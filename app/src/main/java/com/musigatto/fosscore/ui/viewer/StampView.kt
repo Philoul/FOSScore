@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.graphics.Typeface
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -35,15 +37,21 @@ import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.R
 import java.util.Locale
 
-enum class StampSymbol(val label: String) {
-    PP("pp"), P("p"), MP("mp"), MF("mf"), F("f"), FF("ff"),
-    CRESC("cresc."), DECRESC("decresc."),
-    UPBOW("upbow"), DOWNBOW("downbow"),
-    ACCENT("acento"), STACCATO("staccato"), TENUTO("tenuto"), FERMATA("fermata"),
+// label: score notation drawn on the page (Italian dynamics, never translated) or a stable
+// identifier for glyph-only symbols. nameRes: translatable name, used for accessibility.
+enum class StampSymbol(val label: String, @StringRes val nameRes: Int) {
+    PP("pp", R.string.stamp_pp), P("p", R.string.stamp_p), MP("mp", R.string.stamp_mp),
+    MF("mf", R.string.stamp_mf), F("f", R.string.stamp_f), FF("ff", R.string.stamp_ff),
+    CRESC("cresc.", R.string.stamp_cresc), DECRESC("decresc.", R.string.stamp_decresc),
+    UPBOW("upbow", R.string.stamp_upbow), DOWNBOW("downbow", R.string.stamp_downbow),
+    ACCENT("accent", R.string.stamp_accent), STACCATO("staccato", R.string.stamp_staccato),
+    TENUTO("tenuto", R.string.stamp_tenuto), FERMATA("fermata", R.string.stamp_fermata),
     // Alteraciones: glifos SMuFL accidentalSharp/Flat/Natural/DoubleSharp/DoubleFlat, servidos
     // por Noto Music en codepoints Unicode estándar (verificados contra su cmap).
-    SHARP("sostenido"), FLAT("bemol"), NATURAL("becuadro"),
-    DOUBLE_SHARP("doble sostenido"), DOUBLE_FLAT("doble bemol")
+    SHARP("sharp", R.string.stamp_sharp), FLAT("flat", R.string.stamp_flat),
+    NATURAL("natural", R.string.stamp_natural),
+    DOUBLE_SHARP("double sharp", R.string.stamp_double_sharp),
+    DOUBLE_FLAT("double flat", R.string.stamp_double_flat)
 }
 
 // Noto Music (OFL, third_party/NotoMusic-OFL.txt) trae las alteraciones en codepoints Unicode
@@ -130,7 +138,7 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
         if (png != null) {
             Image(
                 painter = painterResource(png),
-                contentDescription = symbol.label,
+                contentDescription = stringResource(symbol.nameRes),
                 colorFilter = ColorFilter.tint(color),
                 modifier = Modifier.fillMaxSize()
             )

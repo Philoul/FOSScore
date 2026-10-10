@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_back">Volver</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_delete">Eliminar</string>
+    <string name="action_edit">Editar</string>
+    <string name="action_import">Importar</string>
+    <string name="action_open">Abrir</string>
+    <string name="action_save">Guardar</string>
+
+    <string name="library_title">Biblioteca</string>
+    <string name="library_search">Buscar</string>
+    <string name="library_empty">Aún no hay partituras. Importa una con el botón Importar.</string>
+    <string name="library_no_results">Sin resultados para “%1$s”</string>
+
+    <string name="import_duplicate">Esa partitura ya está en la biblioteca</string>
+    <string name="import_error_read">El archivo no se pudo leer</string>
+    <string name="import_error_failed">Fallo al importar</string>
+    <string name="import_error_failed_detail">Fallo al importar: %1$s</string>
+
+    <string name="sheet_edit_title">Editar partitura</string>
+    <string name="sheet_field_title">Título</string>
+    <string name="sheet_field_composer">Compositor</string>
+    <string name="sheet_field_genre">Género</string>
+    <string name="sheet_field_key">Tonalidad</string>
+    <string name="sheet_field_tags">Etiquetas</string>
+    <string name="sheet_delete_title">¿Eliminar esta partitura?</string>
+    <string name="sheet_delete_message">Se borrará de la biblioteca y del dispositivo.</string>
+
+    <string name="error_file_open">No se pudo abrir el archivo</string>
+    <string name="viewer_error_invalid_pdf">PDF inválido o corrupto</string>
+    <string name="viewer_error_render">No se pudo renderizar la página</string>
+    <string name="viewer_page_description">Página %1$d de %2$d</string>
+    <string name="viewer_mode">Modo:</string>
+    <string name="viewer_invert">Neg</string>
+    <string name="viewer_dim">Atenuar</string>
+    <string name="viewer_pen_width">Grosor</string>
+    <string name="viewer_stamp_size">Tamaño</string>
+    <string name="percent_value">%1$d%%</string>
+
+    <string name="theme_system">Auto</string>
+    <string name="theme_light">Claro</string>
+    <string name="theme_dark">Oscuro</string>
+
+    <string name="language_current">Idioma: %1$s</string>
+    <string name="language_system_default">Idioma del sistema</string>
+
+    <string name="stamp_pp">pianissimo</string>
+    <string name="stamp_p">piano</string>
+    <string name="stamp_mp">mezzo piano</string>
+    <string name="stamp_mf">mezzo forte</string>
+    <string name="stamp_f">forte</string>
+    <string name="stamp_ff">fortissimo</string>
+    <string name="stamp_cresc">crescendo</string>
+    <string name="stamp_decresc">decrescendo</string>
+    <string name="stamp_upbow">arco arriba</string>
+    <string name="stamp_downbow">arco abajo</string>
+    <string name="stamp_accent">acento</string>
+    <string name="stamp_staccato">staccato</string>
+    <string name="stamp_tenuto">tenuto</string>
+    <string name="stamp_fermata">calderón</string>
+    <string name="stamp_sharp">sostenido</string>
+    <string name="stamp_flat">bemol</string>
+    <string name="stamp_natural">becuadro</string>
+    <string name="stamp_double_sharp">doble sostenido</string>
+    <string name="stamp_double_flat">doble bemol</string>
+</resources>

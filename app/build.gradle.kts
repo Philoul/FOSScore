@@ -42,6 +42,13 @@ android {
     buildFeatures {
         compose = true
     }
+    bundle {
+        // The language is picked inside the app (LocaleHelper), so an App Bundle must ship every
+        // translation instead of only those matching the phone's languages.
+        language {
+            enableSplit = false
+        }
+    }
 }
 
 dependencies {

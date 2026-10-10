@@ -106,7 +106,7 @@ private fun stampDrawableId(symbol: StampSymbol): Int? {
 @Composable
 private fun musicTypeface(): Typeface? {
     val context = LocalContext.current
-    // ResourcesCompat.getFont: Resources.getFont es API 26+ y minSdk es 24
+    // ResourcesCompat.getFont: Resources.getFont is API 26+ and minSdk is 23
     return remember {
         val tf: Typeface? = try {
             ResourcesCompat.getFont(context, R.font.noto_music)
@@ -138,7 +138,7 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
         } else if (symbol in TEXT_SYMBOLS) {
             // ponytail: la etiqueta se encoge con un factor fijo por etiqueta (medido a ojo sobre
             // la caja) en vez de medir el texto en runtime. Upgrade: Canvas.drawText con medición real.
-            val maxSp = with(density) { (sizePx * TEXT_FILL.getOrDefault(symbol, 0.7f) / density.density).sp }
+            val maxSp = with(density) { (sizePx * (TEXT_FILL[symbol] ?: 0.7f) / density.density).sp }
             androidx.compose.material3.Text(
                 text = symbol.label,
                 maxLines = 1,

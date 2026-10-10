@@ -14,15 +14,15 @@ android {
 
     defaultConfig {
         applicationId = "com.musigatto.fosscore"
-        minSdk = 24
+        minSdk = 23
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
-        // MuPDF trae un .so por ABI (~8-11 MB cada uno). minSdk 24 => hay móviles 32 bits
-        // (armeabi-v7a) con Android 7; x86 queda fuera (solo emuladores antiguos).
+        // MuPDF ships one .so per ABI (~8-11 MB each). minSdk 23 => 32-bit devices still exist on
+        // Android 6/7: armeabi-v7a phones and x86 tablets (e.g. Galaxy Tab 3 10.1 on LineageOS).
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

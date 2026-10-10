@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
 import com.musigatto.fosscore.R
 import java.util.Locale
 
@@ -105,10 +106,10 @@ private fun stampDrawableId(symbol: StampSymbol): Int? {
 @Composable
 private fun musicTypeface(): Typeface? {
     val context = LocalContext.current
-    // Resources.getFont (API 26+): devuelve tipo "platform", así que el local va tipado
+    // ResourcesCompat.getFont: Resources.getFont es API 26+ y minSdk es 24
     return remember {
         val tf: Typeface? = try {
-            context.resources.getFont(R.font.noto_music)
+            ResourcesCompat.getFont(context, R.font.noto_music)
         } catch (e: Exception) {
             null
         }

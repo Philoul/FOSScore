@@ -1,0 +1,15 @@
+# Crowdin sync configuration (see docs/i18n.md). Credentials come from the environment and are
+# never committed.
+project_id_env: CROWDIN_PROJECT_ID
+api_token_env: CROWDIN_PERSONAL_TOKEN
+preserve_hierarchy: true
+
+files:
+  - source: /app/src/main/res/values/strings.xml
+    translation: /app/src/main/res/values-%android_code%/strings.xml
+    # Crowdin's default Android codes include a region (es-rES, fr-rFR). Plain language folders
+    # also serve regional variants (es-MX, fr-CA), so they are mapped to the bare language.
+    languages_mapping:
+      android_code:
+        es-ES: es
+        fr: fr

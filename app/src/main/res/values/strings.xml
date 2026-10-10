@@ -1,3 +1,80 @@
 <resources>
-    <string name="app_name">FOSScore</string>
+    <!-- Default language (English). This file is the Crowdin source; translations live in
+         values-<lang>/strings.xml. See docs/i18n.md before adding or renaming a key. -->
+    <string name="app_name" translatable="false">FOSScore</string>
+
+    <!-- Common actions -->
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_import">Import</string>
+    <string name="action_open">Open</string>
+    <string name="action_save">Save</string>
+
+    <!-- Library -->
+    <string name="library_title">Library</string>
+    <string name="library_search">Search</string>
+    <string name="library_empty">No sheets yet. Use the Import button to add one.</string>
+    <string name="library_no_results">No results for “%1$s”</string>
+
+    <!-- Import -->
+    <string name="import_duplicate">This sheet is already in the library</string>
+    <string name="import_error_read">The file could not be read</string>
+    <string name="import_error_failed">Import failed</string>
+    <string name="import_error_failed_detail">Import failed: %1$s</string>
+
+    <!-- Sheet details -->
+    <string name="sheet_edit_title">Edit sheet</string>
+    <string name="sheet_field_title">Title</string>
+    <string name="sheet_field_composer">Composer</string>
+    <string name="sheet_field_genre">Genre</string>
+    <string name="sheet_field_key">Key</string>
+    <string name="sheet_field_tags">Tags</string>
+    <string name="sheet_delete_title">Delete this sheet?</string>
+    <string name="sheet_delete_message">It will be removed from the library and from this device.</string>
+
+    <!-- Viewer -->
+    <string name="error_file_open">The file could not be opened</string>
+    <string name="viewer_error_invalid_pdf">Invalid or corrupted PDF</string>
+    <string name="viewer_error_render">The page could not be rendered</string>
+    <string name="viewer_page_description">Page %1$d of %2$d</string>
+    <string name="viewer_mode">Mode:</string>
+    <!-- Short label of the negative (inverted colours) toggle button -->
+    <string name="viewer_invert">Neg</string>
+    <string name="viewer_dim">Dim</string>
+    <string name="viewer_pen_width">Width</string>
+    <string name="viewer_stamp_size">Size</string>
+    <!-- A percentage, e.g. "40%" -->
+    <string name="percent_value">%1$d%%</string>
+
+    <!-- Theme -->
+    <string name="theme_system">Auto</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
+    <!-- Language selection -->
+    <string name="language_current">Language: %1$s</string>
+    <string name="language_system_default">System default</string>
+
+    <!-- Accessibility names of the annotation stamps -->
+    <string name="stamp_pp">pianissimo</string>
+    <string name="stamp_p">piano</string>
+    <string name="stamp_mp">mezzo-piano</string>
+    <string name="stamp_mf">mezzo-forte</string>
+    <string name="stamp_f">forte</string>
+    <string name="stamp_ff">fortissimo</string>
+    <string name="stamp_cresc">crescendo</string>
+    <string name="stamp_decresc">decrescendo</string>
+    <string name="stamp_upbow">up-bow</string>
+    <string name="stamp_downbow">down-bow</string>
+    <string name="stamp_accent">accent</string>
+    <string name="stamp_staccato">staccato</string>
+    <string name="stamp_tenuto">tenuto</string>
+    <string name="stamp_fermata">fermata</string>
+    <string name="stamp_sharp">sharp</string>
+    <string name="stamp_flat">flat</string>
+    <string name="stamp_natural">natural</string>
+    <string name="stamp_double_sharp">double sharp</string>
+    <string name="stamp_double_flat">double flat</string>
 </resources>

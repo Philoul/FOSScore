@@ -1,6 +1,9 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
+import androidx.annotation.StringRes
+import com.musigatto.fosscore.R
+import com.musigatto.fosscore.locale.LocaleHelper
 
 enum class ThemeMode {
     SYSTEM, LIGHT, DARK;
@@ -13,11 +16,12 @@ enum class ThemeMode {
         DARK -> true
     }
 
-    val label: String
+    @get:StringRes
+    val labelRes: Int
         get() = when (this) {
-            SYSTEM -> "Auto"
-            LIGHT -> "Claro"
-            DARK -> "Oscuro"
+            SYSTEM -> R.string.theme_system
+            LIGHT -> R.string.theme_light
+            DARK -> R.string.theme_dark
         }
 }
 
@@ -27,6 +31,7 @@ object Settings {
     private const val KEY_DIM = "dim"
     private const val KEY_INVERT = "invert"
     private const val KEY_LAST_PAGE = "last_page_"
+    private const val KEY_LANGUAGE = "language"
 
     fun themeMode(context: Context): ThemeMode =
         ThemeMode.entries[context.prefs().getInt(KEY_THEME, ThemeMode.SYSTEM.ordinal)]
@@ -52,6 +57,14 @@ object Settings {
 
     fun setLastPage(context: Context, uri: String, page: Int) {
         context.prefs().edit().putInt(KEY_LAST_PAGE + uri, page).apply()
+    }
+
+    // LocaleHelper.FOLLOW_DEVICE or a language code from LocaleHelper.SUPPORTED
+    fun language(context: Context): String =
+        context.prefs().getString(KEY_LANGUAGE, null) ?: LocaleHelper.FOLLOW_DEVICE
+
+    fun setLanguage(context: Context, language: String) {
+        context.prefs().edit().putString(KEY_LANGUAGE, language).apply()
     }
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)

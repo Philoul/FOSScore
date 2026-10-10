@@ -1,5 +1,6 @@
 package com.musigatto.fosscore
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -7,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -22,9 +24,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
+import com.musigatto.fosscore.locale.LocaleHelper
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
@@ -35,6 +39,11 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // Every resource lookup in this activity, Compose included, uses the selected language
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -48,11 +57,22 @@ class MainActivity : ComponentActivity() {
             val repository = (context.applicationContext as FOSScoreApp).repository
 
             FOSScoreTheme(darkTheme = themeMode.darkTheme(isSystemInDarkTheme())) {
-                FOSScoreNav(repository, themeMode, toggleTheme)
+                FOSScoreNav(repository, themeMode, toggleTheme, ::changeLanguage)
             }
         }
     }
+
+    // Resources are bound to the context built in attachBaseContext, so a new language needs a
+    // new activity
+    private fun changeLanguage(language: String) {
+        if (language == LocaleHelper.selectedLanguage(this)) return
+        LocaleHelper.setSelectedLanguage(this, language)
+        recreate()
+    }
 }
+
+// Snackbar text, resolved in composition so it follows the selected language
+private data class Message(@StringRes val res: Int, val arg: String? = null)
 
 private sealed interface Screen {
     data object Library : Screen
@@ -64,10 +84,11 @@ private sealed interface Screen {
 private fun FOSScoreNav(
     repository: LibraryRepository,
     themeMode: ThemeMode,
-    toggleTheme: () -> Unit
+    toggleTheme: () -> Unit,
+    onLanguageChange: (String) -> Unit
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Library) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<Message?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -75,8 +96,12 @@ private fun FOSScoreNav(
             scope.launch {
                 when (val result = repository.importSheet(uri)) {
                     is ImportResult.Ok -> screen = Screen.Detail(result.sheet)
-                    is ImportResult.Duplicate -> message = "Esa partitura ya está en la biblioteca"
-                    is ImportResult.Error -> message = result.reason
+                    is ImportResult.Duplicate -> message = Message(R.string.import_duplicate)
+                    is ImportResult.Error -> message = if (result.detail == null) {
+                        Message(result.messageRes)
+                    } else {
+                        Message(R.string.import_error_failed_detail, result.detail)
+                    }
                 }
             }
         }
@@ -103,11 +128,13 @@ private fun FOSScoreNav(
                     repository = repository,
                     onOpen = { screen = Screen.Viewer(it) },
                     onEdit = { screen = Screen.Detail(it) },
-                    onImport = { picker.launch(arrayOf("application/pdf")) }
+                    onImport = { picker.launch(arrayOf("application/pdf")) },
+                    onLanguageChange = onLanguageChange
                 )
                 message?.let { msg ->
+                    val text = if (msg.arg == null) stringResource(msg.res) else stringResource(msg.res, msg.arg)
                     LaunchedEffect(msg) {
-                        snackbar.showSnackbar(msg)
+                        snackbar.showSnackbar(text)
                         message = null
                     }
                 }

@@ -76,10 +76,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.FOSScoreApp
+import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.pdf.MuPdfDoc
@@ -181,7 +183,7 @@ fun PdfViewerScreen(
     var halfEnabled by rememberSaveable { mutableStateOf(false) }
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     var navVisible by rememberSaveable { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<Int?>(null) } // string resource
     // SnapshotStateMap: al cambiar un bitmap solo se redibuja quien lee ESA clave. Con un Map
     // normal, cambiar el bitmap invalidaba el Image + el Canvas de tinta + los sellos enteros
     // (eso se-notaba como un tirón al cambiar la nitidez en mitad del pellizco).
@@ -394,10 +396,10 @@ fun PdfViewerScreen(
             throw e
         } catch (e: IOException) {
             Log.e(LOG_TAG, "no se pudo abrir el archivo: ${e.message}", e)
-            error = "No se pudo abrir el archivo"
+            error = R.string.error_file_open
         } catch (e: Exception) {
             Log.e(LOG_TAG, "no se pudo abrir: ${e::class.simpleName}: ${e.message}", e)
-            error = "PDF inválido o corrupto"
+            error = R.string.viewer_error_invalid_pdf
         }
     }
 
@@ -515,14 +517,14 @@ fun PdfViewerScreen(
                 // spinner girando eternamente (pasó con una página en blanco)
                 if (bitmaps[currentPage] == null) {
                     Log.e(LOG_TAG, "la página $currentPage no se pudo renderizar")
-                    error = "No se pudo renderizar la página"
+                    error = R.string.viewer_error_render
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(LOG_TAG, "render failed: ${e::class.simpleName}: ${e.message}", e)
-            if (gen == renderGeneration) error = "No se pudo renderizar la página"
+            if (gen == renderGeneration) error = R.string.viewer_error_render
         }
     }
 
@@ -548,9 +550,9 @@ fun PdfViewerScreen(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(error!!, style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(error!!), style = MaterialTheme.typography.bodyLarge)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onBack) { Text("Volver") }
+                Button(onClick = onBack) { Text(stringResource(R.string.action_back)) }
             }
         } else if (bitmaps.isNotEmpty()) {
             // Modos de lectura (two-up, media página): la capa escala el viewport entero como antes
@@ -1241,7 +1243,7 @@ fun PdfViewerScreen(
                         Box(modifier = Modifier.fillMaxSize().clipToBounds().then(gestureMod)) {
                             Image(
                                 bitmap = bmp.asImageBitmap(),
-                                contentDescription = "Page ${currentPage + 1} of $pageCount",
+                                contentDescription = stringResource(R.string.viewer_page_description, currentPage + 1, pageCount),
                                 contentScale = ContentScale.FillBounds,
                                 colorFilter = if (invert) INVERT_FILTER else null,
                                 modifier = Modifier
@@ -1424,7 +1426,7 @@ fun PdfViewerScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Modo:", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.viewer_mode), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
@@ -1452,7 +1454,7 @@ fun PdfViewerScreen(
                     ) { Text("2") }
                 }
                 Spacer(Modifier.width(16.dp))
-                Button(onClick = onToggleTheme) { Text(themeMode.label) }
+                Button(onClick = onToggleTheme) { Text(stringResource(themeMode.labelRes)) }
                 Spacer(Modifier.width(4.dp))
                 Button(
                     onClick = {
@@ -1461,7 +1463,7 @@ fun PdfViewerScreen(
                     },
                     colors = if (invert) ButtonDefaults.buttonColors()
                     else ButtonDefaults.outlinedButtonColors()
-                ) { Text("Neg") }
+                ) { Text(stringResource(R.string.viewer_invert)) }
                 Spacer(Modifier.width(4.dp))
                 Button(
                     onClick = {
@@ -1486,7 +1488,7 @@ fun PdfViewerScreen(
                     enabled = canEdit,
                     colors = if (editing) ButtonDefaults.buttonColors()
                     else ButtonDefaults.outlinedButtonColors()
-                ) { Text("Editar") }
+                ) { Text(stringResource(R.string.action_edit)) }
             }
 
             Column(
@@ -1502,7 +1504,7 @@ fun PdfViewerScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Atenuar", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.viewer_dim), style = MaterialTheme.typography.bodyMedium)
                         Slider(
                             value = dimPct,
                             onValueChange = { dimPct = it },
@@ -1512,7 +1514,7 @@ fun PdfViewerScreen(
                                 .weight(1f)
                                 .padding(horizontal = 12.dp)
                         )
-                        Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.percent_value, dimPct.toInt()), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 if (editing && canEdit) {
@@ -1633,20 +1635,20 @@ fun PdfViewerScreen(
                         ) { Text("↶") }
                         Spacer(Modifier.width(8.dp))
                         if (drawingTool) {
-                            Text("Grosor", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.viewer_pen_width), style = MaterialTheme.typography.bodyMedium)
                             Slider(
                                 value = penWidth,
                                 onValueChange = { penWidth = it },
                                 valueRange = MIN_STROKE_WIDTH..MAX_STROKE_WIDTH,
                                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
                             )
-                            Text("${(penWidth * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.percent_value, (penWidth * 100).roundToInt()), style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.width(8.dp))
                         }
                         if (selectedStamp != null) {
                             val s = selectedStamp
                             var sliderUndoPushed by remember { mutableStateOf(false) }
-                            Text("Tamaño", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.viewer_stamp_size), style = MaterialTheme.typography.bodyMedium)
                             Slider(
                                 value = s.size.coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE),
                                 onValueChange = { v ->
@@ -1663,7 +1665,7 @@ fun PdfViewerScreen(
                                 valueRange = MIN_STAMP_SIZE..MAX_STAMP_SIZE,
                                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
                             )
-                            Text("${(s.size * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.percent_value, (s.size * 100).roundToInt()), style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.width(8.dp))
                         }
                         Button(

@@ -6,35 +6,35 @@ import com.musigatto.fosscore.library.Stroke
 import kotlin.math.max
 import kotlin.math.min
 
-// snapshot de una página para undo: sellos + trazos
+// snapshot of a page for undo: stamps + strokes
 data class PageEdit(val stamps: List<Stamp>, val strokes: List<Stroke>)
 
-// distancia mínima en px entre puntos de un trazo (downsample)
+// minimum distance in px between points of a stroke (downsample)
 const val MIN_SAMPLE_DIST_PX = 2f
 
-// ancho del trazo en fracción del alto de página (0.002..0.02; ~0.8% por defecto)
+// stroke width as a fraction of the page height (0.002..0.02; ~0.8% by default)
 const val DEFAULT_STROKE_WIDTH = 0.008f
 const val MIN_STROKE_WIDTH = 0.002f
 const val MAX_STROKE_WIDTH = 0.02f
 
-// radio de la goma como fracción del alto de página (px = frac * fit.height)
+// eraser radius as a fraction of the page height (px = frac * fit.height)
 const val ERASE_RADIUS_FRAC = 0.02f
 
-// Al escribir sin soltar del todo: si el siguiente trazo empieza antes de STROKE_MERGE_MS y
-// cerca del final del anterior, se pega al mismo (una palabra = un trazo, aunque el stylus alza).
-// ponytail: los puntos se unen con un segmento recto (el hueco son unos ms). 400ms separa
-// palabras pero junta letras; bajar a ~150ms para exigir escritura continua. Hay un Log.d
-// ("ink: merge=...") para ver gap/dist reales en el dispositivo y ajustar a mano.
+// Writing without fully lifting: if the next stroke starts within STROKE_MERGE_MS and near the
+// end of the previous one, it is joined to it (one word = one stroke, even if the stylus lifts).
+// ponytail: the points are joined with a straight segment (the gap is a few ms). 400ms separates
+// words but joins letters; lower to ~150ms to require continuous writing. There is a Log.d
+// ("ink: merge=...") to see the real gap/dist on the device and tune by hand.
 const val STROKE_MERGE_MS = 400L
 const val STROKE_MERGE_DIST_FRAC = 0.04f
 
-// último trazo recién escrito, para poder pegarle el siguiente
+// last stroke just written, so the next one can be joined to it
 class InkTail {
     var last: Stroke? = null
     var at: Long = 0L
 }
 
-// ¿el trazo nuevo continúa el anterior? mismo estilo, pausa breve y cerca de su final
+// does the new stroke continue the previous one? same style, short pause and near its end
 fun shouldMergeStroke(
     prevEndPx: Offset,
     newStartPx: Offset,
@@ -44,7 +44,7 @@ fun shouldMergeStroke(
 ): Boolean = sameStyle && gapMs <= STROKE_MERGE_MS &&
     (newStartPx - prevEndPx).getDistance() <= STROKE_MERGE_DIST_FRAC * fit.height
 
-// descarta puntos consecutivos a menos de minDist del anterior
+// drops consecutive points closer than minDist to the previous one
 fun samplePoints(pts: List<Offset>, minDist: Float): List<Offset> {
     if (pts.size < 2) return pts
     val out = ArrayList<Offset>(pts.size)
@@ -95,19 +95,19 @@ fun minDistanceToPolyline(p: Offset, poly: List<Offset>): Float {
     return best
 }
 
-// quita de un trazo los puntos que caen a < radius del rastro de la goma y devuelve los
-// tramos supervivientes (los extremos separados quedan como trazos distintos); vacío = borrado entero.
-// ponytail: la goma siempre es parcial (rozas lo que quieres quitar). Para quitar una palabra
-// entera: tocarla (la selecciona) y luego 🗑. Upgrade si hiciera falta: un modo "borra el trazo
-// entero" como ajuste de la goma; no se pidió y el 🗑 ya lo cubre.
+// removes from a stroke the points within < radius of the eraser path and returns the surviving
+// segments (separated ends become distinct strokes); empty = erased entirely.
+// ponytail: the eraser is always partial (you brush over what you want removed). To remove a
+// whole word: tap it (selects it) then 🗑. Upgrade if ever needed: an "erase whole stroke" mode
+// as an eraser setting; it wasn't requested and 🗑 already covers it.
 fun eraseStrokePoints(pts: List<Offset>, eraser: List<Offset>, radius: Float): List<List<Offset>> {
     if (eraser.isEmpty() || pts.isEmpty()) return listOf(pts)
     val keep = pts.map { minDistanceToPolyline(it, eraser) >= radius }
     if (keep.none { it }) return emptyList()
     val runs = mutableListOf<MutableList<Offset>>()
     var cur = mutableListOf<Offset>()
-    // ponytail: un hueco > 2*radio entre supervivientes separa tramos; falla si un trazo tiene
-    // muestras naturalmente muy espaciadas. Upgrade: decidir por cercanía al rastro de la goma.
+    // ponytail: a gap > 2*radius between survivors splits segments; fails if a stroke has
+    // naturally widely spaced samples. Upgrade: decide by proximity to the eraser path.
     val splitGap = radius * 2f
     for (i in pts.indices) {
         if (!keep[i]) {
@@ -123,7 +123,7 @@ fun eraseStrokePoints(pts: List<Offset>, eraser: List<Offset>, radius: Float): L
     return runs
 }
 
-// caja que envuelve los puntos (px) — el recuadro de selección de un trazo
+// box enclosing the points (px) — a stroke's selection rectangle
 fun strokeBounds(pts: List<Offset>): RectPx {
     if (pts.isEmpty()) return RectPx(0f, 0f, 0f, 0f)
     var l = Float.MAX_VALUE
@@ -142,7 +142,7 @@ fun strokeBounds(pts: List<Offset>): RectPx {
 fun scalePoints(pts: List<Offset>, center: Offset, factor: Float): List<Offset> =
     pts.map { Offset(center.x + (it.x - center.x) * factor, center.y + (it.y - center.y) * factor) }
 
-// trazo bajo el dedo (tolerancia = el tirador o el grosor, lo que sea mayor)
+// stroke under the finger (tolerance = the handle or the width, whichever is larger)
 fun hitStroke(pos: Offset, strokes: List<Stroke>, fit: RectPx): Stroke? {
     if (fit.width <= 0f) return null
     return strokes.lastOrNull { st ->

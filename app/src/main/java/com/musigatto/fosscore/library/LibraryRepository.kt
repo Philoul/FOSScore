@@ -66,7 +66,7 @@ class LibraryRepository(context: Context) {
         try {
             File(sheet.path).delete()
         } catch (_: Exception) {
-            // ponytail: fila ya borrada; si el archivo no existe/falla, no bloquea el borrado
+            // ponytail: row already deleted; a missing/failing file doesn't block the deletion
         }
     }
 }

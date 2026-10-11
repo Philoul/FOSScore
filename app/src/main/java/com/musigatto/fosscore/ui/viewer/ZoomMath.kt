@@ -5,19 +5,19 @@ import androidx.compose.ui.geometry.Size
 import kotlin.math.ceil
 
 /**
- * Matemática del zoom "1:1" (ver ZoomMathTest y plan 2026-09-30-zoom-render-1to1).
+ * "1:1" zoom math (see ZoomMathTest and plan 2026-09-30-zoom-render-1to1).
  *
- * La página se dibuja SIN capa con escala: contenido de tamaño `fit*scale` colocado en
- * `base + offset` (pantalla), overlay vectorial escalado en el propio dibujo. `base` es el
- * centrado de la página en el viewport a escala 1 (pageFit.left/top). Todo en px.
+ * The page is drawn WITHOUT a scaled layer: content of size `fit*scale` placed at
+ * `base + offset` (screen), vector overlay scaled in the drawing itself. `base` is the
+ * centring of the page in the viewport at scale 1 (pageFit.left/top). All in px.
  */
 object ZoomMath {
 
     /**
-     * Anclaje del pellizco: al multiplicar el zoom por [k], el punto contenido bajo [anchor]
-     * (pantalla) queda quieto. Es la misma fórmula clásica `k*offset + (1-k)*anchor` con la
-     * base de centrado restada del punto de anclaje (el origen del contenido ya no es el del
-     * viewport: la página está centrada en `base`).
+     * Pinch anchoring: when the zoom is multiplied by [k], the content point under [anchor]
+     * (screen) stays still. It is the classic formula `k*offset + (1-k)*anchor` with the
+     * centring base subtracted from the anchor point (the content origin is no longer the
+     * viewport's: the page is centred at `base`).
      */
     fun anchoredOffset(offset: Offset, k: Float, anchor: Offset, base: Offset): Offset =
         Offset(
@@ -26,9 +26,9 @@ object ZoomMath {
         )
 
     /**
-     * Rango del paneo: el contenido (de tamaño [content] en pantalla a escala 1) ampliado por
-     * [scale] para que siga tocando el viewport — rango único y continuo (sin saltos al cruzar
-     * de no-desbordar a desbordar). A escala 1 (vista completa) queda centrado.
+     * Pan range: the content (of on-screen size [content] at scale 1) magnified by [scale]
+     * so that it keeps touching the viewport — a single, continuous range (no jumps when going
+     * from not overflowing to overflowing). At scale 1 (full view) it stays centred.
      */
     fun clampOffset(offset: Offset, content: Size, viewport: Size, scale: Float, base: Offset): Offset =
         Offset(
@@ -37,22 +37,22 @@ object ZoomMath {
         )
 
     private fun clampAxis(o: Float, content: Float, viewport: Float, scale: Float, base: Float): Float {
-        // Sin zoom la vista es "página completa": siempre centrada.
+        // Without zoom the view is "full page": always centred.
         if (scale <= 1f) return 0f
-        // Rango único y CONTINUO (sin salto al cruzar de no-desbordar a desbordar): la página
-        // puede deslizarse mientras siga tocando el viewport. El anclaje del pellizco nunca se
-        // traiciona (si el eje cabe y se fuerza el centro, la página crece desde el centro y el
-        // punto de los dedos huye hacia la esquina). El precio: al desbordar, un paneo puede
-        // dejar la página un poco fuera por un lado — si molesta, upgrade: clamp de cobertura
-        // total al soltar el gesto.
+        // Single, CONTINUOUS range (no jump when going from not overflowing to overflowing): the
+        // page may slide as long as it keeps touching the viewport. The pinch anchor is never
+        // betrayed (if the axis fits and centring is forced, the page grows from the centre and
+        // the point under the fingers runs off to the corner). The cost: when overflowing, a pan
+        // can leave the page slightly off on one side — if it bothers, upgrade: a full-coverage
+        // clamp on gesture release.
         val scaled = content * scale
         return o.coerceIn(-scaled - base, viewport - base)
     }
 
     /**
-     * Escalón de re-render: el bitmap se renderiza al siguiente 10% del encaje (1.0, 1.1, ...).
-     * Dentro de un gesto las peticiones de render se caen en los mismos escalones y la caché de
-     * MuPdfDoc las reaprovecha; al terminar, el render final coincide con el escalón visual.
+     * Re-render step: the bitmap is rendered at the next 10% of the fit (1.0, 1.1, ...).
+     * Within a gesture, render requests fall on the same steps and MuPdfDoc's cache reuses
+     * them; at the end, the final render matches the visual step.
      */
     fun renderBucket(scale: Float): Float {
         val bucket = ceil(scale * 10f) / 10f

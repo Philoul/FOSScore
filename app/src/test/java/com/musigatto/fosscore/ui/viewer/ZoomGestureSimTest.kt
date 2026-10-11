@@ -8,23 +8,23 @@ import kotlin.math.abs
 import kotlin.math.pow
 
 /**
- * Reproduce NUMÉRICAMENTE el bucle del pellizco de PdfViewerScreen (anclaje → clamp) con las
- * funciones de producción (ZoomMath, fitRect) y mide el residuo del anclaje: cuánto se ha movido en
- * pantalla el punto de página que estaba bajo el dedo con el que se apuntaba.
+ * NUMERICALLY reproduces PdfViewerScreen's pinch loop (anchor → clamp) with the production
+ * functions (ZoomMath, fitRect) and measures the anchor residual: how far the page point that was
+ * under the aiming finger has moved on screen.
  *
- * El foco es FIJO (el primer dedo, no el punto medio de los dos) y no sigue el deslizamiento, así
- * que el residuo debe ser ~0 aunque el otro dedo se mueva. Antes el ancla era el centroide vivo más
- * un pan de 2 dedos: el punto apuntado se escapaba con el viaje de los dedos. El clamp puede forzar
- * el offset en los bordes: por eso el umbral es 5 px y no 0.
+ * The focus is FIXED (the first finger, not the midpoint of the two) and does not follow sliding,
+ * so the residual must be ~0 even if the other finger moves. Previously the anchor was the live
+ * centroid plus a 2-finger pan: the aimed point escaped as the fingers travelled. The clamp may
+ * force the offset at the edges: that is why the threshold is 5 px and not 0.
  */
 class ZoomGestureSimTest {
 
     class Drift(val avg: Float, val max: Float)
 
     /**
-     * Dos dedos que se abren [zoomTotal]×: el primero (el que apunta) se queda en [fingers.x] y el
-     * segundo se abre hacia [fingers.y] y además se desliza [drift] px/frame, como en un pellizco
-     * real sobre un compás.
+     * Two fingers spreading [zoomTotal]×: the first (the aiming one) stays at [fingers.x] and the
+     * second spreads towards [fingers.y] and also slides [drift] px/frame, as in a real pinch
+     * over a bar.
      */
     private fun runPinch(
         viewport: Size,
@@ -43,7 +43,7 @@ class ZoomGestureSimTest {
 
         var scale = 1f
         var offset = Offset.Zero
-        // foco: el dedo que apunta, fijo durante todo el gesto
+        // focus: the aiming finger, fixed for the whole gesture
         val anchor = aim0
         val f0 = Offset((aim0.x - base.x) / scale, (aim0.y - base.y) / scale)
         var anchorDist = 0f
@@ -53,14 +53,14 @@ class ZoomGestureSimTest {
 
         for (t in 1 until frames) {
             val f = t.toFloat() / (frames - 1)
-            // el dedo que abre se aleja y se desliza; el que apunta se queda quieto
+            // the spreading finger moves away and slides; the aiming one stays still
             val openNow = Offset(
                 open0.x + (open0.x - aim0.x) * (zoomTotal - 1f) * f + drift.x * t,
                 open0.y + (open0.y - aim0.y) * (zoomTotal - 1f) * f + drift.y * t
             )
             val d = (openNow - aim0).getDistance()
 
-            // mismo orden y fórmulas que el gesto real
+            // same order and formulas as the real gesture
             if (prevD < 0f) {
                 anchorDist = d
             } else {
@@ -70,13 +70,13 @@ class ZoomGestureSimTest {
                     val target = (scale * ratio).coerceIn(1f, 2.5f)
                     if (target != scale) {
                         val k = target / scale
-                        // ancla al foco fijo (primer dedo), NO al punto medio ni al centroide vivo
+                        // anchor to the fixed focus (1st finger), NOT the midpoint or live centroid
                         offset = ZoomMath.anchoredOffset(offset, k, anchor, base)
                         scale = target
                     }
                 }
             }
-            // sin pan de 2 dedos: el foco no sigue el deslizamiento
+            // no 2-finger pan: the focus does not follow the sliding
             offset = ZoomMath.clampOffset(offset, content, viewport, scale, base)
             prevD = d
 
@@ -101,14 +101,14 @@ class ZoomGestureSimTest {
         assertTrue("$label deriva ${r.avg}px (máx ${r.max}px)", r.avg < 5f)
     }
 
-    // partitura apaisada en el S6 Lite (1200x2000, encaje 1200x1569 @ (0,216)): el usuario apunta
-    // con un dedo y abre con el otro
+    // landscape score on the S6 Lite (1200x2000, fit 1200x1569 @ (0,216)): the user aims with
+    // one finger and spreads with the other
     private val vp = Size(1200f, 2000f)
     private val partitura = 0.7648f
 
     @Test
     fun aimedTopLeftStaysPinned() {
-        // un dedo en (150,300) (arriba izquierda) y el otro abriendo hacia (700,700)
+        // one finger at (150,300) (top left) and the other spreading towards (700,700)
         assertPinned("apunta-arriba-izq", vp, partitura, Offset(150f, 300f) to Offset(700f, 700f))
     }
 
@@ -128,9 +128,9 @@ class ZoomGestureSimTest {
     }
 
     /**
-     * Los dos dedos juntos (caso simétrico): el foco es el del primer dedo, así que el otro extremo
-     * se abre. Es el cambio de comportamiento pedido: el punto medio dejaría el anclaje a la mitad
-     * del hueco entre dedos.
+     * Both fingers together (symmetric case): the focus is the first finger's, so the other end
+     * spreads. This is the requested behaviour change: the midpoint would leave the anchor halfway
+     * across the gap between the fingers.
      */
     @Test
     fun bothFingersTogetherStayPinnedOnTheFirstOne() {
@@ -139,7 +139,7 @@ class ZoomGestureSimTest {
 
     @Test
     fun slidingSecondFingerKeepsFocus() {
-        // el segundo dedo se desliza mucho: el compás apuntado no debe moverse
+        // the second finger slides a lot: the aimed bar must not move
         assertPinned("segundo-dedo-se-desliza", vp, partitura, Offset(150f, 300f) to Offset(700f, 700f), frames = 24, drift = Offset(4f, 6f))
     }
 

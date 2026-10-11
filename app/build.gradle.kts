@@ -19,8 +19,8 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // MuPDF trae un .so por ABI (~11 MB cada uno). minSdk 26 => solo 64 bits:
-        // con armeabi-v7a/x86 el APK subiría ~22 MB sin aportar nada.
+        // MuPDF ships one .so per ABI (~11 MB each). minSdk 26 => 64-bit only:
+        // with armeabi-v7a/x86 the APK would grow ~22 MB for no benefit.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }

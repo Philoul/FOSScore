@@ -14,9 +14,9 @@ class InkGeometryTest {
     fun samplePointsDropsConsecutiveClosePoints() {
         val pts = listOf(Offset(0f, 0f), Offset(1f, 0f), Offset(1.5f, 0f), Offset(10f, 0f))
         val out = samplePoints(pts, 2f)
-        // se mide contra el ÚLTIMO punto conservado: (1,0) y (1.5,0) están a <2 del (0,0),
-        // así que solo entra el (10,0). La expectativa original (conservar el 1.5) contradecía
-        // la implementación y fallaba siempre (definición en InkGeometry: minDist del anterior).
+        // measured against the LAST kept point: (1,0) and (1.5,0) are <2 from (0,0), so only
+        // (10,0) gets in. The original expectation (keeping 1.5) contradicted the implementation
+        // and always failed (definition in InkGeometry: minDist from the previous one).
         assertEquals(listOf(Offset(0f, 0f), Offset(10f, 0f)), out)
     }
 
@@ -52,7 +52,7 @@ class InkGeometryTest {
     @Test
     fun briefPenLiftContinuesTheSameWord() {
         val fit = RectPx(0f, 0f, 1000f, 1000f)
-        // el stylus alza 80 ms y sigue en el mismo sitio: mismo trazo
+        // the stylus lifts for 80 ms and continues at the same spot: same stroke
         assertEquals(
             true,
             shouldMergeStroke(Offset(500f, 500f), Offset(505f, 502f), fit, 80L, sameStyle = true)
@@ -62,17 +62,17 @@ class InkGeometryTest {
     @Test
     fun longPauseOrFarJumpStartsANewStroke() {
         val fit = RectPx(0f, 0f, 1000f, 1000f)
-        // pausa larga: trazo nuevo
+        // long pause: new stroke
         assertEquals(
             false,
             shouldMergeStroke(Offset(500f, 500f), Offset(505f, 502f), fit, 900L, sameStyle = true)
         )
-        // pausa breve pero en otro sitio: trazo nuevo
+        // short pause but somewhere else: new stroke
         assertEquals(
             false,
             shouldMergeStroke(Offset(500f, 500f), Offset(700f, 500f), fit, 80L, sameStyle = true)
         )
-        // otro grosor o color: trazo nuevo aunque el dedo no se mueva
+        // different width or colour: new stroke even if the finger doesn't move
         assertEquals(
             false,
             shouldMergeStroke(Offset(500f, 500f), Offset(500f, 500f), fit, 10L, sameStyle = false)

@@ -13,8 +13,8 @@ class FOSScoreApp : Application() {
     val repository: LibraryRepository by lazy { LibraryRepository(this) }
     val stampRepository: StampRepository by lazy { StampRepository(this) }
     val strokeRepository: StrokeRepository by lazy { StrokeRepository(this) }
-    // ponytail: DI manual con 1 BD + 3 repos; Hilt cuando el grafo crezca
+    // ponytail: manual DI with 1 DB + 3 repos; Hilt once the graph grows
     val database: AppDatabase by lazy { AppDatabase.get(this) }
-    // tareas de limpieza que deben sobrevivir a la composición (p.ej. close() de PdfRenderer)
+    // cleanup tasks that must outlive the composition (e.g. PdfRenderer's close())
     val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 }

@@ -7,6 +7,9 @@ preserve_hierarchy: true
 files:
   - source: /app/src/main/res/values/strings.xml
     translation: /app/src/main/res/values-%android_code%/strings.xml
+    # Leave untranslated strings out of the downloaded files: Android then falls back to English
+    # for them, and partial translations stay small and reviewable.
+    skip_untranslated_strings: true
     # Crowdin's default Android codes include a region (es-rES, fr-rFR). Plain language folders
     # also serve regional variants (es-MX, fr-CA), so they are mapped to the bare language.
     languages_mapping:

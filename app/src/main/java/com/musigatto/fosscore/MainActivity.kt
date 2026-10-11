@@ -21,6 +21,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -80,6 +82,40 @@ private sealed interface Screen {
     data class Viewer(val sheet: Sheet) : Screen
 }
 
+// rotating the tablet recreates the Activity: without saving the screen, `screen` went back to
+// Library and the open sheet was closed. The viewer already keeps the current page (rememberSaveable).
+private val ScreenSaver = listSaver<Screen, Any>(
+    save = { s ->
+        when (s) {
+            Screen.Library -> listOf("library")
+            is Screen.Detail -> listOf("detail") + s.sheet.toSaveable()
+            is Screen.Viewer -> listOf("viewer") + s.sheet.toSaveable()
+        }
+    },
+    restore = { v ->
+        when (v[0]) {
+            "detail" -> Screen.Detail(sheetFromSaveable(v.drop(1)))
+            "viewer" -> Screen.Viewer(sheetFromSaveable(v.drop(1)))
+            else -> Screen.Library
+        }
+    }
+)
+
+private fun Sheet.toSaveable(): List<Any> =
+    listOf(id, fileName, path, hash, title, composer, genre, musicalKey, tags)
+
+private fun sheetFromSaveable(v: List<Any>) = Sheet(
+    id = v[0] as Long,
+    fileName = v[1] as String,
+    path = v[2] as String,
+    hash = v[3] as String,
+    title = v[4] as String,
+    composer = v[5] as String,
+    genre = v[6] as String,
+    musicalKey = v[7] as String,
+    tags = v[8] as String
+)
+
 @Composable
 private fun FOSScoreNav(
     repository: LibraryRepository,
@@ -87,7 +123,7 @@ private fun FOSScoreNav(
     toggleTheme: () -> Unit,
     onLanguageChange: (String) -> Unit
 ) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Library) }
+    var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf<Screen>(Screen.Library) }
     var message by remember { mutableStateOf<Message?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()

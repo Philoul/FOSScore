@@ -20,8 +20,8 @@ data class RectPx(
         o.x >= left && o.x <= right && o.y >= top && o.y <= bottom
 }
 
-// ponytail: tamaño del sello como fracción de alto de página (0.015..0.3); un slider de
-// tamaños absolutos se añadiría cuando el usuario lo pida.
+// ponytail: stamp size as a fraction of page height (0.015..0.3); a slider for absolute
+// sizes would be added when the user asks for it.
 const val MIN_STAMP_SIZE = 0.015f
 const val MAX_STAMP_SIZE = 0.3f
 const val DEFAULT_STAMP_SIZE = 0.09f
@@ -39,8 +39,8 @@ fun normalizedToPx(n: Offset, fit: RectPx): Offset =
 fun pxToNormalized(p: Offset, fit: RectPx): Offset =
     Offset((p.x - fit.left) / fit.width, (p.y - fit.top) / fit.height)
 
-// x/y = centro normalizado del sello sobre el lienzo; el rect puede sobresalir en bordes
-// (un sello medio fuera de página es legítimo), el centro siempre queda dentro tras clamp.
+// x/y = normalized centre of the stamp on the canvas; the rect may stick out at the edges
+// (a stamp half off the page is legitimate), the centre always stays inside after clamping.
 fun stampRect(stamp: Stamp, fit: RectPx): RectPx {
     val side = stamp.size.coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE) * fit.height
     val center = normalizedToPx(
@@ -53,10 +53,10 @@ fun stampRect(stamp: Stamp, fit: RectPx): RectPx {
 fun hitStamp(pos: Offset, stamps: List<Stamp>, fit: RectPx): Stamp? =
     stamps.lastOrNull { stampRect(it, fit).contains(pos) }
 
-// Tiradores del recuadro de selección: 4 quadratitos en las esquinas,jut FUERA del recuadro
-// (como en cualquier editor) para que arrastrar dentro siga moviendo y no reescalando por error.
-private const val HANDLE_RADIUS = 0.0045f // radio del quadratito, fracción del alto de página
-private const val HANDLE_HIT_SLOP = 4f   // el toque es 4x el radio: se ve pequeño pero se agarra bien
+// Selection box handles: 4 small squares at the corners, jutting OUTSIDE the box (as in any
+// editor) so that dragging inside keeps moving rather than accidentally rescaling.
+private const val HANDLE_RADIUS = 0.0045f // small square's radius, fraction of the page height
+private const val HANDLE_HIT_SLOP = 4f   // touch is 4x the radius: looks small but easy to grab
 
 fun handleRadiusPx(fit: RectPx): Float = HANDLE_RADIUS * fit.height
 
@@ -67,7 +67,7 @@ private fun corners(sel: RectPx): List<Offset> = listOf(
     Offset(sel.left, sel.bottom)
 )
 
-/** Centros de los 4 tiradores (px), empujados hacia fuera desde el centro del recuadro. */
+/** Centres of the 4 handles (px), pushed outwards from the centre of the box. */
 fun handleCenters(sel: RectPx, fit: RectPx): List<Offset> {
     val r = handleRadiusPx(fit)
     val c = sel.center()
@@ -78,15 +78,15 @@ fun handleCenters(sel: RectPx, fit: RectPx): List<Offset> {
     }
 }
 
-/** Índice del tirador bajo [pos] (0..3), o null. */
+/** Index of the handle under [pos] (0..3), or null. */
 fun hitHandle(pos: Offset, sel: RectPx, fit: RectPx): Int? {
     val tol = handleRadiusPx(fit) * HANDLE_HIT_SLOP
     return handleCenters(sel, fit).indexOfFirst { (it - pos).getDistance() <= tol }
         .takeIf { it >= 0 }
 }
 
-// factor de escala al arrastrar un tirador = (dist actual al centro) / (dist inicial al centro),
-// acotado para que el tirador pegado al centro no dispare la escala a infinito.
+// scale factor when dragging a handle = (current dist to centre) / (initial dist to centre),
+// clamped so that a handle right at the centre doesn't send the scale to infinity.
 const val MIN_SCALE_FACTOR = 0.1f
 const val MAX_SCALE_FACTOR = 6f
 
@@ -96,7 +96,7 @@ fun scaleFactor(center: Offset, start: Offset, now: Offset): Float {
     return ((now - center).getDistance() / d0).coerceIn(MIN_SCALE_FACTOR, MAX_SCALE_FACTOR)
 }
 
-// rectángulo de selección de un trazo: caja de sus puntos + margen de medio grosor
+// selection rectangle of a stroke: box of its points + a margin of half the width
 fun strokeSelectionRect(pointsPx: List<Offset>, widthPx: Float): RectPx {
     if (pointsPx.isEmpty()) return RectPx(0f, 0f, 0f, 0f)
     val b = strokeBounds(pointsPx)

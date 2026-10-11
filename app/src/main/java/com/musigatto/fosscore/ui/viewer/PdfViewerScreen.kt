@@ -109,40 +109,40 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import kotlin.math.pow
 
-// El techo de render (memoria) vive ahora en MuPdfDoc.MAX_RENDER_PIXELS: MuPDF rasteriza a la
-// resolución que le pidamos, así que el zoom se ve nítido en vez de "slightly soft".
+// The render (memory) ceiling now lives in MuPdfDoc.MAX_RENDER_PIXELS: MuPDF rasterizes at
+// whatever resolution we ask for, so zoom looks sharp instead of "slightly soft".
 private const val LOG_TAG = "FOSScore-PDF"
 
-// formato corto sin depender del Locale (el S6 Lite del usuario va en español).
+// short format that does not depend on the Locale (the user's S6 Lite runs in Spanish).
 private fun f1(v: Float): String = if (v.isFinite()) ((v * 10).roundToInt() / 10f).toString() else "?"
 
-// Ruido del táctil con los dedos quietos: ±1 px sobre ~400 px entre dedos ≈ 0,25 %. Con 0,4 % de
-// zona muerta el zoom no reacciona al ruido (si no, el contenido "respira" y parece que tiembla).
+// Touch noise with fingers still: ±1 px over ~400 px between fingers ≈ 0.25 %. With a 0.4 % dead
+// zone the zoom ignores the noise (otherwise the content "breathes" and seems to tremble).
 private const val ZOOM_NOISE_RATIO = 0.004f
 
-// Zoom al que salta el doble toque (2.5x: legible sin perder el contexto de la página).
+// Zoom that double tap jumps to (2.5x: readable without losing the page context).
 private const val DOUBLE_TAP_ZOOM = 2.5f
 
-// El doble toque se anima (~1 frame sería un teletransporte a la esquina): 250 ms con el
-// anclaje exacto en cada frame, como el zoomWithAnimation de barteksc.
+// Double tap is animated (~1 frame would be a teleport to the corner): 250 ms with the
+// exact anchoring on every frame, like barteksc's zoomWithAnimation.
 private const val DOUBLE_TAP_ANIM_MS = 250
 
-// Tope de zoom. Los visores de referencia (AndroidPdfViewer, vfr/Viewer, GrapheneOS) NO escalan
-// la página con un transform: la re-renderizan al zoom actual, así que la GPU nunca reescala la
-// textura. Nuestro capa sí la escala, y por eso hay que acotar: con MAX_RENDER_PIXELS = 4M y una
-// página que encaja en ~1,6M px, el máximo que MuPDF puede entregar sin reescalar es ~2.5x.
-// Más allá la GPU ampliada con vecino más cercano = "cocer". Súbelo solo si además subes el
-// presupuesto de pixels de MuPdfDoc.
+// Zoom cap. The reference viewers (AndroidPdfViewer, vfr/Viewer, GrapheneOS) do NOT scale the
+// page with a transform: they re-render it at the current zoom, so the GPU never rescales the
+// texture. Our layer does scale it, which is why it must be capped: with MAX_RENDER_PIXELS = 4M
+// and a page that fits in ~1.6M px, the most MuPDF can deliver without rescaling is ~2.5x.
+// Beyond that the GPU upscales with nearest neighbor = "cooking". Only raise it if you also
+// raise MuPdfDoc's pixel budget.
 private const val MAX_ZOOM = 2.5f
 
-// Re-render durante el pellizco: mínimo entre renders (150 ms) y espera de asentamiento para el
-// render final (250 ms sin cambios de zoom). Los visores de referencia re-renderizan durante el
-// gesto (AndroidPdfViewer doRenderDuringScale, GrapheneOS onRenderPage(2)); acotados, el bitmap
-// sigue al zoom y la GPU nunca reescala la textura.
+// Re-render during the pinch: minimum between renders (150 ms) and settle wait before the final
+// render (250 ms with no zoom change). The reference viewers re-render during the gesture
+// (AndroidPdfViewer doRenderDuringScale, GrapheneOS onRenderPage(2)); throttled, the bitmap
+// follows the zoom and the GPU never rescales the texture.
 private const val RENDER_DURING_ZOOM_MS = 150L
 private const val RENDER_SETTLE_MS = 250L
 
-// estado del gesto "estirar un tirador": qué objeto se escala desde qué esquina
+// state of the "drag a handle" gesture: which object is scaled from which corner
 private sealed interface Resizing {
     val startPos: Offset
 
@@ -154,7 +154,7 @@ private sealed interface Resizing {
     data class OfStroke(
         val stroke: Stroke,
         val ptsPx: List<Offset>,
-        val center: Offset,   // centro de la caja: la escala crece hacia fuera desde aquí
+        val center: Offset,   // box center: scaling grows outward from here
         override val startPos: Offset
     ) : Resizing
 }
@@ -194,24 +194,24 @@ fun PdfViewerScreen(
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     var navVisible by rememberSaveable { mutableStateOf(true) }
     var error by remember { mutableStateOf<Int?>(null) } // string resource
-    // SnapshotStateMap: al cambiar un bitmap solo se redibuja quien lee ESA clave. Con un Map
-    // normal, cambiar el bitmap invalidaba el Image + el Canvas de tinta + los sellos enteros
-    // (eso se-notaba como un tirón al cambiar la nitidez en mitad del pellizco).
-    // doble toque: encaje <-> zoom. Se guardan el instante y el punto del toque anterior.
+    // SnapshotStateMap: when a bitmap changes, only whoever reads THAT key is redrawn. With a plain
+    // Map, changing the bitmap invalidated the Image + the ink Canvas + all the stamps
+    // (felt as a jerk when sharpness changed mid-pinch).
+    // double tap: fit <-> zoom. The time and position of the previous tap are stored.
     var lastTapMs by remember { mutableLongStateOf(0L) }
     var lastTapPos by remember { mutableStateOf(Offset.Zero) }
-    // velocidad que queda al soltar el dedo (inercia del paneo); se anula al tocar
+    // velocity left when the finger lifts (pan inertia); cleared on touch
     var flingVel by remember { mutableStateOf(Offset.Zero) }
     val doubleTapSlopPx = with(LocalDensity.current) { 40.dp.toPx() }
     val bitmaps = remember { mutableStateMapOf<Int, Bitmap>() }
-    // escalón de render del bitmap: el bitmap se rasteriza a encaje × renderScale (1:1 en
-    // pantalla, cero reescalado de GPU). Lo alimenta el gesto vía ZoomMath.renderBucket.
+    // bitmap render step: the bitmap is rasterized at fit × renderScale (1:1 on screen,
+    // zero GPU rescaling). Fed by the gesture via ZoomMath.renderBucket.
     var renderScale by remember { mutableFloatStateOf(1f) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
     var renderGeneration by remember { mutableIntStateOf(0) }
-    // sube al exportar tinta al PDF: invalida el bitmap cacheado y fuerza re-render
+    // bumped when ink is exported to the PDF: invalidates the cached bitmap and forces a re-render
     var annotVersion by remember { mutableIntStateOf(0) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var dimPct by remember { mutableStateOf(Settings.dimPct(context)) }
@@ -234,48 +234,48 @@ fun PdfViewerScreen(
 
     var editing by rememberSaveable { mutableStateOf(false) }
     var activeSymbol by rememberSaveable { mutableStateOf<StampSymbol?>(null) }
-    // stamp seleccionado (para el recuadro con tiradores) o trazo seleccionado
+    // selected stamp (for the box with handles) or selected stroke
     var selectedStrokeId by remember { mutableStateOf<Long?>(null) }
-    // tirador en curso: (objeto base, esquina agarrada) mientras se escala
+    // handle in progress: (base object, grabbed corner) while scaling
     var resizing by remember { mutableStateOf<Resizing?>(null) }
-    var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // ARGB del tinte; null = tema
-    var drawingTool by rememberSaveable { mutableStateOf(false) }      // modo lápiz: tinta, no sellos
-    var eraserTool by rememberSaveable { mutableStateOf(false) }      // modo goma: borra sellos y trazos
-    var penWidth by remember { mutableFloatStateOf(DEFAULT_STROKE_WIDTH) }  // grosor de tinta (frac. alto página)
+    var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // tint ARGB; null = theme
+    var drawingTool by rememberSaveable { mutableStateOf(false) }      // pen mode: ink, not stamps
+    var eraserTool by rememberSaveable { mutableStateOf(false) }      // eraser mode: erases stamps and strokes
+    var penWidth by remember { mutableFloatStateOf(DEFAULT_STROKE_WIDTH) }  // ink width (fraction of page height)
     var dragStamp by remember { mutableStateOf<Stamp?>(null) }
-    var dragStroke by remember { mutableStateOf<Stroke?>(null) }   // preview de mover/estirar un trazo
+    var dragStroke by remember { mutableStateOf<Stroke?>(null) }   // preview of moving/stretching a stroke
     var selectedId by remember { mutableStateOf<Long?>(null) }
     var undoStack by remember { mutableStateOf<List<Pair<Int, PageEdit>>>(emptyList()) }
-    var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview del trazo en curso (px)
-    // para pegar el trazo siguiente al anterior si el stylus solo alza unos ms
+    var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke in progress (px)
+    // to join the next stroke to the previous one if the stylus lifts only for a few ms
     val inkTail = remember { InkTail() }
     LaunchedEffect(currentPage, editing) { inkTail.last = null }
-    // tinta ya soltada que la BD todavía no ha devuelto: sin esto el trazo parpadea ~20 ms
+    // ink already released that the DB has not returned yet: without this the stroke flickers ~20 ms
     var pendingInk by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     LaunchedEffect(currentPage, editing) { pendingInk = emptyList() }
-    // borrado optimista: la vista esconde lo borrado al instante y la BD lo confirma después.
-    // ponytail: Set de ids + poda por LaunchedEffect; suficiente porque borrar nunca resucita ids.
+    // optimistic delete: the view hides deleted items instantly and the DB confirms afterwards.
+    // ponytail: Set of ids + pruning via LaunchedEffect; enough because deleting never revives ids.
     var hiddenStampIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var hiddenStrokeIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val editScope = rememberCoroutineScope()
-    // animación del doble toque en vuelo: cualquier toque nuevo la cancela
+    // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
 
     val swipeThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
 
-    // MuPDF tampoco es thread-safe (comparte el Context global): serializa render/close para que
-    // un render cancelado (no cancelable a mitad de página) no colisione con el siguiente ni con
-    // close(). Ponytail: un solo mutex por documento alcanza; si algún día hay multi-documento en
-    // paralelo, moverlo a FOSScoreApp. La caché de bitmaps la lleva MuPdfDoc.
+    // MuPDF is not thread-safe either (it shares the global Context): serialize render/close so a
+    // cancelled render (not cancellable mid-page) does not collide with the next one or with
+    // close(). Ponytail: one mutex per document is enough; if there is ever parallel multi-document,
+    // move it to FOSScoreApp. The bitmap cache is handled by MuPdfDoc.
     val rendererLock = remember(pdfUri) { Mutex() }
 
     val branch = PageFlow(currentPage, halfTurned, halfEnabled, twoUp, isLandscape, pageCount)
 
     val canEdit = sheetHash != null && !branch.showTwoUp && !(branch.showHalf && halfTurned)
 
-    // geometría y sellos de la página actual, compartidos entre overlay y gestos.
-    // El encaje sale del tamaño en puntos de MuPDF (no del bitmap), así que la UI se maqueta
-    // desde el primer frame y el overlay no depende de que el render haya aterrizado.
+    // geometry and stamps of the current page, shared between overlay and gestures.
+    // The fit comes from MuPDF's size in points (not the bitmap), so the UI lays out
+    // from the first frame and the overlay does not depend on the render having landed.
     val pageBox = mupdfDoc?.pageSize(currentPage)
     val pageStamps = if (sheetHash != null) {
         stamps.filter { it.page == currentPage && it.id !in hiddenStampIds }
@@ -290,8 +290,8 @@ fun PdfViewerScreen(
             pageBox.width / pageBox.height
         )
     } else RectPx(0f, 0f, 0f, 0f)
-    // rect de encaje PURO (origen 0,0): coordenadas de contenido (la página en sí, sin el
-    // margen de centrado de pageFit). Todo el overlay y el gesto de edición viven aquí.
+    // PURE fit rect (origin 0,0): content coordinates (the page itself, without pageFit's
+    // centering margin). The whole overlay and the edit gesture live here.
     val hitFit = RectPx(0f, 0f, pageFit.width, pageFit.height)
     val currentEditing by rememberUpdatedState(editing)
     val currentCanEdit by rememberUpdatedState(canEdit)
@@ -301,19 +301,19 @@ fun PdfViewerScreen(
     val currentPageFit by rememberUpdatedState(pageFit)
     val currentDrawingTool by rememberUpdatedState(drawingTool)
     val currentEraserTool by rememberUpdatedState(eraserTool)
-    // base de centrado de la página en el viewport y rect de encaje puro (origen 0,0):
-    // operaciones de contenido y anclaje del zoom viven en estas coordenadas
+    // page centering base in the viewport and pure fit rect (origin 0,0):
+    // content operations and zoom anchoring live in these coordinates
     val currentBase by rememberUpdatedState(Offset(pageFit.left, pageFit.top))
     val currentHitFit by rememberUpdatedState(RectPx(0f, 0f, pageFit.width, pageFit.height))
-    // los modos de lectura (two-up, media página) escalan el viewport entero; la página única
-    // escala su contenido. El gesto lo captura vía rememberUpdatedState: siempre lee lo vivo.
+    // the reading modes (two-up, half page) scale the whole viewport; the single page
+    // scales its content. The gesture captures it via rememberUpdatedState: always reads live.
     val currentSpread by rememberUpdatedState(branch.showTwoUp || (branch.showHalf && halfTurned))
 
     val selectedStamp = pageStamps.firstOrNull { it.id == selectedId }
     val selectedStroke = pageStrokes.firstOrNull { it.id == selectedStrokeId }
 
-    // recuadro de selección en px: caja del sello o del trazo. Mientras se arrastra o estira se
-    // usa la posición viva (dragStamp/dragStroke) para que el recuadro siga al objeto.
+    // selection box in px: the stamp's or stroke's box. While dragging or stretching, the live
+    // position (dragStamp/dragStroke) is used so the box follows the object.
     val selectionRect: RectPx? = when {
         dragStamp != null -> stampRect(dragStamp!!, hitFit)
         dragStroke != null -> strokeSelectionRect(
@@ -331,11 +331,11 @@ fun PdfViewerScreen(
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStroke by rememberUpdatedState(selectedStroke)
 
-    // durante un tirador o un arrastre se dibuja el objeto en su posición viva, no la caja
+    // during a handle drag or a move, the object is drawn at its live position, not the box
     val showSelection = selectionRect != null && editing && canEdit &&
         !drawingTool && !eraserTool
 
-    // apila snapshots ANTES de cada mutación, con su página; como forScore, 10 niveles
+    // pushes snapshots BEFORE each mutation, with their page; like forScore, 10 levels
     fun pushUndo(snapshot: PageEdit = PageEdit(pageStamps, pageStrokes), page: Int = currentPage) {
         undoStack = (undoStack + listOf(page to snapshot)).takeLast(10)
     }
@@ -353,10 +353,10 @@ fun PdfViewerScreen(
 
     fun clampOffsets() {
         if (viewport == IntSize.Zero) return
-        // Página única: el contenido es la página en su encaje; los modos de lectura (two-up,
-        // media página) escalan el viewport entero. `currentSpread`/`currentPageFit` son states
-        // actualizados en cada composición: el gesto y la inercia, que capturan esta función al
-        // empezar, leen siempre los valores vivos.
+        // Single page: the content is the page in its fit; the reading modes (two-up,
+        // half page) scale the whole viewport. `currentSpread`/`currentPageFit` are states
+        // updated on every composition: the gesture and the inertia, which capture this function
+        // when they start, always read the live values.
         val vps = Size(viewport.width.toFloat(), viewport.height.toFloat())
         val (content, base) = if (currentSpread) {
             Size(viewport.width.toFloat(), viewport.height.toFloat()) to Offset.Zero
@@ -369,13 +369,13 @@ fun PdfViewerScreen(
         offsetY = o.y
     }
 
-    // base del anclaje: la página única escala su contenido (centrado en pageFit);
-    // los modos de lectura escalan el viewport entero (origen 0). Misma que el gesto.
+    // anchoring base: a single page scales its content (centred in pageFit);
+    // the reading modes scale the whole viewport (origin 0). Same as the gesture.
     fun anchorBaseOf(): Offset = if (currentSpread) Offset.Zero else currentBase
 
-    // Zoom animado al punto (doble toque): interpola escala geométricamente y ancla cada
-    // frame con la misma fórmula del pellizco, así el destino es exacto y se ve viajar.
-    // La vuelta a encaje interpola lineal a (0,0). Cancela la anterior si la hay.
+    // Animated zoom to a point (double tap): interpolates the scale geometrically and anchors
+    // every frame with the same formula as the pinch, so the target is exact and the move is
+    // visible. Going back to fit interpolates linearly to (0,0). Cancels the previous one, if any.
     fun animateZoomTo(targetScale: Float, anchor: Offset) {
         zoomAnimJob?.cancel()
         zoomAnimJob = editScope.launch {
@@ -407,7 +407,7 @@ fun PdfViewerScreen(
         Settings.setLastPage(context, pdfUri.toString(), currentPage)
     }
 
-    // la BD ya no tiene lo que escondimos: limpia el borrado optimista (y el preview de arrastre)
+    // the DB no longer has what we hid: clear the optimistic delete (and the drag preview)
     LaunchedEffect(stamps, strokes) {
         val liveStamps = stamps.map { it.id }.toSet()
         val liveStrokes = strokes.map { it.id }.toSet()
@@ -419,16 +419,16 @@ fun PdfViewerScreen(
         dragStroke?.let { d ->
             if (strokes.any { it.id == d.id && it.points == d.points && it.width == d.width }) dragStroke = null
         }
-        // la BD ya trae esta tinta: fuera de la capa optimista
+        // the DB already has this ink: out of the optimistic layer
         pendingInk = pendingInk.filter { p -> strokes.none { it.id == p.id && it.points == p.points } }
     }
 
-    // MuPDF (AAR prebuilt, AGPL-3.0: ver LICENSE). Abre y calcula tamaños en segundo plano: abrir
-    // parsea el índice del PDF y no puede tocar el main.
+    // MuPDF (prebuilt AAR, AGPL-3.0: see LICENSE). Opens and computes sizes in the background:
+    // opening parses the PDF index and must not touch the main thread.
     LaunchedEffect(pdfUri) {
         try {
-            // NonCancellable: si el usuario sale mientras abrimos, el documento se crea igual;
-            // lo cerramos abajo. Cancelar aquí dejaría el doc nativo colgado (y su memoria).
+            // NonCancellable: if the user leaves while we open, the document is created anyway;
+            // we close it below. Cancelling here would leave the native doc dangling (and its memory).
             val doc = withContext(NonCancellable + Dispatchers.IO) { MuPdfDoc.open(context, pdfUri) }
             if (!isActive) {
                 withContext(NonCancellable + Dispatchers.IO) { doc.close() }
@@ -448,8 +448,8 @@ fun PdfViewerScreen(
         }
     }
 
-    // zoom a cero al cambiar de página o de modo (el escalón de render también: si no, se
-    // paginaría renderizando cada página ampliada)
+    // reset zoom when changing page or mode (the render step too: otherwise every page
+    // turned to would be rendered zoomed in)
     LaunchedEffect(currentPage, branch.showTwoUp, branch.showHalf, halfTurned) {
         scale = 1f
         offsetX = 0f
@@ -457,9 +457,9 @@ fun PdfViewerScreen(
         renderScale = 1f
     }
 
-    // Inercia del paneo: al soltar, el desplazamiento sigue con fricción hasta que la velocidad
-    // muere o topa con el borde. Sin esto, recorrer una página ampliada a dedo es lentísimo.
-    // ponytail: bucle propio con fricción en vez de Animatable+decay (menos código, mismo efecto).
+    // Pan inertia: on release, the movement continues with friction until the velocity dies
+    // or it hits the edge. Without this, panning a zoomed page by finger is painfully slow.
+    // ponytail: own friction loop instead of Animatable+decay (less code, same effect).
     LaunchedEffect(flingVel) {
         var v = flingVel
         flingVel = Offset.Zero
@@ -478,9 +478,9 @@ fun PdfViewerScreen(
             offsetX = px
             offsetY = py
             clampOffsets()
-            // el clamp nos ha frenado contra el borde: la inercia ahí no aporta nada
+            // the clamp stopped us against the edge: inertia adds nothing there
             if (offsetX == bx && offsetY == by) break
-            v *= 0.965f   // fricción larga: el glide se siente, no se corta a los 200 ms
+            v *= 0.965f   // long friction: the glide is felt, it does not cut off at 200 ms
         }
         Log.d(
             LOG_TAG,
@@ -489,11 +489,11 @@ fun PdfViewerScreen(
         )
     }
 
-    // Re-render al zoom actual (escalones del 10% del encaje, ZoomMath.renderBucket): como los
-    // visores de referencia (AndroidPdfViewer: doRenderDuringScale; GrapheneOS: onRenderPage(2)),
-    // el bitmap sigue al zoom para que la GPU nunca lo reescala. Durante el pellizco solo se
-    // SUBE de escalón, con un mínimo de 150 ms entre renders; al asentarse (sin cambios de scale
-    // durante 250 ms) se afina el escalón final, que también puede BAJAR tras reducir el zoom.
+    // Re-render at the current zoom (steps of 10% of the fit, ZoomMath.renderBucket): like the
+    // reference viewers (AndroidPdfViewer: doRenderDuringScale; GrapheneOS: onRenderPage(2)),
+    // the bitmap follows the zoom so the GPU never rescales it. During the pinch the step only
+    // goes UP, with a minimum of 150 ms between renders; once settled (no scale change for
+    // 250 ms) the final step is refined, and it can also go DOWN after zooming out.
     LaunchedEffect(mupdfDoc, viewport) {
         var lastUpgradeMs = 0L
         snapshotFlow { scale }.collectLatest { s ->
@@ -505,12 +505,12 @@ fun PdfViewerScreen(
                 return@collectLatest
             }
             delay(RENDER_SETTLE_MS)
-            // si el scale siguió cambiando mientras esperábamos, la siguiente emisión lo coge
+            // if scale kept changing while we waited, the next emission picks it up
             if (target >= ZoomMath.renderBucket(scale)) renderScale = target
         }
     }
 
-    // viewport es clave: en el primer frame todavía es IntSize.Zero y sin tamaño no hay render
+    // viewport is a key: on the first frame it is still IntSize.Zero and with no size there is no render
     LaunchedEffect(
         mupdfDoc, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
         annotVersion
@@ -523,13 +523,13 @@ fun PdfViewerScreen(
             else -> listOf(currentPage)
         }
         val isSpread = branch.showTwoUp || (branch.showHalf && halfTurned)
-        // Página única: el hueco de render es el encaje × escalón de zoom (el bitmap se dibuja
-        // 1:1 en pantalla, la GPU no reescala nada). Modos de lectura (two-up, media página): el
-        // hueco es el viewport y la capa sigue escalando (es para leer, no para ampliar).
+        // Single page: the render slot is the fit × zoom step (the bitmap is drawn 1:1 on
+        // screen, the GPU rescales nothing). Reading modes (two-up, half page): the slot is
+        // the viewport and the layer still scales (they are for reading, not for zooming in).
         val spreadSlot =
             if (isSpread) Pair(if (branch.showTwoUp) viewport.width / 2 else viewport.width, viewport.height)
             else null
-        // lecturas del estado de Compose ANTES de entrar al dispatcher de render
+        // Compose state reads BEFORE entering the render dispatcher
         val rs = renderScale
         val vpW = viewport.width.toFloat()
         val vpH = viewport.height.toFloat()
@@ -537,9 +537,9 @@ fun PdfViewerScreen(
         try {
             val session = rendererLock.withLock {
                 withContext(Dispatchers.Default) {
-                    // el tamaño real de la página puede no estar cargado aún (páginas más allá del
-                    // preload): se resuelve dentro del lock con loadSize (parseo barato del
-                    // diccionario de la página), el mismo camino que sigue render para su encaje
+                    // the real page size may not be loaded yet (pages beyond the preload):
+                    // it is resolved inside the lock with loadSize (cheap parse of the page
+                    // dictionary), the same path render follows for its fit
                     val slot = if (isSpread) spreadSlot!! else {
                         val box = r.ensurePageSize(currentPage)
                         if (box == null || box.height <= 0f) return@withContext emptyMap<Int, Bitmap>()
@@ -548,7 +548,7 @@ fun PdfViewerScreen(
                     }
                     val out = mutableMapOf<Int, Bitmap>()
                     for (idx in needed) {
-                        // si el render falla seguimos con lo que ya se ve: mejor tenue que hueco
+                        // if the render fails we keep what is already shown: faint beats a hole
                         out[idx] = r.render(idx, slot.first, slot.second, 1) ?: fallback[idx] ?: continue
                     }
                     out
@@ -557,10 +557,10 @@ fun PdfViewerScreen(
             // guard against an older, non-cancellable render landing after a newer one
             if (gen == renderGeneration) {
                 for ((idx, bmp) in session) bitmaps[idx] = bmp
-                // no acumulamos bitmaps de páginas que ya no se ven (16 MB cada uno en alta nitidez)
+                // don't accumulate bitmaps of pages no longer shown (16 MB each at high sharpness)
                 bitmaps.keys.filterNot { it in needed }.forEach { bitmaps.remove(it) }
-                // sin bitmap para esta página no hay nada que enseñar: dilo en vez de dejar el
-                // spinner girando eternamente (pasó con una página en blanco)
+                // no bitmap for this page means nothing to show: say so instead of leaving the
+                // spinner spinning forever (happened with a blank page)
                 if (bitmaps[currentPage] == null) {
                     Log.e(LOG_TAG, "la página $currentPage no se pudo renderizar")
                     error = R.string.viewer_error_render
@@ -577,8 +577,8 @@ fun PdfViewerScreen(
     DisposableEffect(mupdfDoc) {
         val current = mupdfDoc
         onDispose {
-            // nunca bloquear el main esperando a un render en vuelo (ANR): close() va a
-            // applicationScope; la cola FIFO del mutex garantiza que ocurre tras el render.
+            // never block main waiting for an in-flight render (ANR): close() goes to
+            // applicationScope; the mutex FIFO queue guarantees it happens after the render.
             val scope = (context.applicationContext as FOSScoreApp).applicationScope
             scope.launch {
                 rendererLock.withLock { current?.close() }
@@ -601,11 +601,11 @@ fun PdfViewerScreen(
                 Button(onClick = onBack) { Text(stringResource(R.string.action_back)) }
             }
         } else if (bitmaps.isNotEmpty()) {
-            // Modos de lectura (two-up, media página): la capa escala el viewport entero como antes
-            // (no se usan para ampliar detalles: el offscreen barre el "cocer" sin coste notorio de
-            // nitidez). Página única (rama else): SIN capa de escala — el bitmap se renderiza al
-            // zoom actual y se dibuja 1:1; el overlay se re-rasteriza como vector (ver plan
-            // 2026-09-30-zoom-render-1to1).
+            // Reading modes (two-up, half page): the layer scales the whole viewport as before
+            // (they are not used to zoom into details: offscreen sweeps away the "cooking" with no
+            // noticeable sharpness cost). Single page (else branch): NO scale layer — the bitmap is
+            // rendered at the current zoom and drawn 1:1; the overlay is re-rasterized as vector
+            // (see plan 2026-09-30-zoom-render-1to1).
             val spreadMod = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
@@ -620,10 +620,10 @@ fun PdfViewerScreen(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         if (down.isConsumed) return@awaitEachGesture
-                        flingVel = Offset.Zero   // tocar corta la inercia
-                        zoomAnimJob?.cancel()    // y la animación del doble toque
-                        // pantalla -> coordenadas de encaje (0..fitW x 0..fitH): el contenido ya no
-                        // vive en una capa escalada, el gesto traduce aquí el punto de los dedos
+                        flingVel = Offset.Zero   // touching stops the inertia
+                        zoomAnimJob?.cancel()    // and the double-tap animation
+                        // screen -> fit coordinates (0..fitW x 0..fitH): the content no longer
+                        // lives in a scaled layer, the gesture translates the finger point here
                         fun fitPoint(p: Offset): Offset {
                             val b = currentBase
                             return Offset(
@@ -632,8 +632,8 @@ fun PdfViewerScreen(
                             )
                         }
                         val downF = fitPoint(down.position)
-                        // base del anclaje: la página única escala su contenido (centrado en
-                        // pageFit.left/top); los modos de lectura escalan el viewport entero (origen 0)
+                        // anchor base: the single page scales its content (centered at
+                        // pageFit.left/top); the reading modes scale the whole viewport (origin 0)
                         val anchorBase = if (currentSpread) Offset.Zero else currentBase
                         var ids = setOf(down.id)
                         var prevCount = 1
@@ -641,8 +641,8 @@ fun PdfViewerScreen(
                         var anchorDist = 0f
                         var totalPan = Offset.Zero
                         var isTransform = false
-                        // Con 2+ dedos solo la rama del pellizco mueve la pagina (como
-                        // ReaderView con !mScaling en onScroll): las dos ramas nunca pelean.
+                        // With 2+ fingers only the pinch branch moves the page (like
+                        // ReaderView with !mScaling in onScroll): the two branches never fight.
                         var scaling = false
                         var movingStamp: Stamp? = null
                         var movingOrigin: Stamp? = null
@@ -654,12 +654,12 @@ fun PdfViewerScreen(
                         var inkPts = mutableListOf<Offset>()
                         var eraserActive = false
                         var eraserPath = mutableListOf<Offset>()
-                        var scaleF = 1f   // factor acumulado del tirador (siempre desde startPos)
+                        var scaleF = 1f   // accumulated handle factor (always from startPos)
                         var panVel = Offset.Zero
                         var lastPanMs = System.currentTimeMillis()
                         if (currentEditing && currentCanEdit && !currentDrawingTool && !currentEraserTool) {
-                            // 1) un tirador del recuadro de selección manda sobre todo lo demás:
-                            //    entrar por la esquina estira, entrar por dentro mueve.
+                            // 1) a selection-box handle takes priority over everything else:
+                            //    grabbing a corner stretches, grabbing inside moves.
                             val sel = currentSelectionRect
                             val corner = if (sel != null) hitHandle(downF, sel, currentHitFit) else null
                             if (corner != null) {
@@ -750,12 +750,12 @@ fun PdfViewerScreen(
                                                 }
                                             }
                                         }
-                                        null -> {}  // resizing es una var capturada: puede ser null
+                                        null -> {}  // resizing is a captured var: it can be null
                                     }
                                 } else if (inkActive) {
                                     inkActive = false
-                                    // la captura de tinta vive en coordenadas de encaje (F): el umbral
-                                    // de muestreo es de pantalla, así que se escala con el zoom
+                                    // ink capture lives in fit coordinates (F): the sampling
+                                    // threshold is in screen px, so it is scaled by the zoom
                                     val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / scale)
                                     inkPts = mutableListOf()
                                     inkPreview = emptyList()
@@ -767,7 +767,7 @@ fun PdfViewerScreen(
                                         val hash = sheetHash
                                         val width = penWidth
                                         val color = activeColor
-                                        val startPx = pts.first()   // comparación en px, no normalizado
+                                        val startPx = pts.first()   // comparison in px, not normalized
                                         editScope.launch {
                                             val now = android.os.SystemClock.uptimeMillis()
                                             val prev = inkTail.last
@@ -812,8 +812,8 @@ fun PdfViewerScreen(
                                     if (path.isNotEmpty() && sheetHash != null && currentPageFit.width > 0f) {
                                         pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                         val radiusPx = ERASE_RADIUS_FRAC * currentHitFit.height
-                                        // la goma siempre borra lo que roza: para quitar una palabra
-                                        // entera, tocarla (la selecciona) y luego 🗑
+                                        // the eraser always erases what it touches: to remove a whole
+                                        // word, tap it (selects it) and then 🗑
                                         val goneStamps = currentPageStamps.filter { st ->
                                             val r = stampRect(st, currentHitFit)
                                             path.any { r.contains(it) }
@@ -824,7 +824,7 @@ fun PdfViewerScreen(
                                             val ptsPx = decodePoints(st.points).map { normalizedToPx(it, currentHitFit) }
                                             val runs = eraseStrokePoints(ptsPx, path, radiusPx)
                                             if (runs.size == 1 && runs[0].size == ptsPx.size) {
-                                                // intacto
+                                                // intact
                                             } else {
                                                 goneStrokes.add(st)
                                                 runs.forEach { r ->
@@ -839,8 +839,8 @@ fun PdfViewerScreen(
                                         }
                                         selectedId = null
                                         selectedStrokeId = null
-                                        inkTail.last = null   // el trazo anterior ya no existe
-                                        // que se vea borrado YA: la BD va por detrás (~20 ms)
+                                        inkTail.last = null   // the previous stroke no longer exists
+                                        // show it erased NOW: the DB lags behind (~20 ms)
                                         hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
                                         hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
                                         editScope.launch {
@@ -856,8 +856,8 @@ fun PdfViewerScreen(
                                     val base = movingStrokeBase
                                     movingStroke = null
                                     movingStrokeBase = null
-                                    // mantener la posición final: si se limpia aquí, el overlay dibuja la
-                                    // posición vieja de la BD unos ms hasta que el flow re-emite (glitch).
+                                    // keep the final position: if cleared here, the overlay draws the old
+                                    // DB position for a few ms until the flow re-emits (glitch).
                                     dragStroke = done
                                     if (done != null && base != null) {
                                         if (done.points != base.points) {
@@ -870,8 +870,8 @@ fun PdfViewerScreen(
                                     val origin = movingOrigin
                                     movingStamp = null
                                     movingOrigin = null
-                                    // mantener la posición final: si se limpia aquí, el overlay dibuja la
-                                    // posición vieja de la BD unos ms hasta que el flow re-emite (glitch).
+                                    // keep the final position: if cleared here, the overlay draws the old
+                                    // DB position for a few ms until the flow re-emits (glitch).
                                     dragStamp = done
                                     if (done != null) {
                                         if (origin != null && (done.x != origin.x || done.y != origin.y)) {
@@ -880,9 +880,9 @@ fun PdfViewerScreen(
                                         editScope.launch { stampRepo.update(done) }
                                     }
                                 } else if (!isTransform) {
-                                    // doble toque: alterna encaje <-> 2.5x en el punto tocado. Es el
-                                    // atajo para volver a ver la página entera (y para meterse en un
-                                    // detalle) sin pelearse con los botones de la barra.
+                                    // double tap: toggles fit <-> 2.5x at the tapped point. It is the
+                                    // shortcut to see the whole page again (and to dive into a
+                                    // detail) without fighting the toolbar buttons.
                                     val nowMs = System.currentTimeMillis()
                                     val isDoubleTap = nowMs - lastTapMs < 320L &&
                                         (down.position - lastTapPos).getDistance() < doubleTapSlopPx
@@ -896,18 +896,18 @@ fun PdfViewerScreen(
                                     } else {
                                         lastTapMs = nowMs
                                         lastTapPos = down.position
-                                        // Sin guarda de multi-dedo: con la rama de paneo guardada
-                                        // por `scaling`, panVel solo nace de un arrastre real de un
-                                        // dedo. Asi hace ReaderView (onScroll con !mScaling).
+                                        // No multi-finger guard needed: with the pan branch guarded
+                                        // by `scaling`, panVel only comes from a real one-finger
+                                        // drag. That is how ReaderView does it (onScroll with !mScaling).
                                         flingVel = if (panVel.getDistance() > 600f) panVel else Offset.Zero
                                     }
                                     if (isDoubleTap) {
-                                        // ya gestionado arriba: ni coloca sello ni cambia de página
+                                        // already handled above: neither places a stamp nor turns the page
                                     } else if (currentEditing && currentCanEdit) {
-                                        // tap en modo editar: coloca el sello activo en el punto tocado
+                                        // tap in edit mode: places the active stamp at the tapped point
                                         val sym = currentActiveSymbol
                                         if (sym == null) {
-                                            // sin herramienta: solo deseleccionar
+                                            // no tool: just deselect
                                             selectedId = null
                                             selectedStrokeId = null
                                             dragStamp = null
@@ -952,8 +952,8 @@ fun PdfViewerScreen(
                             }
 
                             if (resizing != null) {
-                                // estirar por un tirador: 1 puntero, escala sobre el centro.
-                                // el factor se recalcula desde la posición inicial, nunca se acumula
+                                // stretching by a handle: 1 pointer, scales about the center.
+                                // the factor is recomputed from the start position, never accumulated
                                 val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                 val rz = resizing!!
                                 val center = when (rz) {
@@ -1001,8 +1001,8 @@ fun PdfViewerScreen(
                             }
 
                             if (movingStamp != null) {
-                                // mover con 1 dedo (el puntero inicial, sin saltos al añadir otro dedo);
-                                // sin reescalar por pellizco — forScore ajusta el tamaño con un slider
+                                // move with 1 finger (the initial pointer, no jumps when adding a finger);
+                                // no pinch rescaling — forScore adjusts the size with a slider
                                 val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                 val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
                                     pxToNormalized(moveTrackingPos, currentHitFit)
@@ -1020,15 +1020,15 @@ fun PdfViewerScreen(
 
                             if (inkActive) {
                                 if (pressed.size > 1) {
-                                    // llegó un segundo dedo: abandona la tinta, deja que el pellizco haga zoom
+                                    // a second finger arrived: drop the ink, let the pinch zoom
                                     inkActive = false
                                     inkPts = mutableListOf()
                                     inkPreview = emptyList()
                                 } else {
                                     val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                     val last = inkPts.last()
-                                    // puntos capturados en coordenadas de encaje: el umbral de
-                                    // pantalla se escala con el zoom
+                                    // points captured in fit coordinates: the screen threshold
+                                    // is scaled by the zoom
                                     if ((fitPoint(tracking.position) - last).getDistance() >=
                                         MIN_SAMPLE_DIST_PX / scale
                                     ) {
@@ -1062,51 +1062,51 @@ fun PdfViewerScreen(
                             }
 
                             val nids = pressed.map { it.id }.toSet()
-                            // Re-ancla si cambia el CONJUNTO de dedos O su NUMERO. Comparar solo el
-                            // set dejaba pasar el 1 -> 2 -> 1: al volver a un dedo nids volvia a ser
-                            // ids, no se re-anclaba y prevCentroid se quedaba en el punto medio de
-                            // los dos, asi que delta valia media separacion y la pagina se
-                            // teletransportaba +-215 px al soltar un dedo del pellizco.
+                            // Re-anchor if the finger SET OR their COUNT changes. Comparing only the
+                            // set let 1 -> 2 -> 1 slip through: back to one finger, nids equaled
+                            // ids again, no re-anchor happened and prevCentroid stayed at the
+                            // midpoint of the two, so delta was half the separation and the page
+                            // teleported +-215 px when lifting a finger from the pinch.
                             if (nids != ids || nids.size != prevCount) {
                                 prevCount = nids.size
                                 ids = nids
-                                anchorDist = 0f      // reancla la referencia del ratio
+                                anchorDist = 0f      // re-anchors the ratio reference
                                 prevCentroid = centroid(pressed)
                             }
 
                             val c = centroid(pressed)
                             val delta = c - prevCentroid
                             totalPan += delta
-                            // ReaderView.onScaleBegin: mScaling. Mientras hay pellizco, el paneo de
-                            // un dedo NO se ejecuta (onScroll: if (!mScaling)) y el foco se
-                            // reancla. Es lo que impide que las dos ramas peleen por el offset.
+                            // ReaderView.onScaleBegin: mScaling. While pinching, the one-finger pan
+                            // does NOT run (onScroll: if (!mScaling)) and the focus is
+                            // re-anchored. This keeps the two branches from fighting over the offset.
                             scaling = pressed.size > 1
 
                             if (scaling) {
                                 isTransform = true
                                 val d = (pressed[0].position - pressed[1].position).getDistance()
-                                // FOCO: el centroide vivo (punto medio de los dedos). Sin follow
-                                // (offset += delta): el follow integraba el viaje del punto medio
-                                // en el offset y arrastraba la pagina ~30 px en pellizcos
-                                // asimetricos. Anclar sin follow deja quieto el contenido bajo
-                                // el punto medio; cada dedo se queda sobre su contenido cuando
-                                // el pellizco es simetrico (el gesto real: ver ZoomGestureSimTest
+                                // FOCUS: the live centroid (midpoint of the fingers). No follow
+                                // (offset += delta): following added the midpoint's travel to
+                                // the offset and dragged the page ~30 px in asymmetric
+                                // pinches. Anchoring without follow keeps the content under
+                                // the midpoint still; each finger stays over its content when
+                                // the pinch is symmetric (the real gesture: see ZoomGestureSimTest
                                 // symmetricPinchKeepsFingersPinned).
                                 val pinchAnchor = c
                                 if (anchorDist == 0f) {
-                                    // onScaleBegin: el primer frame de escala no aplica zoom
-                                    // (la referencia se toma contra esta distancia)
+                                    // onScaleBegin: the first scaling frame applies no zoom
+                                    // (the reference is taken against this distance)
                                     anchorDist = d
                                 } else if (d > 0f) {
-                                    // INCREMENTAL: cuanto ha cambiado la distancia en ESTE frame.
+                                    // INCREMENTAL: how much the distance changed in THIS frame.
                                     val ratio = d / anchorDist
-                                    anchorDist = d   // el siguiente frame mide contra esta distancia
-                                    // zona muerta contra el ruido del tactil (±1 px, dedos quietos)
+                                    anchorDist = d   // the next frame measures against this distance
+                                    // dead zone against touch noise (±1 px, fingers still)
                                     if (abs(ratio - 1f) > ZOOM_NOISE_RATIO) {
                                         val target = (scale * ratio).coerceIn(1f, MAX_ZOOM)
                                         if (target != scale) {
-                                            // Anclaje al punto medio vivo: el contenido bajo el
-                                            // centroide se queda quieto. Sin follow del centroide.
+                                            // Anchoring to the live midpoint: the content under the
+                                            // centroid stays still. The centroid is not followed.
                                             val k = target / scale
                                             val no = ZoomMath.anchoredOffset(
                                                 Offset(offsetX, offsetY), k, pinchAnchor, anchorBase
@@ -1118,19 +1118,19 @@ fun PdfViewerScreen(
                                     }
                                 }
                             } else if (scale > 1f && delta.getDistance() > 0f) {
-                                // Un solo dedo y SIN pellizco en curso: paneo. ReaderView.onScroll
-                                // con if (!mScaling). Mientras hay 2+ dedos esta rama no se ejecuta,
-                                // asi que las dos ramas nunca pelean por el offset.
+                                // A single finger and NO pinch in progress: pan. ReaderView.onScroll
+                                // with if (!mScaling). While there are 2+ fingers this branch does
+                                // not run, so the two branches never fight over the offset.
                                 isTransform = true
                                 offsetX += delta.x
                                 offsetY += delta.y
-                                // velocidad suavizada, para la inercia al soltar
+                                // smoothed velocity, for the inertia on release
                                 val nowMs = System.currentTimeMillis()
                                 val dt = (nowMs - lastPanMs).coerceAtLeast(1L) / 1000f
-                                // Solo se acumula con arrastre real de un dedo (esta rama no corre
-                                // durante un pellizco), que es como ReaderView evita el fling espurio
-                                // al terminar de escalar: su onScroll tambien esta guard por
-                                // mScaling, asi que el scroll nunca nace del pellizco.
+                                // Only accumulated during a real one-finger drag (this branch does
+                                // not run during a pinch), which is how ReaderView avoids the spurious
+                                // fling at the end of a scale: its onScroll is also guarded by
+                                // mScaling, so scrolling never comes from the pinch.
                                 if (dt < 0.2f) panVel = panVel * 0.7f + (delta / dt) * 0.3f
                                 lastPanMs = nowMs
                             }
@@ -1173,8 +1173,8 @@ fun PdfViewerScreen(
                     val w = cur.width
                     val h = cur.height
                     val sepColor = MaterialTheme.colorScheme.primary.toArgb()
-                    // remember por los BITMAPS (no por el mapa): con SnapshotStateMap, leer las
-                    // claves arriba ya registra la dependencia y solo se recompone si cambian
+                    // remember keyed on the BITMAPS (not the map): with SnapshotStateMap, reading the
+                    // keys above already registers the dependency and it only recomposes if they change
                     val combined = remember(cur, next, w, h) {
                         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                         val canvas = android.graphics.Canvas(out)
@@ -1196,18 +1196,18 @@ fun PdfViewerScreen(
                 }
                 else -> {
                     bitmaps[currentPage]?.let { bmp ->
-                        // Página única: el bitmap se renderiza al zoom actual (encaje × scale, el
-                        // mismo tamaño que ocupa en pantalla) y se dibuja 1:1 — la GPU no reescala
-                        // nada. El overlay (tinta/sellos/selección) se dibuja en coordenadas de
-                        // encaje y el zoom se aplica en el propio dibujo con translate+scale:
-                        // vectorial, se re-rasteriza cada frame y queda nítido a cualquier zoom.
+                        // Single page: the bitmap is rendered at the current zoom (fit × scale, the
+                        // same size it takes on screen) and drawn 1:1 — the GPU rescales nothing.
+                        // The overlay (ink/stamps/selection) is drawn in fit coordinates and the
+                        // zoom is applied in the drawing itself with translate+scale: vector,
+                        // re-rasterized every frame and sharp at any zoom.
                         val density = LocalDensity.current
                         val k = scale
                         val posX = pageFit.left + offsetX
                         val posY = pageFit.top + offsetY
-                        // clipToBounds: sin esto la página ampliada (caja de 3000x3922) se dibuja
-                        // fuera del viewport y PISA las barras de la app (se veía en el S6 Lite:
-                        // al ampliar desaparecían la barra de modo y la de página).
+                        // clipToBounds: without this the zoomed page (3000x3922 box) is drawn
+                        // outside the viewport and COVERS the app bars (seen on the S6 Lite:
+                        // when zooming in, the mode bar and the page bar disappeared).
                         Box(modifier = Modifier.fillMaxSize().clipToBounds().then(gestureMod)) {
                             Image(
                                 bitmap = bmp.asImageBitmap(),
@@ -1215,13 +1215,13 @@ fun PdfViewerScreen(
                                 contentScale = ContentScale.FillBounds,
                                 colorFilter = if (invert) INVERT_FILTER else null,
                                 modifier = Modifier
-                                    // ponytail: el Placeable coacciona el tamaño reportado a las
-                                    // constraints y centra el contenido desbordado con
-                                    // apparentToRealOffset ((aparente-real)/2: ver PROBE img).
-                                    // Se reporta el tamaño del padre (viewport, acotado por
-                                    // construcción: ambos Box son fillMaxSize) y el contenido
-                                    // real (fit*k) se coloca en (0,0): la esquina queda en
-                                    // posX/posY como dice el modelo y clipToBounds recorta.
+                                    // ponytail: the Placeable coerces the reported size to the
+                                    // constraints and centres overflowing content with
+                                    // apparentToRealOffset ((apparent-real)/2: see PROBE img).
+                                    // The parent's size is reported (the viewport, bounded by
+                                    // construction: both Boxes are fillMaxSize) and the real
+                                    // content (fit*k) is placed at (0,0): the corner lands at
+                                    // posX/posY as the model says and clipToBounds clips it.
                                     .layout { m, c ->
                                         val p = m.measure(
                                             Constraints.fixed(
@@ -1231,19 +1231,19 @@ fun PdfViewerScreen(
                                         )
                                         layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
                                     }
-                                    // La POSICIÓN va por graphicsLayer (transform de DIBUJO), no por
-                                    // Modifier.offset (que va por LAYOUT). Con offset la página se
-                                    // colocaba en un sitio distinto del que dice el modelo: el
-                                    // contenido se iba de debajo de los dedos mientras la tinta y los
-                                    // stamps (Canvas + withTransform, que sí es transform de dibujo)
-                                    // se quedaban donde debían y parecían deslizarse de la música.
+                                    // The POSITION goes through graphicsLayer (DRAW transform), not
+                                    // Modifier.offset (which goes through LAYOUT). With offset the page
+                                    // was placed somewhere other than where the model says: the
+                                    // content slid out from under the fingers while the ink and the
+                                    // stamps (Canvas + withTransform, which IS a draw transform)
+                                    // stayed where they should and seemed to slide off the music.
                                     .graphicsLayer {
                                         translationX = posX
                                         translationY = posY
                                     }
                             )
                             if (canEdit) {
-                                // por defecto tinta/sellos en negro (no el primary azulado del tema)
+                                // ink/stamps default to black (not the theme's bluish primary)
                                 val themeColor = Color.Black
                                 Canvas(modifier = Modifier.fillMaxSize()) {
                                     withTransform({
@@ -1265,11 +1265,11 @@ fun PdfViewerScreen(
                                                 )
                                             )
                                         }
-                                        // pendingInk va primero: si el flujo aún trae la versión
-                                        // anterior (tras una fusión), gana la que se está escribiendo
+                                        // pendingInk goes first: if the flow still carries the previous
+                                        // version (after a merge), the one being written wins
                                         for (stroke in (pendingInk + pageStrokes).distinctBy { it.id }) {
-                                            // el que se está moviendo/estirando se dibuja solo en su
-                                            // posición viva (si no, quedan dos copias = fantasma)
+                                            // the one being moved/stretched is drawn only at its
+                                            // live position (otherwise two copies remain = ghost)
                                             if (dragStroke?.id == stroke.id) continue
                                             drawStrokePath(
                                                 decodePoints(stroke.points).map { normalizedToPx(it, hitFit) },
@@ -1277,7 +1277,7 @@ fun PdfViewerScreen(
                                                 stroke.width * hitFit.height
                                             )
                                         }
-                                        // trazo seleccionado movido/estirado en vivo
+                                        // selected stroke moved/stretched live
                                         dragStroke?.let { ds ->
                                             drawStrokePath(
                                                 decodePoints(ds.points).map { normalizedToPx(it, hitFit) },
@@ -1296,26 +1296,26 @@ fun PdfViewerScreen(
                                         }
                                     }
                                 }
-                                // Stamps: MISMO transform que la pagina y la tinta (translate+scale
-                                // desde el origen) pero en la ruta de DIBUJO. Antes iban por la ruta
-                                // de LAYOUT (Modifier.offset + Modifier.size), o sea dos
-                                // mecanismos para la misma transformacion: por eso stamps y musica
-                                // se separaban al ampliar. size() es ademas el mismo modificador que
-                                // rompio la pagina en la ronda 4 (hizo falta requiredSize alli).
+                                // Stamps: SAME transform as the page and the ink (translate+scale
+                                // from the origin) but on the DRAW path. They used to go through the
+                                // LAYOUT path (Modifier.offset + Modifier.size), i.e. two
+                                // mechanisms for the same transformation: that is why stamps and music
+                                // drifted apart when zooming. size() is also the same modifier that
+                                // broke the page in round 4 (requiredSize was needed there).
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer {
-                                            // obligatorio: por defecto el origen es el CENTRO y la
-                                            // escala se aplicaria desde ahi, moviendo todo
+                                            // mandatory: by default the origin is the CENTER and the
+                                            // scale would be applied from there, moving everything
                                             transformOrigin = TransformOrigin(0f, 0f)
                                             translationX = posX
                                             translationY = posY
                                             scaleX = k
                                             scaleY = k
-                                            // sin compositingStrategy: asi la escala es transform de
-                                            // canvas y los glifos se re-rasterizan nitidos. Con
-                                            // Offscreen se rasteriza a bitmap y se escala eso (borroso)
+                                            // no compositingStrategy: this way the scale is a canvas
+                                            // transform and glyphs are re-rasterized sharp. With
+                                            // Offscreen it is rasterized to a bitmap and that is scaled (blurry)
                                         }
                                 ) {
                                     for (stamp in pageStamps) {
@@ -1325,8 +1325,8 @@ fun PdfViewerScreen(
                                         val r = stampRect(shown, hitFit)
                                         StampView(
                                             symbol = sym,
-                                            // en unidades de encaje: la escala la pone la capa, no el
-                                            // tamano del sello (asi no se duplica)
+                                            // in fit units: the scale comes from the layer, not the
+                                            // stamp size (so it is not applied twice)
                                             sizePx = r.width,
                                             color = stampColor(shown.color, Color.Black),
                                             modifier = Modifier
@@ -1338,8 +1338,8 @@ fun PdfViewerScreen(
                                         )
                                     }
                                 }
-                                // recuadro de selección POR ENCIMA de todo: si no, los tiradores
-                                // quedan tapados por el propio sello que se está editando
+                                // selection box ON TOP of everything: otherwise the handles
+                                // are hidden by the very stamp being edited
                                 if (showSelection && selectionRect != null) {
                                     val sel = selectionRect
                                     val hr = handleRadiusPx(hitFit)
@@ -1521,7 +1521,7 @@ fun PdfViewerScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // swatch transparen = sin tinte (color del tema)
+                        // transparent swatch = no tint (theme color)
                         ColorSwatchButton(
                             color = Color.Transparent,
                             selected = activeColor == null,
@@ -1608,8 +1608,8 @@ fun PdfViewerScreen(
                             enabled = undoStack.isNotEmpty()
                         ) { Text("↶") }
                         Spacer(Modifier.width(8.dp))
-                        // Guarda la tinta en el propio PDF (/Annots Ink, como Xodo): deja de ser
-                        // sidecar y vale en cualquier visor. Solo tinta; los sellos siguen en BD.
+                        // Saves the ink into the PDF itself (/Annots Ink, like Xodo): it is no
+                        // longer a sidecar and works in any viewer. Ink only; stamps stay in the DB.
                         var exportingPdf by remember { mutableStateOf(false) }
                         Button(
                             onClick = {
@@ -1646,7 +1646,7 @@ fun PdfViewerScreen(
                                                 bitmaps.remove(p)
                                             }
                                         }
-                                        // el undo guarda snapshots de BD: tras mover al PDF no valen
+                                        // undo keeps DB snapshots: they are no longer valid after moving to the PDF
                                         undoStack = emptyList()
                                         selectedStrokeId = null
                                         dragStroke = null

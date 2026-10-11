@@ -1,0 +1,70 @@
+# Crowdin synchronization (see docs/i18n.md, "Crowdin workflow").
+#
+# Uploads the English source (app/src/main/res/values/strings.xml) to Crowdin and brings the
+# translations back on the `l10n_dev` branch, with a pull request into `main`.
+#
+# Inert until the repository secrets CROWDIN_PROJECT_ID and CROWDIN_PERSONAL_TOKEN exist: the
+# job then stops at the first step and reports success.
+name: Crowdin sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_translations:
+        description: "Also upload the translations already in the repository (one-time import)"
+        type: boolean
+        default: false
+  push:
+    branches: [ main ]
+    paths: [ "app/src/main/res/values/strings.xml", "crowdin.yml" ]
+  schedule:
+    - cron: "17 3 * * *" # daily, 03:17 UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: crowdin
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Crowdin secrets
+        id: secrets
+        env:
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+        run: |
+          if [ -n "$CROWDIN_PROJECT_ID" ] && [ -n "$CROWDIN_PERSONAL_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Crowdin secrets are not configured yet; nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.secrets.outputs.ready == 'true'
+        uses: actions/checkout@v7
+
+      - name: Synchronize with Crowdin
+        if: steps.secrets.outputs.ready == 'true'
+        uses: crowdin/github-action@v3
+        with:
+          config: crowdin.yml
+          upload_sources: true
+          upload_translations: ${{ inputs.upload_translations || false }}
+          download_translations: true
+          localization_branch_name: l10n_dev
+          create_pull_request: true
+          pull_request_base_branch_name: main
+          pull_request_title: "New Crowdin translations"
+          pull_request_body: "Translations downloaded from Crowdin by the Crowdin sync workflow."
+          pull_request_labels: "l10n"
+          commit_message: "New Crowdin translations"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}

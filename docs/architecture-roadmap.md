@@ -84,7 +84,7 @@ contributor) and its conflict risk with ongoing viewer bug fixing.
 | Step | What | Size |
 |---|---|---|
 | 0.1 | Review and merge, or decline, the pending PRs: #4 (string resources and language picker), #5 (rotation), #6 (negative mode), #7 (keyboard page turns). They are independent and based on `main`. Merging them first avoids rebasing them over refactors. | S each |
-| 0.2 | Agree on conventions: language for comments and commits, branch naming, "one topic per PR", and a target PR size of about 300 changed lines. | S |
+| 0.2 | Agree on conventions: language for comments and commits, branch naming, "one topic per PR", and a target PR size of about 300 changed lines. Record them in the root `CLAUDE.md` (proposed in this PR) so that contributors and AI assistants follow the same rules. | S |
 | 0.3 | List the open viewer bugs (see commit `7b52f7b`, "bugs ABIERTOS") as GitHub issues, so contributors know which areas are being changed. | S |
 
 ### Phase 1: Protect user data (small fixes, do first)

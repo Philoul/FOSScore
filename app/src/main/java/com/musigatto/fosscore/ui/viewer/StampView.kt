@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
 import com.musigatto.fosscore.R
 import java.util.Locale
 
@@ -113,10 +114,10 @@ private fun stampDrawableId(symbol: StampSymbol): Int? {
 @Composable
 private fun musicTypeface(): Typeface? {
     val context = LocalContext.current
-    // Resources.getFont (API 26+): returns a "platform" type, so the local is explicitly typed
+    // ResourcesCompat.getFont: Resources.getFont is API 26+ and minSdk is 23
     return remember {
         val tf: Typeface? = try {
-            context.resources.getFont(R.font.noto_music)
+            ResourcesCompat.getFont(context, R.font.noto_music)
         } catch (e: Exception) {
             null
         }
@@ -145,7 +146,8 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
         } else if (symbol in TEXT_SYMBOLS) {
             // ponytail: the label shrinks by a fixed per-label factor (eyeballed against the box)
             // instead of measuring the text at runtime. Upgrade: Canvas.drawText, truly measured.
-            val maxSp = with(density) { (sizePx * TEXT_FILL.getOrDefault(symbol, 0.7f) / density.density).sp }
+            // `?:` rather than getOrDefault, which is API 24+.
+            val maxSp = with(density) { (sizePx * (TEXT_FILL[symbol] ?: 0.7f) / density.density).sp }
             androidx.compose.material3.Text(
                 text = symbol.label,
                 maxLines = 1,

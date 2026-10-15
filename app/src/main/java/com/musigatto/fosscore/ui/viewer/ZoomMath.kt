@@ -39,14 +39,14 @@ object ZoomMath {
     private fun clampAxis(o: Float, content: Float, viewport: Float, scale: Float, base: Float): Float {
         // Without zoom the view is "full page": always centred.
         if (scale <= 1f) return 0f
-        // Single, CONTINUOUS range (no jump when going from not overflowing to overflowing): the
-        // page may slide as long as it keeps touching the viewport. The pinch anchor is never
-        // betrayed (if the axis fits and centring is forced, the page grows from the centre and
-        // the point under the fingers runs off to the corner). The cost: when overflowing, a pan
-        // can leave the page slightly off on one side — if it bothers, upgrade: a full-coverage
-        // clamp on gesture release.
         val scaled = content * scale
-        return o.coerceIn(-scaled - base, viewport - base)
+        // ponytail: clamp sin huecos — si el contenido cabe se centra (sin paneo),
+        // si desborda el borde queda pegado (nada de medio viewport vacío).
+        return if (scaled <= viewport) {
+            (viewport - scaled) / 2f - base
+        } else {
+            o.coerceIn(viewport - scaled - base, -base)
+        }
     }
 
     /**

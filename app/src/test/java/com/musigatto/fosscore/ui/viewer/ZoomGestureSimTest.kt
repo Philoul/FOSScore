@@ -5,151 +5,168 @@ import androidx.compose.ui.geometry.Size
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
-import kotlin.math.pow
 
 /**
- * Reproduce NUMÉRICAMENTE el bucle del pellizco de PdfViewerScreen (anclaje → clamp) con las
- * funciones de producción (ZoomMath, fitRect) y mide el residuo del anclaje: cuánto se ha movido en
- * pantalla el punto de página que estaba bajo el dedo con el que se apuntaba.
+ * Reproduce NUMÉRICAMENTE el bucle del pellizco de PdfViewerScreen con las funciones de
+ * producción (ZoomMath, fitRect).
  *
- * El foco es FIJO (el primer dedo, no el punto medio de los dos) y no sigue el deslizamiento, así
- * que el residuo debe ser ~0 aunque el otro dedo se mueva. Antes el ancla era el centroide vivo más
- * un pan de 2 dedos: el punto apuntado se escapaba con el viaje de los dedos. El clamp puede forzar
- * el offset en los bordes: por eso el umbral es 5 px y no 0.
+ * Contrato del clamp sin huecos: mientras un eje cabe en el viewport va centrado
+ * (el anclaje no manda ahí); cuando desborda, el contenido bajo el punto medio se
+ * queda quieto. El sim lo refleja: la deriva del punto medio solo se mide en
+ * régimen de desborde, y el residuo mide la exactitud del paso de zoom ANTES del
+ * clamp (la matemática de anchoredOffset es exacta siempre).
+ *
+ * El gesto real es SIMÉTRICO: los dos dedos se abren alrededor de un punto medio fijo
+ * (ver log 2026-09-06: d1 (645,1179) + d2 (954,1382), medio clavado en (800,1280)).
  */
 class ZoomGestureSimTest {
 
-    class Drift(val avg: Float, val max: Float)
+    class Drift(val avg: Float, val max: Float, val res: Float)
 
     /**
-     * Dos dedos que se abren [zoomTotal]×: el primero (el que apunta) se queda en [fingers.x] y el
-     * segundo se abre hacia [fingers.y] y además se desliza [drift] px/frame, como en un pellizco
-     * real sobre un compás.
+     * Los dos dedos se abren simétricamente alrededor de [mid]: f1 = mid - h(t),
+     * f2 = mid + h(t) + [slide]*t, con h(t) = h0*(1 + 1.5*f). Misma física que el gesto real:
+     * anclaje al centroide vivo con ZoomMath.anchoredOffset, sin follow, con clamp.
      */
     private fun runPinch(
         viewport: Size,
         pageAspect: Float,
-        fingers: Pair<Offset, Offset>,
+        aim: Offset,
+        away: Offset,
         frames: Int = 28,
         zoomTotal: Float = 2.5f,
-        drift: Offset = Offset.Zero
+        slide: Offset = Offset.Zero
     ): Drift {
         val fit = fitRect(viewport.width, viewport.height, pageAspect)
         val content = Size(fit.width, fit.height)
         val base = Offset(fit.left, fit.top)
-        val (aim, open) = fingers
-        val aim0 = aim
-        val open0 = open
+        val mid = (aim + away) / 2f
+        val h0 = (away - aim) / 2f
 
         var scale = 1f
         var offset = Offset.Zero
-        // foco: el dedo que apunta, fijo durante todo el gesto
-        val anchor = aim0
-        val f0 = Offset((aim0.x - base.x) / scale, (aim0.y - base.y) / scale)
         var anchorDist = 0f
-        var prevD = -1f
         var maxDrift = 0f
         var sumDrift = 0f
+        var driftFrames = 0
+        var maxResidual = 0f
+        // a partir de este zoom ambos ejes desbordan y el anclaje manda en los dos
+        val sOverflow = maxOf(viewport.width / content.width, viewport.height / content.height, 1f)
+        var pBase: Offset? = null   // contenido bajo el punto medio al entrar en desborde
 
         for (t in 1 until frames) {
             val f = t.toFloat() / (frames - 1)
-            // el dedo que abre se aleja y se desliza; el que apunta se queda quieto
-            val openNow = Offset(
-                open0.x + (open0.x - aim0.x) * (zoomTotal - 1f) * f + drift.x * t,
-                open0.y + (open0.y - aim0.y) * (zoomTotal - 1f) * f + drift.y * t
+            val h = Offset(
+                h0.x * (1f + (zoomTotal - 1f) * f),
+                h0.y * (1f + (zoomTotal - 1f) * f)
             )
-            val d = (openNow - aim0).getDistance()
+            val f1 = mid - h
+            val f2 = mid + h + Offset(slide.x * t, slide.y * t)
+            val c = (f1 + f2) / 2f
+            val d = (f2 - f1).getDistance()
+            // punto bajo el centroide vivo antes de actualizar: el paso de zoom no debe
+            // moverlo (el anclaje es exacto); se mide ANTES del clamp para no mezclar
+            // el centrado del eje que aún cabe con la exactitud de la matemática
+            val pC = (c - base - offset) / scale
 
-            // mismo orden y fórmulas que el gesto real
-            if (prevD < 0f) {
+            if (anchorDist == 0f) {                          // onScaleBegin
                 anchorDist = d
-            } else {
+            } else if (d > 0f) {
                 val ratio = d / anchorDist
                 anchorDist = d
                 if (abs(ratio - 1f) > 1e-4f) {
                     val target = (scale * ratio).coerceIn(1f, 2.5f)
                     if (target != scale) {
                         val k = target / scale
-                        // ancla al foco fijo (primer dedo), NO al punto medio ni al centroide vivo
-                        offset = ZoomMath.anchoredOffset(offset, k, anchor, base)
+                        // mismo anclaje que el gesto real: centroide vivo, sin follow
+                        offset = ZoomMath.anchoredOffset(offset, k, c, base)
                         scale = target
                     }
                 }
             }
-            // sin pan de 2 dedos: el foco no sigue el deslizamiento
+            maxResidual = maxOf(maxResidual, ((base + offset + pC * scale) - c).getDistance())
             offset = ZoomMath.clampOffset(offset, content, viewport, scale, base)
-            prevD = d
 
-            val screen = Offset(base.x + offset.x + f0.x * scale, base.y + offset.y + f0.y * scale)
-            val dr = (screen - anchor).getDistance()
-            maxDrift = maxOf(maxDrift, dr)
-            sumDrift += dr
+            // invariante en desborde: el contenido bajo el punto medio fijo se queda quieto
+            if (scale >= sOverflow) {
+                val pb = pBase ?: ((mid - base - offset) / scale).also { pBase = it }
+                val screen = base + offset + pb * scale
+                val dr = (screen - mid).getDistance()
+                maxDrift = maxOf(maxDrift, dr)
+                sumDrift += dr
+                driftFrames++
+            }
         }
-        return Drift(sumDrift / (frames - 1), maxDrift)
+        val avg = if (driftFrames > 0) sumDrift / driftFrames else 0f
+        return Drift(avg, maxDrift, maxResidual)
     }
 
     private fun assertPinned(
         label: String,
         viewport: Size,
         pageAspect: Float,
-        fingers: Pair<Offset, Offset>,
+        aim: Offset,
+        away: Offset,
         frames: Int = 28,
-        drift: Offset = Offset.Zero
+        slide: Offset = Offset.Zero
     ) {
-        val r = runPinch(viewport, pageAspect, fingers, frames = frames, drift = drift)
-        println("$label: deriva del foco medio ${r.avg}px, máx ${r.max}px")
-        assertTrue("$label deriva ${r.avg}px (máx ${r.max}px)", r.avg < 5f)
+        val r = runPinch(viewport, pageAspect, aim, away, frames, slide = slide)
+        println("$label: deriva del punto medio ${r.avg}px, máx ${r.max}px")
+        assertTrue("$label deriva ${r.avg}px (máx ${r.max}px)", r.avg < 1f)
     }
 
-    // partitura apaisada en el S6 Lite (1200x2000, encaje 1200x1569 @ (0,216)): el usuario apunta
-    // con un dedo y abre con el otro
+    // S6 Lite: 1200x2000, partitura 1200x1569 @ (0,216)
     private val vp = Size(1200f, 2000f)
     private val partitura = 0.7648f
 
     @Test
-    fun aimedTopLeftStaysPinned() {
-        // un dedo en (150,300) (arriba izquierda) y el otro abriendo hacia (700,700)
-        assertPinned("apunta-arriba-izq", vp, partitura, Offset(150f, 300f) to Offset(700f, 700f))
+    fun aimedTopLeft() {
+        assertPinned("medio-arriba-izq", vp, partitura, Offset(150f, 300f), Offset(700f, 700f))
     }
 
     @Test
-    fun aimedBottomRightStaysPinned() {
-        assertPinned("apunta-abajo-der", vp, partitura, Offset(1050f, 1600f) to Offset(500f, 1100f))
+    fun aimedTopRight() {
+        assertPinned("medio-arriba-der", vp, partitura, Offset(1050f, 300f), Offset(400f, 900f))
     }
 
     @Test
-    fun aimedTopRightStaysPinned() {
-        assertPinned("apunta-arriba-der", vp, partitura, Offset(1050f, 300f) to Offset(400f, 900f))
+    fun aimedBottomRight() {
+        assertPinned("medio-abajo-der", vp, partitura, Offset(1050f, 1600f), Offset(500f, 1100f))
     }
 
     @Test
-    fun aimedBottomLeftStaysPinned() {
-        assertPinned("apunta-abajo-izq", vp, partitura, Offset(150f, 1600f) to Offset(800f, 900f))
-    }
-
-    /**
-     * Los dos dedos juntos (caso simétrico): el foco es el del primer dedo, así que el otro extremo
-     * se abre. Es el cambio de comportamiento pedido: el punto medio dejaría el anclaje a la mitad
-     * del hueco entre dedos.
-     */
-    @Test
-    fun bothFingersTogetherStayPinnedOnTheFirstOne() {
-        assertPinned("dos-dedos-juntos", vp, partitura, Offset(500f, 900f) to Offset(560f, 905f), frames = 24)
+    fun aimedBottomLeft() {
+        assertPinned("medio-abajo-izq", vp, partitura, Offset(150f, 1600f), Offset(800f, 900f))
     }
 
     @Test
-    fun slidingSecondFingerKeepsFocus() {
-        // el segundo dedo se desliza mucho: el compás apuntado no debe moverse
-        assertPinned("segundo-dedo-se-desliza", vp, partitura, Offset(150f, 300f) to Offset(700f, 700f), frames = 24, drift = Offset(4f, 6f))
+    fun symmetricPinchAroundTheTarget() {
+        // espejo del gesto real del log: medio fijo en (800,1280)
+        assertPinned("simetrico-log", vp, partitura, Offset(645f, 1179f), Offset(955f, 1381f))
+    }
+
+    @Test
+    fun slidingSecondFingerKeepsMidpoint() {
+        // el segundo dedo abre DESLIZÁNDOSE de lado (4,6 px/frame): el punto medio viaja
+        // con las manos por diseño (el zoom centra entre los dedos, como Maps) y el
+        // contenido inicial del medio viaja con él. Lo que se fija aquí: el paso de zoom
+        // no mueve por sí mismo el contenido bajo el centroide vivo (residuo ~0) — con
+        // follow ese residuo integraba el viaje en el offset y sumaba ~30 px de deriva.
+        val r = runPinch(
+            vp, partitura, Offset(150f, 300f), Offset(700f, 700f),
+            frames = 24, slide = Offset(4f, 6f)
+        )
+        println("segundo-dedo-se-desliza: residuo máx ${r.res}px (deriva del medio ${r.avg}px)")
+        assertTrue("desliza residuo ${r.res}px", r.res < 1f)
     }
 
     @Test
     fun landscapePageInPortraitViewport() {
-        assertPinned("apaisada/en-retrato", Size(1428f, 2143f), 1.414f, Offset(300f, 400f) to Offset(900f, 1000f), frames = 24)
+        assertPinned("apaisada/en-retrato", Size(1428f, 2143f), 1.414f, Offset(300f, 400f), Offset(900f, 1000f), frames = 24)
     }
 
     @Test
     fun portraitPageInLandscapeViewport() {
-        assertPinned("retrato/en-apaisado", Size(2143f, 1428f), 0.7071f, Offset(500f, 300f) to Offset(1300f, 900f), frames = 24)
+        assertPinned("retrato/en-apaisado", Size(2143f, 1428f), 0.7071f, Offset(500f, 300f), Offset(1300f, 900f), frames = 24)
     }
 }

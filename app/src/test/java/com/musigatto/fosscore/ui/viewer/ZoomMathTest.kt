@@ -3,7 +3,10 @@ package com.musigatto.fosscore.ui.viewer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Matemática del zoom "1:1": anclaje con base de centrado, rango de paneo en coordenadas de
@@ -44,26 +47,25 @@ class ZoomMathTest {
         assertEquals(k * offset.y + (1f - k) * anchor.y, noBase.y, 1e-3f)
     }
 
-    // con zoom, la página puede deslizarse en un rango ÚNICO y continuo (siempre toca el viewport):
-    // el anclaje del pellizco se respeta en todos los escalados — no hay salto al cruzar de
-    // "cabe" a "desborda" (antes la página huía hacia la esquina en el tramo donde cabía).
-    // Sin zoom (scale == 1) la vista es página completa: siempre centrada.
+    // Sin huecos: si el contenido cabe se centra (sin paneo); si desborda, el borde
+    // queda pegado al viewport. Sin zoom (scale == 1) la vista es página completa.
     @Test
     fun clampOffsetKeepsAnchorSlideAcrossAllScalesAndCentersAtScaleOne() {
         val viewport = Size(1000f, 700f)
         val content = Size(400f, 560f)   // encaje <= viewport
         val base = Offset((viewport.width - content.width) / 2f, (viewport.height - content.height) / 2f)
-        val s = 1.2f   // 400*1.2=480 <= 1000 y 560*1.2=672 <= 700: ambos ejes caben
+        val s = 1.2f   // 400*1.2=480 <= 1000 y 560*1.2=672 <= 700: ambos ejes caben -> centrado
 
-        // un offset dentro del rango no se re-centra (la página se desliza tras el anclaje)
+        // cabe: siempre al centro, el paneo no mueve
+        val centered = Offset((viewport.width - 480f) / 2f - base.x, (viewport.height - 672f) / 2f - base.y)
         val kept = ZoomMath.clampOffset(Offset(50f, 50f), content, viewport, s, base)
-        assertEquals(50f, kept.x, 1e-3f)
-        assertEquals(50f, kept.y, 1e-3f)
+        assertEquals(centered.x, kept.x, 1e-3f)
+        assertEquals(centered.y, kept.y, 1e-3f)
 
-        // fuera del rango: la página se acota para seguir tocando el viewport
+        // fuera del rango: igual, al centro
         val tooFar = ZoomMath.clampOffset(Offset(-5000f, -5000f), content, viewport, s, base)
-        assertEquals(-480f - 300f, tooFar.x, 1e-3f)      // -780
-        assertEquals(-672f - 70f, tooFar.y, 1e-3f)       // -742
+        assertEquals(centered.x, tooFar.x, 1e-3f)
+        assertEquals(centered.y, tooFar.y, 1e-3f)
 
         // scale == 1: vista de página completa, centrada
         val atOne = ZoomMath.clampOffset(Offset(50f, 50f), content, viewport, 1f, base)
@@ -71,32 +73,50 @@ class ZoomMathTest {
         assertEquals(0f, atOne.y, 1e-3f)
     }
 
-    // contenido más grande que el viewport: el paneo se acota para que la página nunca se
-    // despegue del todo (sigue tocando el viewport por una arista en el extremo del rango)
+    // contenido más grande que el viewport: bordes pegados, sin huecos (nada de
+    // medio viewport vacío: el paneo posterior al zoom no puede dejar la página
+    // en la esquina).
     @Test
     fun clampOffsetClampsPanWhenContentOverflows() {
         val viewport = Size(600f, 800f)
         val content = Size(900f, 1200f)
         val base = Offset((600f - 900f) / 2f, (800f - 1200f) / 2f)   // (-150, -200)
         val s = 2f   // contenido eficaz 1800x2400
-        val minX = -content.width * s - base.x                       // -1650
-        val maxX = viewport.width - base.x                           // 750
-        val minY = -content.height * s - base.y                      // -2200
-        val maxY = viewport.height - base.y                          // 1000
 
         val tooLeft = ZoomMath.clampOffset(Offset(-5000f, -5000f), content, viewport, s, base)
-        assertEquals(minX, tooLeft.x, 1e-3f)
-        assertEquals(minY, tooLeft.y, 1e-3f)
+        assertEquals(-1050f, tooLeft.x, 1e-3f)
+        assertEquals(-1400f, tooLeft.y, 1e-3f)
 
         val tooRight = ZoomMath.clampOffset(Offset(5000f, 5000f), content, viewport, s, base)
-        assertEquals(maxX, tooRight.x, 1e-3f)
-        assertEquals(maxY, tooRight.y, 1e-3f)
+        assertEquals(150f, tooRight.x, 1e-3f)
+        assertEquals(200f, tooRight.y, 1e-3f)
 
         // un offset dentro del rango no se toca
-        val mid = Offset((minX + maxX) / 2f, (minY + maxY) / 2f)
+        val mid = Offset((-1050f + 150f) / 2f, (-1400f + 200f) / 2f)
         val kept = ZoomMath.clampOffset(mid, content, viewport, s, base)
         assertEquals(mid.x, kept.x, 1e-3f)
         assertEquals(mid.y, kept.y, 1e-3f)
+    }
+
+    // regresión del escape: con el contenido desbordando, el rect visible tras el clamp
+    // siempre cubre al menos la mitad del viewport en cada eje (la página no se pierde).
+    @Test
+    fun clampOffsetNeverLetsPageEscapeViewport() {
+        val viewport = Size(1600f, 2560f)
+        val content = Size(1600f, 2044f)   // encaje a pantalla completa
+        val base = Offset(0f, (2560f - 2044f) / 2f)
+        val s = 2f
+        for (off in listOf(Offset(-5000f, -5000f), Offset(5000f, 5000f))) {
+            val o = ZoomMath.clampOffset(off, content, viewport, s, base)
+            val left = base.x + o.x
+            val top = base.y + o.y
+            val right = left + content.width * s
+            val bottom = top + content.height * s
+            val visX = min(right, viewport.width) - max(left, 0f)
+            val visY = min(bottom, viewport.height) - max(top, 0f)
+            assertTrue("eje X visible $visX", visX >= viewport.width / 2f)
+            assertTrue("eje Y visible $visY", visY >= viewport.height / 2f)
+        }
     }
 
     @Test

@@ -39,14 +39,14 @@ object ZoomMath {
     private fun clampAxis(o: Float, content: Float, viewport: Float, scale: Float, base: Float): Float {
         // Sin zoom la vista es "página completa": siempre centrada.
         if (scale <= 1f) return 0f
-        // Rango único y CONTINUO (sin salto al cruzar de no-desbordar a desbordar): la página
-        // puede deslizarse mientras siga tocando el viewport. El anclaje del pellizco nunca se
-        // traiciona (si el eje cabe y se fuerza el centro, la página crece desde el centro y el
-        // punto de los dedos huye hacia la esquina). El precio: al desbordar, un paneo puede
-        // dejar la página un poco fuera por un lado — si molesta, upgrade: clamp de cobertura
-        // total al soltar el gesto.
         val scaled = content * scale
-        return o.coerceIn(-scaled - base, viewport - base)
+        // ponytail: clamp sin huecos — si el contenido cabe se centra (sin paneo),
+        // si desborda el borde queda pegado (nada de medio viewport vacío).
+        return if (scaled <= viewport) {
+            (viewport - scaled) / 2f - base
+        } else {
+            o.coerceIn(viewport - scaled - base, -base)
+        }
     }
 
     /**

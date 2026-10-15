@@ -86,6 +86,11 @@ JNIEXPORT jstring JNICALL FN(nativeRenderTimemap)(JNIEnv *env, jclass, jlong h)
     return jstr(env, tk(h)->RenderToTimemap());
 }
 
+JNIEXPORT jint JNICALL FN(nativePageWithElement)(JNIEnv *env, jclass, jlong h, jstring id)
+{
+    return tk(h)->GetPageWithElement(str(env, id));
+}
+
 JNIEXPORT jstring JNICALL FN(nativeLog)(JNIEnv *env, jclass, jlong h) { return jstr(env, tk(h)->GetLog()); }
 
 } // extern "C"

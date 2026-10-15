@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -34,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -70,6 +74,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** A rendered page and where its notes are, kept so playback can turn pages without waiting. */
+private class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun SpikeScreen(autoBench: Boolean) {
@@ -92,22 +99,76 @@ private fun SpikeScreen(autoBench: Boolean) {
     var fileName by remember { mutableStateOf(samples.firstOrNull() ?: "") }
     var fileBytes by remember { mutableStateOf<ByteArray?>(null) }
     var openedBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var settingsFor by remember { mutableStateOf<String?>(null) }
     var parts by remember { mutableStateOf(emptyList<Part>()) }
     var shownParts by remember { mutableStateOf(emptySet<String>()) }
-    var partsMenuOpen by remember { mutableStateOf(false) }
+    var lyrics by remember { mutableStateOf(LyricsPlacement.FILE) }
+    var audible by remember { mutableStateOf<Set<String>?>(null) }
+    var programs by remember { mutableStateOf(emptyMap<String, Int>()) }
+    var tempo by remember { mutableDoubleStateOf(1.0) }
     var renderer by remember { mutableStateOf(Renderer.MUPDF) }
     var scale by remember { mutableIntStateOf(defaultScale) }
     var semitones by remember { mutableIntStateOf(0) }
     var page by remember { mutableIntStateOf(1) }
+    var renderedPage by remember { mutableIntStateOf(0) }
     var pageCount by remember { mutableIntStateOf(0) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var geometry by remember { mutableStateOf<PageGeometry?>(null) }
+    val pageCache = remember { mutableMapOf<Int, RenderedPage>() }
+    var cacheKey by remember { mutableStateOf<Any?>(null) }
     var svgForWeb by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
+    var partsMenuOpen by remember { mutableStateOf(false) }
+    var soundMenuOpen by remember { mutableStateOf(false) }
+    var instrumentFor by remember { mutableStateOf<Part?>(null) }
+    var lyricsMenuOpen by remember { mutableStateOf(false) }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var playback by remember { mutableStateOf<Playback?>(null) }
+    var playing by remember { mutableStateOf(false) }
+    var cursorNotes by remember { mutableStateOf(emptyList<String>()) }
     var benchRunning by remember { mutableStateOf(false) }
     var version by remember { mutableStateOf("") }
+
+    fun stopPlayback() {
+        player?.release()
+        player = null
+        playback = null
+        playing = false
+        cursorNotes = emptyList()
+    }
+
+    /** Starts playing at [fromQuarters], or at the first note of the page on screen. */
+    fun startPlayback(fromQuarters: Double? = null) {
+        stopPlayback()
+        scope.launch {
+            try {
+                status = "Preparing playback…"
+                val t0 = System.nanoTime()
+                val pb = engine.playback(SoundSpec(audible, programs, tempo))
+                val onPage = geometry?.noteIds.orEmpty()
+                val start = fromQuarters
+                    ?: pb.onsets.firstOrNull { o -> o.notes.any { it in onPage } }?.quarters ?: 0.0
+                player = MediaPlayer().apply {
+                    setDataSource(pb.midi.absolutePath)
+                    prepare()
+                    setOnCompletionListener { stopPlayback() }
+                    if (start > 0) seekTo(pb.msAt(start).toInt())
+                    start()
+                }
+                playback = pb
+                playing = true
+                status = "Playing · prepared in ${(System.nanoTime() - t0) / 1_000_000} ms · tempo ${(tempo * 100).roundToInt()}%"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "playback failed", e)
+                status = "MIDI: ${e.javaClass.simpleName}: ${e.message}"
+                stopPlayback()
+            }
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -123,6 +184,7 @@ private fun SpikeScreen(autoBench: Boolean) {
     LaunchedEffect(Unit) { version = engine.version() }
 
     LaunchedEffect(fileName) {
+        stopPlayback()
         if (fileBytes == null || samples.contains(fileName)) {
             fileBytes = withContext(Dispatchers.IO) {
                 runCatching {
@@ -136,7 +198,22 @@ private fun SpikeScreen(autoBench: Boolean) {
         }
     }
 
-    LaunchedEffect(fileBytes, viewport, scale, semitones, shownParts, page, renderer, benchRunning) {
+    // Save the settings with the score as soon as they change.
+    LaunchedEffect(settingsFor, scale, semitones, shownParts, lyrics, audible, programs, tempo) {
+        val file = settingsFor ?: return@LaunchedEffect
+        ScoreSettings.save(context, file, ScoreSettings(scale, semitones, shownParts, lyrics, audible, programs, tempo))
+    }
+
+    // A reloaded score has new note ids: playback must start again.
+    LaunchedEffect(semitones, shownParts, lyrics, audible, programs) { if (player != null) stopPlayback() }
+
+    LaunchedEffect(tempo) {
+        val pb = playback
+        val p = player
+        if (pb != null && p != null) startPlayback(pb.quartersAt(p.currentPosition.toLong()))
+    }
+
+    LaunchedEffect(fileBytes, viewport, scale, semitones, shownParts, lyrics, page, renderer, benchRunning) {
         val bytes = fileBytes ?: return@LaunchedEffect
         if (viewport.width == 0 || benchRunning) return@LaunchedEffect
         try {
@@ -144,29 +221,55 @@ private fun SpikeScreen(autoBench: Boolean) {
                 parts = engine.open(bytes)
                 openedBytes = bytes
                 page = 1
-                // Start with the parts the author left visible (MuseScore exports hidden staves too).
+                renderedPage = 0
+                cacheKey = null
+                // Restore the settings saved with this score, or start with the parts the author
+                // left visible (MuseScore exports hidden staves too).
                 val visible = parts.filter { it.visible }.map { it.id }.toSet()
                 val initial = if (visible.isEmpty() || visible.size == parts.size) emptySet() else visible
-                if (shownParts != initial) {
-                    shownParts = initial
-                    return@LaunchedEffect
-                }
-            } else {
+                val saved = ScoreSettings.load(context, fileName)
+                    ?: ScoreSettings(scale = defaultScale, parts = initial)
+                val changed = scale != saved.scale || semitones != saved.semitones ||
+                    shownParts != saved.parts || lyrics != saved.lyrics
+                scale = saved.scale
+                semitones = saved.semitones
+                shownParts = saved.parts
+                lyrics = saved.lyrics
+                audible = saved.audible
+                programs = saved.programs
+                tempo = saved.tempo
+                settingsFor = fileName
+                if (changed) return@LaunchedEffect
+            } else if (page == renderedPage) {
                 // Let repeated taps on zoom or transpose settle before the slow layout starts.
                 delay(300)
             }
-            status = "…"
-            if (!engine.layout(LayoutSpec(viewport.width, viewport.height, scale, semitones, shownParts))) {
-                status = "Could not load $fileName\n${engine.log()}"
-                bitmap = null
-                return@LaunchedEffect
+            val spec = LayoutSpec(viewport.width, viewport.height, scale, semitones, shownParts, lyrics)
+            if (cacheKey != spec || renderer != Renderer.MUPDF) {
+                status = "…"
+                if (!engine.layout(spec)) {
+                    status = "Could not load $fileName\n${engine.log()}"
+                    bitmap = null
+                    return@LaunchedEffect
+                }
+                pageCache.clear()
+                cacheKey = spec
             }
             pageCount = engine.pageCount
             if (page > pageCount) page = pageCount.coerceAtLeast(1)
+            val cached = pageCache[page]
+            if (cached != null && renderer == Renderer.MUPDF) {
+                bitmap = cached.bitmap
+                geometry = cached.geometry
+                svgForWeb = ""
+                renderedPage = page
+                return@LaunchedEffect
+            }
             val svg = engine.svg(page)
             when (renderer) {
                 Renderer.WEBVIEW -> {
                     bitmap = null
+                    geometry = PageGeometry.parse(svg)
                     svgForWeb = svg
                 }
                 else -> {
@@ -176,16 +279,67 @@ private fun SpikeScreen(autoBench: Boolean) {
                         else Rasterizers.androidSvg(svg, viewport.width, viewport.height)
                     }
                     engine.recordRaster((System.nanoTime() - t0) / 1_000_000)
+                    val geo = withContext(Dispatchers.Default) { PageGeometry.parse(svg) }
+                    if (renderer == Renderer.MUPDF) pageCache[page] = RenderedPage(bmp, geo)
                     bitmap = bmp
+                    geometry = geo
                     svgForWeb = ""
                 }
             }
-            status = engine.lastTimings.toString()
+            renderedPage = page
+            if (player == null) status = engine.lastTimings.toString()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             Log.e(TAG, "render failed", e)
             status = "Error: ${e.javaClass.simpleName}: ${e.message}"
+        }
+    }
+
+    // While playing, render the next page ahead so the page turn is immediate. Keep three pages.
+    LaunchedEffect(playing, renderedPage, cacheKey) {
+        val spec = cacheKey as? LayoutSpec ?: return@LaunchedEffect
+        if (!playing || renderer != Renderer.MUPDF) return@LaunchedEffect
+        pageCache.keys.filter { it < renderedPage - 1 || it > renderedPage + 1 }.forEach { pageCache.remove(it) }
+        val next = renderedPage + 1
+        if (next > pageCount || pageCache.containsKey(next)) return@LaunchedEffect
+        try {
+            val svg = engine.svg(next)
+            val rendered = withContext(Dispatchers.Default) {
+                RenderedPage(Rasterizers.mupdf(svg, spec.width, spec.height), PageGeometry.parse(svg))
+            }
+            if (cacheKey == spec) pageCache[next] = rendered
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.e(TAG, "prefetch failed", e)
+        }
+    }
+
+    // Follow the music: move the cursor to the notes being played and turn the page when needed.
+    LaunchedEffect(playing, playback) {
+        val pb = playback ?: return@LaunchedEffect
+        if (!playing) return@LaunchedEffect
+        var last = -2
+        var asked = 0
+        while (true) {
+            val p = player ?: break
+            val index = pb.onsetIndexAt(pb.quartersAt(p.currentPosition.toLong()))
+            if (index != last && index >= 0) {
+                last = index
+                val notes = pb.onsets[index].notes
+                // Onsets of hidden notes only (a vocal line kept for its lyrics) keep the last cursor.
+                if (notes.any { geometry?.head(it) != null }) cursorNotes = notes
+                val shown = geometry?.noteIds.orEmpty()
+                if (renderedPage == page && notes.none { it in shown }) {
+                    val target = engine.pageOf(notes.first())
+                    if (target > 0 && target != page && target != asked) {
+                        asked = target
+                        page = target
+                    }
+                }
+            }
+            delay(40)
         }
     }
 
@@ -217,6 +371,7 @@ private fun SpikeScreen(autoBench: Boolean) {
                     samples.forEach { name ->
                         DropdownMenuItem(text = { Text(name) }, onClick = {
                             menuOpen = false
+                            settingsFor = null
                             fileBytes = null
                             fileName = name
                         })
@@ -245,11 +400,19 @@ private fun SpikeScreen(autoBench: Boolean) {
                     }
                 }
             }
-            Renderer.entries.forEach { r ->
-                Button(
-                    onClick = { renderer = r },
-                    colors = if (renderer == r) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
-                ) { Text(r.name.take(4)) }
+            Box {
+                Button(onClick = { lyricsMenuOpen = true }) { Text("Lyrics: ${lyrics.label}") }
+                DropdownMenu(expanded = lyricsMenuOpen, onDismissRequest = { lyricsMenuOpen = false }) {
+                    LyricsPlacement.entries.forEach { placement ->
+                        DropdownMenuItem(
+                            text = { Text("${if (placement == lyrics) "●" else "○"} ${placement.label}") },
+                            onClick = {
+                                lyricsMenuOpen = false
+                                lyrics = placement
+                            }
+                        )
+                    }
+                }
             }
             Button(onClick = { scale = (scale - 5).coerceAtLeast(10) }) { Text("−") }
             Text("zoom $scale")
@@ -260,34 +423,86 @@ private fun SpikeScreen(autoBench: Boolean) {
             Button(onClick = { page = (page - 1).coerceAtLeast(1) }, enabled = page > 1) { Text("◀") }
             Text("$page/$pageCount")
             Button(onClick = { page = (page + 1).coerceAtMost(pageCount) }, enabled = page < pageCount) { Text("▶") }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Button(onClick = {
-                val current = player
-                if (current != null) {
-                    current.release()
-                    player = null
-                } else {
-                    scope.launch {
-                        try {
-                            val file = engine.midiFile()
-                            player = MediaPlayer().apply {
-                                setDataSource(file.absolutePath)
-                                prepare()
-                                setOnCompletionListener { it.release(); player = null }
-                                start()
+                val p = player
+                when {
+                    p == null -> startPlayback()
+                    playing -> { p.pause(); playing = false }
+                    else -> { p.start(); playing = true }
+                }
+            }) { Text(if (playing) "⏸" else "♪ ▶") }
+            Button(onClick = { stopPlayback() }, enabled = player != null) { Text("■") }
+            Button(onClick = { tempo = ((tempo - 0.1) * 10).roundToInt() / 10.0 }, enabled = tempo > 0.35) { Text("−") }
+            Text("tempo ${(tempo * 100).roundToInt()}%")
+            Button(onClick = { tempo = ((tempo + 0.1) * 10).roundToInt() / 10.0 }, enabled = tempo < 1.95) { Text("+") }
+            Box {
+                Button(onClick = { soundMenuOpen = true }) {
+                    Text(if (audible == null) "Sound: shown parts" else "Sound: ${audible!!.size}/${parts.size}")
+                }
+                DropdownMenu(expanded = soundMenuOpen, onDismissRequest = { soundMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("${if (audible == null) "●" else "○"} Hear the parts shown") },
+                        onClick = { audible = null }
+                    )
+                    parts.forEach { part ->
+                        val heard = (audible ?: shownParts.ifEmpty { parts.map { it.id }.toSet() }).contains(part.id)
+                        DropdownMenuItem(
+                            text = { Text("${if (heard) "🔊" else "🔇"} ${part.name.ifBlank { part.id }}") },
+                            onClick = {
+                                val current = audible ?: shownParts.ifEmpty { parts.map { it.id }.toSet() }
+                                val next = if (part.id in current) current - part.id else current + part.id
+                                if (next.isNotEmpty()) audible = next
                             }
-                        } catch (e: Exception) {
-                            status = "MIDI: ${e.javaClass.simpleName}: ${e.message}"
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "      ↳ " + if (part.drums) "drums" else programName(programs[part.id] ?: part.program),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            },
+                            enabled = !part.drums,
+                            onClick = { instrumentFor = part }
+                        )
+                    }
+                }
+                DropdownMenu(expanded = instrumentFor != null, onDismissRequest = { instrumentFor = null }) {
+                    val part = instrumentFor
+                    if (part != null) {
+                        DropdownMenuItem(text = { Text("As in file (${programName(part.program)})") }, onClick = {
+                            programs = programs - part.id
+                            instrumentFor = null
+                        })
+                        GM_PROGRAMS.forEach { (program, name) ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                programs = programs + (part.id to program)
+                                instrumentFor = null
+                            })
                         }
                     }
                 }
-            }) { Text(if (player != null) "■" else "♪") }
+            }
+            Renderer.entries.forEach { r ->
+                Button(
+                    onClick = { renderer = r },
+                    colors = if (renderer == r) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
+                ) { Text(r.name.take(4)) }
+            }
             Button(onClick = {
                 if (benchRunning || viewport.width == 0) return@Button
+                stopPlayback()
                 scope.launch {
                     benchRunning = true
                     Benchmark(context, engine).run(viewport.width, viewport.height, scale) { status = it }
                     benchRunning = false
                     openedBytes = null
+                    cacheKey = null
                 }
             }) { Text("Bench") }
         }
@@ -322,13 +537,34 @@ private fun SpikeScreen(autoBench: Boolean) {
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                bitmap?.let {
+                bitmap?.let { bmp ->
                     Image(
-                        bitmap = it.asImageBitmap(),
+                        bitmap = bmp.asImageBitmap(),
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
+                    val geo = geometry
+                    if (geo != null && cursorNotes.isNotEmpty()) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            // Same transform as ContentScale.Fit with centred alignment.
+                            val fit = minOf(size.width / bmp.width, size.height / bmp.height)
+                            val dx = (size.width - bmp.width * fit) / 2
+                            val dy = (size.height - bmp.height * fit) / 2
+                            val k = bmp.width / geo.width * fit
+                            val heads = cursorNotes.mapNotNull { geo.head(it) }
+                            if (heads.isEmpty()) return@Canvas
+                            val space = heads.first().space * k
+                            val left = heads.minOf { it.x } * k + dx - space
+                            val right = heads.maxOf { it.x } * k + dx + space
+                            val top = heads.minOf { it.top } * k + dy - 2 * space
+                            val bottom = heads.maxOf { it.bottom } * k + dy + 2 * space
+                            drawRect(Color(0x3300A0FF), Offset(left, top), Size(right - left, bottom - top))
+                            heads.forEach { h ->
+                                drawCircle(Color(0x8800A0FF), radius = space * 0.8f, center = Offset(h.x * k + dx, h.y * k + dy))
+                            }
+                        }
+                    }
                 }
             }
         }

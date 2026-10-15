@@ -31,6 +31,9 @@ class Verovio(resourcePath: String) : AutoCloseable {
     fun renderMidi(): String = nativeRenderMidi(handle)
     fun renderTimemap(): String = nativeRenderTimemap(handle)
 
+    /** The page (1-based) that holds the element with this id, or 0. */
+    fun pageWithElement(id: String): Int = nativePageWithElement(handle, id)
+
     override fun close() {
         if (handle != 0L) nativeDestroy(handle)
         handle = 0L
@@ -91,6 +94,7 @@ class Verovio(resourcePath: String) : AutoCloseable {
         @JvmStatic private external fun nativeRenderSvg(h: Long, page: Int): String
         @JvmStatic private external fun nativeRenderMidi(h: Long): String
         @JvmStatic private external fun nativeRenderTimemap(h: Long): String
+        @JvmStatic private external fun nativePageWithElement(h: Long, id: String): Int
         @JvmStatic private external fun nativeLog(h: Long): String
     }
 }

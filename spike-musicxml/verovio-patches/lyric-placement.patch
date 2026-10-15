@@ -1,0 +1,16 @@
+diff --git a/src/iomusxml.cpp b/src/iomusxml.cpp
+index f20540d..cac1c7c 100644
+--- a/src/iomusxml.cpp
++++ b/src/iomusxml.cpp
+@@ -3380,7 +3380,10 @@ void MusicXmlInput::ReadMusicXmlNote(
+             lyricNumber = (lyricNumber < 1) ? 1 : lyricNumber;
+             Verse *verse = new Verse();
+             verse->SetColor(lyric.attribute("color").as_string());
+-            // verse->SetPlace(verse->AttPlacementRelStaff::StrToStaffrelBasic(lyric.attribute("placement").as_string()));
++            const std::string lyricPlacement = lyric.attribute("placement").as_string();
++            if (lyricPlacement == "above" || lyricPlacement == "below") {
++                verse->SetPlace(verse->AttPlacementRelStaff::StrToStaffrel(lyricPlacement));
++            }
+             verse->SetLabel(lyric.attribute("name").as_string());
+             verse->SetN(lyricNumber);
+             // MusicXML represents melisma endpoints as textless <lyric><extend type="stop"/></lyric>.

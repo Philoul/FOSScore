@@ -161,17 +161,35 @@ All 23 files opened. The 4 real songs gave 6 to 38 landscape pages.
 1. **Part selection is needed from M1, not M3.** MuseScore exports contain the whole arrangement. One real song has 11 parts (voice, piano, guitar, strings, drums...) where the musician reads only the piano: 98 portrait pages instead of about 30.
 
    Removing `<score-part>`/`<part>` elements before loading works well (`MusicXml.kt` in the spike). It needs no Verovio feature.
-2. **Use `densityDpi`, not `xdpi`, to size the staff.** The tablet's ROM reports a wrong `xdpi`, which gave a 2.5× too large default zoom.
-3. **The SMuFL text font is not available to MuPDF.** The note symbol in tempo marks (♩ = 96) is missing. This is to be solved by mapping the glyph to the music font, or by drawing tempo marks without it.
-4. **Some files have import problems.** One OSMD test file (The Entertainer) produces Verovio import errors (beams inside chords, unmatched ties) and shows some wrong beams. The real MuseScore exports looked correct.
-5. **Verovio's log is not returned on Android** (it goes to logcat). The import warnings must be read from logcat until this is wired.
+
+   The default selection should follow the file: MuseScore writes `<staff-details print-object="no">` for the staves the author hid. Parts whose staves are all hidden start unselected, so each real song opened directly with the part the author reads.
+2. **MuseScore's hidden notes must be cleaned up before loading (needed in M1).** In all 4 real songs, the vocal line is kept only for its lyrics: its notes have no notehead and no stem (`<notehead>none</notehead>`, `<stem>none</stem>`), and some notes and rests have `print-object="no"`. Verovio still drew their beams, ledger lines, ties, accidentals and augmentation dots, so the page looked dirty, which blocked real use.
+
+   The fix is a DOM pass before loading (`hideInvisibleNotes()` in the spike): mark such notes `print-object="no"` and remove their `<beam>`, `<tie>`, `<tied>`, `<slur>` and `<accidental>`. Verovio then draws nothing for them but their lyrics. Durations, dots and tuplet ratios are kept, so the alignment does not change. After this pass, the musician found the result clean and close to the MuseScore PDF.
+3. **Use `densityDpi`, not `xdpi`, to size the staff.** The tablet's ROM reports a wrong `xdpi`, which gave a 2.5× too large default zoom.
+4. **The SMuFL text font is not available to MuPDF.** The note symbol in tempo marks (♩ = 96) is missing. This is to be solved by mapping the glyph to the music font, or by drawing tempo marks without it.
+5. **Some files have import problems.** One OSMD test file (The Entertainer) produces Verovio import errors (beams inside chords, unmatched ties) and shows some wrong beams.
+6. **Lyrics marked `placement="above"` are drawn below the staff.** Minor: the MuseScore PDF shows them above the piano staff.
+7. **Verovio's log is not returned on Android** (it goes to logcat). The import warnings must be read from logcat until this is wired.
 
 ### Not measured yet
 
-- Re-layout time after a zoom or rotation (felt fast in manual use; not timed).
 - Memory use.
-- **MIDI playback** through `MediaPlayer`: the file is generated, but sound quality and timing were not verified.
-- Transposition correctness on real songs.
+- Transposition correctness, checked note by note.
+
+### Re-layout after zoom, rotation or part change
+
+The first manual test felt slow: about 5 s between a tap and the new page. A zoom cost, on the tablet: layout 2.0 s, SVG 0.7 s, MuPDF 0.6 s, plus 1.4 s to re-parse the file. Four changes made zoom feel immediate in the second manual test:
+- `redoLayout({"resetCache": false})` when only the page size or the scale changes: Verovio keeps the measure widths computed at load time and only breaks lines and pages again (the output was checked to be identical, apart from the order of glyph definitions);
+- part selection detaches and re-attaches DOM nodes instead of parsing the file again;
+- `svgFormatRaw: true` halves the SVG size, so MuPDF parses it faster (the bitmap is pixel-identical);
+- repeated taps are debounced (300 ms), so only the last one is laid out.
+
+Transposition still reloads the file, because Verovio applies it at load time.
+
+### Manual test by a musician
+
+On the tablet, with their own songs: rendering clean after the hidden-note fix, re-layout on rotation and zoom fast, transposition and MIDI playback working, and "really usable". MuPDF fonts clearly better than AndroidSVG. The WebView path showed a blank page (not investigated: that path is not needed).
 
 ### Verdict
 
@@ -179,7 +197,8 @@ All 23 files opened. The 4 real songs gave 6 to 38 landscape pages.
 - Verovio built without Humdrum and with `MinSizeRel`;
 - one shared library if possible, to avoid `libc++_shared.so`;
 - MuPDF rasterisation of the adapted SVG;
-- part selection in M1.
+- part selection in M1, defaulting to the parts the author left visible;
+- the hidden-note cleanup in M1.
 
 The main cost is the APK size: about +10 MB per ABI. That argues for publishing per-ABI APKs or an App Bundle.
 

@@ -1,0 +1,4 @@
+/build
+/.cxx
+# Copied from the Verovio checkout at build time.
+/src/main/assets/verovio/

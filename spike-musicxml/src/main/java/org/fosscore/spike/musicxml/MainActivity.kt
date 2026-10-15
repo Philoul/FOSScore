@@ -51,7 +51,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -142,11 +144,18 @@ private fun SpikeScreen(autoBench: Boolean) {
                 parts = engine.open(bytes)
                 openedBytes = bytes
                 page = 1
-                if (shownParts.isNotEmpty()) {
-                    shownParts = emptySet()
+                // Start with the parts the author left visible (MuseScore exports hidden staves too).
+                val visible = parts.filter { it.visible }.map { it.id }.toSet()
+                val initial = if (visible.isEmpty() || visible.size == parts.size) emptySet() else visible
+                if (shownParts != initial) {
+                    shownParts = initial
                     return@LaunchedEffect
                 }
+            } else {
+                // Let repeated taps on zoom or transpose settle before the slow layout starts.
+                delay(300)
             }
+            status = "…"
             if (!engine.layout(LayoutSpec(viewport.width, viewport.height, scale, semitones, shownParts))) {
                 status = "Could not load $fileName\n${engine.log()}"
                 bitmap = null
@@ -172,6 +181,8 @@ private fun SpikeScreen(autoBench: Boolean) {
                 }
             }
             status = engine.lastTimings.toString()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             Log.e(TAG, "render failed", e)
             status = "Error: ${e.javaClass.simpleName}: ${e.message}"

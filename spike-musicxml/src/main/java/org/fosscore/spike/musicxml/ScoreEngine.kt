@@ -84,7 +84,9 @@ class ScoreEngine(context: Context) {
             loaded = wanted
         } else if (laidOut != spec) {
             val t0 = System.nanoTime()
-            t.redoLayout()
+            // Only the page size or the scale changed: the measure widths Verovio cached at load
+            // time are still valid, so it only has to break lines and pages again.
+            t.redoLayout("""{"resetCache": false}""")
             layoutMs = ms(t0)
         }
         laidOut = spec
@@ -137,6 +139,8 @@ class ScoreEngine(context: Context) {
             put("header", "auto")
             put("adjustPageHeight", false)
             put("svgViewBox", true)
+            // No indentation: about half the size, so MuPDF parses it faster.
+            put("svgFormatRaw", true)
             put("transpose", interval(spec.semitones))
         }.toString()
 

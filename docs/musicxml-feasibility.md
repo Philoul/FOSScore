@@ -1,6 +1,6 @@
 # MusicXML support in FOSScore: feasibility study
 
-*Status: proposal for discussion. Written with Claude Code at the request of a contributor (Philoul). No code has been written yet; every "to verify" item below needs a prototype before a decision.*
+*Status: proposal for discussion. Written with Claude Code at the request of a contributor (Philoul). Section 6 reports the results of the M0 prototype; no FOSScore code has been changed.*
 
 ## 1. Summary
 
@@ -96,23 +96,101 @@ Each phase is a separate PR, usable on its own.
 | Phase | Goal | Content | Size |
 |---|---|---|---|
 | **M0** | Prototype (throwaway branch) | Build Verovio for all ABIs; render one MusicXML page on the x86 Android 7 tablet and on a recent device; measure APK size and layout time; test the three rendering paths of 4.1; test a corpus of 10–20 real MusicXML files exported from MuseScore. **Go / no-go decision.** | M |
-| **M1** | Static display | Import MusicXML/MXL; database migration with a `format` column; read-only viewer screen with pages laid out for the screen; page turning (touch, keyboard, pedal). No annotations. | L |
+| **M1** | Static display | Import MusicXML/MXL; database migration with a `format` column; read-only viewer screen with pages laid out for the screen; **choice of the parts to show** (see 6); page turning (touch, keyboard, pedal). No annotations. | L |
 | **M2** | Adaptive layout | Relayout on rotation and zoom (zoom changes `scale`, not the bitmap); options for measures per line / systems per page; settings saved per score. | M |
-| **M3** | Transposition and parts | Transpose by interval or target key; concert / written pitch for transposing instruments; show or hide parts (for example, piano only). | S |
+| **M3** | Transposition | Transpose by interval or target key; concert / written pitch for transposing instruments. | S |
 | **M4** | Listening | `renderToMIDI()` → Android's built-in MIDI player (`MediaPlayer`, no extra dependency, basic sound quality); play / pause / tempo; highlight the current notes with the timemap; automatic page turn. Later, better sound with a small SoundFont synthesizer (for example TinySoundFont, MIT) if APK size allows. | M |
 | **M5** | Annotations on MusicXML | Annotations anchored to measures or notes (see 4.3). | L |
 | **M6** | PDF → MusicXML | Document a desktop workflow: convert the PDF with **Audiveris** (AGPL, Java), fix recognition errors in its editor or in MuseScore, then import the MusicXML into FOSScore, linked to the original PDF. On-device recognition is not realistic today. | S (docs) |
 
 **Order with the architecture roadmap** (`docs/architecture-roadmap.md` on its own branch): M1 depends on proper Room migrations (phase 2 there). M0 does not depend on anything and can start now.
 
-## 6. Open questions for the maintainer
+## 6. M0 prototype results (2026-10-15)
+
+A throwaway app module (local branch `spike/m0-musicxml`, separate application ID, never merged) built Verovio 6.3.0 natively and measured it on the slowest target device.
+
+**Setup:** Galaxy Tab 3 10.1 (Intel Atom x86, 2013), LineageOS 7.1.2 (API 25). Landscape viewport 1280 × 688 px, Verovio scale 61 (staff height about 7 mm). 19 public sample files (W3C examples, OSMD test files) plus 4 real songs exported from MuseScore as `.mxl`.
+
+### Build
+
+- Verovio compiles with NDK r27 and CMake 3.22 for arm64-v8a, armeabi-v7a, x86_64 and x86, with `minSdk 23`.
+- **No SWIG needed:** a hand-written JNI bridge of about 120 lines over `vrv::Toolkit` is enough (load, options, page count, SVG, MIDI, timemap, log).
+- First build: about 30 minutes for the 4 ABIs on a 12-thread PC. Later builds only recompile what changed (seconds).
+
+### Size (per ABI, arm64-v8a)
+
+| Library | Uncompressed | Compressed (gzip -9) |
+|---|---|---|
+| `libverovio.so`, default options | 15.9 MB | 5.5 MB |
+| `libverovio.so`, `NO_HUMDRUM_SUPPORT` + `MinSizeRel` | **8.4 MB** | **2.4 MB** |
+| `libc++_shared.so` (needed with two .so files) | 1.3 MB | 0.4 MB |
+| For comparison: `libmupdf_java.so` (already in FOSScore) | 10.8 MB | 5.5 MB |
+| Music fonts (Leipzig + Bravura, assets, shared by all ABIs) | 1.6 MB | — |
+
+Humdrum is a format FOSScore does not need; disabling it halves the library and the build time.
+
+### Speed on the 2013 tablet
+
+| Step | Small files | Classical pieces (2–7 pages) | Real songs (15–24 pages) | Full 11-part arrangement |
+|---|---|---|---|---|
+| Parse the file (Kotlin DOM) | < 0.1 s | 0.1–0.7 s | 0.6–1.2 s | 2.4 s |
+| Verovio load and layout | 0.2–0.4 s | 0.4–2.4 s | 2.2–4.7 s | 10.6 s |
+| One page to SVG | 20–100 ms | 80–240 ms | 60–270 ms | 110 ms |
+| SVG to bitmap, MuPDF | 50–110 ms | 150–320 ms | 100–230 ms | 190 ms |
+| SVG to bitmap, AndroidSVG | 60–490 ms | 400–950 ms | 240–850 ms | 550 ms |
+| MIDI file | 0.1–0.2 s | 0.2–1.2 s | 0.9–1.9 s | 4.5 s |
+
+- **Page turns are fast enough:** 0.1–0.6 s.
+- **Opening a large file is slow** on this device. It needs a progress indicator, and the laid-out result should be kept while the score stays open.
+
+All 23 files opened. The 4 real songs gave 6 to 38 landscape pages.
+
+### Rendering path
+
+- **MuPDF (recommended).** It renders Verovio's SVG once three small text changes are applied to it (`forMuPdf()` in the spike):
+  - give the nested `<svg class="definition-scale">` a 100% width and height (otherwise nothing is drawn);
+  - turn the CSS rule `stroke: currentColor` into attributes (otherwise staff lines, stems and bar lines are missing);
+  - drop the `<style>` blocks.
+
+  It is 2–3 times faster than AndroidSVG. Its Times-compatible text font matches Verovio's layout metrics, so lyrics are spaced correctly. No new dependency, and the existing bitmap, zoom and cache code can be reused.
+- **AndroidSVG.** Works without changes, but is slower, and lyrics overlap because Android's serif font has different metrics.
+- **WebView.** Kept as a manual option in the spike; not needed.
+
+### Findings that change the roadmap
+
+1. **Part selection is needed from M1, not M3.** MuseScore exports contain the whole arrangement. One real song has 11 parts (voice, piano, guitar, strings, drums...) where the musician reads only the piano: 98 portrait pages instead of about 30.
+
+   Removing `<score-part>`/`<part>` elements before loading works well (`MusicXml.kt` in the spike). It needs no Verovio feature.
+2. **Use `densityDpi`, not `xdpi`, to size the staff.** The tablet's ROM reports a wrong `xdpi`, which gave a 2.5× too large default zoom.
+3. **The SMuFL text font is not available to MuPDF.** The note symbol in tempo marks (♩ = 96) is missing. This is to be solved by mapping the glyph to the music font, or by drawing tempo marks without it.
+4. **Some files have import problems.** One OSMD test file (The Entertainer) produces Verovio import errors (beams inside chords, unmatched ties) and shows some wrong beams. The real MuseScore exports looked correct.
+5. **Verovio's log is not returned on Android** (it goes to logcat). The import warnings must be read from logcat until this is wired.
+
+### Not measured yet
+
+- Re-layout time after a zoom or rotation (felt fast in manual use; not timed).
+- Memory use.
+- **MIDI playback** through `MediaPlayer`: the file is generated, but sound quality and timing were not verified.
+- Transposition correctness on real songs.
+
+### Verdict
+
+**Go**, with these choices:
+- Verovio built without Humdrum and with `MinSizeRel`;
+- one shared library if possible, to avoid `libc++_shared.so`;
+- MuPDF rasterisation of the adapted SVG;
+- part selection in M1.
+
+The main cost is the APK size: about +10 MB per ABI. That argues for publishing per-ABI APKs or an App Bundle.
+
+## 7. Open questions for the maintainer
 
 1. Is MusicXML support wanted in FOSScore, or should FOSScore stay a PDF reader?
 2. Is a native C++ dependency (Verovio, built with the NDK and SWIG) acceptable in the build? It adds SWIG and CMake to the contributor setup.
 3. What is the APK size budget? Should the project publish one APK per ABI (or an App Bundle) to keep downloads small?
 4. Should MusicXML scores live in the same library as PDFs (one list, a format icon), or in a separate section?
 
-## 7. Sources
+## 8. Sources
 
 - MusicXML 4.0: <https://github.com/w3c/musicxml>
 - Verovio, Java and Android: <https://book.verovio.org/installing-or-building-from-sources/java-and-android.html>

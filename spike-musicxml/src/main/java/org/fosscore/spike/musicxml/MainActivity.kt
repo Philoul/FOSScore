@@ -25,12 +25,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +60,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -100,6 +105,11 @@ private fun SpikeScreen(autoBench: Boolean) {
     var fileBytes by remember { mutableStateOf<ByteArray?>(null) }
     var openedBytes by remember { mutableStateOf<ByteArray?>(null) }
     var settingsFor by remember { mutableStateOf<String?>(null) }
+    var configs by remember { mutableStateOf<ScoreConfigs?>(null) }
+    var configMenuOpen by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var baseTempo by remember { mutableDoubleStateOf(120.0) }
+    var startJob by remember { mutableStateOf<Job?>(null) }
     var parts by remember { mutableStateOf(emptyList<Part>()) }
     var shownParts by remember { mutableStateOf(emptySet<String>()) }
     var lyrics by remember { mutableStateOf(LyricsPlacement.FILE) }
@@ -132,6 +142,8 @@ private fun SpikeScreen(autoBench: Boolean) {
     var version by remember { mutableStateOf("") }
 
     fun stopPlayback() {
+        startJob?.cancel()
+        startJob = null
         player?.release()
         player = null
         playback = null
@@ -141,8 +153,10 @@ private fun SpikeScreen(autoBench: Boolean) {
 
     /** Starts playing at [fromQuarters], or at the first note of the page on screen. */
     fun startPlayback(fromQuarters: Double? = null) {
+        // Only one start at a time: a second tap or a tempo change cancels the one being prepared,
+        // otherwise two players could end up playing over each other.
         stopPlayback()
-        scope.launch {
+        startJob = scope.launch {
             try {
                 status = "Preparing playback…"
                 val t0 = System.nanoTime()
@@ -150,6 +164,8 @@ private fun SpikeScreen(autoBench: Boolean) {
                 val onPage = geometry?.noteIds.orEmpty()
                 val start = fromQuarters
                     ?: pb.onsets.firstOrNull { o -> o.notes.any { it in onPage } }?.quarters ?: 0.0
+                ensureActive()
+                player?.release()
                 player = MediaPlayer().apply {
                     setDataSource(pb.midi.absolutePath)
                     prepare()
@@ -159,7 +175,7 @@ private fun SpikeScreen(autoBench: Boolean) {
                 }
                 playback = pb
                 playing = true
-                status = "Playing · prepared in ${(System.nanoTime() - t0) / 1_000_000} ms · tempo ${(tempo * 100).roundToInt()}%"
+                status = "Playing · prepared in ${(System.nanoTime() - t0) / 1_000_000} ms · ♩ = ${(baseTempo * tempo).roundToInt()}"
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -198,16 +214,39 @@ private fun SpikeScreen(autoBench: Boolean) {
         }
     }
 
-    // Save the settings with the score as soon as they change.
+    fun applySettings(saved: ScoreSettings) {
+        scale = saved.scale
+        semitones = saved.semitones
+        shownParts = saved.parts
+        lyrics = saved.lyrics
+        audible = saved.audible
+        programs = saved.programs
+        tempo = saved.tempo
+    }
+
+    // Save the settings into the current configuration of the score as soon as they change.
     LaunchedEffect(settingsFor, scale, semitones, shownParts, lyrics, audible, programs, tempo) {
         val file = settingsFor ?: return@LaunchedEffect
-        ScoreSettings.save(context, file, ScoreSettings(scale, semitones, shownParts, lyrics, audible, programs, tempo))
+        val updated = configs?.with(ScoreSettings(scale, semitones, shownParts, lyrics, audible, programs, tempo))
+            ?: return@LaunchedEffect
+        configs = updated
+        ScoreConfigs.save(context, file, updated)
+    }
+
+    /** Switches to another configuration (or a changed set of them) and saves it. */
+    fun useConfigs(next: ScoreConfigs) {
+        stopPlayback()
+        configs = next
+        applySettings(next.settings)
+        settingsFor?.let { ScoreConfigs.save(context, it, next) }
     }
 
     // A reloaded score has new note ids: playback must start again.
     LaunchedEffect(semitones, shownParts, lyrics, audible, programs) { if (player != null) stopPlayback() }
 
     LaunchedEffect(tempo) {
+        // Let repeated taps settle, then go on at the same place with the new tempo.
+        delay(400)
         val pb = playback
         val p = player
         if (pb != null && p != null) startPlayback(pb.quartersAt(p.currentPosition.toLong()))
@@ -227,17 +266,14 @@ private fun SpikeScreen(autoBench: Boolean) {
                 // left visible (MuseScore exports hidden staves too).
                 val visible = parts.filter { it.visible }.map { it.id }.toSet()
                 val initial = if (visible.isEmpty() || visible.size == parts.size) emptySet() else visible
-                val saved = ScoreSettings.load(context, fileName)
-                    ?: ScoreSettings(scale = defaultScale, parts = initial)
+                baseTempo = engine.baseTempo
+                val loaded = ScoreConfigs.load(context, fileName)
+                    ?: ScoreConfigs.new(ScoreSettings(scale = defaultScale, parts = initial))
+                val saved = loaded.settings
                 val changed = scale != saved.scale || semitones != saved.semitones ||
                     shownParts != saved.parts || lyrics != saved.lyrics
-                scale = saved.scale
-                semitones = saved.semitones
-                shownParts = saved.parts
-                lyrics = saved.lyrics
-                audible = saved.audible
-                programs = saved.programs
-                tempo = saved.tempo
+                configs = loaded
+                applySettings(saved)
                 settingsFor = fileName
                 if (changed) return@LaunchedEffect
             } else if (page == renderedPage) {
@@ -355,6 +391,22 @@ private fun SpikeScreen(autoBench: Boolean) {
 
     DisposableEffect(Unit) { onDispose { player?.release() } }
 
+    renaming?.let { initial ->
+        var name by remember(initial) { mutableStateOf(initial) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Configuration name") },
+            text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true) },
+            confirmButton = {
+                TextButton(onClick = {
+                    renaming = null
+                    configs?.let { useConfigs(it.rename(name)) }
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } }
+        )
+    }
+
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
@@ -372,8 +424,40 @@ private fun SpikeScreen(autoBench: Boolean) {
                         DropdownMenuItem(text = { Text(name) }, onClick = {
                             menuOpen = false
                             settingsFor = null
+                            configs = null
                             fileBytes = null
                             fileName = name
+                        })
+                    }
+                }
+            }
+            Box {
+                Button(onClick = { configMenuOpen = true }, enabled = configs != null) {
+                    Text("Config: ${configs?.current ?: "–"}")
+                }
+                DropdownMenu(expanded = configMenuOpen, onDismissRequest = { configMenuOpen = false }) {
+                    val c = configs
+                    if (c != null) {
+                        c.configs.keys.forEach { name ->
+                            DropdownMenuItem(
+                                text = { Text("${if (name == c.current) "●" else "○"} $name") },
+                                onClick = {
+                                    configMenuOpen = false
+                                    if (name != c.current) useConfigs(c.select(name))
+                                }
+                            )
+                        }
+                        DropdownMenuItem(text = { Text("New (copy of this one)") }, onClick = {
+                            configMenuOpen = false
+                            useConfigs(c.duplicate())
+                        })
+                        DropdownMenuItem(text = { Text("Rename…") }, onClick = {
+                            configMenuOpen = false
+                            renaming = c.current
+                        })
+                        DropdownMenuItem(text = { Text("Delete this one") }, enabled = c.configs.size > 1, onClick = {
+                            configMenuOpen = false
+                            useConfigs(c.delete())
                         })
                     }
                 }
@@ -438,9 +522,15 @@ private fun SpikeScreen(autoBench: Boolean) {
                 }
             }) { Text(if (playing) "⏸" else "♪ ▶") }
             Button(onClick = { stopPlayback() }, enabled = player != null) { Text("■") }
-            Button(onClick = { tempo = ((tempo - 0.1) * 10).roundToInt() / 10.0 }, enabled = tempo > 0.35) { Text("−") }
-            Text("tempo ${(tempo * 100).roundToInt()}%")
-            Button(onClick = { tempo = ((tempo + 0.1) * 10).roundToInt() / 10.0 }, enabled = tempo < 1.95) { Text("+") }
+            // Tempo in quarter notes per minute, 2 at a time; stored as a factor of the written tempo.
+            val bpm = (baseTempo * tempo).roundToInt()
+            fun setBpm(value: Int) {
+                tempo = (value / baseTempo).coerceIn(0.2, 4.0)
+            }
+            Button(onClick = { setBpm(bpm - 2) }, enabled = tempo > 0.21) { Text("−") }
+            Text(if (bpm == baseTempo.roundToInt()) "♩ = $bpm" else "♩ = $bpm (${baseTempo.roundToInt()})")
+            Button(onClick = { setBpm(bpm + 2) }, enabled = tempo < 3.99) { Text("+") }
+            Button(onClick = { tempo = 1.0 }, enabled = tempo != 1.0) { Text("↺") }
             Box {
                 Button(onClick = { soundMenuOpen = true }) {
                     Text(if (audible == null) "Sound: shown parts" else "Sound: ${audible!!.size}/${parts.size}")

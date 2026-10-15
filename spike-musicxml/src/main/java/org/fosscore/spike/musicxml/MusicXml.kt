@@ -66,6 +66,12 @@ class MusicXml private constructor(private val xml: ByteArray) {
         }
     }
 
+    /** The first tempo of the score in quarter notes per minute, if the file gives one. */
+    val tempo: Double? = doc.getElementsByTagName("sound").let { sounds ->
+        (0 until sounds.length).map { sounds.item(it) as Element }
+            .firstNotNullOfOrNull { it.getAttribute("tempo").toDoubleOrNull() }
+    }
+
     /** The score changed as [filter] asks, as XML text. */
     fun serialize(filter: ScoreFilter): String {
         // Android's DOM cannot clone a Document, and parsing it again costs more than a second on

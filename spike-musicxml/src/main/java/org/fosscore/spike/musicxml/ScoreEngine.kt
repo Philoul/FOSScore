@@ -92,6 +92,7 @@ class ScoreEngine(context: Context) {
     private val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
     private val cacheDir = context.cacheDir
     private val resourcePath = Verovio.prepareResources(context)
+    private val glyphs = SmuflGlyphs(resourcePath)
     private var tk: Verovio? = null
     private var audioTk: Verovio? = null
     private var score: MusicXml? = null
@@ -105,6 +106,10 @@ class ScoreEngine(context: Context) {
     var lastTimings = Timings()
         private set
 
+    /** The first tempo written in the file, in quarter notes per minute (Verovio's default is 120). */
+    var baseTempo = 120.0
+        private set
+
     suspend fun version(): String = run { toolkit().version }
 
     /** Parses the file; returns its parts. */
@@ -112,6 +117,7 @@ class ScoreEngine(context: Context) {
         val t0 = System.nanoTime()
         score = MusicXml.parse(data)
         prepMs = ms(t0)
+        baseTempo = score?.tempo ?: 120.0
         loaded = null
         audioLoaded = null
         laidOut = null
@@ -152,7 +158,7 @@ class ScoreEngine(context: Context) {
 
     suspend fun svg(page: Int): String = run {
         val t0 = System.nanoTime()
-        val svg = toolkit().renderSvg(page)
+        val svg = glyphs.inline(toolkit().renderSvg(page))
         lastTimings = lastTimings.copy(svgMs = ms(t0), svgKb = svg.length / 1024)
         svg
     }
@@ -236,6 +242,8 @@ class ScoreEngine(context: Context) {
             // No indentation: about half the size, so MuPDF parses it faster.
             put("svgFormatRaw", true)
             put("transpose", interval(spec.semitones))
+            // Verovio's default (1.2) let words touch in narrow measures of real songs.
+            put("lyricWordSpace", 2.5)
         }.toString()
 
         private val INTERVALS = listOf("P1", "m2", "M2", "m3", "M3", "P4", "A4", "P5", "m6", "M6", "m7", "M7", "P8")

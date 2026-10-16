@@ -1,6 +1,6 @@
 # MusicXML support in FOSScore: feasibility study
 
-*Status: proposal for discussion. Written with Claude Code at the request of a contributor (Philoul). Section 6 reports the results of the M0 prototype; no FOSScore code has been changed.*
+*Status: proposal for discussion. Written with Claude Code at the request of a contributor (Philoul). Section 6 reports the results of the M0 prototype, section 7 what was tried in it afterwards, section 8 how to integrate it cleanly. No FOSScore code has been changed. The user-facing features for both PDF and MusicXML are listed in [`feature-roadmap.md`](feature-roadmap.md).*
 
 ## 1. Summary
 
@@ -14,7 +14,7 @@ FOSScore only reads PDF. A PDF is a fixed picture of the music: the app can zoom
 - Do **not** write a MusicXML engine in FOSScore. Music engraving is a very large problem; it would make the app anything but light.
 - Keep **OpenSheetMusicDisplay (OSMD)** as the fallback only, if Verovio's rendering of real-world MusicXML proves not good enough.
 - Treat **Audiveris** (PDF → MusicXML recognition) as an **external desktop tool**, not as part of the app.
-- Build the MusicXML viewer as a **separate screen** that does not touch `PdfViewerScreen.kt`. This lets the work move forward without conflicting with the maintainer's ongoing viewer bug fixes or waiting for the viewer refactoring.
+- For the musician, a MusicXML score must **look and behave like a PDF** (same viewer, gestures, menus and page turning), with extra options only where MusicXML allows more. The MusicXML renderer should therefore plug into the **same viewer shell** as PDF, once the viewer is split (phase 5 of the architecture roadmap). See section 8 and [`feature-roadmap.md`](feature-roadmap.md).
 
 Everything works **100% offline**: Verovio, its fonts and the MIDI player are bundled in the APK.
 
@@ -78,9 +78,9 @@ Verovio produces SVG pages. Three ways to show them, to compare in the prototype
 
 - **Import:** accept `.musicxml`, `.xml` and compressed `.mxl` in the file picker (today `arrayOf("application/pdf")` in `MainActivity.kt`). The existing MD5 hashing in `SheetImporter` works unchanged.
 - **Database:** the `Sheet` table needs a `format` column (PDF or MusicXML). This is a schema change: it must be done with a **real Room migration**, not with the current destructive fallback (roadmap items D3/D4), or users lose their library.
-- **New screen:** a `MusicXmlViewerScreen` with its own small state holder, instead of adding branches to the 1 700-line `PdfViewerScreen.kt`. Shared pieces (page-turn keys, dim, keep-screen-on, invert) can be extracted when the viewer refactoring happens.
+- **Viewer:** a MusicXML page source plugged into the shared viewer shell (page turning, display modes, menus), not branches added to the 1 700-line `PdfViewerScreen.kt` and not a second copy of the viewer. This needs the viewer split first (section 8).
 - **Engine wrapper:** a `VerovioDoc` class next to `MuPdfDoc`, with the same rules (one thread, a mutex, explicit `close()`).
-- **Settings per score:** zoom level, transposition, visible parts, stored in the database next to the sheet.
+- **Settings per score:** several named configurations per score (music size, transposition, parts shown and heard, lyrics placement, tempo, instruments), stored in the database next to the sheet (section 8).
 
 ### 4.3 Annotations: the hard part
 
@@ -96,10 +96,10 @@ Each phase is a separate PR, usable on its own.
 | Phase | Goal | Content | Size |
 |---|---|---|---|
 | **M0** | Prototype (throwaway branch) | Build Verovio for all ABIs; render one MusicXML page on the x86 Android 7 tablet and on a recent device; measure APK size and layout time; test the three rendering paths of 4.1; test a corpus of 10–20 real MusicXML files exported from MuseScore. **Go / no-go decision.** | M |
-| **M1** | Static display | Import MusicXML/MXL; database migration with a `format` column; read-only viewer screen with pages laid out for the screen; **choice of the parts to show** (see 6); page turning (touch, keyboard, pedal). No annotations. | L |
-| **M2** | Adaptive layout | Relayout on rotation and zoom (zoom changes `scale`, not the bitmap); options for measures per line / systems per page; settings saved per score. | M |
+| **M1** | Static display | Import MusicXML/MXL; database migration with a `format` column and the new sheet details read from the file (title, composer, lyricist, key, time signature, tempo); display in the shared viewer shell with pages laid out for the screen; **choice of the parts to show** and the **hidden-note cleanup** (see 6); lyrics placement; page turning (touch, keyboard, pedal); **named configurations per score**. No annotations. | L |
+| **M2** | Adaptive layout | Relayout on rotation and music size (changes `scale`, not the bitmap); the display modes of PDF (two pages, half page); options for measures per line / systems per page. | M |
 | **M3** | Transposition | Transpose by interval or target key; concert / written pitch for transposing instruments. | S |
-| **M4** | Listening | `renderToMIDI()` → Android's built-in MIDI player (`MediaPlayer`, no extra dependency, basic sound quality); play / pause / tempo; highlight the current notes with the timemap; automatic page turn. Later, better sound with a small SoundFont synthesizer (for example TinySoundFont, MIT) if APK size allows. | M |
+| **M4** | Listening | `renderToMIDI()` → Android's built-in MIDI player (`MediaPlayer`, no extra dependency, basic sound quality); play / pause / stop; tempo in BPM; parts heard chosen separately from parts shown; instrument per part; cursor on the current notes with the timemap; automatic page turn, with the next page rendered ahead. The playback bar is shared with PDF scores that have a MIDI file attached. Later, better sound with a small SoundFont synthesizer (for example TinySoundFont, MIT) if APK size allows. | M |
 | **M5** | Annotations on MusicXML | Annotations anchored to measures or notes (see 4.3). | L |
 | **M6** | PDF → MusicXML | Document a desktop workflow: convert the PDF with **Audiveris** (AGPL, Java), fix recognition errors in its editor or in MuseScore, then import the MusicXML into FOSScore, linked to the original PDF. On-device recognition is not realistic today. | S (docs) |
 
@@ -174,8 +174,9 @@ All 23 files opened. The 4 real songs gave 6 to 38 landscape pages.
 
 ### Not measured yet
 
-- Memory use.
+- Memory use (two toolkits are loaded when the parts heard differ from the parts shown).
 - Transposition correctness, checked note by note.
+- A recent device (all measurements are on the 2013 tablet).
 
 ### Re-layout after zoom, rotation or part change
 
@@ -202,14 +203,57 @@ On the tablet, with their own songs: rendering clean after the hidden-note fix, 
 
 The main cost is the APK size: about +10 MB per ABI. That argues for publishing per-ABI APKs or an App Bundle.
 
-## 7. Open questions for the maintainer
+## 7. Prototype log after M0 (throwaway branch)
+
+After the go decision, the prototype (local branch `spike/m0-musicxml`, application ID `org.fosscore.spike.musicxml`, installed next to FOSScore) was used to try the features a musician asked for, on their own MuseScore songs. Each round was tested on the tablet by that musician. The code is not meant to be merged: it is one screen, settings are kept in `SharedPreferences` and there are no tests. What is worth keeping is listed in section 8.
+
+| Round | Tried | Result and lessons |
+|---|---|---|
+| 1 | Hidden-note cleanup, parts hidden by the author unselected at opening, faster re-layout | See section 6. "Really usable." |
+| 2 | **Playback cursor and automatic page turn**: the timemap gives, for each onset, its time and the notes that start; a translucent bar and dots mark them on the bitmap, and the page turns when the notes are no longer on it. The next page is rendered ahead while playing. | Works and was the most appreciated feature. Score positions in quarter notes (`qstamp`) link audio and display, so the sound can come from other parts than the ones shown. |
+| 2 | **Tempo factor** (`midiTempoAdjustment`) | Verovio applies it to both the MIDI and the timemap, so the cursor stays in sync. |
+| 2 | **Parts heard separately from parts shown**, **instrument per part** (`<midi-program>` rewritten before loading) | A second toolkit loads the parts to hear. Musicians use it to play their part with the others as accompaniment, which is why several configurations per score are needed. Drums (MIDI channel 10) keep their kit. |
+| 2 | **Lyrics placement**: as in file, above, below the staff, under the system | Verovio's MusicXML import ignored `<lyric placement>`: one-line patch. "Under the system" moves the hidden vocal voice to the lowest staff of its part (its notes are invisible, so only the lyrics move). |
+| 2 | **Tempo kept when the voice part is hidden** | MuseScore writes the tempo mark in the first part only, often the hidden voice: without it, playback fell back to 120. The tempo directions are copied into the first part shown, at the same measure and beat. |
+| 2 | **Settings saved per score** | Restored when the file is opened again. |
+| 3 | **Several named configurations per score** (switch, copy, rename, delete) | Asked for by the musician: one to practise alone, one to rehearse with the band. |
+| 3 | **Tempo in BPM** (♩ = 96, steps of 2, reset) instead of a percentage | A percentage was not intuitive. |
+| 3 | **Tempo note symbol** (♩) | Verovio writes it as text in the SMuFL font, which MuPDF does not have. It is now drawn as a path taken from Verovio's font data (`SmuflGlyphs.kt`). |
+| 3 | **Wider lyrics** (`lyricWordSpace` 2.5 instead of 1.2) | Words touched in narrow measures. |
+| 3 | **Bug: two players at once** after quick tempo and part changes, impossible to stop | A playback start being prepared is now cancelled by the next one, and tempo changes are debounced. Keep this in mind for the real playback controller. |
+| 4 | **Title size** | Verovio's import ignored the `<credit-words>` font size: second patch, the size relative to the file's default word font. |
+
+**Verovio patches** (`spike-musicxml/verovio-patches/musicxml-import.patch` on the spike branch): lyric placement and credit font size, both in `iomusxml.cpp`. They should be proposed to the Verovio project rather than kept as a fork.
+
+## 8. Integration plan
+
+The prototype stays a test bench for the user interface. The integration is **new, clean code**, in small pull requests that the maintainer can review one by one, starting only once the maintainer agrees (question 1).
+
+**Prerequisites from the architecture roadmap:**
+- phase 2 (exported schema, migration tests, no destructive fallback): MusicXML adds columns and a table;
+- phase 5 (viewer split into a shell, a page flow and a `ViewerViewModel`): the MusicXML page source plugs into that shell, so both formats share page turning, display modes and menus.
+
+**Code layout:**
+- a Gradle module `musicxml` holding Verovio (Git submodule at a pinned release, built without Humdrum, `MinSizeRel`), the JNI bridge, the engine (one thread, explicit `close()`, like `MuPdfDoc`) and the MusicXML preparation (hidden notes, parts, tempo copy, lyrics, instruments). The app sees a small interface: load, lay out, render a page, play;
+- a **page source** interface in the viewer, implemented by MuPDF for PDF and by the `musicxml` module for MusicXML;
+- a **playback controller** and a **metronome** that do not depend on the format (see `feature-roadmap.md`, section 4).
+
+**Data:**
+- `sheets`: a `format` column and the extra details read from MusicXML files;
+- a new table of **named configurations per sheet** (name, last used, and the settings of `feature-roadmap.md` section 3.4).
+
+**What to reuse from the prototype** (copied, reviewed and tested, not merged): the JNI bridge, `MusicXml.kt` (DOM preparation with undo), `SmuflGlyphs.kt`, `PageGeometry.kt` (note and system positions for the cursor), the `Playback` time maps, the MuPDF SVG fixes in `Rasterizers.forMuPdf()`, and the measurements of section 6.
+
+**Distribution:** about +10 MB per ABI, so per-ABI APKs or an App Bundle (question 3). Verovio is LGPL-3.0, compatible with FOSScore's AGPL-3.0.
+
+## 9. Open questions for the maintainer
 
 1. Is MusicXML support wanted in FOSScore, or should FOSScore stay a PDF reader?
-2. Is a native C++ dependency (Verovio, built with the NDK and SWIG) acceptable in the build? It adds SWIG and CMake to the contributor setup.
+2. Is a native C++ dependency (Verovio, built with the NDK and CMake) acceptable in the build? The prototype showed SWIG is not needed, but the first build takes about 30 minutes.
 3. What is the APK size budget? Should the project publish one APK per ABI (or an App Bundle) to keep downloads small?
 4. Should MusicXML scores live in the same library as PDFs (one list, a format icon), or in a separate section?
 
-## 8. Sources
+## 10. Sources
 
 - MusicXML 4.0: <https://github.com/w3c/musicxml>
 - Verovio, Java and Android: <https://book.verovio.org/installing-or-building-from-sources/java-and-android.html>

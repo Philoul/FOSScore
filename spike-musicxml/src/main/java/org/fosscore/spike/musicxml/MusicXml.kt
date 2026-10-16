@@ -72,6 +72,30 @@ class MusicXml private constructor(private val xml: ByteArray) {
             .firstNotNullOfOrNull { it.getAttribute("tempo").toDoubleOrNull() }
     }
 
+    /** True when most lyrics of the file ask to be drawn above the staff. */
+    private val lyricsAboveInFile: Boolean = doc.getElementsByTagName("lyric").let { lyrics ->
+        val places = (0 until lyrics.length).map { (lyrics.item(it) as Element).getAttribute("placement") }
+        places.count { it == "above" } > places.size / 2
+    }
+
+    /** Whether lyrics must be drawn above the staff for [placement]. */
+    fun lyricsAbove(placement: LyricsPlacement): Boolean = when (placement) {
+        LyricsPlacement.FILE -> lyricsAboveInFile
+        LyricsPlacement.ABOVE -> true
+        LyricsPlacement.BELOW, LyricsPlacement.BOTTOM -> false
+    }
+
+    /**
+     * Size of each first-page credit (title, composer...), in percent of the file's default word
+     * font, in the order Verovio turns them into page-header lines. Null when the file gives none.
+     */
+    val creditSizes: List<Int?> = doc.documentElement.let { root ->
+        val wordSize = root.child("defaults")?.child("word-font")?.getAttribute("font-size")?.toFloatOrNull()
+            ?.takeIf { it > 0 } ?: 10f
+        root.children("credit").filter { it.getAttribute("page") == "1" }.flatMap { it.children("credit-words") }
+            .map { words -> words.getAttribute("font-size").toFloatOrNull()?.let { Math.round(it / wordSize * 100) } }
+    }
+
     /** The score changed as [filter] asks, as XML text. */
     fun serialize(filter: ScoreFilter): String {
         // Android's DOM cannot clone a Document, and parsing it again costs more than a second on
@@ -120,18 +144,9 @@ class MusicXml private constructor(private val xml: ByteArray) {
         undo += { element.textContent = old }
     }
 
-    private fun setAttribute(element: Element, name: String, value: String, undo: MutableList<() -> Unit>) {
-        val had = element.hasAttribute(name)
-        val old = element.getAttribute(name)
-        element.setAttribute(name, value)
-        undo += { if (had) element.setAttribute(name, old) else element.removeAttribute(name) }
-    }
-
+    // Above or below the staff is set later in the MEI (MeiFixes): Verovio's MusicXML import
+    // ignores <lyric placement>. Only "under the system" needs a change in the MusicXML.
     private fun placeLyrics(placement: LyricsPlacement, undo: MutableList<() -> Unit>) {
-        if (placement == LyricsPlacement.FILE) return
-        val place = if (placement == LyricsPlacement.ABOVE) "above" else "below"
-        val lyrics = doc.getElementsByTagName("lyric")
-        for (i in 0 until lyrics.length) setAttribute(lyrics.item(i) as Element, "placement", place, undo)
         if (placement != LyricsPlacement.BOTTOM) return
         // Move the hidden voices that carry lyrics to the lowest staff of their part. Their notes
         // are invisible, so only the lyrics move; the visible notes stay where they are.

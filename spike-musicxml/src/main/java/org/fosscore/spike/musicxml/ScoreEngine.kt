@@ -140,7 +140,19 @@ class ScoreEngine(context: Context) {
             val xml = doc.serialize(ScoreFilter(spec.parts, spec.lyrics))
             serializeMs = ms(t0)
             val t1 = System.nanoTime()
-            if (!t.loadXml(xml)) return@run false
+            val above = doc.lyricsAbove(spec.lyrics)
+            if (MeiFixes.needed(above, doc.creditSizes)) {
+                // Load once only to get the MEI (one endless system is the cheapest layout), fix
+                // what the MusicXML import dropped, then load the MEI for real. The MEI is
+                // already transposed, so it must not be transposed again.
+                t.setOptions("""{"breaks": "none"}""")
+                if (!t.loadXml(xml)) return@run false
+                val mei = MeiFixes.apply(t.mei(), above, doc.creditSizes)
+                t.setOptions(JSONObject(optionsFor(spec)).put("transpose", "").toString())
+                if (!t.loadXml(mei)) return@run false
+            } else if (!t.loadXml(xml)) {
+                return@run false
+            }
             loadMs = ms(t1)
             loaded = wanted
         } else if (laidOut != spec) {

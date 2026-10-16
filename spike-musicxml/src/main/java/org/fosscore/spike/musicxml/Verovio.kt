@@ -21,7 +21,7 @@ class Verovio(resourcePath: String) : AutoCloseable {
     fun load(bytes: ByteArray): Boolean =
         if (isZip(bytes)) nativeLoadZip(handle, bytes) else nativeLoadData(handle, decodeXml(bytes))
 
-    /** Loads MusicXML text (already unzipped and filtered). */
+    /** Loads MusicXML or MEI text (Verovio detects which); MusicXML already unzipped and filtered. */
     fun loadXml(xml: String): Boolean = nativeLoadData(handle, xml)
 
     fun redoLayout(json: String = "") = nativeRedoLayout(handle, json)
@@ -30,6 +30,9 @@ class Verovio(resourcePath: String) : AutoCloseable {
     /** Base64-encoded standard MIDI file. */
     fun renderMidi(): String = nativeRenderMidi(handle)
     fun renderTimemap(): String = nativeRenderTimemap(handle)
+
+    /** The loaded score as MEI, Verovio's own format (with any transposition already applied). */
+    fun mei(): String = nativeGetMei(handle)
 
     /** The page (1-based) that holds the element with this id, or 0. */
     fun pageWithElement(id: String): Int = nativePageWithElement(handle, id)
@@ -94,6 +97,7 @@ class Verovio(resourcePath: String) : AutoCloseable {
         @JvmStatic private external fun nativeRenderSvg(h: Long, page: Int): String
         @JvmStatic private external fun nativeRenderMidi(h: Long): String
         @JvmStatic private external fun nativeRenderTimemap(h: Long): String
+        @JvmStatic private external fun nativeGetMei(h: Long): String
         @JvmStatic private external fun nativePageWithElement(h: Long, id: String): Int
         @JvmStatic private external fun nativeLog(h: Long): String
     }

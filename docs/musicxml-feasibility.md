@@ -213,7 +213,7 @@ After the go decision, the prototype (local branch `spike/m0-musicxml`, applicat
 | 2 | **Playback cursor and automatic page turn**: the timemap gives, for each onset, its time and the notes that start; a translucent bar and dots mark them on the bitmap, and the page turns when the notes are no longer on it. The next page is rendered ahead while playing. | Works and was the most appreciated feature. Score positions in quarter notes (`qstamp`) link audio and display, so the sound can come from other parts than the ones shown. |
 | 2 | **Tempo factor** (`midiTempoAdjustment`) | Verovio applies it to both the MIDI and the timemap, so the cursor stays in sync. |
 | 2 | **Parts heard separately from parts shown**, **instrument per part** (`<midi-program>` rewritten before loading) | A second toolkit loads the parts to hear. Musicians use it to play their part with the others as accompaniment, which is why several configurations per score are needed. Drums (MIDI channel 10) keep their kit. |
-| 2 | **Lyrics placement**: as in file, above, below the staff, under the system | Verovio's MusicXML import ignored `<lyric placement>`: one-line patch. "Under the system" moves the hidden vocal voice to the lowest staff of its part (its notes are invisible, so only the lyrics move). |
+| 2 | **Lyrics placement**: as in file, above, below the staff, under the system | Verovio's MusicXML import ignores `<lyric placement>`: first solved with a patch to Verovio, then without one (round 5). "Under the system" moves the hidden vocal voice to the lowest staff of its part (its notes are invisible, so only the lyrics move). |
 | 2 | **Tempo kept when the voice part is hidden** | MuseScore writes the tempo mark in the first part only, often the hidden voice: without it, playback fell back to 120. The tempo directions are copied into the first part shown, at the same measure and beat. |
 | 2 | **Settings saved per score** | Restored when the file is opened again. |
 | 3 | **Several named configurations per score** (switch, copy, rename, delete) | Asked for by the musician: one to practise alone, one to rehearse with the band. |
@@ -221,9 +221,10 @@ After the go decision, the prototype (local branch `spike/m0-musicxml`, applicat
 | 3 | **Tempo note symbol** (♩) | Verovio writes it as text in the SMuFL font, which MuPDF does not have. It is now drawn as a path taken from Verovio's font data (`SmuflGlyphs.kt`). |
 | 3 | **Wider lyrics** (`lyricWordSpace` 2.5 instead of 1.2) | Words touched in narrow measures. |
 | 3 | **Bug: two players at once** after quick tempo and part changes, impossible to stop | A playback start being prepared is now cancelled by the next one, and tempo changes are debounced. Keep this in mind for the real playback controller. |
-| 4 | **Title size** | Verovio's import ignored the `<credit-words>` font size: second patch, the size relative to the file's default word font. |
+| 4 | **Title size** | Verovio's import ignores the `<credit-words>` font size: first solved with a second patch, then without one (round 5). |
+| 5 | **No patch to Verovio** | Patching a third-party library means redoing the change at every update. Instead, the score is loaded once with the cheapest layout (`breaks: none`), exported as **MEI** (Verovio's own format, `getMEI()`), given `verse@place="above"` and `rend@fontsize` on the page-header lines, then loaded again without transposition (the MEI is already transposed). MIDI output is byte-identical. Cost: about 15% more load time on a large score (`MeiFixes.kt`). |
 
-**Verovio patches** (`spike-musicxml/verovio-patches/musicxml-import.patch` on the spike branch): lyric placement and credit font size, both in `iomusxml.cpp`. They should be proposed to the Verovio project rather than kept as a fork.
+**Verovio is used as released, without any patch.** What its MusicXML import drops is put back in the MEI it exports. In the real integration, the MusicXML file would be converted to MEI once at import and the MEI stored, so the round trip costs nothing when a score is opened. The two import gaps (lyric placement, credit font size) could also be proposed as fixes to the Verovio project, which would make these MEI corrections unnecessary.
 
 ## 8. Integration plan
 

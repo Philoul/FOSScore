@@ -54,7 +54,7 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 | Zoom | Bitmap zoom | **Music size** (re-layout, the music reflows) + the same bitmap zoom | Spike | In the display menu next to the modes. MusicXML zoom is a setting saved per configuration. |
 | Rotation | Same page, new fit | Re-layout for the new shape | Today (PDF) · Spike | |
 | Parts shown | — | Choose the parts to display; default = staves the author left visible | Spike | MuseScore exports the whole arrangement. |
-| Lyrics placement | — | As in file / above / below the staff / under the system | Spike | Needs a Verovio patch (section 7 of the study). |
+| Lyrics placement | — | As in file / above / below the staff / under the system | Spike | Done in the MEI, without patching Verovio (section 7 of the study). |
 | Transposition | — | ♭ / ♯ by semitone, later by target key | Spike | |
 | Dark / negative / dim | Yes | Same | Today (PDF) | MusicXML can also draw in colours directly (later). |
 | Annotations | Yes | Anchored to measures or notes | Today (PDF) · To do (MusicXML, milestone M5) | Positions on a reflowed page have no stable meaning. |

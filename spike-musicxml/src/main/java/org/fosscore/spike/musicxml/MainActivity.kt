@@ -6,6 +6,7 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import android.webkit.WebView
 import java.io.File
 import android.webkit.WebViewClient
@@ -16,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +54,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
@@ -63,6 +66,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -70,12 +75,23 @@ import kotlinx.coroutines.withContext
 private const val TAG = "M0"
 
 class MainActivity : ComponentActivity() {
+    private val pageTurns = MutableSharedFlow<Int>(extraBufferCapacity = 8)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val autoBench = intent.getBooleanExtra("bench", false)
         setContent {
-            MaterialTheme { SpikeScreen(autoBench) }
+            MaterialTheme { SpikeScreen(autoBench, pageTurns) }
         }
+    }
+
+    // Page-turn keys are taken before the focused button sees them (Enter and Space would
+    // otherwise press it). Dialogs have their own window, so typing a name still works.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val turn = pageTurnFor(event.keyCode, event.isShiftPressed)
+        if (turn == 0) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) pageTurns.tryEmit(turn)
+        return true
     }
 }
 
@@ -84,7 +100,7 @@ private class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun SpikeScreen(autoBench: Boolean) {
+private fun SpikeScreen(autoBench: Boolean, pageTurns: SharedFlow<Int>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val engine = remember { ScoreEngine(context.applicationContext) }
@@ -110,6 +126,10 @@ private fun SpikeScreen(autoBench: Boolean) {
     var renaming by remember { mutableStateOf<String?>(null) }
     var baseTempo by remember { mutableDoubleStateOf(120.0) }
     var startJob by remember { mutableStateOf<Job?>(null) }
+    var menusVisible by remember { mutableStateOf(true) }
+    // True after a manual page turn while playing: the music no longer turns pages until it
+    // reaches the page on screen again.
+    var followPaused by remember { mutableStateOf(false) }
     var parts by remember { mutableStateOf(emptyList<Part>()) }
     var shownParts by remember { mutableStateOf(emptySet<String>()) }
     var lyrics by remember { mutableStateOf(LyricsPlacement.FILE) }
@@ -175,6 +195,7 @@ private fun SpikeScreen(autoBench: Boolean) {
                 }
                 playback = pb
                 playing = true
+                followPaused = false
                 status = "Playing · prepared in ${(System.nanoTime() - t0) / 1_000_000} ms · ♩ = ${(baseTempo * tempo).roundToInt()}"
             } catch (e: CancellationException) {
                 throw e
@@ -352,6 +373,15 @@ private fun SpikeScreen(autoBench: Boolean) {
         }
     }
 
+    fun turnPage(delta: Int) {
+        val target = (page + delta).coerceIn(1, pageCount.coerceAtLeast(1))
+        if (target == page) return
+        page = target
+        if (player != null) followPaused = true
+    }
+
+    LaunchedEffect(Unit) { pageTurns.collect { turnPage(it) } }
+
     // Follow the music: move the cursor to the notes being played and turn the page when needed.
     LaunchedEffect(playing, playback) {
         val pb = playback ?: return@LaunchedEffect
@@ -367,7 +397,8 @@ private fun SpikeScreen(autoBench: Boolean) {
                 // Onsets of hidden notes only (a vocal line kept for its lyrics) keep the last cursor.
                 if (notes.any { geometry?.head(it) != null }) cursorNotes = notes
                 val shown = geometry?.noteIds.orEmpty()
-                if (renderedPage == page && notes.none { it in shown }) {
+                if (followPaused && renderedPage == page && notes.any { it in shown }) followPaused = false
+                if (!followPaused && renderedPage == page && notes.none { it in shown }) {
                     val target = engine.pageOf(notes.first())
                     if (target > 0 && target != page && target != asked) {
                         asked = target
@@ -407,204 +438,20 @@ private fun SpikeScreen(autoBench: Boolean) {
         )
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box {
-                Button(onClick = { menuOpen = true }) { Text(fileName.take(24)) }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("Open a file…") }, onClick = {
-                        menuOpen = false
-                        picker.launch(arrayOf("*/*"))
-                    })
-                    samples.forEach { name ->
-                        DropdownMenuItem(text = { Text(name) }, onClick = {
-                            menuOpen = false
-                            settingsFor = null
-                            configs = null
-                            fileBytes = null
-                            fileName = name
-                        })
-                    }
-                }
-            }
-            Box {
-                Button(onClick = { configMenuOpen = true }, enabled = configs != null) {
-                    Text("Config: ${configs?.current ?: "–"}")
-                }
-                DropdownMenu(expanded = configMenuOpen, onDismissRequest = { configMenuOpen = false }) {
-                    val c = configs
-                    if (c != null) {
-                        c.configs.keys.forEach { name ->
-                            DropdownMenuItem(
-                                text = { Text("${if (name == c.current) "●" else "○"} $name") },
-                                onClick = {
-                                    configMenuOpen = false
-                                    if (name != c.current) useConfigs(c.select(name))
-                                }
-                            )
-                        }
-                        DropdownMenuItem(text = { Text("New (copy of this one)") }, onClick = {
-                            configMenuOpen = false
-                            useConfigs(c.duplicate())
-                        })
-                        DropdownMenuItem(text = { Text("Rename…") }, onClick = {
-                            configMenuOpen = false
-                            renaming = c.current
-                        })
-                        DropdownMenuItem(text = { Text("Delete this one") }, enabled = c.configs.size > 1, onClick = {
-                            configMenuOpen = false
-                            useConfigs(c.delete())
-                        })
-                    }
-                }
-            }
-            Box {
-                Button(onClick = { partsMenuOpen = true }, enabled = parts.size > 1) {
-                    Text(if (shownParts.isEmpty()) "Parts: all" else "Parts: ${shownParts.size}/${parts.size}")
-                }
-                DropdownMenu(expanded = partsMenuOpen, onDismissRequest = { partsMenuOpen = false }) {
-                    DropdownMenuItem(text = { Text("All parts") }, onClick = { shownParts = emptySet() })
-                    parts.forEach { part ->
-                        val shown = shownParts.isEmpty() || part.id in shownParts
-                        DropdownMenuItem(
-                            text = { Text("${if (shown) "☑" else "☐"} ${part.name.ifBlank { part.id }}") },
-                            onClick = {
-                                val current = if (shownParts.isEmpty()) parts.map { it.id }.toSet() else shownParts
-                                val next = if (part.id in current) current - part.id else current + part.id
-                                // Keep at least one part; all selected means "no filter".
-                                if (next.isNotEmpty()) {
-                                    shownParts = if (next.size == parts.size) emptySet() else next
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-            Box {
-                Button(onClick = { lyricsMenuOpen = true }) { Text("Lyrics: ${lyrics.label}") }
-                DropdownMenu(expanded = lyricsMenuOpen, onDismissRequest = { lyricsMenuOpen = false }) {
-                    LyricsPlacement.entries.forEach { placement ->
-                        DropdownMenuItem(
-                            text = { Text("${if (placement == lyrics) "●" else "○"} ${placement.label}") },
-                            onClick = {
-                                lyricsMenuOpen = false
-                                lyrics = placement
-                            }
-                        )
-                    }
-                }
-            }
-            Button(onClick = { scale = (scale - 5).coerceAtLeast(10) }) { Text("−") }
-            Text("zoom $scale")
-            Button(onClick = { scale = (scale + 5).coerceAtMost(300) }) { Text("+") }
-            Button(onClick = { semitones = (semitones - 1).coerceAtLeast(-12) }) { Text("♭") }
-            Text("transp ${if (semitones > 0) "+" else ""}$semitones")
-            Button(onClick = { semitones = (semitones + 1).coerceAtMost(12) }) { Text("♯") }
-            Button(onClick = { page = (page - 1).coerceAtLeast(1) }, enabled = page > 1) { Text("◀") }
-            Text("$page/$pageCount")
-            Button(onClick = { page = (page + 1).coerceAtMost(pageCount) }, enabled = page < pageCount) { Text("▶") }
-        }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(onClick = {
-                val p = player
-                when {
-                    p == null -> startPlayback()
-                    playing -> { p.pause(); playing = false }
-                    else -> { p.start(); playing = true }
-                }
-            }) { Text(if (playing) "⏸" else "♪ ▶") }
-            Button(onClick = { stopPlayback() }, enabled = player != null) { Text("■") }
-            // Tempo in quarter notes per minute, 2 at a time; stored as a factor of the written tempo.
-            val bpm = (baseTempo * tempo).roundToInt()
-            fun setBpm(value: Int) {
-                tempo = (value / baseTempo).coerceIn(0.2, 4.0)
-            }
-            Button(onClick = { setBpm(bpm - 2) }, enabled = tempo > 0.21) { Text("−") }
-            Text(if (bpm == baseTempo.roundToInt()) "♩ = $bpm" else "♩ = $bpm (${baseTempo.roundToInt()})")
-            Button(onClick = { setBpm(bpm + 2) }, enabled = tempo < 3.99) { Text("+") }
-            Button(onClick = { tempo = 1.0 }, enabled = tempo != 1.0) { Text("↺") }
-            Box {
-                Button(onClick = { soundMenuOpen = true }) {
-                    Text(if (audible == null) "Sound: shown parts" else "Sound: ${audible!!.size}/${parts.size}")
-                }
-                DropdownMenu(expanded = soundMenuOpen, onDismissRequest = { soundMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("${if (audible == null) "●" else "○"} Hear the parts shown") },
-                        onClick = { audible = null }
-                    )
-                    parts.forEach { part ->
-                        val heard = (audible ?: shownParts.ifEmpty { parts.map { it.id }.toSet() }).contains(part.id)
-                        DropdownMenuItem(
-                            text = { Text("${if (heard) "🔊" else "🔇"} ${part.name.ifBlank { part.id }}") },
-                            onClick = {
-                                val current = audible ?: shownParts.ifEmpty { parts.map { it.id }.toSet() }
-                                val next = if (part.id in current) current - part.id else current + part.id
-                                if (next.isNotEmpty()) audible = next
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    "      ↳ " + if (part.drums) "drums" else programName(programs[part.id] ?: part.program),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            },
-                            enabled = !part.drums,
-                            onClick = { instrumentFor = part }
-                        )
-                    }
-                }
-                DropdownMenu(expanded = instrumentFor != null, onDismissRequest = { instrumentFor = null }) {
-                    val part = instrumentFor
-                    if (part != null) {
-                        DropdownMenuItem(text = { Text("As in file (${programName(part.program)})") }, onClick = {
-                            programs = programs - part.id
-                            instrumentFor = null
-                        })
-                        GM_PROGRAMS.forEach { (program, name) ->
-                            DropdownMenuItem(text = { Text(name) }, onClick = {
-                                programs = programs + (part.id to program)
-                                instrumentFor = null
-                            })
-                        }
-                    }
-                }
-            }
-            Renderer.entries.forEach { r ->
-                Button(
-                    onClick = { renderer = r },
-                    colors = if (renderer == r) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
-                ) { Text(r.name.take(4)) }
-            }
-            Button(onClick = {
-                if (benchRunning || viewport.width == 0) return@Button
-                stopPlayback()
-                scope.launch {
-                    benchRunning = true
-                    Benchmark(context, engine).run(viewport.width, viewport.height, scale) { status = it }
-                    benchRunning = false
-                    openedBytes = null
-                    cacheKey = null
-                }
-            }) { Text("Bench") }
-        }
-        Text(
-            "Verovio $version · $status",
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            minLines = 2,
-            modifier = Modifier.padding(horizontal = 8.dp)
-        )
+    Box(Modifier.fillMaxSize().background(Color.White)) {
+        // The score fills the screen and the menus float over it, so hiding them does not change
+        // the viewport (which would lay the score out again). Tap zones as in FOSScore's PDF
+        // viewer: left third previous page, right third next page, centre shows or hides the menus.
         Box(
-            Modifier.fillMaxWidth().weight(1f).background(Color.White).onSizeChanged { viewport = it }
+            Modifier.fillMaxSize().onSizeChanged { viewport = it }.pointerInput(Unit) {
+                detectTapGestures { pos ->
+                    when {
+                        pos.x > size.width * 2f / 3f -> turnPage(1)
+                        pos.x < size.width / 3f -> turnPage(-1)
+                        else -> menusVisible = !menusVisible
+                    }
+                }
+            }
         ) {
             if (renderer == Renderer.WEBVIEW && svgForWeb.isNotEmpty()) {
                 val html = remember(svgForWeb) {
@@ -656,6 +503,205 @@ private fun SpikeScreen(autoBench: Boolean) {
                         }
                     }
                 }
+            }
+        }
+        if (menusVisible) {
+            Column(Modifier.fillMaxWidth().background(Color(0xF2FFFFFF))) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    Button(onClick = { menuOpen = true }) { Text(fileName.take(24)) }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Open a file…") }, onClick = {
+                            menuOpen = false
+                            picker.launch(arrayOf("*/*"))
+                        })
+                        samples.forEach { name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                menuOpen = false
+                                settingsFor = null
+                                configs = null
+                                fileBytes = null
+                                fileName = name
+                            })
+                        }
+                    }
+                }
+                Box {
+                    Button(onClick = { configMenuOpen = true }, enabled = configs != null) {
+                        Text("Config: ${configs?.current ?: "–"}")
+                    }
+                    DropdownMenu(expanded = configMenuOpen, onDismissRequest = { configMenuOpen = false }) {
+                        val c = configs
+                        if (c != null) {
+                            c.configs.keys.forEach { name ->
+                                DropdownMenuItem(
+                                    text = { Text("${if (name == c.current) "●" else "○"} $name") },
+                                    onClick = {
+                                        configMenuOpen = false
+                                        if (name != c.current) useConfigs(c.select(name))
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(text = { Text("New (copy of this one)") }, onClick = {
+                                configMenuOpen = false
+                                useConfigs(c.duplicate())
+                            })
+                            DropdownMenuItem(text = { Text("Rename…") }, onClick = {
+                                configMenuOpen = false
+                                renaming = c.current
+                            })
+                            DropdownMenuItem(text = { Text("Delete this one") }, enabled = c.configs.size > 1, onClick = {
+                                configMenuOpen = false
+                                useConfigs(c.delete())
+                            })
+                        }
+                    }
+                }
+                Box {
+                    Button(onClick = { partsMenuOpen = true }, enabled = parts.size > 1) {
+                        Text(if (shownParts.isEmpty()) "Parts: all" else "Parts: ${shownParts.size}/${parts.size}")
+                    }
+                    DropdownMenu(expanded = partsMenuOpen, onDismissRequest = { partsMenuOpen = false }) {
+                        DropdownMenuItem(text = { Text("All parts") }, onClick = { shownParts = emptySet() })
+                        parts.forEach { part ->
+                            val shown = shownParts.isEmpty() || part.id in shownParts
+                            DropdownMenuItem(
+                                text = { Text("${if (shown) "☑" else "☐"} ${part.name.ifBlank { part.id }}") },
+                                onClick = {
+                                    val current = if (shownParts.isEmpty()) parts.map { it.id }.toSet() else shownParts
+                                    val next = if (part.id in current) current - part.id else current + part.id
+                                    // Keep at least one part; all selected means "no filter".
+                                    if (next.isNotEmpty()) {
+                                        shownParts = if (next.size == parts.size) emptySet() else next
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                Box {
+                    Button(onClick = { lyricsMenuOpen = true }) { Text("Lyrics: ${lyrics.label}") }
+                    DropdownMenu(expanded = lyricsMenuOpen, onDismissRequest = { lyricsMenuOpen = false }) {
+                        LyricsPlacement.entries.forEach { placement ->
+                            DropdownMenuItem(
+                                text = { Text("${if (placement == lyrics) "●" else "○"} ${placement.label}") },
+                                onClick = {
+                                    lyricsMenuOpen = false
+                                    lyrics = placement
+                                }
+                            )
+                        }
+                    }
+                }
+                Button(onClick = { scale = (scale - 5).coerceAtLeast(10) }) { Text("−") }
+                Text("zoom $scale")
+                Button(onClick = { scale = (scale + 5).coerceAtMost(300) }) { Text("+") }
+                Button(onClick = { semitones = (semitones - 1).coerceAtLeast(-12) }) { Text("♭") }
+                Text("transp ${if (semitones > 0) "+" else ""}$semitones")
+                Button(onClick = { semitones = (semitones + 1).coerceAtMost(12) }) { Text("♯") }
+                Button(onClick = { page = (page - 1).coerceAtLeast(1) }, enabled = page > 1) { Text("◀") }
+                Text("$page/$pageCount")
+                Button(onClick = { page = (page + 1).coerceAtMost(pageCount) }, enabled = page < pageCount) { Text("▶") }
+            }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(onClick = {
+                    val p = player
+                    when {
+                        p == null -> startPlayback()
+                        playing -> { p.pause(); playing = false }
+                        else -> { p.start(); playing = true }
+                    }
+                }) { Text(if (playing) "⏸" else "♪ ▶") }
+                Button(onClick = { stopPlayback() }, enabled = player != null) { Text("■") }
+                // Tempo in quarter notes per minute, 2 at a time; stored as a factor of the written tempo.
+                val bpm = (baseTempo * tempo).roundToInt()
+                fun setBpm(value: Int) {
+                    tempo = (value / baseTempo).coerceIn(0.2, 4.0)
+                }
+                Button(onClick = { setBpm(bpm - 2) }, enabled = tempo > 0.21) { Text("−") }
+                Text(if (bpm == baseTempo.roundToInt()) "♩ = $bpm" else "♩ = $bpm (${baseTempo.roundToInt()})")
+                Button(onClick = { setBpm(bpm + 2) }, enabled = tempo < 3.99) { Text("+") }
+                Button(onClick = { tempo = 1.0 }, enabled = tempo != 1.0) { Text("↺") }
+                Box {
+                    Button(onClick = { soundMenuOpen = true }) {
+                        Text(if (audible == null) "Sound: shown parts" else "Sound: ${audible!!.size}/${parts.size}")
+                    }
+                    DropdownMenu(expanded = soundMenuOpen, onDismissRequest = { soundMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("${if (audible == null) "●" else "○"} Hear the parts shown") },
+                            onClick = { audible = null }
+                        )
+                        parts.forEach { part ->
+                            val heard = (audible ?: shownParts.ifEmpty { parts.map { it.id }.toSet() }).contains(part.id)
+                            DropdownMenuItem(
+                                text = { Text("${if (heard) "🔊" else "🔇"} ${part.name.ifBlank { part.id }}") },
+                                onClick = {
+                                    val current = audible ?: shownParts.ifEmpty { parts.map { it.id }.toSet() }
+                                    val next = if (part.id in current) current - part.id else current + part.id
+                                    if (next.isNotEmpty()) audible = next
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "      ↳ " + if (part.drums) "drums" else programName(programs[part.id] ?: part.program),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                },
+                                enabled = !part.drums,
+                                onClick = { instrumentFor = part }
+                            )
+                        }
+                    }
+                    DropdownMenu(expanded = instrumentFor != null, onDismissRequest = { instrumentFor = null }) {
+                        val part = instrumentFor
+                        if (part != null) {
+                            DropdownMenuItem(text = { Text("As in file (${programName(part.program)})") }, onClick = {
+                                programs = programs - part.id
+                                instrumentFor = null
+                            })
+                            GM_PROGRAMS.forEach { (program, name) ->
+                                DropdownMenuItem(text = { Text(name) }, onClick = {
+                                    programs = programs + (part.id to program)
+                                    instrumentFor = null
+                                })
+                            }
+                        }
+                    }
+                }
+                Renderer.entries.forEach { r ->
+                    Button(
+                        onClick = { renderer = r },
+                        colors = if (renderer == r) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
+                    ) { Text(r.name.take(4)) }
+                }
+                Button(onClick = {
+                    if (benchRunning || viewport.width == 0) return@Button
+                    stopPlayback()
+                    scope.launch {
+                        benchRunning = true
+                        Benchmark(context, engine).run(viewport.width, viewport.height, scale) { status = it }
+                        benchRunning = false
+                        openedBytes = null
+                        cacheKey = null
+                    }
+                }) { Text("Bench") }
+            }
+            Text(
+                "Verovio $version · $status",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                minLines = 2,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
             }
         }
     }

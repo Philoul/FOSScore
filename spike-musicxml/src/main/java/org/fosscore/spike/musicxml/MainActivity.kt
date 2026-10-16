@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -112,9 +115,12 @@ private fun SpikeScreen(autoBench: Boolean, pageTurns: SharedFlow<Int>) {
     }
     // Default staff height ~7 mm: Verovio draws a staff 72 px high at scale 100. densityDpi,
     // not xdpi: some ROMs report a wrong xdpi (the Galaxy Tab 3 gave a 2.5x too large scale).
+    // On a phone, 7 mm leaves one measure per line: the staff is also kept under 1/14 of the
+    // shorter screen side.
     val defaultScale = remember {
-        val dpi = context.resources.displayMetrics.densityDpi
-        (7f / 25.4f * dpi / 72f * 100f).roundToInt().coerceIn(20, 200)
+        val metrics = context.resources.displayMetrics
+        val staffPx = minOf(7f / 25.4f * metrics.densityDpi, minOf(metrics.widthPixels, metrics.heightPixels) / 14f)
+        (staffPx / 72f * 100f).roundToInt().coerceIn(20, 200)
     }
 
     var fileName by remember { mutableStateOf(samples.firstOrNull() ?: "") }
@@ -438,7 +444,8 @@ private fun SpikeScreen(autoBench: Boolean, pageTurns: SharedFlow<Int>) {
         )
     }
 
-    Box(Modifier.fillMaxSize().background(Color.White)) {
+    // Android 15+ draws apps edge to edge: keep the score and menus out of the system bars.
+    Box(Modifier.fillMaxSize().background(Color.White).windowInsetsPadding(WindowInsets.safeDrawing)) {
         // The score fills the screen and the menus float over it, so hiding them does not change
         // the viewport (which would lay the score out again). Tap zones as in FOSScore's PDF
         // viewer: left third previous page, right third next page, centre shows or hides the menus.

@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.musigatto.fosscore.R
 import com.artifex.mupdf.fitz.ColorSpace
 import com.artifex.mupdf.fitz.Context
 import com.artifex.mupdf.fitz.DisplayList
@@ -86,15 +87,11 @@ class MuPdfDoc private constructor(
     fun ensurePageSize(index: Int): PageBox? = sizes[index] ?: loadSize(index)
 
     /**
-     * Rasteriza la página al tamaño pedido (px), respetando [MAX_RENDER_PIXELS].
-     * Devuelve el bitmap cacheado si esa resolución ya se renderizó.
+     * Rasteriza la página para que ocupe [slotW]x[slotH] px (el hueco donde se encaja).
+     * Hace el ajuste a la caja internamente, así que quien llama no necesita conocer
+     * el tamaño de la página.
      */
-    /**
-     * Rasteriza la página para que ocupe [slotW]x[slotH] px (el hueco donde se encaja), con
-     * [quality] = 1 a 3 (multiplicador para el zoom). Hace el ajuste a la caja internamente, así
-     * que quien llama no necesita conocer el tamaño de la página.
-     */
-    fun render(index: Int, slotW: Int, slotH: Int, quality: Int): Bitmap? {
+    fun render(index: Int, slotW: Int, slotH: Int): Bitmap? {
         val list = lists[index] ?: displayList(index) ?: return null
         // OJO: el tamaño sale del DISPLAY LIST, no de page.getBounds(): toDisplayList() aplica la
         // transformación de la página (rotación /Rotate y flip del eje Y), así que sus bounds son
@@ -117,9 +114,9 @@ class MuPdfDoc private constructor(
         val ph = box.height
         if (!pw.isFinite() || !ph.isFinite() || pw <= 0f || ph <= 0f) return null
 
-        // encaje en el hueco (mismo criterio que fitRect en la UI) por el multiplicador de calidad
+        // encaje en el hueco (mismo criterio que fitRect en la UI)
         val fitW = min(slotW.toFloat(), slotH * (pw / ph))
-        var w = (fitW * quality).toInt().coerceAtLeast(1)
+        var w = fitW.toInt().coerceAtLeast(1)
         // presupuesto de memoria: el pixmap real será w x (w*ph/pw)
         val realH = w * ph / pw
         if (w.toLong() * realH.toLong() > MAX_RENDER_PIXELS) {
@@ -152,7 +149,7 @@ class MuPdfDoc private constructor(
             Log.d(
                 LOG_TAG,
                 "render p$index ${pix.getWidth()}x${pix.getHeight()} " +
-                    "en ${(System.nanoTime() - t0) / 1_000_000}ms (hueco ${slotW}x$slotH q$quality)"
+                    "en ${(System.nanoTime() - t0) / 1_000_000}ms (hueco ${slotW}x$slotH)"
             )
             return bmp
         } catch (e: Exception) {
@@ -201,6 +198,16 @@ class MuPdfDoc private constructor(
             }
         } else null
 
+    /**
+     * Olvida lo cacheado de una página (display list + bitmaps) para que se re-parsee y
+     * re-renderice. Para después de editar el PDF por fuera (exportar anotaciones): si no,
+     * el bitmap viejo escondería la tinta ya guardada. Llamar bajo el mutex del visor.
+     */
+    fun forgetPage(index: Int) {
+        lists.remove(index)?.destroy()
+        bitmaps.keys.filter { it / 1_000_000L == index.toLong() }.forEach { bitmaps.remove(it) }
+    }
+
     /** Libera todo. **Bloqueante**: llamarlo fuera del main (ver FOSScoreApp.applicationScope). */
     fun close() {
         lists.values.forEach { runCatching { it.destroy() } }
@@ -222,7 +229,7 @@ class MuPdfDoc private constructor(
                 initialized = true
             }
             val fd = context.contentResolver.openFileDescriptor(uri, "r")
-                ?: throw IOException("No se pudo abrir el archivo")
+                ?: throw IOException(context.getString(R.string.err_open_file))
             val stream = FdSeekable(fd)
             val doc = try {
                 Document.openDocument(stream, "application/pdf")

@@ -77,13 +77,16 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.FOSScoreApp
+import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.pdf.InkStroke
+import com.musigatto.fosscore.pdf.ExportError
 import com.musigatto.fosscore.pdf.MuPdfAnnots
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import java.io.IOException
@@ -191,7 +194,7 @@ fun PdfViewerScreen(
     var halfEnabled by rememberSaveable { mutableStateOf(false) }
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     var navVisible by rememberSaveable { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<Int?>(null) }
     // SnapshotStateMap: al cambiar un bitmap solo se redibuja quien lee ESA clave. Con un Map
     // normal, cambiar el bitmap invalidaba el Image + el Canvas de tinta + los sellos enteros
     // (eso se-notaba como un tirón al cambiar la nitidez en mitad del pellizco).
@@ -439,10 +442,10 @@ fun PdfViewerScreen(
             throw e
         } catch (e: IOException) {
             Log.e(LOG_TAG, "no se pudo abrir el archivo: ${e.message}", e)
-            error = "No se pudo abrir el archivo"
+            error = R.string.err_open_file
         } catch (e: Exception) {
             Log.e(LOG_TAG, "no se pudo abrir: ${e::class.simpleName}: ${e.message}", e)
-            error = "PDF inválido o corrupto"
+            error = R.string.err_invalid_pdf
         }
     }
 
@@ -547,7 +550,7 @@ fun PdfViewerScreen(
                     val out = mutableMapOf<Int, Bitmap>()
                     for (idx in needed) {
                         // si el render falla seguimos con lo que ya se ve: mejor tenue que hueco
-                        out[idx] = r.render(idx, slot.first, slot.second, 1) ?: fallback[idx] ?: continue
+                        out[idx] = r.render(idx, slot.first, slot.second) ?: fallback[idx] ?: continue
                     }
                     out
                 }
@@ -561,14 +564,14 @@ fun PdfViewerScreen(
                 // spinner girando eternamente (pasó con una página en blanco)
                 if (bitmaps[currentPage] == null) {
                     Log.e(LOG_TAG, "la página $currentPage no se pudo renderizar")
-                    error = "No se pudo renderizar la página"
+                    error = R.string.err_render_page
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(LOG_TAG, "render failed: ${e::class.simpleName}: ${e.message}", e)
-            if (gen == renderGeneration) error = "No se pudo renderizar la página"
+            if (gen == renderGeneration) error = R.string.err_render_page
         }
     }
 
@@ -594,9 +597,9 @@ fun PdfViewerScreen(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(error!!, style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(error!!), style = MaterialTheme.typography.bodyLarge)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onBack) { Text("Volver") }
+                Button(onClick = onBack) { Text(stringResource(R.string.action_back)) }
             }
         } else if (bitmaps.isNotEmpty()) {
             // Modos de lectura (two-up, media página): la capa escala el viewport entero como antes
@@ -1209,7 +1212,9 @@ fun PdfViewerScreen(
                         Box(modifier = Modifier.fillMaxSize().clipToBounds().then(gestureMod)) {
                             Image(
                                 bitmap = bmp.asImageBitmap(),
-                                contentDescription = "Page ${currentPage + 1} of $pageCount",
+                                contentDescription = stringResource(
+                                    R.string.desc_page, currentPage + 1, pageCount
+                                ),
                                 contentScale = ContentScale.FillBounds,
                                 colorFilter = if (invert) INVERT_FILTER else null,
                                 modifier = Modifier
@@ -1398,7 +1403,7 @@ fun PdfViewerScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Modo:", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.mode_label), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
@@ -1426,7 +1431,7 @@ fun PdfViewerScreen(
                     ) { Text("2") }
                 }
                 Spacer(Modifier.width(16.dp))
-                Button(onClick = onToggleTheme) { Text(themeMode.label) }
+                Button(onClick = onToggleTheme) { Text(themeMode.label()) }
                 Spacer(Modifier.width(4.dp))
                 Button(
                     onClick = {
@@ -1435,7 +1440,7 @@ fun PdfViewerScreen(
                     },
                     colors = if (invert) ButtonDefaults.buttonColors()
                     else ButtonDefaults.outlinedButtonColors()
-                ) { Text("Neg") }
+                ) { Text(stringResource(R.string.neg_label)) }
                 Spacer(Modifier.width(4.dp))
                 Button(
                     onClick = {
@@ -1460,7 +1465,7 @@ fun PdfViewerScreen(
                     enabled = canEdit,
                     colors = if (editing) ButtonDefaults.buttonColors()
                     else ButtonDefaults.outlinedButtonColors()
-                ) { Text("Editar") }
+                ) { Text(stringResource(R.string.action_edit)) }
             }
 
             Column(
@@ -1476,7 +1481,7 @@ fun PdfViewerScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Atenuar", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyMedium)
                         Slider(
                             value = dimPct,
                             onValueChange = { dimPct = it },
@@ -1619,11 +1624,11 @@ fun PdfViewerScreen(
                                         val app = context.applicationContext as FOSScoreApp
                                         val sheet = withContext(Dispatchers.IO) {
                                             app.repository.byHash(hash)
-                                        } ?: throw IllegalStateException("Partitura sin archivo local")
+                                        } ?: throw ExportError.NoLocalFile
                                         val all = withContext(Dispatchers.IO) {
                                             strokeRepo.listBySheet(hash)
                                         }
-                                        if (all.isEmpty()) throw IllegalStateException("No hay tinta que guardar")
+                                        if (all.isEmpty()) throw ExportError.NoInk
                                         val pages = all.groupBy({ it.page }) { s ->
                                             InkStroke(decodePoints(s.points), s.width, s.color)
                                         }
@@ -1634,7 +1639,7 @@ fun PdfViewerScreen(
                                                 }
                                             }
                                         }
-                                        if (written.isEmpty()) throw IllegalStateException("El PDF no se puede editar")
+                                        if (written.isEmpty()) throw ExportError.NotEditable
                                         withContext(Dispatchers.IO) {
                                             strokeRepo.deleteAll(all.filter { it.page in written })
                                         }
@@ -1653,7 +1658,7 @@ fun PdfViewerScreen(
                                         throw e
                                     } catch (e: Exception) {
                                         Log.e(LOG_TAG, "exportar tinta: ${e.message}", e)
-                                        error = e.message ?: "No se pudo guardar en el PDF"
+                                        error = (e as? ExportError)?.res ?: R.string.err_export_failed
                                     } finally {
                                         exportingPdf = false
                                     }
@@ -1663,7 +1668,7 @@ fun PdfViewerScreen(
                         ) { Text(if (exportingPdf) "…" else "💾PDF") }
                         Spacer(Modifier.width(8.dp))
                         if (drawingTool) {
-                            Text("Grosor", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.thickness_label), style = MaterialTheme.typography.bodyMedium)
                             Slider(
                                 value = penWidth,
                                 onValueChange = { penWidth = it },
@@ -1676,7 +1681,7 @@ fun PdfViewerScreen(
                         if (selectedStamp != null) {
                             val s = selectedStamp
                             var sliderUndoPushed by remember { mutableStateOf(false) }
-                            Text("Tamaño", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.size_label), style = MaterialTheme.typography.bodyMedium)
                             Slider(
                                 value = s.size.coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE),
                                 onValueChange = { v ->

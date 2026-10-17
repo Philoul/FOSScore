@@ -50,16 +50,18 @@ abstract class AppDatabase : RoomDatabase() {
          */
         const val VERSION = 4
 
-        /** Every migration, oldest first. */
+        /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
         val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         private var instance: AppDatabase? = null
 
         @Synchronized
         fun get(context: Context): AppDatabase = instance ?: run {
+            // A copy of the database before any migration, and a newer database (after going back
+            // to an older app version) moved aside instead of deleted.
+            DatabaseSafety.beforeOpen(context.applicationContext, NAME, VERSION)
             Room.databaseBuilder(context, AppDatabase::class.java, NAME)
                 .addMigrations(*MIGRATIONS)
-                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { instance = it }
         }

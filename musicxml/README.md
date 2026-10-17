@@ -59,12 +59,14 @@ Only the music fonts Leipzig (default) and Bravura (fallback) are shipped, copie
 **Build:**
 - `git submodule update --init` once after cloning;
 - the Android NDK 27.2.12479018 and CMake 3.22.1 (Android Studio's SDK Manager);
-- the first native build takes about 30 minutes; later builds reuse `musicxml/.cxx`.
+- the first native build takes 15 to 30 minutes depending on the computer; later builds reuse
+  `musicxml/.cxx`.
 
 **Updating Verovio:** check out the new release tag in `verovio/`, commit the new submodule
 pointer, change `DATA_VERSION` in `Verovio.kt`, and run the tests below.
 
-**Size:** about 10 MB per ABI. The module builds the four Android ABIs; the app keeps only the ones
+**Size** (release build): about 10 MB of native code per ABI (arm64: Verovio 8.9 MB, C++ runtime
+1.3 MB) and 1.1 MB of fonts. The module builds the four Android ABIs; the app keeps only the ones
 it ships (its `abiFilters`).
 
 ## Tests

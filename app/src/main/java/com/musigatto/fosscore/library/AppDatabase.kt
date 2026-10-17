@@ -57,11 +57,18 @@ abstract class AppDatabase : RoomDatabase() {
 
         @Synchronized
         fun get(context: Context): AppDatabase = instance ?: run {
+            val app = context.applicationContext
+            // A library import chosen before the restart replaces the database now, while closed.
+            LibraryBackup.applyPending(app, NAME, VERSION)
             // A copy of the database before any migration, and a newer database (after going back
             // to an older app version) moved aside instead of deleted.
-            DatabaseSafety.beforeOpen(context.applicationContext, NAME, VERSION)
+            DatabaseSafety.beforeOpen(app, NAME, VERSION)
             Room.databaseBuilder(context, AppDatabase::class.java, NAME)
                 .addMigrations(*MIGRATIONS)
+                .addCallback(object : Callback() {
+                    // After the migrations: the imported sheets point to their PDFs on this device.
+                    override fun onOpen(db: SupportSQLiteDatabase) = LibraryBackup.relinkIfNeeded(app, db)
+                })
                 .build()
                 .also { instance = it }
         }

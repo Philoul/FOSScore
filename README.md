@@ -5,21 +5,33 @@
 
 ## Features
 
-- [ ] **Visor PDF** optimizado para partituras (MuPDF) — retrato, paisaje, two-up, half-page turns
+Hecho:
+
+- [x] **Visor PDF** optimizado para partituras (MuPDF) — retrato, paisaje, two-up, half-page turns, zoom/pan con ancla al punto medio, doble toque animado
+- [x] **Biblioteca con metadatos** — compositor, género, tonalidad, etiquetas
+- [x] **Anotaciones de tinta exportables al PDF** (`/Annots` Ink, botón 💾PDF en modo edición)
+- [x] **Tema oscuro** — claro/oscuro/automático, atenuado de página, modo negativo para OLED
+
+Pendiente (roadmap detallado en los issues de GitHub):
+
 - [ ] **Reflow** — detección automática de sistemas musicales para visualización tipo teleprompter horizontal
-- [ ] **Biblioteca con metadatos** — compositor, género, tonalidad, dificultad, duración, etiquetas, valoración
 - [ ] **Búsqueda y filtros** — browsing dinámico sin carpetas
 - [ ] **Setlists** — agrupa partituras para tocarlas en orden, con navegación entre archivos
-- [ ] **Anotaciones** — dibujo, texto, sellos musicales, capas múltiples. Soporte para stylus (S Pen, etc.)
+- [ ] **Sellos y texto** — sellos musicales también a `/Annots`, notas de texto
 - [ ] **Pistas de audio** — asocia audio a cada partitura, ajusta velocidad/tono, loop, cambio de página automático
 - [ ] **Herramientas integradas** — metrónomo, afinador, diapasón, piano virtual
 - [ ] **MIDI / Bluetooth** — pedales de cambio de página (PageFlip, AirTurn, etc.)
 - [ ] **Marcadores y banderas** — navegación rápida dentro de archivos largos
 - [ ] **Enlaces y botones** — repeticiones, acciones programables en la página
 - [ ] **Reordenar páginas** — insertar, duplicar, eliminar, dividir archivos
-- [ ] **Tema oscuro** — modo claro/oscuro/automático, atenuado de página para poca luz
+- [ ] **Performance mode, dashboard de práctica**
 - [ ] **100 % offline first** — tu música siempre contigo
 - [ ] **Sin telemetría, sin anuncios, sin cuentas obligatorias**
+
+## Compatibilidad
+
+- Android 6.0+ (minSdk 23), incluidas tablets viejas de 32 bits (`armeabi-v7a`).
+- 100 % offline: sin cuentas, sin telemetría, sin anuncios.
 
 ## Stack
 
@@ -43,4 +55,10 @@ Consecuencias prácticas:
 
 ## Estado
 
-En desarrollo temprano. PRs, issues y sugerencias bienvenidas.
+En desarrollo temprano. La rama `dev` es la integración; `main` siempre instalable.
+
+## Contribuir
+
+- Trabaja sobre `dev`, con PRs pequeños e independientes (una idea por PR).
+- Cada push a `dev`/`main` corre el CI: `assembleDebug` + `lintDebug` + `testDebugUnitTest`.
+- PRs, issues y sugerencias bienvenidas.

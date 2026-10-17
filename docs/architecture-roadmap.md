@@ -1,7 +1,7 @@
 # FOSScore: architecture review and improvement roadmap
 
 > **Status:** proposal for discussion between the maintainer and contributors.
-> **Baseline:** `main` at `7b52f7b` (25 commits). Pending pull requests #4–#7 are *not* included.
+> **Baseline:** `main` at `c6f1044` (25 commits; it was `7b52f7b` before the history rewrite of 2026-10-16). Pending pull requests #4–#7 are *not* included.
 > **Date:** 2026-10-13
 
 This document reviews the current code base and proposes a step-by-step plan to improve it. Each
@@ -85,7 +85,7 @@ contributor) and its conflict risk with ongoing viewer bug fixing.
 |---|---|---|
 | 0.1 | Review and merge, or decline, the pending PRs: #4 (string resources and language picker), #5 (rotation), #6 (negative mode), #7 (keyboard page turns). They are independent and based on `main`. Merging them first avoids rebasing them over refactors. | S each |
 | 0.2 | Agree on conventions: language for comments and commits, branch naming, "one topic per PR", and a target PR size of about 300 changed lines. Record them in the root `CLAUDE.md` (proposed in this PR) so that contributors and AI assistants follow the same rules. | S |
-| 0.3 | List the open viewer bugs (see commit `7b52f7b`, "bugs ABIERTOS") as GitHub issues, so contributors know which areas are being changed. | S |
+| 0.3 | List the open viewer bugs (see commit `c6f1044`, "bugs ABIERTOS") as GitHub issues, so contributors know which areas are being changed. | S |
 
 ### Phase 1: Protect user data (small fixes, do first)
 

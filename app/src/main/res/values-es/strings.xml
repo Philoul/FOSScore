@@ -64,4 +64,11 @@
     <string name="stamp_natural">becuadro</string>
     <string name="stamp_double_sharp">doble sostenido</string>
     <string name="stamp_double_flat">doble bemol</string>
+
+    <!-- Exportar la tinta al PDF -->
+    <string name="err_no_local_file">Partitura sin archivo local</string>
+    <string name="err_no_ink">No hay tinta que guardar</string>
+    <string name="err_pdf_not_editable">El PDF no se puede editar</string>
+    <string name="err_replace_failed">No se pudo reemplazar el PDF</string>
+    <string name="err_export_failed">No se pudo guardar en el PDF</string>
 </resources>

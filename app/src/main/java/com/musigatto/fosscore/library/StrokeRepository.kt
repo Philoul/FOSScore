@@ -19,6 +19,8 @@ class StrokeRepository(context: Context) {
     // the eraser splits a stroke into several: the surviving segments are re-inserted
     suspend fun insertAll(strokes: List<Stroke>) = dao.insertAll(strokes)
 
+    suspend fun listBySheet(hash: String): List<Stroke> = dao.listBySheet(hash)
+
     // restores a page to a snapshot (undo): deletes the current state and inserts the snapshot
     suspend fun restorePage(hash: String, page: Int, strokes: List<Stroke>) {
         dao.deletePage(hash, page)

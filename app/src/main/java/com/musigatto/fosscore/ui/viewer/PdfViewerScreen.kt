@@ -95,6 +95,7 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.pdf.InkStroke
+import com.musigatto.fosscore.pdf.ExportError
 import com.musigatto.fosscore.pdf.MuPdfAnnots
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import java.io.IOException
@@ -1660,11 +1661,11 @@ fun PdfViewerScreen(
                                         val app = context.applicationContext as FOSScoreApp
                                         val sheet = withContext(Dispatchers.IO) {
                                             app.repository.byHash(hash)
-                                        } ?: throw IllegalStateException("Partitura sin archivo local")
+                                        } ?: throw ExportError.NoLocalFile
                                         val all = withContext(Dispatchers.IO) {
                                             strokeRepo.listBySheet(hash)
                                         }
-                                        if (all.isEmpty()) throw IllegalStateException("No hay tinta que guardar")
+                                        if (all.isEmpty()) throw ExportError.NoInk
                                         val pages = all.groupBy({ it.page }) { s ->
                                             InkStroke(decodePoints(s.points), s.width, s.color)
                                         }
@@ -1675,7 +1676,7 @@ fun PdfViewerScreen(
                                                 }
                                             }
                                         }
-                                        if (written.isEmpty()) throw IllegalStateException("El PDF no se puede editar")
+                                        if (written.isEmpty()) throw ExportError.NotEditable
                                         withContext(Dispatchers.IO) {
                                             strokeRepo.deleteAll(all.filter { it.page in written })
                                         }
@@ -1694,7 +1695,7 @@ fun PdfViewerScreen(
                                         throw e
                                     } catch (e: Exception) {
                                         Log.e(LOG_TAG, "exportar tinta: ${e.message}", e)
-                                        error = e.message ?: "No se pudo guardar en el PDF"
+                                        error = (e as? ExportError)?.res ?: R.string.err_export_failed
                                     } finally {
                                         exportingPdf = false
                                     }

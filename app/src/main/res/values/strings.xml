@@ -77,4 +77,11 @@
     <string name="stamp_natural">natural</string>
     <string name="stamp_double_sharp">double sharp</string>
     <string name="stamp_double_flat">double flat</string>
+
+    <!-- Ink export into the PDF (names as in upstream dev) -->
+    <string name="err_no_local_file">Sheet has no local file</string>
+    <string name="err_no_ink">No ink to save</string>
+    <string name="err_pdf_not_editable">The PDF cannot be edited</string>
+    <string name="err_replace_failed">Could not replace the PDF</string>
+    <string name="err_export_failed">Could not save into the PDF</string>
 </resources>

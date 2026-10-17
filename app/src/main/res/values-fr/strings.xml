@@ -64,4 +64,11 @@
     <string name="stamp_natural">bécarre</string>
     <string name="stamp_double_sharp">double dièse</string>
     <string name="stamp_double_flat">double bémol</string>
+
+    <!-- Export de l’encre dans le PDF -->
+    <string name="err_no_local_file">La partition n’a pas de fichier local</string>
+    <string name="err_no_ink">Aucune encre à enregistrer</string>
+    <string name="err_pdf_not_editable">Ce PDF ne peut pas être modifié</string>
+    <string name="err_replace_failed">Le PDF n’a pas pu être remplacé</string>
+    <string name="err_export_failed">L’enregistrement dans le PDF a échoué</string>
 </resources>

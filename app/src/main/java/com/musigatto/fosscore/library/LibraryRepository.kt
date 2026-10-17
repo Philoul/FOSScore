@@ -18,10 +18,14 @@ sealed class ImportResult {
 
 class LibraryRepository(context: Context) {
     private val appContext = context.applicationContext
-    private val dao = AppDatabase.get(context).sheetDao()
-    private val stampDao = AppDatabase.get(context).stampDao()
+    private val db = AppDatabase.get(appContext)
+    private val dao = db.sheetDao()
+    private val stampDao = db.stampDao()
+    private val strokeDao = db.strokeDao()
 
     fun sheets(): Flow<List<Sheet>> = dao.observeAll()
+
+    suspend fun byHash(hash: String): Sheet? = dao.byHash(hash)
 
     suspend fun importSheet(uri: Uri): ImportResult = try {
         val fileName = appContext.contentResolver.query(uri, arrayOf("_display_name"), null, null, null)
@@ -63,6 +67,7 @@ class LibraryRepository(context: Context) {
     suspend fun delete(sheet: Sheet) {
         dao.delete(sheet)
         stampDao.deleteForSheet(sheet.hash)
+        strokeDao.deleteForSheet(sheet.hash)
         try {
             File(sheet.path).delete()
         } catch (_: Exception) {

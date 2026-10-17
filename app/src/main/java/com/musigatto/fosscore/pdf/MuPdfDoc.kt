@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.musigatto.fosscore.R
 import com.artifex.mupdf.fitz.ColorSpace
 import com.artifex.mupdf.fitz.Context
 import com.artifex.mupdf.fitz.DisplayList
@@ -160,7 +161,7 @@ class MuPdfDoc private constructor(
             Log.d(
                 LOG_TAG,
                 "render p$index ${pix.getWidth()}x${pix.getHeight()} " +
-                    "en ${(System.nanoTime() - t0) / 1_000_000}ms (hueco ${slotW}x$slotH q$quality)"
+                    "en ${(System.nanoTime() - t0) / 1_000_000}ms (hueco ${slotW}x$slotH)"
             )
             return bmp
         } catch (e: Exception) {
@@ -209,6 +210,16 @@ class MuPdfDoc private constructor(
             }
         } else null
 
+    /**
+     * Forgets what is cached for a page (display list + bitmaps) so it is parsed and rendered
+     * again. For after the PDF was edited outside (annotation export): otherwise the old bitmap
+     * would hide the ink just saved. Call it under the viewer's mutex.
+     */
+    fun forgetPage(index: Int) {
+        lists.remove(index)?.destroy()
+        bitmaps.keys.filter { it / 1_000_000L == index.toLong() }.forEach { bitmaps.remove(it) }
+    }
+
     /** Frees all. **Blocking**: call off the main thread (see FOSScoreApp.applicationScope). */
     fun close() {
         lists.values.forEach { runCatching { it.destroy() } }
@@ -230,7 +241,7 @@ class MuPdfDoc private constructor(
                 initialized = true
             }
             val fd = context.contentResolver.openFileDescriptor(uri, "r")
-                ?: throw IOException("No se pudo abrir el archivo")
+                ?: throw IOException(context.getString(R.string.error_file_open))
             val stream = FdSeekable(fd)
             val doc = try {
                 Document.openDocument(stream, "application/pdf")

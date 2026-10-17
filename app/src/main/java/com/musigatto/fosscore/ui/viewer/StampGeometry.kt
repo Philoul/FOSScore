@@ -60,18 +60,16 @@ private const val HANDLE_HIT_SLOP = 4f   // touch is 4x the radius: looks small 
 
 fun handleRadiusPx(fit: RectPx): Float = HANDLE_RADIUS * fit.height
 
-private fun corners(sel: RectPx): List<Offset> = listOf(
-    Offset(sel.left, sel.top),
-    Offset(sel.right, sel.top),
-    Offset(sel.right, sel.bottom),
-    Offset(sel.left, sel.bottom)
-)
-
 /** Centres of the 4 handles (px), pushed outwards from the centre of the box. */
 fun handleCenters(sel: RectPx, fit: RectPx): List<Offset> {
     val r = handleRadiusPx(fit)
     val c = sel.center()
-    return corners(sel).map { k ->
+    return listOf(
+        Offset(sel.left, sel.top),
+        Offset(sel.right, sel.top),
+        Offset(sel.right, sel.bottom),
+        Offset(sel.left, sel.bottom)
+    ).map { k ->
         val d = k - c
         val len = d.getDistance()
         if (len <= 1e-3f) k else Offset(k.x + d.x / len * r, k.y + d.y / len * r)

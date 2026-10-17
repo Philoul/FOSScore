@@ -1,6 +1,9 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.musigatto.fosscore.R
 
 enum class ThemeMode {
     SYSTEM, LIGHT, DARK;
@@ -13,12 +16,12 @@ enum class ThemeMode {
         DARK -> true
     }
 
-    val label: String
-        get() = when (this) {
-            SYSTEM -> "Auto"
-            LIGHT -> "Claro"
-            DARK -> "Oscuro"
-        }
+    @Composable
+    fun label(): String = when (this) {
+        SYSTEM -> stringResource(R.string.theme_auto)
+        LIGHT -> stringResource(R.string.theme_light)
+        DARK -> stringResource(R.string.theme_dark)
+    }
 }
 
 object Settings {

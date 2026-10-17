@@ -22,6 +22,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
@@ -67,7 +69,8 @@ private fun FOSScoreNav(
     toggleTheme: () -> Unit
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Library) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var messageRes by remember { mutableStateOf<Int?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -75,8 +78,8 @@ private fun FOSScoreNav(
             scope.launch {
                 when (val result = repository.importSheet(uri)) {
                     is ImportResult.Ok -> screen = Screen.Detail(result.sheet)
-                    is ImportResult.Duplicate -> message = "Esa partitura ya está en la biblioteca"
-                    is ImportResult.Error -> message = result.reason
+                    is ImportResult.Duplicate -> messageRes = R.string.sheet_already_in_library
+                    is ImportResult.Error -> messageRes = result.messageRes
                 }
             }
         }
@@ -105,10 +108,11 @@ private fun FOSScoreNav(
                     onEdit = { screen = Screen.Detail(it) },
                     onImport = { picker.launch(arrayOf("application/pdf")) }
                 )
-                message?.let { msg ->
+                messageRes?.let { res ->
+                    val msg = stringResource(res)
                     LaunchedEffect(msg) {
                         snackbar.showSnackbar(msg)
-                        message = null
+                        messageRes = null
                     }
                 }
             }

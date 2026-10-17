@@ -1,12 +1,11 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.graphics.Typeface
+import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -17,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -25,7 +23,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -33,7 +30,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.R
-import java.util.Locale
 
 enum class StampSymbol(val label: String) {
     PP("pp"), P("p"), MP("mp"), MF("mf"), F("f"), FF("ff"),
@@ -89,36 +85,27 @@ val SWATCH_COLORS = listOf(
 // null = color del tema; si no, el ARGB guardado
 fun stampColor(color: Int?, fallback: Color): Color = color?.let(::Color) ?: fallback
 
-// ponytail: resolución por getIdentifier para que el usuario pueda soltar `stamp_<nombre>.png`
-// en res/drawable y los iconos aparezcan sin tocar código. Upgrade si llega a >20 iconos: mapeo estático.
-@Composable
-private fun stampDrawableId(symbol: StampSymbol): Int? {
-    val context = LocalContext.current
-    return remember(symbol) {
-        val id = context.resources.getIdentifier(
-            "stamp_" + symbol.name.lowercase(Locale.ROOT), "drawable", context.packageName
-        )
-        id.takeIf { it != 0 }
-    }
-}
-
 @Composable
 private fun musicTypeface(): Typeface? {
     val context = LocalContext.current
-    // Resources.getFont (API 26+): devuelve tipo "platform", así que el local va tipado
+    // Resources.getFont es API 26+: en 23-25 se salta (NoSuchMethodError no lo caza un
+    // catch(Exception)) y los glifos caen al dibujado por Canvas, que ya es el fallback.
     return remember {
-        val tf: Typeface? = try {
-            context.resources.getFont(R.font.noto_music)
-        } catch (e: Exception) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             null
+        } else {
+            try {
+                context.resources.getFont(R.font.noto_music)
+            } catch (e: Exception) {
+                null
+            }
         }
-        tf
     }
 }
 
 /**
  * Glifos musicales: Noto Music para las alteraciones (glifos reales, medidos y centrados por la
- * caja de tinta) y Canvas para el resto. Un PNG en res/drawable tiene prioridad sobre todo.
+ * caja de tinta), Spectral Italic para las dinámicas y Canvas para el resto.
  */
 @Composable
 fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifier = Modifier) {
@@ -126,18 +113,10 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
     val side = with(density) { sizePx.toDp() }
     val typeface = musicTypeface()
     Box(modifier, contentAlignment = Alignment.Center) {
-        val png = stampDrawableId(symbol)
-        if (png != null) {
-            Image(
-                painter = painterResource(png),
-                contentDescription = symbol.label,
-                colorFilter = ColorFilter.tint(color),
-                modifier = Modifier.fillMaxSize()
-            )
-        } else if (symbol in TEXT_SYMBOLS) {
+        if (symbol in TEXT_SYMBOLS) {
             // ponytail: la etiqueta se encoge con un factor fijo por etiqueta (medido a ojo sobre
             // la caja) en vez de medir el texto en runtime. Upgrade: Canvas.drawText con medición real.
-            val maxSp = with(density) { (sizePx * TEXT_FILL.getOrDefault(symbol, 0.7f) / density.density).sp }
+            val maxSp = with(density) { (sizePx * (TEXT_FILL[symbol] ?: 0.7f) / density.density).sp }
             androidx.compose.material3.Text(
                 text = symbol.label,
                 maxLines = 1,

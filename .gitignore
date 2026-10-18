@@ -9,3 +9,4 @@ docs/superpowers/
 captures/
 .DS_Store
 local.properties
+/.kotlin/

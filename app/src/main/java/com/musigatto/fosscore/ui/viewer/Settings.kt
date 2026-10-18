@@ -30,6 +30,7 @@ object Settings {
     private const val KEY_THEME = "theme"
     private const val KEY_DIM = "dim"
     private const val KEY_INVERT = "invert"
+    private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
     private const val KEY_LAST_PAGE = "last_page_"
 
     fun themeMode(context: Context): ThemeMode =
@@ -49,6 +50,14 @@ object Settings {
 
     fun setInvert(context: Context, value: Boolean) {
         context.prefs().edit { putBoolean(KEY_INVERT, value) }
+    }
+
+    // the screen stays awake while a score is on screen, so it does not sleep mid-performance
+    fun keepScreenOn(context: Context): Boolean =
+        context.prefs().getBoolean(KEY_KEEP_SCREEN_ON, false)
+
+    fun setKeepScreenOn(context: Context, value: Boolean) {
+        context.prefs().edit { putBoolean(KEY_KEEP_SCREEN_ON, value) }
     }
 
     fun lastPage(context: Context, uri: String): Int =

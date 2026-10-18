@@ -85,6 +85,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
@@ -223,6 +224,14 @@ fun PdfViewerScreen(
     var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
     var showDim by rememberSaveable { mutableStateOf(false) }
     var invert by remember { mutableStateOf(Settings.invert(context)) }
+    var keepScreenOn by remember { mutableStateOf(Settings.keepScreenOn(context)) }
+
+    // Applies only while the viewer is on screen: the library lets the device sleep as usual.
+    val view = LocalView.current
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
 
     val stampsFlow = remember(sheetHash) {
         sheetHash?.let { (context.applicationContext as FOSScoreApp).stampRepository.observe(it) }
@@ -1705,6 +1714,17 @@ fun PdfViewerScreen(
                         colors = if (showDim) ButtonDefaults.buttonColors()
                         else ButtonDefaults.outlinedButtonColors()
                     ) { Text("◐") }
+                    Spacer(Modifier.width(16.dp))
+                    // ponytail: provisional home until there is a settings screen, together with
+                    // the language picker and the future page-turn key choice
+                    Button(
+                        onClick = {
+                            keepScreenOn = !keepScreenOn
+                            Settings.setKeepScreenOn(context, keepScreenOn)
+                        },
+                        colors = if (keepScreenOn) ButtonDefaults.buttonColors()
+                        else ButtonDefaults.outlinedButtonColors()
+                    ) { Text("☀") }
                     Spacer(Modifier.width(16.dp))
                     Button(
                         onClick = applyNext,

@@ -20,7 +20,7 @@ const val MAX_STROKE_WIDTH = 0.02f
 // fraction is worked out when the stroke is created. ponytail: on small pages the real cap is
 // MAX_STROKE_WIDTH (2% of the height), so the last px of the slider change nothing; raise that
 // constant if it bothers you.
-const val DEFAULT_PEN_PX = 8f
+const val DEFAULT_PEN_PX = 4f
 const val MIN_PEN_PX = 1f
 const val MAX_PEN_PX = 20f
 

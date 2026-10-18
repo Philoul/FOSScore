@@ -12,10 +12,19 @@ data class PageEdit(val stamps: List<Stamp>, val strokes: List<Stroke>)
 // distancia mínima en px entre puntos de un trazo (downsample)
 const val MIN_SAMPLE_DIST_PX = 2f
 
-// ancho del trazo en fracción del alto de página (0.002..0.02; ~0.8% por defecto)
-const val DEFAULT_STROKE_WIDTH = 0.008f
+// ancho del trazo en fracción del alto de página (0.002..0.02)
 const val MIN_STROKE_WIDTH = 0.002f
 const val MAX_STROKE_WIDTH = 0.02f
+
+// el usuario elige el grosor en px de pantalla a zoom 1 (alto del encaje); la fracción se
+// deriva al crear el trazo. ponytail: en páginas pequeñas el tope real lo pone MAX_STROKE_WIDTH
+// (2% del alto), o sea que los últimos px del slider no crecen; subir esa constante si molesta.
+const val DEFAULT_PEN_PX = 8f
+const val MIN_PEN_PX = 1f
+const val MAX_PEN_PX = 20f
+
+fun penWidthPxToFrac(px: Float, fit: RectPx): Float =
+    (px / max(1f, fit.height)).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
 
 // radio de la goma como fracción del alto de página (px = frac * fit.height)
 const val ERASE_RADIUS_FRAC = 0.02f

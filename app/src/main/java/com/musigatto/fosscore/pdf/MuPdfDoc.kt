@@ -2,6 +2,7 @@ package com.musigatto.fosscore.pdf
 
 import android.content.Context as AndroidContext
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
@@ -147,12 +148,12 @@ class MuPdfDoc private constructor(
                     rgba.copyPixelsFromBuffer(ByteBuffer.wrap(samples, y * stride, rowBytes))
                 }
             }
-            // the pixmap comes out with a TRANSPARENT paper: composite it onto white so the page is
-            // opaque. Otherwise the "Neg" filter inverts the ink but not the background (whatever
-            // is behind shows through, white in light theme) and the score ends up white on white.
+            // the pixmap comes out with TRANSPARENT paper: composite it onto white so the page is
+            // opaque. Otherwise "Neg" inverts the ink but not the background (whatever is behind
+            // shows through, white in light theme) and the score ends up white on white.
             val bmp = createBitmap(rgba.width, rgba.height)
             bmp.eraseColor(android.graphics.Color.WHITE)
-            android.graphics.Canvas(bmp).drawBitmap(rgba, 0f, 0f, null)
+            Canvas(bmp).drawBitmap(rgba, 0f, 0f, null)
             bmp.setHasAlpha(false)
             rgba.recycle()
             bitmaps[key] = bmp

@@ -58,25 +58,6 @@
     <string name="language_system_default">System default</string>
 
     <!-- Accessibility names of the annotation stamps -->
-    <string name="stamp_pp">pianissimo</string>
-    <string name="stamp_p">piano</string>
-    <string name="stamp_mp">mezzo-piano</string>
-    <string name="stamp_mf">mezzo-forte</string>
-    <string name="stamp_f">forte</string>
-    <string name="stamp_ff">fortissimo</string>
-    <string name="stamp_cresc">crescendo</string>
-    <string name="stamp_decresc">decrescendo</string>
-    <string name="stamp_upbow">up-bow</string>
-    <string name="stamp_downbow">down-bow</string>
-    <string name="stamp_accent">accent</string>
-    <string name="stamp_staccato">staccato</string>
-    <string name="stamp_tenuto">tenuto</string>
-    <string name="stamp_fermata">fermata</string>
-    <string name="stamp_sharp">sharp</string>
-    <string name="stamp_flat">flat</string>
-    <string name="stamp_natural">natural</string>
-    <string name="stamp_double_sharp">double sharp</string>
-    <string name="stamp_double_flat">double flat</string>
 
     <!-- Ink export into the PDF (names as in upstream dev) -->
     <string name="err_no_local_file">Sheet has no local file</string>
@@ -84,4 +65,25 @@
     <string name="err_pdf_not_editable">The PDF cannot be edited</string>
     <string name="err_replace_failed">Could not replace the PDF</string>
     <string name="err_export_failed">Could not save into the PDF</string>
+
+    <!-- Names spoken by screen readers (stamp palette) -->
+    <string name="stamp_pp">Pianissimo (pp)</string>
+    <string name="stamp_p">Piano (p)</string>
+    <string name="stamp_mp">Mezzo-piano (mp)</string>
+    <string name="stamp_mf">Mezzo-forte (mf)</string>
+    <string name="stamp_f">Forte (f)</string>
+    <string name="stamp_ff">Fortissimo (ff)</string>
+    <string name="stamp_cresc">Crescendo</string>
+    <string name="stamp_decresc">Decrescendo</string>
+    <string name="stamp_upbow">Up bow</string>
+    <string name="stamp_downbow">Down bow</string>
+    <string name="stamp_accent">Accent</string>
+    <string name="stamp_staccato">Staccato</string>
+    <string name="stamp_tenuto">Tenuto</string>
+    <string name="stamp_fermata">Fermata</string>
+    <string name="stamp_sharp">Sharp</string>
+    <string name="stamp_flat">Flat</string>
+    <string name="stamp_natural">Natural</string>
+    <string name="stamp_double_sharp">Double sharp</string>
+    <string name="stamp_double_flat">Double flat</string>
 </resources>

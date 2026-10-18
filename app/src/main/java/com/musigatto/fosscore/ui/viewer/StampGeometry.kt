@@ -17,11 +17,11 @@ data class RectPx(
     fun center(): Offset = Offset(left + width / 2f, top + height / 2f)
 
     fun contains(o: Offset): Boolean =
-        o.x >= left && o.x <= right && o.y >= top && o.y <= bottom
+        o.x in left..right && o.y >= top && o.y <= bottom
 }
 
-// ponytail: stamp size as a fraction of page height (0.015..0.3); a slider for absolute
-// sizes would be added when the user asks for it.
+// ponytail: stamp size as a share of the page height (0.015..0.3); a slider of absolute sizes
+// would come when the user asks for one.
 const val MIN_STAMP_SIZE = 0.015f
 const val MAX_STAMP_SIZE = 0.3f
 const val DEFAULT_STAMP_SIZE = 0.09f
@@ -39,8 +39,8 @@ fun normalizedToPx(n: Offset, fit: RectPx): Offset =
 fun pxToNormalized(p: Offset, fit: RectPx): Offset =
     Offset((p.x - fit.left) / fit.width, (p.y - fit.top) / fit.height)
 
-// x/y = normalized centre of the stamp on the canvas; the rect may stick out at the edges
-// (a stamp half off the page is legitimate), the centre always stays inside after clamping.
+// x/y = the stamp's center, as a share of the page; the box may stick out past the edges
+// (a stamp half off the page is fine), but the center is always kept inside.
 fun stampRect(stamp: Stamp, fit: RectPx): RectPx {
     val side = stamp.size.coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE) * fit.height
     val center = normalizedToPx(
@@ -53,14 +53,14 @@ fun stampRect(stamp: Stamp, fit: RectPx): RectPx {
 fun hitStamp(pos: Offset, stamps: List<Stamp>, fit: RectPx): Stamp? =
     stamps.lastOrNull { stampRect(it, fit).contains(pos) }
 
-// Selection box handles: 4 small squares at the corners, jutting OUTSIDE the box (as in any
-// editor) so that dragging inside keeps moving rather than accidentally rescaling.
-private const val HANDLE_RADIUS = 0.0045f // small square's radius, fraction of the page height
-private const val HANDLE_HIT_SLOP = 4f   // touch is 4x the radius: looks small but easy to grab
+// Selection box handles: 4 little squares on the corners, just OUTSIDE the box (as in any
+// editor) so dragging inside still moves it instead of resizing it by mistake.
+private const val HANDLE_RADIUS = 0.0045f // little-square radius, as a share of the page height
+private const val HANDLE_HIT_SLOP = 4f   // the touch area is 4x the radius: looks small, grabs well
 
 fun handleRadiusPx(fit: RectPx): Float = HANDLE_RADIUS * fit.height
 
-/** Centres of the 4 handles (px), pushed outwards from the centre of the box. */
+/** Centres of the 4 handles (px), pushed outwards from the center of the box. */
 fun handleCenters(sel: RectPx, fit: RectPx): List<Offset> {
     val r = handleRadiusPx(fit)
     val c = sel.center()
@@ -83,8 +83,8 @@ fun hitHandle(pos: Offset, sel: RectPx, fit: RectPx): Int? {
         .takeIf { it >= 0 }
 }
 
-// scale factor when dragging a handle = (current dist to centre) / (initial dist to centre),
-// clamped so that a handle right at the centre doesn't send the scale to infinity.
+// scale factor while dragging a handle = (distance to the center now) / (distance when it
+// started), capped so a handle sitting in the center cannot blow the scale up to infinity.
 const val MIN_SCALE_FACTOR = 0.1f
 const val MAX_SCALE_FACTOR = 6f
 
@@ -94,7 +94,7 @@ fun scaleFactor(center: Offset, start: Offset, now: Offset): Float {
     return ((now - center).getDistance() / d0).coerceIn(MIN_SCALE_FACTOR, MAX_SCALE_FACTOR)
 }
 
-// selection rectangle of a stroke: box of its points + a margin of half the width
+// selection box for a stroke: the box around its points, plus half the thickness of margin
 fun strokeSelectionRect(pointsPx: List<Offset>, widthPx: Float): RectPx {
     if (pointsPx.isEmpty()) return RectPx(0f, 0f, 0f, 0f)
     val b = strokeBounds(pointsPx)

@@ -45,25 +45,6 @@
     <string name="language_current">Idioma: %1$s</string>
     <string name="language_system_default">Idioma del sistema</string>
 
-    <string name="stamp_pp">pianissimo</string>
-    <string name="stamp_p">piano</string>
-    <string name="stamp_mp">mezzo piano</string>
-    <string name="stamp_mf">mezzo forte</string>
-    <string name="stamp_f">forte</string>
-    <string name="stamp_ff">fortissimo</string>
-    <string name="stamp_cresc">crescendo</string>
-    <string name="stamp_decresc">decrescendo</string>
-    <string name="stamp_upbow">arco arriba</string>
-    <string name="stamp_downbow">arco abajo</string>
-    <string name="stamp_accent">acento</string>
-    <string name="stamp_staccato">staccato</string>
-    <string name="stamp_tenuto">tenuto</string>
-    <string name="stamp_fermata">calderón</string>
-    <string name="stamp_sharp">sostenido</string>
-    <string name="stamp_flat">bemol</string>
-    <string name="stamp_natural">becuadro</string>
-    <string name="stamp_double_sharp">doble sostenido</string>
-    <string name="stamp_double_flat">doble bemol</string>
 
     <!-- Exportar la tinta al PDF -->
     <string name="err_no_local_file">Partitura sin archivo local</string>
@@ -71,4 +52,25 @@
     <string name="err_pdf_not_editable">El PDF no se puede editar</string>
     <string name="err_replace_failed">No se pudo reemplazar el PDF</string>
     <string name="err_export_failed">No se pudo guardar en el PDF</string>
+
+    <!-- Nombres que lee el lector de pantalla (paleta de sellos) -->
+    <string name="stamp_pp">Pianissimo (pp)</string>
+    <string name="stamp_p">Piano (p)</string>
+    <string name="stamp_mp">Mezzopiano (mp)</string>
+    <string name="stamp_mf">Mezzoforte (mf)</string>
+    <string name="stamp_f">Forte (f)</string>
+    <string name="stamp_ff">Fortissimo (ff)</string>
+    <string name="stamp_cresc">Crescendo</string>
+    <string name="stamp_decresc">Decrescendo</string>
+    <string name="stamp_upbow">Arco arriba</string>
+    <string name="stamp_downbow">Arco abajo</string>
+    <string name="stamp_accent">Acento</string>
+    <string name="stamp_staccato">Staccato</string>
+    <string name="stamp_tenuto">Tenuto</string>
+    <string name="stamp_fermata">Calderón</string>
+    <string name="stamp_sharp">Sostenido</string>
+    <string name="stamp_flat">Bemol</string>
+    <string name="stamp_natural">Becuadro</string>
+    <string name="stamp_double_sharp">Doble sostenido</string>
+    <string name="stamp_double_flat">Doble bemol</string>
 </resources>

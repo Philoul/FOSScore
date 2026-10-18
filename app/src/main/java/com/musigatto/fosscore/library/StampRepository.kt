@@ -16,7 +16,7 @@ class StampRepository(context: Context) {
 
     suspend fun deleteAll(stamps: List<Stamp>) = dao.deleteAll(stamps)
 
-    // restores a page to a snapshot (undo): deletes the current state and inserts the snapshot
+    // puts a page back from an undo snapshot: drops what is there, inserts the snapshot
     suspend fun restorePage(hash: String, page: Int, stamps: List<Stamp>) {
         dao.deletePage(hash, page)
         dao.insertAll(stamps)

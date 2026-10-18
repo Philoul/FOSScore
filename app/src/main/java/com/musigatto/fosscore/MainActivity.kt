@@ -35,8 +35,8 @@ import com.musigatto.fosscore.ui.theme.FOSScoreTheme
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
 import com.musigatto.fosscore.ui.viewer.Settings
 import com.musigatto.fosscore.ui.viewer.ThemeMode
-import java.io.File
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

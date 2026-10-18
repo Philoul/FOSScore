@@ -21,37 +21,40 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.min
 import kotlin.math.sqrt
+import androidx.core.graphics.createBitmap
 
 private const val LOG_TAG = "FOSScore-MuPDF"
 
-// Memory ceiling per bitmap (4M px = 16 MB). This caps zoom quality: above it the process eats
-// the RAM and the system kills it. Upgrade path: render only the visible rectangle (tiles)
-// instead of the whole page, as serious viewers do.
+// ponytail: memory cap per bitmap (4M px = 16 MB) is the limit on zoom quality: past it the
+// process eats the RAM and the system kills it. Upgrade path: draw only the visible part
+// (tiles) instead of the whole page.
 const val MAX_RENDER_PIXELS = 4_000_000L
 
-// display lists kept in memory: they allow re-rendering at another resolution without re-parsing
+// display lists in memory: they let us draw the page again at another resolution without
+// parsing it a second time
 private const val MAX_CACHED_LISTS = 3
 
-// already-rendered bitmaps keyed by (page, width in px)
+// bitmaps already drawn, keyed by (page, width in px)
 private const val MAX_CACHED_BITMAPS = 4
 
-// pages whose size is preloaded on open, so layout can happen without waiting for the first render
+// pages whose size is loaded up front on open, so the UI can lay out without waiting for the
+// first render
 private const val PRELOAD_SIZES = 4
 
-// below this (in points) the display list is considered to have "no usable bounds"
+// below this size (in points) a display list counts as having no usable bounds
 private const val MIN_PAGE_DIM = 0.05f
 
-/** Page box in PDF points. */
+/** The page box, in PDF points. */
 data class PageBox(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
     val width: Float get() = x1 - x0
     val height: Float get() = y1 - y0
 }
 
 /**
- * PDF document opened with MuPDF.
+ * A PDF document opened with MuPDF.
  *
- * The whole API is **synchronous and not thread-safe** (MuPDF's `Context` is global): the caller
- * must serialize access with a mutex, just as was done with `PdfRenderer`.
+ * The whole API is **synchronous and not thread-safe** (MuPDF's `Context` is shared): callers
+ * must take a mutex, the same way the old `PdfRenderer` code did.
  */
 class MuPdfDoc private constructor(
     private val fd: ParcelFileDescriptor,
@@ -60,7 +63,7 @@ class MuPdfDoc private constructor(
 ) {
     val pageCount: Int = doc.countPages()
 
-    // read from the main thread (pageSize) and written from the render dispatcher
+    // read from the main thread (pageSize), written from the render dispatcher
     private val sizes = ConcurrentHashMap<Int, PageBox>()
     private val lists = object : LinkedHashMap<Int, DisplayList>(MAX_CACHED_LISTS + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, DisplayList>?): Boolean {
@@ -75,35 +78,30 @@ class MuPdfDoc private constructor(
     }
 
     /**
-     * Page size in points. **Pure memory read** (safe from the main thread): only returns
-     * something if we already preloaded it on open or if it was rendered.
+     * Page size in points. **Reads memory only** (safe from the main thread): it answers only
+     * if the size was loaded up front on open, or the page has been drawn already.
      */
     fun pageSize(index: Int): PageBox? = sizes[index]
 
     /**
-     * Same as [pageSize] but, if the size is not loaded yet (pages beyond the preload), loads it
-     * now. Since it touches MuPDF ([loadSize]), call it inside the viewer's render Mutex.
+     * Same as [pageSize], but loads the size now if it is not in yet (pages past the up-front
+     * ones). It reaches into MuPDF ([loadSize]), so call it under the viewer's render mutex.
      */
     fun ensurePageSize(index: Int): PageBox? = sizes[index] ?: loadSize(index)
 
     /**
-     * Rasterizes the page at the requested size (px), honouring [MAX_RENDER_PIXELS].
-     * Returns the cached bitmap if that resolution was already rendered.
+     * Draws the page as a bitmap that fits a [slotW]x[slotH] px hole.
+     * It does the fitting itself, so callers do not need to know the page size.
      */
-    /**
-     * Rasterizes the page so that it fills [slotW]x[slotH] px (the slot it is fitted into), with
-     * [quality] = 1 to 3 (multiplier for zoom). Fits to the box internally, so the caller does
-     * not need to know the page size.
-     */
-    fun render(index: Int, slotW: Int, slotH: Int, quality: Int): Bitmap? {
+    fun render(index: Int, slotW: Int, slotH: Int): Bitmap? {
         val list = lists[index] ?: displayList(index) ?: return null
-        // CAREFUL: the size comes from the DISPLAY LIST, not page.getBounds(): toDisplayList()
-        // applies the page transform (/Rotate rotation and Y-axis flip), so its bounds are those
-        // of the already-upright page in y-down space.
-        val dl = list.getBounds()
+        // NOTE: the size comes from the DISPLAY LIST, not from page.getBounds(): toDisplayList()
+        // applies the page transform (/Rotate and the Y flip), so its bounds are those of the
+        // page already straightened out, with y running down.
+        val dl = list.bounds
         val fromList = PageBox(dl.x0, dl.y0, dl.x1, dl.y1)
-        // a blank page gives a display list with INFINITE bounds: if one slips by, the scale is
-        // w/inf = 0 and the pixmap is born empty. Fall back to the page dictionary's size.
+        // a blank page gives a display list with INFINITE bounds: if that slips through, the
+        // scale comes out as w/inf = 0 and the bitmap is born empty. Fall back to the dictionary.
         val box = if (fromList.width.isFinite() && fromList.height.isFinite() &&
             fromList.width > MIN_PAGE_DIM && fromList.height > MIN_PAGE_DIM
         ) {
@@ -118,10 +116,10 @@ class MuPdfDoc private constructor(
         val ph = box.height
         if (!pw.isFinite() || !ph.isFinite() || pw <= 0f || ph <= 0f) return null
 
-        // fit into the slot (same rule as fitRect in the UI) times the quality multiplier
+        // fit into the hole (same rule as fitRect in the UI)
         val fitW = min(slotW.toFloat(), slotH * (pw / ph))
-        var w = (fitW * quality).toInt().coerceAtLeast(1)
-        // memory budget: the actual pixmap will be w x (w*ph/pw)
+        var w = fitW.toInt().coerceAtLeast(1)
+        // memory budget: the real pixmap will be w x (w*ph/pw)
         val realH = w * ph / pw
         if (w.toLong() * realH.toLong() > MAX_RENDER_PIXELS) {
             w = sqrt(MAX_RENDER_PIXELS.toDouble() * pw.toDouble() / ph.toDouble())
@@ -130,29 +128,29 @@ class MuPdfDoc private constructor(
         val key = index.toLong() * 1_000_000L + w
         bitmaps[key]?.let { return it }
 
-        // y-down on both sides: positive scale, without the flip the viewer uses
+        // y down on both sides: positive scale, no sign flip like the viewer does
         val scale = w / pw
         val m = Matrix(scale, 0f, 0f, scale, -box.x0 * scale, -box.y0 * scale)
         val t0 = System.nanoTime()
         var pix: Pixmap? = null
         try {
-            // alpha=true: output is RGBA and the buffer is copied as-is into an ARGB_8888
+            // alpha=true: comes out RGBA, and the buffer drops straight into an ARGB_8888
             pix = list.toPixmap(m, ColorSpace.DeviceRGB, true)
-            val rgba = Bitmap.createBitmap(pix.getWidth(), pix.getHeight(), Bitmap.Config.ARGB_8888)
-            val samples = pix.getSamples()
-            val stride = pix.getStride()
-            val rowBytes = pix.getWidth() * 4
+            val rgba = createBitmap(pix.width, pix.height)
+            val samples = pix.samples
+            val stride = pix.stride
+            val rowBytes = pix.width * 4
             if (stride == rowBytes) {
                 rgba.copyPixelsFromBuffer(ByteBuffer.wrap(samples))
             } else {
-                for (y in 0 until pix.getHeight()) {
+                for (y in 0 until pix.height) {
                     rgba.copyPixelsFromBuffer(ByteBuffer.wrap(samples, y * stride, rowBytes))
                 }
             }
             // the pixmap comes out with a TRANSPARENT paper: composite it onto white so the page is
             // opaque. Otherwise the "Neg" filter inverts the ink but not the background (whatever
             // is behind shows through, white in light theme) and the score ends up white on white.
-            val bmp = Bitmap.createBitmap(rgba.width, rgba.height, Bitmap.Config.ARGB_8888)
+            val bmp = createBitmap(rgba.width, rgba.height)
             bmp.eraseColor(android.graphics.Color.WHITE)
             android.graphics.Canvas(bmp).drawBitmap(rgba, 0f, 0f, null)
             bmp.setHasAlpha(false)
@@ -160,7 +158,7 @@ class MuPdfDoc private constructor(
             bitmaps[key] = bmp
             Log.d(
                 LOG_TAG,
-                "render p$index ${pix.getWidth()}x${pix.getHeight()} " +
+                "render p$index ${pix.width}x${pix.height} " +
                     "en ${(System.nanoTime() - t0) / 1_000_000}ms (hueco ${slotW}x$slotH)"
             )
             return bmp
@@ -172,22 +170,22 @@ class MuPdfDoc private constructor(
         }
     }
 
-    // Cheap size (parses only the page dictionary, does not run the content): enough to lay out
-    // before the first render. On pages with /Rotate 90/270 the aspect comes out rotated until the
-    // first render corrects it in sizes (one frame of off-centre overlay, nothing more).
+    // Cheap size (reads just the page dictionary, does not run the content): enough to lay out
+    // before the first draw. On pages with /Rotate 90/270 the shape comes out turned until the
+    // first draw corrects it in sizes (one frame of an off-centre overlay, nothing more).
     private fun loadSize(index: Int): PageBox? {
         if (index !in 0 until pageCount) return null
         val page = loadPage(index) ?: return null
         val b = try {
-            page.getBounds()
+            page.bounds
         } finally {
             page.destroy()
         }
         return PageBox(b.x0, b.y0, b.x1, b.y1).also { sizes[index] = it }
     }
 
-    // The display list includes the page content and annotations; it allows re-rasterizing at
-    // another resolution without parsing again (this is what gives sharp zoom).
+    // The display list holds the page content and its annotations; it lets us draw again at
+    // another resolution without parsing a second time (that is what keeps zoom sharp).
     private fun displayList(index: Int): DisplayList? {
         val page = loadPage(index) ?: return null
         return try {
@@ -211,16 +209,16 @@ class MuPdfDoc private constructor(
         } else null
 
     /**
-     * Forgets what is cached for a page (display list + bitmaps) so it is parsed and rendered
-     * again. For after the PDF was edited outside (annotation export): otherwise the old bitmap
-     * would hide the ink just saved. Call it under the viewer's mutex.
+     * Drops what is cached for a page (display list + bitmaps) so it gets parsed and drawn again.
+     * For after the PDF is edited behind our back (exporting annotations): otherwise the old
+     * bitmap would hide the ink that was just saved. Call it under the viewer's mutex.
      */
     fun forgetPage(index: Int) {
         lists.remove(index)?.destroy()
         bitmaps.keys.filter { it / 1_000_000L == index.toLong() }.forEach { bitmaps.remove(it) }
     }
 
-    /** Frees all. **Blocking**: call off the main thread (see FOSScoreApp.applicationScope). */
+    /** Frees everything. **Blocking**: call it off the main thread (see FOSScoreApp.applicationScope). */
     fun close() {
         lists.values.forEach { runCatching { it.destroy() } }
         lists.clear()
@@ -234,7 +232,7 @@ class MuPdfDoc private constructor(
     companion object {
         private var initialized = false
 
-        /** Opens a PDF from a SAF Uri. Blocking: call from a background dispatcher. */
+        /** Opens a PDF from a SAF Uri. Blocking: call it from a background dispatcher. */
         fun open(context: AndroidContext, uri: Uri): MuPdfDoc {
             if (!initialized) {
                 Context.init()
@@ -251,7 +249,7 @@ class MuPdfDoc private constructor(
                 throw e
             }
             return MuPdfDoc(fd, stream, doc).also { mupdf ->
-                // sizes up front: the UI lays out without having to wait for the first render
+                // sizes up front: the UI can lay out without waiting for the first draw
                 for (i in 0 until PRELOAD_SIZES) {
                     if (i >= mupdf.pageCount) break
                     runCatching { mupdf.loadSize(i) }
@@ -262,13 +260,13 @@ class MuPdfDoc private constructor(
 }
 
 /**
- * MuPDF needs a seekable stream; the SAF PFD provides one. It stays open for the document's
- * whole lifetime because MuPDF reads lazily.
- * ponytail: `RandomAccessFile(FileDescriptor, ...)` does not exist in android.jar (it is desktop
- * only), so we read with FileInputStream and seek with its FileChannel: both share the offset of
- * the same descriptor, so reads and seeks stay consistent.
+ * MuPDF wants a stream it can seek, and the SAF file descriptor gives us one. It stays open for
+ * the whole life of the document because MuPDF reads lazily.
+ * ponytail: `RandomAccessFile(FileDescriptor, ...)` does not exist in android.jar (that is a
+ * desktop thing), so we read with FileInputStream and seek with its FileChannel: both share the
+ * offset of the same descriptor, so reading and seeking stay in step.
  */
-private class FdSeekable(private val fd: ParcelFileDescriptor) : SeekableInputStream {
+private class FdSeekable(fd: ParcelFileDescriptor) : SeekableInputStream {
     private val fis = FileInputStream(fd.fileDescriptor)
     private val channel = fis.channel
     private var closed = false

@@ -6,19 +6,20 @@ import com.musigatto.fosscore.library.Stroke
 import kotlin.math.max
 import kotlin.math.min
 
-// snapshot of a page for undo: stamps + strokes
+// one page saved for undo: stamps + strokes
 data class PageEdit(val stamps: List<Stamp>, val strokes: List<Stroke>)
 
-// minimum distance in px between points of a stroke (downsample)
+// smallest gap in px between points of a stroke; anything closer is dropped
 const val MIN_SAMPLE_DIST_PX = 2f
 
-// stroke width as a fraction of the page height (0.002..0.02)
+// stroke width as a share of the page height (0.002..0.02)
 const val MIN_STROKE_WIDTH = 0.002f
 const val MAX_STROKE_WIDTH = 0.02f
 
-// the user picks the width in screen px at zoom 1 (fit height); the fraction is derived when the
-// stroke is created. ponytail: on small pages the real cap is MAX_STROKE_WIDTH (2% of the height),
-// so the last px of the slider do not grow; raise that constant if it bothers.
+// the user picks the thickness in screen px at zoom 1 (the height of the fitted page); the
+// fraction is worked out when the stroke is created. ponytail: on small pages the real cap is
+// MAX_STROKE_WIDTH (2% of the height), so the last px of the slider change nothing; raise that
+// constant if it bothers you.
 const val DEFAULT_PEN_PX = 8f
 const val MIN_PEN_PX = 1f
 const val MAX_PEN_PX = 20f
@@ -26,24 +27,24 @@ const val MAX_PEN_PX = 20f
 fun penWidthPxToFrac(px: Float, fit: RectPx): Float =
     (px / max(1f, fit.height)).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
 
-// eraser radius as a fraction of the page height (px = frac * fit.height)
+// eraser radius as a share of the page height (px = frac * fit.height)
 const val ERASE_RADIUS_FRAC = 0.02f
 
-// Writing without fully lifting: if the next stroke starts within STROKE_MERGE_MS and near the
-// end of the previous one, it is joined to it (one word = one stroke, even if the stylus lifts).
-// ponytail: the points are joined with a straight segment (the gap is a few ms). 400ms separates
-// words but joins letters; lower to ~150ms to require continuous writing. There is a Log.d
-// ("ink: merge=...") to see the real gap/dist on the device and tune by hand.
+// Writing without fully letting go: if the next stroke starts less than STROKE_MERGE_MS after
+// the previous one, and close to where it ended, it joins onto it (one word = one stroke, even
+// if the pen lifts). ponytail: the gap gets bridged with a straight line (it is a few ms wide).
+// 400ms keeps words apart but still joins letters; drop to ~150ms to demand steady writing.
+// There is a Log.d ("ink: merge=...") to see the real gap/dist on the device and tune it by hand.
 const val STROKE_MERGE_MS = 400L
 const val STROKE_MERGE_DIST_FRAC = 0.04f
 
-// last stroke just written, so the next one can be joined to it
+// the stroke just written, so the next one can join it
 class InkTail {
     var last: Stroke? = null
     var at: Long = 0L
 }
 
-// does the new stroke continue the previous one? same style, short pause and near its end
+// does the new stroke continue the last one? same style, short pause, close to its end
 fun shouldMergeStroke(
     prevEndPx: Offset,
     newStartPx: Offset,
@@ -53,7 +54,7 @@ fun shouldMergeStroke(
 ): Boolean = sameStyle && gapMs <= STROKE_MERGE_MS &&
     (newStartPx - prevEndPx).getDistance() <= STROKE_MERGE_DIST_FRAC * fit.height
 
-// drops consecutive points closer than minDist to the previous one
+// drops points that land closer than minDist to the one before
 fun samplePoints(pts: List<Offset>, minDist: Float): List<Offset> {
     if (pts.size < 2) return pts
     val out = ArrayList<Offset>(pts.size)
@@ -104,19 +105,19 @@ fun minDistanceToPolyline(p: Offset, poly: List<Offset>): Float {
     return best
 }
 
-// removes from a stroke the points within < radius of the eraser path and returns the surviving
-// segments (separated ends become distinct strokes); empty = erased entirely.
-// ponytail: the eraser is always partial (you brush over what you want removed). To remove a
-// whole word: tap it (selects it) then 🗑. Upgrade if ever needed: an "erase whole stroke" mode
-// as an eraser setting; it wasn't requested and 🗑 already covers it.
+// removes from a stroke the points that fall within radius of the eraser trail and returns the
+// surviving pieces (separated ends become separate strokes); empty = the whole thing went.
+// ponytail: the eraser is always partial (you graze what you want gone). To remove a whole
+// word: tap it (that selects it) and press 🗑. Upgrade if it ever matters: a "delete the whole
+// stroke" mode as an eraser setting; nobody asked for it and 🗑 already covers it.
 fun eraseStrokePoints(pts: List<Offset>, eraser: List<Offset>, radius: Float): List<List<Offset>> {
     if (eraser.isEmpty() || pts.isEmpty()) return listOf(pts)
     val keep = pts.map { minDistanceToPolyline(it, eraser) >= radius }
     if (keep.none { it }) return emptyList()
     val runs = mutableListOf<MutableList<Offset>>()
     var cur = mutableListOf<Offset>()
-    // ponytail: a gap > 2*radius between survivors splits segments; fails if a stroke has
-    // naturally widely spaced samples. Upgrade: decide by proximity to the eraser path.
+    // ponytail: a gap wider than 2*radius between survivors splits the pieces; it gets it wrong
+    // if a stroke has naturally very spread-out points. Upgrade: split by distance to the trail.
     val splitGap = radius * 2f
     for (i in pts.indices) {
         if (!keep[i]) {
@@ -132,7 +133,7 @@ fun eraseStrokePoints(pts: List<Offset>, eraser: List<Offset>, radius: Float): L
     return runs
 }
 
-// box enclosing the points (px) — a stroke's selection rectangle
+// the box that wraps the points (px) — the selection box around a stroke
 fun strokeBounds(pts: List<Offset>): RectPx {
     if (pts.isEmpty()) return RectPx(0f, 0f, 0f, 0f)
     var l = Float.MAX_VALUE
@@ -151,7 +152,7 @@ fun strokeBounds(pts: List<Offset>): RectPx {
 fun scalePoints(pts: List<Offset>, center: Offset, factor: Float): List<Offset> =
     pts.map { Offset(center.x + (it.x - center.x) * factor, center.y + (it.y - center.y) * factor) }
 
-// stroke under the finger (tolerance = the handle or the width, whichever is larger)
+// the stroke under the finger (tolerance = the handle or the thickness, whichever is bigger)
 fun hitStroke(pos: Offset, strokes: List<Stroke>, fit: RectPx): Stroke? {
     if (fit.width <= 0f) return null
     return strokes.lastOrNull { st ->

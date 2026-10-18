@@ -8,11 +8,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
+// ponytail: hand-rolled DI, one DB + three repos; move to Hilt when the graph grows
 class FOSScoreApp : Application() {
     val repository: LibraryRepository by lazy { LibraryRepository(this) }
     val stampRepository: StampRepository by lazy { StampRepository(this) }
     val strokeRepository: StrokeRepository by lazy { StrokeRepository(this) }
-    // ponytail: manual DI with 1 DB + 3 repos; Hilt once the graph grows
-    // cleanup tasks that must outlive the composition (e.g. PdfRenderer's close())
+
+    // cleanup work that must outlive the UI (e.g. MuPdfDoc.close())
     val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 }

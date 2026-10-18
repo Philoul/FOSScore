@@ -1,8 +1,10 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
-import androidx.annotation.StringRes
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.R
+import androidx.core.content.edit
 import com.musigatto.fosscore.locale.LocaleHelper
 
 enum class ThemeMode {
@@ -16,13 +18,12 @@ enum class ThemeMode {
         DARK -> true
     }
 
-    @get:StringRes
-    val labelRes: Int
-        get() = when (this) {
-            SYSTEM -> R.string.theme_auto
-            LIGHT -> R.string.theme_light
-            DARK -> R.string.theme_dark
-        }
+    @Composable
+    fun label(): String = when (this) {
+        SYSTEM -> stringResource(R.string.theme_auto)
+        LIGHT -> stringResource(R.string.theme_light)
+        DARK -> stringResource(R.string.theme_dark)
+    }
 }
 
 object Settings {
@@ -38,19 +39,19 @@ object Settings {
         ThemeMode.entries[context.prefs().getInt(KEY_THEME, ThemeMode.SYSTEM.ordinal)]
 
     fun setThemeMode(context: Context, mode: ThemeMode) {
-        context.prefs().edit().putInt(KEY_THEME, mode.ordinal).apply()
+        context.prefs().edit { putInt(KEY_THEME, mode.ordinal) }
     }
 
     fun dimPct(context: Context): Float = context.prefs().getFloat(KEY_DIM, 0f)
 
     fun setDimPct(context: Context, pct: Float) {
-        context.prefs().edit().putFloat(KEY_DIM, pct.coerceIn(0f, 80f)).apply()
+        context.prefs().edit { putFloat(KEY_DIM, pct.coerceIn(0f, 80f)) }
     }
 
     fun invert(context: Context): Boolean = context.prefs().getBoolean(KEY_INVERT, false)
 
     fun setInvert(context: Context, value: Boolean) {
-        context.prefs().edit().putBoolean(KEY_INVERT, value).apply()
+        context.prefs().edit { putBoolean(KEY_INVERT, value) }
     }
 
     // Keeps the screen awake while a score is displayed, so it does not sleep mid-performance.
@@ -65,7 +66,7 @@ object Settings {
         context.prefs().getInt(KEY_LAST_PAGE + uri, 0)
 
     fun setLastPage(context: Context, uri: String, page: Int) {
-        context.prefs().edit().putInt(KEY_LAST_PAGE + uri, page).apply()
+        context.prefs().edit { putInt(KEY_LAST_PAGE + uri, page) }
     }
 
     // LocaleHelper.FOLLOW_DEVICE or a language code from LocaleHelper.SUPPORTED

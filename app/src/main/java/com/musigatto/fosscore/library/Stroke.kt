@@ -12,10 +12,10 @@ data class Stroke(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sheetHash: String,
     val page: Int,
-    // normalized points (0..1) encoded as "x;y|x;y|…" (see encodePoints)
+    // points as 0..1, packed as "x,y|x,y|…"
     val points: String,
-    // width as a fraction of the page height
+    // width as a share of the page height
     val width: Float,
-    // ARGB ink colour (null = theme colour)
+    // ARGB ink color (null = theme color)
     val color: Int? = null
 )

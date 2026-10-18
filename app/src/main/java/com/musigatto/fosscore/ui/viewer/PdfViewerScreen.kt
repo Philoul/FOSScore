@@ -54,6 +54,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -68,6 +70,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -401,6 +409,12 @@ fun PdfViewerScreen(
 
     BackHandler(onBack = onBack)
 
+    // keyboard / pedal page turns: the viewer root holds the focus, otherwise key events reach
+    // nothing and only the on-screen buttons turn pages. Preview so a focused button or slider
+    // does not swallow the key first.
+    val keyFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { keyFocus.requestFocus() }
+
     LaunchedEffect(currentPage) {
         Settings.setLastPage(context, pdfUri.toString(), currentPage)
     }
@@ -556,6 +570,16 @@ fun PdfViewerScreen(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { viewport = it }
+            .onPreviewKeyEvent { e ->
+                val turn = pageTurnFor(e.key, e.isShiftPressed) ?: return@onPreviewKeyEvent false
+                // a held key repeats: turn one page per press, not a burst
+                if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
+                    if (turn == PageTurn.NEXT) applyNext() else applyPrev()
+                }
+                true
+            }
+            .focusRequester(keyFocus)
+            .focusable()
     ) {
         if (error != null) {
             Column(

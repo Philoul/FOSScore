@@ -683,7 +683,8 @@ fun PdfViewerScreen(
                                     movingOrigin = hitS
                                     selectedId = hitS.id
                                     selectedStrokeId = null
-                                    activeSymbol = runCatching { StampSymbol.valueOf(hitS.symbol) }.getOrNull()
+                                    // Selecting a stamp must NOT arm its symbol, or the next tap
+                                    // outside it silently stamps a second copy.
                                     dragStamp = hitS
                                 } else if (hitT != null) {
                                     movingStroke = hitT
@@ -898,6 +899,10 @@ fun PdfViewerScreen(
                                         }
                                         if (sym != null && sheetHash != null && scale <= 1f) {
                                             val pos = pxToNormalized(downF, currentHitFit)
+                                            // One stamp per arming: stand the tool down as soon as it
+                                            // is used, so the next tap outside the new stamp deselects
+                                            // instead of stamping again.
+                                            activeSymbol = null
                                             pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                             editScope.launch {
                                                 val id = stampRepo.insert(
@@ -1431,6 +1436,9 @@ fun PdfViewerScreen(
                             dragStroke = null
                             drawingTool = false
                             eraserTool = false
+                            // same invariant as above: leaving edit mode must not leave a
+                            // stamp tool armed for the next time we come back in
+                            activeSymbol = null
                             inkPreview = emptyList()
                             hiddenStampIds = emptySet()
                             hiddenStrokeIds = emptySet()

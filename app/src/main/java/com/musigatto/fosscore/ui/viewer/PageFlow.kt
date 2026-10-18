@@ -38,3 +38,13 @@ data class PageFlow(
         else copy(page = (page - step).coerceAtLeast(0))
     }
 }
+
+/**
+ * Páginas que se ven a la vez, 0-based: [currentPage] sola, o ella y la siguiente en spread.
+ * `IntRange.EMPTY` si el PDF todavía no tiene páginas.
+ */
+fun visiblePageRange(currentPage: Int, pageCount: Int, showSpread: Boolean): IntRange = when {
+    pageCount <= 0 -> IntRange.EMPTY
+    showSpread && currentPage + 1 < pageCount -> currentPage..currentPage + 1
+    else -> currentPage..currentPage
+}

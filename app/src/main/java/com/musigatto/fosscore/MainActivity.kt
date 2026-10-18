@@ -69,7 +69,7 @@ private sealed interface Screen {
 
 // rotating the tablet recreates the Activity: without saving the screen, `screen` went back to
 // Library and the open sheet was closed. The viewer already keeps the current page (rememberSaveable).
-private val ScreenSaver = listSaver<Screen, Any>(
+private val ScreenSaver = listSaver(
     save = { s ->
         when (s) {
             Screen.Library -> listOf("library")

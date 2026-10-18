@@ -13,44 +13,45 @@ import java.io.File
 
 private const val LOG_TAG = "FOSScore-Annots"
 
-/** Error tipado de exportar tinta: cada caso lleva su string (ver values/strings.xml). */
+/** Typed ink-export error: each case carries its own string (see values/strings.xml). */
 sealed class ExportError(val res: Int) : Exception() {
-    data object NoLocalFile : ExportError(R.string.err_no_local_file)
-    data object NotEditable : ExportError(R.string.err_pdf_not_editable)
-    data object ReplaceFailed : ExportError(R.string.err_replace_failed)
-    data object NoInk : ExportError(R.string.err_no_ink)
+    class NoLocalFile : ExportError(R.string.err_no_local_file)
+    class NotEditable : ExportError(R.string.err_pdf_not_editable)
+    class ReplaceFailed : ExportError(R.string.err_replace_failed)
+    class NoInk : ExportError(R.string.err_no_ink)
 }
 
 /**
- * Tinta en coordenadas normalizadas de encaje (0..1, y-hacia-abajo): lo que guarda la BD.
- * Sin IDs ni metadatos de Room para no acoplar este paquete a la capa de datos.
+ * Ink as fractions of the page you see (0..1, y running down): what the DB stores.
+ * No Room IDs or metadata, so this package stays clear of the data layer.
  */
 data class InkStroke(val points: List<Offset>, val widthFrac: Float, val colorArgb: Int?)
 
 /**
- * Anotaciones dentro del propio PDF (/Annots), estilo Xodo: la tinta deja de vivir solo en el
- * sidecar SQLite y pasa a formar parte del documento (vale en cualquier visor).
+ * Annotations inside the PDF itself (/Annots): ink stops living only in the
+ * SQLite sidecar and becomes part of the document (works in any viewer).
  *
- * v1: solo tinta (Ink). Todo es síncrono y toca JNI: llamar bajo el mutex de render del visor
- * y desde un dispatcher de fondo. No toca la BD: quien llama borra el sidecar exportado.
+ * v1: ink only. Everything is synchronous and reaches into native code: call it under the
+ * viewer's render mutex and from a background dispatcher. It leaves the DB alone: the
+ * caller deletes the sidecar that was exported.
  */
 object MuPdfAnnots {
 
     /**
-     * Escribe [strokes] por página como anotaciones Ink y guarda el archivo.
-     * Devuelve las páginas escritas con éxito (para que el llamador borre ese sidecar).
-     * No edita nada si el documento no abre como PDF editable.
+     * Writes [strokes] per page as ink annotations and saves the file.
+     * Returns the pages that were written (so the caller can delete that sidecar).
+     * Edits nothing if the document does not open as an editable PDF.
      */
     fun exportInk(
         filePath: String,
         strokes: Map<Int, List<InkStroke>>,
         fallbackBox: (Int) -> PageBox?
     ): Set<Int> {
-        if (strokes.isEmpty()) throw ExportError.NoInk
+        if (strokes.isEmpty()) throw ExportError.NoInk()
         val file = File(filePath)
-        if (!file.isFile) throw ExportError.NoLocalFile
+        if (!file.isFile) throw ExportError.NoLocalFile()
         val doc = Document.openDocument(filePath) as? PDFDocument
-            ?: throw ExportError.NotEditable
+            ?: throw ExportError.NotEditable()
         try {
             val done = mutableSetOf<Int>()
             for ((pageIdx, list) in strokes) {
@@ -59,13 +60,13 @@ object MuPdfAnnots {
                 if (writePageInk(doc, pageIdx, usable, fallbackBox(pageIdx))) done += pageIdx
             }
             if (done.isEmpty()) return emptySet()
-            // guardado completo a tmp + reemplazo: sin el peligro de reescribir el mismo
-            // archivo que se está leyendo (el incremental lo evita, pero exige el doc abierto
-            // del propio fichero y falla en PDFs reparados).
+            // save the whole file under a tmp name, then swap it in: never rewrite a file
+            // while reading it. Saving just the changes would avoid that too, but it needs
+            // the document opened as that very file and breaks on repaired PDFs.
             val tmp = File("$filePath.fosscore-tmp")
             try {
                 doc.save(tmp.absolutePath, "")
-                if (!tmp.renameTo(file)) throw ExportError.ReplaceFailed
+                if (!tmp.renameTo(file)) throw ExportError.ReplaceFailed()
             } finally {
                 tmp.delete()
             }
@@ -91,16 +92,16 @@ object MuPdfAnnots {
         return try {
             val space = readSpace(page, fallback) ?: return false
             var n = 0
-            for (s in strokes) {
-                val pts = s.points.map {
+            for ((points, widthFrac, colorArgb) in strokes) {
+                val pts = points.map {
                     val p = PdfAnnotMapper.normalizedToPdf(it, space)
                     Point(p.x, p.y)
                 }
                 val annot = page.createAnnotation(PDFAnnotation.TYPE_INK)
-                annot.setInkList(arrayOf(pts.toTypedArray()))
-                annot.setRect(inkRect(pts, PdfAnnotMapper.widthFracToPt(s.widthFrac, space)))
-                annot.setColor(PdfAnnotMapper.argbToPdfRgb(s.colorArgb ?: 0xFF000000.toInt()))
-                annot.setBorderWidth(PdfAnnotMapper.widthFracToPt(s.widthFrac, space))
+                annot.inkList = arrayOf(pts.toTypedArray())
+                annot.rect = inkRect(pts, PdfAnnotMapper.widthFracToPt(widthFrac, space))
+                annot.color = PdfAnnotMapper.argbToPdfRgb(colorArgb ?: 0xFF000000.toInt())
+                annot.borderWidth = PdfAnnotMapper.widthFracToPt(widthFrac, space)
                 annot.update()
                 n++
             }
@@ -125,7 +126,7 @@ object MuPdfAnnots {
             )
         }.getOrNull()
         if (parsed != null) return parsed
-        // último recurso: caja de dibujo (ya rotada) como si no hubiera rotación
+        // last resort: use the drawing box (already turned) as if the page were not turned
         Log.w(LOG_TAG, "MediaBox ilegible, uso caja de dibujo")
         return fallback?.let { PdfPageSpace(0f, 0f, it.width, it.height, 0) }
     }

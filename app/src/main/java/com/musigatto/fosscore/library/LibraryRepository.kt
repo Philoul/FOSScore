@@ -34,9 +34,9 @@ class LibraryRepository(context: Context) {
         val destination = File(dir, "${UUID.randomUUID()}.pdf")
         val hash = try {
             val input = appContext.contentResolver.openInputStream(uri)
-            if (input == null) return ImportResult.Error(R.string.err_open_file)
+                ?: return ImportResult.Error(R.string.err_open_file)
             SheetImporter.import(input, destination)
-        } catch (e: IOException) {
+        } catch (_: IOException) {
             destination.delete()
             return ImportResult.Error(R.string.err_file_unreadable)
         }
@@ -71,7 +71,7 @@ class LibraryRepository(context: Context) {
         try {
             File(sheet.path).delete()
         } catch (_: Exception) {
-            // ponytail: fila ya borrada; si el archivo no existe/falla, no bloquea el borrado
+            // ponytail: the row is already gone; a missing file must not block the delete
         }
     }
 }

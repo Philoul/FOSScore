@@ -39,4 +39,25 @@
     <string name="err_pdf_not_editable">El PDF no se puede editar</string>
     <string name="err_replace_failed">No se pudo reemplazar el PDF</string>
     <string name="err_export_failed">No se pudo guardar en el PDF</string>
+
+    <!-- Nombres que lee el lector de pantalla (paleta de sellos) -->
+    <string name="stamp_pp">Pianissimo (pp)</string>
+    <string name="stamp_p">Piano (p)</string>
+    <string name="stamp_mp">Mezzopiano (mp)</string>
+    <string name="stamp_mf">Mezzoforte (mf)</string>
+    <string name="stamp_f">Forte (f)</string>
+    <string name="stamp_ff">Fortissimo (ff)</string>
+    <string name="stamp_cresc">Crescendo</string>
+    <string name="stamp_decresc">Decrescendo</string>
+    <string name="stamp_upbow">Arco arriba</string>
+    <string name="stamp_downbow">Arco abajo</string>
+    <string name="stamp_accent">Acento</string>
+    <string name="stamp_staccato">Staccato</string>
+    <string name="stamp_tenuto">Tenuto</string>
+    <string name="stamp_fermata">Calderón</string>
+    <string name="stamp_sharp">Sostenido</string>
+    <string name="stamp_flat">Bemol</string>
+    <string name="stamp_natural">Becuadro</string>
+    <string name="stamp_double_sharp">Doble sostenido</string>
+    <string name="stamp_double_flat">Doble bemol</string>
 </resources>

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.R
+import androidx.core.content.edit
 
 enum class ThemeMode {
     SYSTEM, LIGHT, DARK;
@@ -35,26 +36,26 @@ object Settings {
         ThemeMode.entries[context.prefs().getInt(KEY_THEME, ThemeMode.SYSTEM.ordinal)]
 
     fun setThemeMode(context: Context, mode: ThemeMode) {
-        context.prefs().edit().putInt(KEY_THEME, mode.ordinal).apply()
+        context.prefs().edit { putInt(KEY_THEME, mode.ordinal) }
     }
 
     fun dimPct(context: Context): Float = context.prefs().getFloat(KEY_DIM, 0f)
 
     fun setDimPct(context: Context, pct: Float) {
-        context.prefs().edit().putFloat(KEY_DIM, pct.coerceIn(0f, 80f)).apply()
+        context.prefs().edit { putFloat(KEY_DIM, pct.coerceIn(0f, 80f)) }
     }
 
     fun invert(context: Context): Boolean = context.prefs().getBoolean(KEY_INVERT, false)
 
     fun setInvert(context: Context, value: Boolean) {
-        context.prefs().edit().putBoolean(KEY_INVERT, value).apply()
+        context.prefs().edit { putBoolean(KEY_INVERT, value) }
     }
 
     fun lastPage(context: Context, uri: String): Int =
         context.prefs().getInt(KEY_LAST_PAGE + uri, 0)
 
     fun setLastPage(context: Context, uri: String, page: Int) {
-        context.prefs().edit().putInt(KEY_LAST_PAGE + uri, page).apply()
+        context.prefs().edit { putInt(KEY_LAST_PAGE + uri, page) }
     }
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)

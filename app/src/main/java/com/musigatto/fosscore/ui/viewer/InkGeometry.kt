@@ -12,10 +12,19 @@ data class PageEdit(val stamps: List<Stamp>, val strokes: List<Stroke>)
 // minimum distance in px between points of a stroke (downsample)
 const val MIN_SAMPLE_DIST_PX = 2f
 
-// stroke width as a fraction of the page height (0.002..0.02; ~0.8% by default)
-const val DEFAULT_STROKE_WIDTH = 0.008f
+// stroke width as a fraction of the page height (0.002..0.02)
 const val MIN_STROKE_WIDTH = 0.002f
 const val MAX_STROKE_WIDTH = 0.02f
+
+// the user picks the width in screen px at zoom 1 (fit height); the fraction is derived when the
+// stroke is created. ponytail: on small pages the real cap is MAX_STROKE_WIDTH (2% of the height),
+// so the last px of the slider do not grow; raise that constant if it bothers.
+const val DEFAULT_PEN_PX = 8f
+const val MIN_PEN_PX = 1f
+const val MAX_PEN_PX = 20f
+
+fun penWidthPxToFrac(px: Float, fit: RectPx): Float =
+    (px / max(1f, fit.height)).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
 
 // eraser radius as a fraction of the page height (px = frac * fit.height)
 const val ERASE_RADIUS_FRAC = 0.02f

@@ -262,7 +262,7 @@ fun PdfViewerScreen(
     var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // tint ARGB; null = theme
     var drawingTool by rememberSaveable { mutableStateOf(false) }      // pen mode: ink, not stamps
     var eraserTool by rememberSaveable { mutableStateOf(false) }      // eraser mode: erases stamps and strokes
-    var penWidth by remember { mutableFloatStateOf(DEFAULT_STROKE_WIDTH) }  // ink width (fraction of page height)
+    var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink width (px at zoom 1)
     var dragStamp by remember { mutableStateOf<Stamp?>(null) }
     var dragStroke by remember { mutableStateOf<Stroke?>(null) }   // preview of moving/stretching a stroke
     var selectedId by remember { mutableStateOf<Long?>(null) }
@@ -802,7 +802,7 @@ fun PdfViewerScreen(
                                         val fit = currentHitFit
                                         val page = currentPage
                                         val hash = sheetHash
-                                        val width = penWidth
+                                        val width = penWidthPxToFrac(penWidthPx, currentHitFit)
                                         val color = activeColor
                                         val startPx = pts.first()   // comparison in px, not normalized
                                         editScope.launch {
@@ -1331,7 +1331,7 @@ fun PdfViewerScreen(
                                                 if (eraserTool) Color.Red.copy(alpha = 0.4f)
                                                 else inkColor(stampColor(activeColor, themeColor)),
                                                 if (eraserTool) ERASE_RADIUS_FRAC * hitFit.height * 2f
-                                                else penWidth * hitFit.height
+                                                else penWidthPx
                                             )
                                         }
                                     }
@@ -1707,12 +1707,15 @@ fun PdfViewerScreen(
                         if (drawingTool) {
                             Text(stringResource(R.string.thickness_label), style = MaterialTheme.typography.bodyMedium)
                             Slider(
-                                value = penWidth,
-                                onValueChange = { penWidth = it },
-                                valueRange = MIN_STROKE_WIDTH..MAX_STROKE_WIDTH,
-                                modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
+                                value = penWidthPx,
+                                onValueChange = { penWidthPx = it },
+                                valueRange = MIN_PEN_PX..MAX_PEN_PX,
+                                steps = (MAX_PEN_PX - MIN_PEN_PX).toInt() - 1,
+                                modifier = Modifier
+                                    .width(140.dp)
+                                    .padding(horizontal = 12.dp)
                             )
-                            Text(stringResource(R.string.percent_value, (penWidth * 100).roundToInt()), style = MaterialTheme.typography.bodyMedium)
+                            Text("${penWidthPx.roundToInt()} px", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.width(8.dp))
                         }
                         if (selectedStamp != null) {

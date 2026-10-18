@@ -115,9 +115,6 @@ import androidx.core.graphics.createBitmap
 // resolution we ask for, so zoom looks sharp instead of slightly soft.
 private const val LOG_TAG = "FOSScore-PDF"
 
-// short number format that does not depend on the phone language (the test device runs in Spanish).
-private fun f1(v: Float): String = if (v.isFinite()) ((v * 10).roundToInt() / 10f).toString() else "?"
-
 // Touch noise with still fingers: ±1 px over ~400 px between fingers ≈ 0.25%. A 0.4% dead zone
 // stops the zoom reacting to that noise (without it the content "breathes" and looks shaky).
 private const val ZOOM_NOISE_RATIO = 0.004f
@@ -200,8 +197,6 @@ fun PdfViewerScreen(
     // double tap: fit <-> zoom. We keep the time and the point of the previous tap.
     var lastTapMs by remember { mutableLongStateOf(0L) }
     var lastTapPos by remember { mutableStateOf(Offset.Zero) }
-    // speed left over when the finger lifts (pan inertia); cleared on touch
-    var flingVel by remember { mutableStateOf(Offset.Zero) }
     val doubleTapSlopPx = with(LocalDensity.current) { 40.dp.toPx() }
     // SnapshotStateMap: changing one bitmap only redraws whoever reads THAT key. With a plain
     // Map, changing a bitmap invalidated the Image + the ink Canvas + all the stamps at once
@@ -358,8 +353,8 @@ fun PdfViewerScreen(
         if (viewport == IntSize.Zero) return
         // Single page: the content is the page at its fit; the reading modes (two-up, half page)
         // scale the whole viewport. `currentSpread`/`currentPageFit` are states updated on every
-        // composition, so the gesture and the inertia — which captured this function when they
-        // started — always read live values.
+        // composition, so the gesture — which captured this function when it started — always
+        // reads live values.
         val vps = Size(viewport.width.toFloat(), viewport.height.toFloat())
         val (content, base) = if (currentSpread) {
             Size(viewport.width.toFloat(), viewport.height.toFloat()) to Offset.Zero
@@ -459,38 +454,6 @@ fun PdfViewerScreen(
         offsetX = 0f
         offsetY = 0f
         renderScale = 1f
-    }
-
-    // Pan inertia: after you lift, the movement carries on with friction until the speed dies, or
-    // it hits the edge. Without this, crossing a zoomed page by hand is painfully slow.
-    // ponytail: our own loop with friction instead of Animatable+decay (less code, same effect).
-    LaunchedEffect(flingVel) {
-        var v = flingVel
-        flingVel = Offset.Zero
-        if (v.getDistance() < 600f) return@LaunchedEffect
-        var px = offsetX
-        var py = offsetY
-        val fromX = px
-        val fromY = py
-        Log.d(LOG_TAG, "INERCIA empieza v=${f1(v.x)},${f1(v.y)} off=${f1(px)},${f1(py)}")
-        while (v.getDistance() > 20f) {
-            delay(16.milliseconds)
-            px += v.x * 0.016f
-            py += v.y * 0.016f
-            val bx = offsetX
-            val by = offsetY
-            offsetX = px
-            offsetY = py
-            clampOffsets()
-            // the clamp has braked us against the edge: inertia adds nothing there
-            if (offsetX == bx && offsetY == by) break
-            v *= 0.965f   // long friction: the glide is felt, it does not stop after 200 ms
-        }
-        Log.d(
-            LOG_TAG,
-            "INERCIA acaba off=${f1(offsetX)},${f1(offsetY)} " +
-                "recorrido=${f1(offsetX - fromX)},${f1(offsetY - fromY)}"
-        )
     }
 
     // Redraw at the current zoom (steps of 10% of the fit, ZoomMath.renderBucket): like reference
@@ -623,8 +586,7 @@ fun PdfViewerScreen(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         if (down.isConsumed) return@awaitEachGesture
-                        flingVel = Offset.Zero   // touching cuts the inertia
-                        zoomAnimJob?.cancel()    // and the double-tap animation
+                        zoomAnimJob?.cancel()    // any new touch cancels the double-tap animation
                         // screen -> fit coordinates (0..fitW x 0..fitH): the content no longer
                         // lives in a scaled layer, so the gesture translates the finger point here
                         fun fitPoint(p: Offset): Offset {
@@ -658,8 +620,6 @@ fun PdfViewerScreen(
                         var eraserActive = false
                         var eraserPath = mutableListOf<Offset>()
                         var scaleF = 1f   // accumulated handle factor (always from startPos)
-                        var panVel = Offset.Zero
-                        var lastPanMs = System.currentTimeMillis()
                         if (currentEditing && currentCanEdit && !currentDrawingTool && !currentEraserTool) {
                             // 1) a handle on the selection box wins over everything else: entering
                             //    by the corner stretches, entering inside moves.
@@ -890,10 +850,6 @@ fun PdfViewerScreen(
                                     } else {
                                         lastTapMs = nowMs
                                         lastTapPos = down.position
-                                        // No multi-finger guard needed: with the pan branch held
-                                        // back by `scaling`, panVel only comes from a real
-                                        // one-finger drag.
-                                        flingVel = if (panVel.getDistance() > 600f) panVel else Offset.Zero
                                     }
                                     if (isDoubleTap) {
                                         // already handled above: neither places a stamp nor turns the page
@@ -1117,14 +1073,6 @@ fun PdfViewerScreen(
                                 isTransform = true
                                 offsetX += delta.x
                                 offsetY += delta.y
-                                // smoothed speed, for the inertia when you lift
-                                val nowMs = System.currentTimeMillis()
-                                val dt = (nowMs - lastPanMs).coerceAtLeast(1L) / 1000f
-                                // It only builds up on a real one-finger drag (this branch does not run
-                                // during a pinch), which is how a spurious fling at the end of a pinch
-                                // is avoided: the pan never comes out of the pinch.
-                                if (dt < 0.2f) panVel = panVel * 0.7f + (delta / dt) * 0.3f
-                                lastPanMs = nowMs
                             }
                             clampOffsets()
                             prevCentroid = c

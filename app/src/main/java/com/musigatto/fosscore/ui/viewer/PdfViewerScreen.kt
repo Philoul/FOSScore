@@ -108,8 +108,11 @@ import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.pdf.MuPdfDoc
+import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.PageSource
+import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -122,6 +125,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.max
@@ -202,6 +206,10 @@ fun PdfViewerScreen(
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     var pageSource by remember { mutableStateOf<PageSource?>(null) }
+    // a MusicXML score has no pages of its own: they are laid out for this screen (MusicXmlPages)
+    val format = remember(pdfUri) { SheetFormat.of(pdfUri.path.orEmpty()) }
+    // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
+    var layoutVersion by remember { mutableIntStateOf(0) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
@@ -336,7 +344,10 @@ fun PdfViewerScreen(
         }
     }
 
-    val canEdit = sheetHash != null && !branch.showTwoUp && !(branch.showHalf && halfTurned)
+    // ponytail: no annotations on MusicXML yet. They are stored per page, and a MusicXML page
+    // changes with the screen and the music size; they need to be tied to measures first.
+    val canEdit = sheetHash != null && !format.isMusicXml && !branch.showTwoUp &&
+        !(branch.showHalf && halfTurned)
 
     // marks and stamps of the current page, shared between the overlay and the gestures.
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
@@ -569,7 +580,10 @@ fun PdfViewerScreen(
             // NonCancellable: if the user leaves while we are opening, the document is created
             // anyway, and we close it below. Cancelling here would leave the native doc hanging
             // (and its memory too).
-            val doc = withContext(NonCancellable + Dispatchers.IO) { MuPdfDoc.open(context, pdfUri) }
+            val doc: PageSource = withContext(NonCancellable + Dispatchers.IO) {
+                if (format.isMusicXml) MusicXmlPages.open(context, File(pdfUri.path.orEmpty()))
+                else MuPdfDoc.open(context, pdfUri)
+            }
             if (!isActive) {
                 withContext(NonCancellable + Dispatchers.IO) { doc.close() }
                 return@LaunchedEffect
@@ -584,8 +598,46 @@ fun PdfViewerScreen(
             error = R.string.err_open_file
         } catch (e: Exception) {
             Log.e(LOG_TAG, "no se pudo abrir: ${e::class.simpleName}: ${e.message}", e)
-            error = R.string.err_invalid_pdf
+            error = if (format.isMusicXml) R.string.err_open_file else R.string.err_invalid_pdf
         }
+    }
+
+    // MusicXML: break the music into pages of this screen's size, and again when the screen turns
+    // or two-up starts (two pages of half the width). The reading position is kept as a fraction
+    // of the score: the page breaks move, not the music.
+    val densityDpi = configuration.densityDpi
+    val twoUpSlots = isLandscape && twoUp && !halfEnabled
+    LaunchedEffect(pageSource, viewport, twoUpSlots) {
+        val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
+        if (viewport == IntSize.Zero) return@LaunchedEffect
+        val spec = LayoutSpec(
+            width = if (twoUpSlots) viewport.width / 2 else viewport.width,
+            height = viewport.height,
+            // the music size follows the whole screen, so two-up does not shrink the notes
+            scale = LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi),
+        )
+        val before = pageCount
+        try {
+            val changed = rendererLock.withLock {
+                withContext(Dispatchers.Default) { pages.layout(spec) }
+            }
+            if (!changed) return@LaunchedEffect
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "MusicXML layout failed: ${e::class.simpleName}: ${e.message}", e)
+            error = R.string.err_open_file
+            return@LaunchedEffect
+        }
+        val after = pages.pageCount
+        if (after > 0) {
+            currentPage = (if (before > 0) currentPage * after / before else currentPage)
+                .coerceIn(0, after - 1)
+        }
+        halfTurned = false
+        pageCount = after
+        bitmaps.clear()
+        layoutVersion++
     }
 
     // zoom back to zero when the page or the reading mode changes (the draw step too: otherwise
@@ -620,8 +672,11 @@ fun PdfViewerScreen(
     // viewport matters: on the first frame it is still IntSize.Zero, and with no size there is no draw
     LaunchedEffect(
         pageSource, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
+        layoutVersion,
     ) {
         val r = pageSource ?: return@LaunchedEffect
+        // a MusicXML score has no pages until it is laid out (the effect above)
+        if (r is MusicXmlPages && r.pageCount == 0) return@LaunchedEffect
         val gen = ++renderGeneration
         val needed = when {
             branch.showTwoUp -> listOf(currentPage, currentPage + 1).filter { it < pageCount }
@@ -686,7 +741,9 @@ fun PdfViewerScreen(
     // ahead of time makes the turn a cache hit in MuPdfDoc (same page, same width key).
     // Only at 1x: a turn resets the zoom, so a draw at a zoomed slot would never be reused.
     // The delay gives a quick turn the lock: turning before it fires cancels this effect.
-    LaunchedEffect(pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf) {
+    LaunchedEffect(
+        pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf, layoutVersion,
+    ) {
         val r = pageSource ?: return@LaunchedEffect
         if (branch.showTwoUp || (branch.showHalf && halfTurned)) return@LaunchedEffect
         if (renderScale != 1f || viewport == IntSize.Zero) return@LaunchedEffect

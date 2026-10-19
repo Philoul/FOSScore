@@ -40,8 +40,8 @@ object ZoomMath {
         // Without zoom the view is "full page": always centred.
         if (scale <= 1f) return 0f
         val scaled = content * scale
-        // ponytail: clamp sin huecos — si el contenido cabe se centra (sin paneo),
-        // si desborda el borde queda pegado (nada de medio viewport vacío).
+        // ponytail: gapless clamp — if the content fits it is centred (no pan),
+        // if it overflows the edge sticks to the viewport (no half-empty viewport).
         return if (scaled <= viewport) {
             (viewport - scaled) / 2f - base
         } else {

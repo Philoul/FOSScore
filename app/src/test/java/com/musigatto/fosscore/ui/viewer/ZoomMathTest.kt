@@ -47,22 +47,22 @@ class ZoomMathTest {
         assertEquals(k * offset.y + (1f - k) * anchor.y, noBase.y, 1e-3f)
     }
 
-    // Sin huecos: si el contenido cabe se centra (sin paneo); si desborda, el borde
-    // queda pegado al viewport. Sin zoom (scale == 1) la vista es página completa.
+    // No gaps: if the content fits it is centred (no pan); if it overflows, the edge
+    // sticks to the viewport. Without zoom (scale == 1) the view is full page.
     @Test
     fun clampOffsetKeepsAnchorSlideAcrossAllScalesAndCentersAtScaleOne() {
         val viewport = Size(1000f, 700f)
         val content = Size(400f, 560f)   // fit <= viewport
         val base = Offset((viewport.width - content.width) / 2f, (viewport.height - content.height) / 2f)
-        val s = 1.2f   // 400*1.2=480 <= 1000 y 560*1.2=672 <= 700: ambos ejes caben -> centrado
+        val s = 1.2f   // 400*1.2=480 <= 1000 and 560*1.2=672 <= 700: both axes fit -> centred
 
-        // cabe: siempre al centro, el paneo no mueve
+        // fits: always centred, panning does not move it
         val centered = Offset((viewport.width - 480f) / 2f - base.x, (viewport.height - 672f) / 2f - base.y)
         val kept = ZoomMath.clampOffset(Offset(50f, 50f), content, viewport, s, base)
         assertEquals(centered.x, kept.x, 1e-3f)
         assertEquals(centered.y, kept.y, 1e-3f)
 
-        // fuera del rango: igual, al centro
+        // out of range: same, centred
         val tooFar = ZoomMath.clampOffset(Offset(-5000f, -5000f), content, viewport, s, base)
         assertEquals(centered.x, tooFar.x, 1e-3f)
         assertEquals(centered.y, tooFar.y, 1e-3f)
@@ -73,15 +73,14 @@ class ZoomMathTest {
         assertEquals(0f, atOne.y, 1e-3f)
     }
 
-    // contenido más grande que el viewport: bordes pegados, sin huecos (nada de
-    // medio viewport vacío: el paneo posterior al zoom no puede dejar la página
-    // en la esquina).
+    // content larger than the viewport: edges stick, no gaps (no half-empty
+    // viewport: panning after the zoom cannot leave the page in the corner).
     @Test
     fun clampOffsetClampsPanWhenContentOverflows() {
         val viewport = Size(600f, 800f)
         val content = Size(900f, 1200f)
         val base = Offset((600f - 900f) / 2f, (800f - 1200f) / 2f)   // (-150, -200)
-        val s = 2f   // contenido eficaz 1800x2400
+        val s = 2f   // effective content 1800x2400
 
         val tooLeft = ZoomMath.clampOffset(Offset(-5000f, -5000f), content, viewport, s, base)
         assertEquals(-1050f, tooLeft.x, 1e-3f)
@@ -91,19 +90,19 @@ class ZoomMathTest {
         assertEquals(150f, tooRight.x, 1e-3f)
         assertEquals(200f, tooRight.y, 1e-3f)
 
-        // un offset dentro del rango no se toca
+        // an offset within the range is left untouched
         val mid = Offset((-1050f + 150f) / 2f, (-1400f + 200f) / 2f)
         val kept = ZoomMath.clampOffset(mid, content, viewport, s, base)
         assertEquals(mid.x, kept.x, 1e-3f)
         assertEquals(mid.y, kept.y, 1e-3f)
     }
 
-    // regresión del escape: con el contenido desbordando, el rect visible tras el clamp
-    // siempre cubre al menos la mitad del viewport en cada eje (la página no se pierde).
+    // escape regression: with the content overflowing, the visible rect after the clamp
+    // always covers at least half the viewport on each axis (the page is never lost).
     @Test
     fun clampOffsetNeverLetsPageEscapeViewport() {
         val viewport = Size(1600f, 2560f)
-        val content = Size(1600f, 2044f)   // encaje a pantalla completa
+        val content = Size(1600f, 2044f)   // full-screen fit
         val base = Offset(0f, (2560f - 2044f) / 2f)
         val s = 2f
         for (off in listOf(Offset(-5000f, -5000f), Offset(5000f, 5000f))) {

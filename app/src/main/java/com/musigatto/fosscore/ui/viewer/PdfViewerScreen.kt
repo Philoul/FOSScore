@@ -220,8 +220,10 @@ fun PdfViewerScreen(
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
     var renderGeneration by remember { mutableIntStateOf(0) }
-    // goes up when ink is exported into the PDF: drops the cached bitmap and forces a redraw
-    var annotVersion by remember { mutableIntStateOf(0) }
+    // last page that was actually drawn: while the next one renders (~300 ms, plus the display
+    // list parse) the old page stays on screen instead of a spinner flash. Cleared when the doc
+    // changes so a new score never shows the previous one's paper.
+    var lastShown by remember(pdfUri) { mutableStateOf<Bitmap?>(null) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
     var invert by remember { mutableStateOf(Settings.invert(context)) }
@@ -407,6 +409,10 @@ fun PdfViewerScreen(
         currentPage = f.page
         halfTurned = f.halfTurned
     }
+    // The gesture's pointerInput(Unit) never restarts, so it must read the live turns: a captured
+    // lambda keeps the `branch` it closed over and stops advancing past the first page.
+    val currentApplyNext by rememberUpdatedState(applyNext)
+    val currentApplyPrev by rememberUpdatedState(applyPrev)
 
     fun clampOffsets() {
         if (viewport == IntSize.Zero) return
@@ -544,7 +550,6 @@ fun PdfViewerScreen(
     // viewport matters: on the first frame it is still IntSize.Zero, and with no size there is no draw
     LaunchedEffect(
         mupdfDoc, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
-        annotVersion
     ) {
         val r = mupdfDoc ?: return@LaunchedEffect
         val gen = ++renderGeneration
@@ -575,7 +580,7 @@ fun PdfViewerScreen(
                         val box = r.ensurePageSize(currentPage)
                         if (box == null || box.height <= 0f) return@withContext emptyMap()
                         val fit = fitRect(vpW, vpH, box.width / box.height)
-                        Pair((fit.width * rs).toInt(), (fit.height * rs).toInt())
+                        ZoomMath.renderSlot(fit, rs)
                     }
                     val out = mutableMapOf<Int, Bitmap>()
                     for (idx in needed) {
@@ -588,6 +593,8 @@ fun PdfViewerScreen(
             // guard against an older, non-cancellable render landing after a newer one
             if (gen == renderGeneration) {
                 for ((idx, bmp) in session) bitmaps[idx] = bmp
+                // keep the page on screen while the next one renders (see lastShown)
+                bitmaps[currentPage]?.let { lastShown = it }
                 // we do not pile up bitmaps of pages that are no longer on screen (16 MB each when sharp)
                 bitmaps.keys.filterNot { it in needed }.forEach { bitmaps.remove(it) }
                 // no bitmap for this page means nothing to show: say so instead of leaving the
@@ -602,6 +609,33 @@ fun PdfViewerScreen(
         } catch (e: Exception) {
             Log.e(LOG_TAG, "render failed: ${e::class.simpleName}: ${e.message}", e)
             if (gen == renderGeneration) error = R.string.err_render_page
+        }
+    }
+
+    // Prefetch both neighbours: a draw costs ~100-300 ms (measured on device), and drawing them
+    // ahead of time makes the turn a cache hit in MuPdfDoc (same page, same width key).
+    // Only at 1x: a turn resets the zoom, so a draw at a zoomed slot would never be reused.
+    // The delay gives a quick turn the lock: turning before it fires cancels this effect.
+    LaunchedEffect(mupdfDoc, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf) {
+        val r = mupdfDoc ?: return@LaunchedEffect
+        if (branch.showTwoUp || (branch.showHalf && halfTurned)) return@LaunchedEffect
+        if (renderScale != 1f || viewport == IntSize.Zero) return@LaunchedEffect
+        delay(RENDER_SETTLE_MS.milliseconds)
+        val vpW = viewport.width.toFloat()
+        val vpH = viewport.height.toFloat()
+        rendererLock.withLock {
+            withContext(Dispatchers.Default) {
+                for (page in listOf(currentPage + 1, currentPage - 1)) {
+                    if (page !in 0 until pageCount) continue
+                    // a turn supersedes this prefetch: drop the rest instead of holding the lock
+                    if (!isActive) return@withContext
+                    val box = r.ensurePageSize(page) ?: continue
+                    if (box.height <= 0f) continue
+                    val fit = fitRect(vpW, vpH, box.width / box.height)
+                    val slot = ZoomMath.renderSlot(fit, 1f)
+                    r.render(page, slot.first, slot.second)
+                }
+            }
         }
     }
 
@@ -971,13 +1005,13 @@ fun PdfViewerScreen(
                                             totalPan.getDistance() > swipeThresholdPx &&
                                             abs(totalPan.x) > abs(totalPan.y)
                                         if (isSwipe) {
-                                            if (totalPan.x < 0f) applyNext() else applyPrev()
+                                            if (totalPan.x < 0f) currentApplyNext() else currentApplyPrev()
                                         } else {
                                             // tap zones: left third prev, right third next, center toggles the bars
                                             val width = viewport.width
                                             when {
-                                                width > 0 && down.position.x > width * 2f / 3f -> applyNext()
-                                                width > 0 && down.position.x < width / 3f -> applyPrev()
+                                                width > 0 && down.position.x > width * 2f / 3f -> currentApplyNext()
+                                                width > 0 && down.position.x < width / 3f -> currentApplyPrev()
                                                 else -> navVisible = !navVisible
                                             }
                                         }
@@ -1221,7 +1255,7 @@ fun PdfViewerScreen(
                     )
                 }
                 else -> {
-                    bitmaps[currentPage]?.let { bmp ->
+                    (bitmaps[currentPage] ?: lastShown)?.let { bmp ->
                         // Single page: the bitmap is drawn at the current zoom (fit × scale, the
                         // same size it takes on screen) and shown 1:1 — the GPU rescales nothing.
                         // The overlay (ink/stamps/selection) is drawn in fit coordinates and the
@@ -1269,7 +1303,9 @@ fun PdfViewerScreen(
                                         translationY = posY
                                     }
                             )
-                            if (canEdit) {
+                            // the overlay belongs to currentPage: while lastShown is still the
+                            // previous page's paper, its ink would land on the wrong music
+                            if (canEdit && bitmaps[currentPage] != null) {
                                 // ink/stamps default to black (not the theme's bluish primary). With
                                 // "Neg" they are inverted like the page: otherwise black ink
                                 // disappears on the now-black background.

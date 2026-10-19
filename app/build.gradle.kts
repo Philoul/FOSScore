@@ -19,10 +19,10 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // MuPDF trae un .so por ABI (~7-11 MB cada uno). Se incluye armeabi-v7a para
-        // tablets viejas de 32 bits (minSdk 23); x86 (raro en hardware real) se omite.
+        // MuPDF ships one .so per ABI (~7-11 MB each). armeabi-v7a and x86 cover older 32-bit
+        // tablets (minSdk 23): x86 is rare today but real, e.g. the Intel Atom Galaxy Tab 3 10.1.
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64", "armeabi-v7a")
+            abiFilters += listOf("arm64-v8a", "x86_64", "armeabi-v7a", "x86")
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

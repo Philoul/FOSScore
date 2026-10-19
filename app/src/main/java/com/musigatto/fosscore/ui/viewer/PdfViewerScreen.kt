@@ -54,6 +54,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -68,6 +70,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -77,6 +85,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
@@ -86,9 +95,6 @@ import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
-import com.musigatto.fosscore.pdf.ExportError
-import com.musigatto.fosscore.pdf.InkStroke
-import com.musigatto.fosscore.pdf.MuPdfAnnots
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -175,7 +181,10 @@ private fun centroid(changes: List<PointerInputChange>): Offset =
 @Composable
 fun PdfViewerScreen(
     pdfUri: Uri,
+    title: String,
+    composer: String,
     onBack: () -> Unit,
+    onOpenLibrary: () -> Unit = onBack,
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     sheetHash: String? = null
@@ -192,7 +201,9 @@ fun PdfViewerScreen(
     var twoUp by rememberSaveable { mutableStateOf(isLandscape) }
     var halfEnabled by rememberSaveable { mutableStateOf(false) }
     var halfTurned by rememberSaveable { mutableStateOf(false) }
-    var navVisible by rememberSaveable { mutableStateOf(true) }
+    // the chrome starts hidden: the app is the page (spec §0)
+    var navVisible by rememberSaveable { mutableStateOf(false) }
+    var optionsOpen by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<Int?>(null) }
     // double tap: fit <-> zoom. We keep the time and the point of the previous tap.
     var lastTapMs by remember { mutableLongStateOf(0L) }
@@ -213,8 +224,15 @@ fun PdfViewerScreen(
     var annotVersion by remember { mutableIntStateOf(0) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
-    var showDim by rememberSaveable { mutableStateOf(false) }
     var invert by remember { mutableStateOf(Settings.invert(context)) }
+    var keepScreenOn by remember { mutableStateOf(Settings.keepScreenOn(context)) }
+
+    // Applies only while the viewer is on screen: the library lets the device sleep as usual.
+    val view = LocalView.current
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
 
     val stampsFlow = remember(sheetHash) {
         sheetHash?.let { (context.applicationContext as FOSScoreApp).stampRepository.observe(it) }
@@ -268,6 +286,20 @@ fun PdfViewerScreen(
     val rendererLock = remember(pdfUri) { Mutex() }
 
     val branch = PageFlow(currentPage, halfTurned, halfEnabled, twoUp, isLandscape, pageCount)
+
+    // "Página 5 de 9" / "Páginas 3-4 de 9". Empty while the PDF still has no pages, so the pill
+    // never says "Página 1 de 0".
+    val pageLabel = visiblePageRange(
+        currentPage,
+        pageCount,
+        branch.showTwoUp || (branch.showHalf && halfTurned),
+    ).let { r ->
+        when {
+            r.isEmpty() -> ""
+            r.first == r.last -> stringResource(R.string.desc_page, r.first + 1, pageCount)
+            else -> stringResource(R.string.desc_page_range, r.first + 1, r.last + 1, pageCount)
+        }
+    }
 
     val canEdit = sheetHash != null && !branch.showTwoUp && !(branch.showHalf && halfTurned)
 
@@ -338,6 +370,33 @@ fun PdfViewerScreen(
         undoStack = (undoStack + listOf(page to snapshot)).takeLast(10)
     }
 
+    // what the ✎ pill does. Leaving edit mode must not leave anything armed or selected behind.
+    fun toggleEditing() {
+        // the old "Editar" button carried `enabled = canEdit`; a pill entry has no enabled state, so
+        // the gate lives here instead — which also covers the entry paths that are coming (Apple
+        // Pencil, long press). In two-up or a turned half page there is nothing to annotate.
+        if (!editing && !canEdit) return
+        editing = !editing
+        if (editing) {
+            twoUp = false
+            halfEnabled = false
+            halfTurned = false
+        } else {
+            undoStack = emptyList()
+            selectedId = null
+            selectedStrokeId = null
+            dragStamp = null
+            dragStroke = null
+            drawingTool = false
+            eraserTool = false
+            // leaving edit mode must not leave a stamp tool armed for the next time we come back in
+            activeSymbol = null
+            inkPreview = emptyList()
+            hiddenStampIds = emptySet()
+            hiddenStrokeIds = emptySet()
+        }
+    }
+
     val applyNext: () -> Unit = {
         val f = branch.next()
         currentPage = f.page
@@ -400,6 +459,12 @@ fun PdfViewerScreen(
     }
 
     BackHandler(onBack = onBack)
+
+    // keyboard / pedal page turns: the viewer root holds the focus, otherwise key events reach
+    // nothing and only the on-screen buttons turn pages. Preview so a focused button or slider
+    // does not swallow the key first.
+    val keyFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { keyFocus.requestFocus() }
 
     LaunchedEffect(currentPage) {
         Settings.setLastPage(context, pdfUri.toString(), currentPage)
@@ -555,7 +620,20 @@ fun PdfViewerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // the matte around the page: the theme background, and black when "Neg" is on (the page
+            // turns black and the bands were left white)
+            .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
             .onSizeChanged { viewport = it }
+            .onPreviewKeyEvent { e ->
+                val turn = pageTurnFor(e.key, e.isShiftPressed) ?: return@onPreviewKeyEvent false
+                // a held key repeats: turn one page per press, not a burst
+                if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
+                    if (turn == PageTurn.NEXT) applyNext() else applyPrev()
+                }
+                true
+            }
+            .focusRequester(keyFocus)
+            .focusable()
     ) {
         if (error != null) {
             Column(
@@ -678,8 +756,11 @@ fun PdfViewerScreen(
                             val event = awaitPointerEvent()
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.isEmpty()) {
-                                if (resizing != null) {
-                                    val rz = resizing
+                                // local copy: a delegated var captured by this lambda gets no smart
+                                // cast, so a `when` on it needs a null branch — and the IDE, which
+                                // does narrow it, then flags that branch as never reachable
+                                val rz = resizing
+                                if (rz != null) {
                                     resizing = null
                                     when (rz) {
                                         is Resizing.OfStamp -> {
@@ -714,7 +795,6 @@ fun PdfViewerScreen(
                                                 }
                                             }
                                         }
-                                        null -> {}  // resizing is a captured var: it can be null
                                     }
                                 } else if (inkActive) {
                                     // ink capture lives in fit coordinates (F): the sampling
@@ -879,7 +959,7 @@ fun PdfViewerScreen(
                                                         symbol = sym.name,
                                                         x = pos.x.coerceIn(0f, 1f),
                                                         y = pos.y.coerceIn(0f, 1f),
-                                                        size = DEFAULT_STAMP_SIZE,
+                                                        size = stampSizePxToFrac(DEFAULT_STAMP_PX, currentHitFit),
                                                         color = activeColor
                                                     )
                                                 )
@@ -1337,85 +1417,19 @@ fun PdfViewerScreen(
             )
         }
 
-        if (navVisible) {
+        if (navVisible || editing) {
             val surface = MaterialTheme.colorScheme.surface
 
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .background(surface)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(stringResource(R.string.mode_label), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        halfEnabled = !halfEnabled
-                        halfTurned = false
-                    },
-                    enabled = !editing,
-                    colors = if (halfEnabled) ButtonDefaults.buttonColors()
-                    else ButtonDefaults.outlinedButtonColors()
-                ) { Text("½") }
-                if (isLandscape) {
-                    Spacer(Modifier.width(4.dp))
-                    Button(
-                        onClick = { twoUp = false },
-                        enabled = !editing,
-                        colors = if (!twoUp) ButtonDefaults.buttonColors()
-                        else ButtonDefaults.outlinedButtonColors()
-                    ) { Text("1") }
-                    Spacer(Modifier.width(4.dp))
-                    Button(
-                        onClick = { twoUp = true },
-                        enabled = !editing,
-                        colors = if (twoUp) ButtonDefaults.buttonColors()
-                        else ButtonDefaults.outlinedButtonColors()
-                    ) { Text("2") }
-                }
-                Spacer(Modifier.width(16.dp))
-                Button(onClick = onToggleTheme) { Text(themeMode.label()) }
-                Spacer(Modifier.width(4.dp))
-                Button(
-                    onClick = {
-                        invert = !invert
-                        Settings.setInvert(context, invert)
-                    },
-                    colors = if (invert) ButtonDefaults.buttonColors()
-                    else ButtonDefaults.outlinedButtonColors()
-                ) { Text(stringResource(R.string.neg_label)) }
-                Spacer(Modifier.width(4.dp))
-                Button(
-                    onClick = {
-                        editing = !editing
-                        if (editing) {
-                            twoUp = false
-                            halfEnabled = false
-                            halfTurned = false
-                        } else {
-                            undoStack = emptyList()
-                            selectedId = null
-                            selectedStrokeId = null
-                            dragStamp = null
-                            dragStroke = null
-                            drawingTool = false
-                            eraserTool = false
-                            // same invariant as above: leaving edit mode must not leave a
-                            // stamp tool armed for the next time we come back in
-                            activeSymbol = null
-                            inkPreview = emptyList()
-                            hiddenStampIds = emptySet()
-                            hiddenStrokeIds = emptySet()
-                        }
-                    },
-                    enabled = canEdit,
-                    colors = if (editing) ButtonDefaults.buttonColors()
-                    else ButtonDefaults.outlinedButtonColors()
-                ) { Text(stringResource(R.string.action_edit)) }
-            }
+            ViewerTitleBar(
+                title = title,
+                composer = composer,
+                pageLabel = pageLabel,
+                editing = editing,
+                onOpenLibrary = onOpenLibrary,
+                onToggleEdit = { toggleEditing() },
+                onShowOptions = { if (!editing) optionsOpen = true },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
 
             Column(
                 modifier = Modifier
@@ -1423,26 +1437,6 @@ fun PdfViewerScreen(
                     .fillMaxWidth()
                     .background(surface)
             ) {
-                if (showDim) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyMedium)
-                        Slider(
-                            value = dimPct,
-                            onValueChange = { dimPct = it },
-                            onValueChangeFinished = { Settings.setDimPct(context, dimPct) },
-                            valueRange = 0f..80f,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 12.dp)
-                        )
-                        Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
                 if (editing && canEdit) {
                     Row(
                         modifier = Modifier
@@ -1555,62 +1549,6 @@ fun PdfViewerScreen(
                             },
                             enabled = undoStack.isNotEmpty()
                         ) { Text("↶") }
-                        Spacer(Modifier.width(8.dp))
-                        // Saves the ink into the PDF itself (/Annots ink): it stops being a sidecar
-                        // and works in any viewer. Ink only; stamps stay in the DB.
-                        var exportingPdf by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = {
-                                if (exportingPdf) return@Button
-                                exportingPdf = true
-                                editScope.launch {
-                                    try {
-                                        val app = context.applicationContext as FOSScoreApp
-                                        val sheet = withContext(Dispatchers.IO) {
-                                            app.repository.byHash(sheetHash)
-                                        } ?: throw ExportError.NoLocalFile()
-                                        val all = withContext(Dispatchers.IO) {
-                                            strokeRepo.listBySheet(sheetHash)
-                                        }
-                                        if (all.isEmpty()) throw ExportError.NoInk()
-                                        val pages = all.groupBy({ it.page }) { s ->
-                                            InkStroke(decodePoints(s.points), s.width, s.color)
-                                        }
-                                        val written = withContext(Dispatchers.IO) {
-                                            rendererLock.withLock {
-                                                MuPdfAnnots.exportInk(sheet.path, pages) { idx ->
-                                                    mupdfDoc?.ensurePageSize(idx)
-                                                }
-                                            }
-                                        }
-                                        if (written.isEmpty()) throw ExportError.NotEditable()
-                                        withContext(Dispatchers.IO) {
-                                            strokeRepo.deleteAll(all.filter { it.page in written })
-                                        }
-                                        rendererLock.withLock {
-                                            for (p in written) {
-                                                mupdfDoc?.forgetPage(p)
-                                                bitmaps.remove(p)
-                                            }
-                                        }
-                                        // undo keeps DB snapshots: once the ink has moved into the PDF they are worthless
-                                        undoStack = emptyList()
-                                        selectedStrokeId = null
-                                        dragStroke = null
-                                        annotVersion++
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        Log.e(LOG_TAG, "exportar tinta: ${e.message}", e)
-                                        error = (e as? ExportError)?.res ?: R.string.err_export_failed
-                                    } finally {
-                                        exportingPdf = false
-                                    }
-                                }
-                            },
-                            enabled = !exportingPdf && currentCanEdit
-                        ) { Text(if (exportingPdf) "…" else "💾PDF") }
-                        Spacer(Modifier.width(8.dp))
                         if (drawingTool) {
                             Text(stringResource(R.string.thickness_label), style = MaterialTheme.typography.bodyMedium)
                             Slider(
@@ -1627,24 +1565,29 @@ fun PdfViewerScreen(
                         }
                         if (selectedStamp != null) {
                             var sliderUndoPushed by remember { mutableStateOf(false) }
+                            // the slider works in px, the stored size is a share of the page height
+                            // (same split as the pen width)
+                            val stampPx = stampSizeFracToPx(selectedStamp.size, currentHitFit)
                             Text(stringResource(R.string.size_label), style = MaterialTheme.typography.bodyMedium)
                             Slider(
-                                value = selectedStamp.size.coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE),
+                                value = stampPx.coerceIn(MIN_STAMP_PX, MAX_STAMP_PX),
                                 onValueChange = { v ->
                                     val current = pageStamps.firstOrNull { it.id == selectedId }
-                                    if (current != null && v != current.size) {
+                                    val frac = stampSizePxToFrac(v, currentHitFit)
+                                    if (current != null && frac != current.size) {
                                         if (!sliderUndoPushed) {
                                             pushUndo()
                                             sliderUndoPushed = true
                                         }
-                                        editScope.launch { stampRepo.update(current.copy(size = v)) }
+                                        editScope.launch { stampRepo.update(current.copy(size = frac)) }
                                     }
                                 },
                                 onValueChangeFinished = { sliderUndoPushed = false },
-                                valueRange = MIN_STAMP_SIZE..MAX_STAMP_SIZE,
+                                valueRange = MIN_STAMP_PX..MAX_STAMP_PX,
+                                steps = (MAX_STAMP_PX - MIN_STAMP_PX).toInt() - 1,
                                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
                             )
-                            Text("${(selectedStamp.size * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
+                            Text("${stampPx.roundToInt()} px", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.width(8.dp))
                         }
                         Button(
@@ -1665,38 +1608,40 @@ fun PdfViewerScreen(
                         ) { Text("🗑") }
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Button(
-                        onClick = applyPrev,
-                        enabled = branch.canPrev
-                    ) { Text("◀") }
-                    Spacer(Modifier.width(16.dp))
-                    Text(
-                        branch.label,
-                        modifier = Modifier.align(Alignment.CenterVertically),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Button(onClick = onBack) { Text("✕") }
-                    Spacer(Modifier.width(16.dp))
-                    Button(
-                        onClick = { showDim = !showDim },
-                        colors = if (showDim) ButtonDefaults.buttonColors()
-                        else ButtonDefaults.outlinedButtonColors()
-                    ) { Text("◐") }
-                    Spacer(Modifier.width(16.dp))
-                    Button(
-                        onClick = applyNext,
-                        enabled = branch.canNext
-                    ) { Text("▶") }
-                }
             }
         }
 
+        // spec §2: the bottom of the score view is the page selector, nothing else. The page label
+        // moved into the center pill and page turning is the tap zones (spec §3); the dot selector
+        // is its own step.
+        // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
+        if (optionsOpen) {
+            DisplayOptionsOverlay(
+                halfEnabled = halfEnabled,
+                onSetHalf = {
+                    halfEnabled = it
+                    halfTurned = false
+                },
+                twoUp = twoUp,
+                onSetTwoUp = { twoUp = it },
+                twoUpVisible = isLandscape,
+                themeLabel = themeMode.label(),
+                onToggleTheme = onToggleTheme,
+                invert = invert,
+                onToggleInvert = {
+                    invert = !invert
+                    Settings.setInvert(context, invert)
+                },
+                keepScreenOn = keepScreenOn,
+                onToggleKeepScreenOn = {
+                    keepScreenOn = !keepScreenOn
+                    Settings.setKeepScreenOn(context, keepScreenOn)
+                },
+                dimPct = dimPct,
+                onDimChange = { dimPct = it },
+                onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
+                onDismiss = { optionsOpen = false },
+            )
+        }
     }
 }

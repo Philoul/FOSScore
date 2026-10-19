@@ -39,9 +39,8 @@
     <string name="err_invalid_pdf">Invalid or corrupted PDF</string>
     <string name="err_render_page">The page could not be rendered</string>
     <string name="desc_page">Page %1$d of %2$d</string>
-    <string name="mode_label">Mode:</string>
     <!-- Short label of the negative (inverted colours) toggle button -->
-    <string name="neg_label">Neg</string>
+    <string name="neg_label">Negative</string>
     <string name="dim_label">Dim</string>
     <string name="thickness_label">Width</string>
     <string name="size_label">Size</string>
@@ -86,4 +85,16 @@
     <string name="stamp_natural">Natural</string>
     <string name="stamp_double_sharp">Double sharp</string>
     <string name="stamp_double_flat">Double flat</string>
+
+    <!-- Viewer controls (display options, pills) -->
+    <string name="action_close">Close</string>
+    <string name="page_section_label">Page</string>
+    <string name="screen_section_label">Screen</string>
+    <string name="half_page_label">Half-page turn</string>
+    <string name="one_page_label">One page</string>
+    <string name="two_pages_label">Two pages</string>
+    <string name="theme_row_label">Theme</string>
+    <string name="desc_page_range">Pages %1$d-%2$d of %3$d</string>
+    <string name="display_options_title">Display Options</string>
+    <string name="keep_screen_on_label">Keep screen on</string>
 </resources>

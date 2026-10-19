@@ -15,6 +15,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.LibraryRepository
@@ -34,7 +37,9 @@ fun LibraryScreen(
     repository: LibraryRepository,
     onOpen: (Sheet) -> Unit,
     onEdit: (Sheet) -> Unit,
-    onImport: () -> Unit
+    onImport: () -> Unit,
+    /** ✕ is shown only when the library floats over a score, where it means "back to the page". */
+    onClose: (() -> Unit)? = null
 ) {
     val sheets by repository.sheets().collectAsState(initial = emptyList())
     var query by rememberSaveable { mutableStateOf("") }
@@ -49,8 +54,17 @@ fun LibraryScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.weight(1f))
-            Button(onClick = onImport) { Text(stringResource(R.string.action_import)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                onClose?.let { close ->
+                    val closeLabel = stringResource(R.string.action_close)
+                    TextButton(
+                        onClick = close,
+                        modifier = Modifier.semantics { contentDescription = closeLabel }
+                    ) { Text("✕") }
+                    Spacer(Modifier.width(8.dp))
+                }
+                Button(onClick = onImport) { Text(stringResource(R.string.action_import)) }
+            }
         }
 
         OutlinedTextField(

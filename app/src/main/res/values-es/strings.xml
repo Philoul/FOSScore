@@ -31,8 +31,7 @@
     <string name="err_invalid_pdf">PDF inválido o corrupto</string>
     <string name="err_render_page">No se pudo renderizar la página</string>
     <string name="desc_page">Página %1$d de %2$d</string>
-    <string name="mode_label">Modo:</string>
-    <string name="neg_label">Neg</string>
+    <string name="neg_label">Negativo</string>
     <string name="dim_label">Atenuar</string>
     <string name="thickness_label">Grosor</string>
     <string name="size_label">Tamaño</string>
@@ -73,4 +72,16 @@
     <string name="stamp_natural">Becuadro</string>
     <string name="stamp_double_sharp">Doble sostenido</string>
     <string name="stamp_double_flat">Doble bemol</string>
+
+    <!-- Viewer controls (display options, pills) -->
+    <string name="action_close">Cerrar</string>
+    <string name="page_section_label">Página</string>
+    <string name="screen_section_label">Pantalla</string>
+    <string name="half_page_label">Pasar media página</string>
+    <string name="one_page_label">Una página</string>
+    <string name="two_pages_label">Dos páginas</string>
+    <string name="theme_row_label">Tema</string>
+    <string name="desc_page_range">Páginas %1$d-%2$d de %3$d</string>
+    <string name="display_options_title">Opciones de visualización</string>
+    <string name="keep_screen_on_label">Mantener pantalla encendida</string>
 </resources>

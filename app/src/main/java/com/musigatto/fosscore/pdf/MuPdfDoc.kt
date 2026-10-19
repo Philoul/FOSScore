@@ -137,17 +137,25 @@ class MuPdfDoc private constructor(
         try {
             // alpha=true: output is RGBA and the buffer is copied as-is into an ARGB_8888
             pix = list.toPixmap(m, ColorSpace.DeviceRGB, true)
-            val bmp = Bitmap.createBitmap(pix.getWidth(), pix.getHeight(), Bitmap.Config.ARGB_8888)
+            val rgba = Bitmap.createBitmap(pix.getWidth(), pix.getHeight(), Bitmap.Config.ARGB_8888)
             val samples = pix.getSamples()
             val stride = pix.getStride()
             val rowBytes = pix.getWidth() * 4
             if (stride == rowBytes) {
-                bmp.copyPixelsFromBuffer(ByteBuffer.wrap(samples))
+                rgba.copyPixelsFromBuffer(ByteBuffer.wrap(samples))
             } else {
                 for (y in 0 until pix.getHeight()) {
-                    bmp.copyPixelsFromBuffer(ByteBuffer.wrap(samples, y * stride, rowBytes))
+                    rgba.copyPixelsFromBuffer(ByteBuffer.wrap(samples, y * stride, rowBytes))
                 }
             }
+            // the pixmap comes out with a TRANSPARENT paper: composite it onto white so the page is
+            // opaque. Otherwise the "Neg" filter inverts the ink but not the background (whatever
+            // is behind shows through, white in light theme) and the score ends up white on white.
+            val bmp = Bitmap.createBitmap(rgba.width, rgba.height, Bitmap.Config.ARGB_8888)
+            bmp.eraseColor(android.graphics.Color.WHITE)
+            android.graphics.Canvas(bmp).drawBitmap(rgba, 0f, 0f, null)
+            bmp.setHasAlpha(false)
+            rgba.recycle()
             bitmaps[key] = bmp
             Log.d(
                 LOG_TAG,

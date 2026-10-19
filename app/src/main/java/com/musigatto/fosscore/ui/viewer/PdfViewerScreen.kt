@@ -159,6 +159,9 @@ private val INVERT_MATRIX = floatArrayOf(
 )
 private val INVERT_FILTER = ColorFilter.colorMatrix(ColorMatrix(INVERT_MATRIX))
 
+// same negative as INVERT_MATRIX, for what is drawn with a color rather than a bitmap
+internal fun Color.inverted(): Color = Color(1f - red, 1f - green, 1f - blue, alpha)
+
 private fun centroid(changes: List<PointerInputChange>): Offset =
     changes.fold(Offset.Zero) { acc, c -> acc + c.position } / changes.size.toFloat()
 
@@ -1269,8 +1272,11 @@ fun PdfViewerScreen(
                                     }
                             )
                             if (canEdit) {
-                                // ink/stamps default to black (not the theme's bluish primary)
+                                // ink/stamps default to black (not the theme's bluish primary).
+                                // With "Neg" they are inverted like the page: otherwise black ink
+                                // disappears on the now-black background.
                                 val themeColor = Color.Black
+                                fun inkColor(c: Color) = if (invert) c.inverted() else c
                                 Canvas(modifier = Modifier.fillMaxSize()) {
                                     withTransform({
                                         translate(posX, posY)
@@ -1299,7 +1305,7 @@ fun PdfViewerScreen(
                                             if (dragStroke?.id == stroke.id) continue
                                             drawStrokePath(
                                                 decodePoints(stroke.points).map { normalizedToPx(it, hitFit) },
-                                                stampColor(stroke.color, themeColor),
+                                                inkColor(stampColor(stroke.color, themeColor)),
                                                 stroke.width * hitFit.height
                                             )
                                         }
@@ -1307,7 +1313,7 @@ fun PdfViewerScreen(
                                         dragStroke?.let { ds ->
                                             drawStrokePath(
                                                 decodePoints(ds.points).map { normalizedToPx(it, hitFit) },
-                                                stampColor(ds.color, themeColor),
+                                                inkColor(stampColor(ds.color, themeColor)),
                                                 ds.width * hitFit.height
                                             )
                                         }
@@ -1315,7 +1321,7 @@ fun PdfViewerScreen(
                                             drawStrokePath(
                                                 inkPreview,
                                                 if (eraserTool) Color.Red.copy(alpha = 0.4f)
-                                                else stampColor(activeColor, themeColor),
+                                                else inkColor(stampColor(activeColor, themeColor)),
                                                 if (eraserTool) ERASE_RADIUS_FRAC * hitFit.height * 2f
                                                 else penWidth * hitFit.height
                                             )
@@ -1354,7 +1360,7 @@ fun PdfViewerScreen(
                                             // in fit units: the scale comes from the layer, not the
                                             // stamp size (so it is not applied twice)
                                             sizePx = r.width,
-                                            color = stampColor(shown.color, Color.Black),
+                                            color = inkColor(stampColor(shown.color, themeColor)),
                                             modifier = Modifier
                                                 .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                                                 .requiredSize(

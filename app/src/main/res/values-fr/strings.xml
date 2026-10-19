@@ -31,8 +31,7 @@
     <string name="err_invalid_pdf">PDF invalide ou corrompu</string>
     <string name="err_render_page">La page n’a pas pu être affichée</string>
     <string name="desc_page">Page %1$d sur %2$d</string>
-    <string name="mode_label">Mode :</string>
-    <string name="neg_label">Nég</string>
+    <string name="neg_label">Négatif</string>
     <string name="dim_label">Atténuer</string>
     <string name="thickness_label">Épaisseur</string>
     <string name="size_label">Taille</string>
@@ -71,4 +70,16 @@
     <string name="err_pdf_not_editable">Ce PDF ne peut pas être modifié</string>
     <string name="err_replace_failed">Le PDF n’a pas pu être remplacé</string>
     <string name="err_export_failed">L’enregistrement dans le PDF a échoué</string>
+
+    <!-- Commandes de la visionneuse (options d’affichage) -->
+    <string name="action_close">Fermer</string>
+    <string name="page_section_label">Page</string>
+    <string name="screen_section_label">Écran</string>
+    <string name="half_page_label">Demi-page</string>
+    <string name="one_page_label">Une page</string>
+    <string name="two_pages_label">Deux pages</string>
+    <string name="theme_row_label">Thème</string>
+    <string name="desc_page_range">Pages %1$d-%2$d sur %3$d</string>
+    <string name="display_options_title">Options d’affichage</string>
+    <string name="keep_screen_on_label">Garder l’écran allumé</string>
 </resources>

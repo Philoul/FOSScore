@@ -20,11 +20,21 @@ data class RectPx(
         o.x in left..right && o.y >= top && o.y <= bottom
 }
 
-// ponytail: stamp size as a share of the page height (0.015..0.3); a slider of absolute sizes
-// would come when the user asks for one.
-const val MIN_STAMP_SIZE = 0.015f
+// The user picks the stamp side in screen px at zoom 1 (the height of the fitted page), same as the
+// pen width; the fraction is worked out when it is created. MIN is low enough for MIN_STAMP_PX to
+// still be a real size on a small render. ponytail: the real cap is MAX_STAMP_SIZE (30% of the
+// height), so on short pages the last px of the slider change nothing; raise it if it bothers you.
+const val MIN_STAMP_SIZE = 0.004f
 const val MAX_STAMP_SIZE = 0.3f
-const val DEFAULT_STAMP_SIZE = 0.09f
+
+const val DEFAULT_STAMP_PX = 30f
+const val MIN_STAMP_PX = 8f
+const val MAX_STAMP_PX = 300f
+
+fun stampSizePxToFrac(px: Float, fit: RectPx): Float =
+    (px / max(1f, fit.height)).coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE)
+
+fun stampSizeFracToPx(frac: Float, fit: RectPx): Float = frac * fit.height
 
 fun fitRect(slotW: Float, slotH: Float, aspect: Float): RectPx {
     if (slotW <= 0f || slotH <= 0f || aspect <= 0f) return RectPx(0f, 0f, 0f, 0f)

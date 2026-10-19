@@ -18,10 +18,6 @@ data class PageFlow(
         else -> page < pageCount - 1
     }
 
-    val label: String
-        get() = if (showTwoUp && page + 1 < pageCount) "${page + 1}-${page + 2} / $pageCount"
-        else "${page + 1} / $pageCount"
-
     fun next(): PageFlow {
         if (!canNext) return this
         return if (showHalf) {
@@ -40,8 +36,8 @@ data class PageFlow(
 }
 
 /**
- * Páginas que se ven a la vez, 0-based: [currentPage] sola, o ella y la siguiente en spread.
- * `IntRange.EMPTY` si el PDF todavía no tiene páginas.
+ * Pages visible at once, 0-based: [currentPage] alone, or it and the next one in a spread.
+ * `IntRange.EMPTY` while the PDF still has no pages.
  */
 fun visiblePageRange(currentPage: Int, pageCount: Int, showSpread: Boolean): IntRange = when {
     pageCount <= 0 -> IntRange.EMPTY

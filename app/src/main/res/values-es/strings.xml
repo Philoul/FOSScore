@@ -7,6 +7,7 @@
     <string name="action_save">Guardar</string>
     <string name="action_delete">Eliminar</string>
     <string name="action_cancel">Cancelar</string>
+    <string name="action_close">Cerrar</string>
     <string name="search_label">Buscar</string>
     <string name="library_title">Biblioteca</string>
     <string name="empty_library">Aún no hay partituras. Importa una con el botón Importar.</string>
@@ -17,8 +18,13 @@
     <string name="field_genre">Género</string>
     <string name="field_key">Tonalidad</string>
     <string name="field_tags">Etiquetas</string>
-    <string name="mode_label">Modo:</string>
-    <string name="neg_label">Neg</string>
+    <string name="page_section_label">Página</string>
+    <string name="screen_section_label">Pantalla</string>
+    <string name="half_page_label">Pasar media página</string>
+    <string name="one_page_label">Una página</string>
+    <string name="two_pages_label">Dos páginas</string>
+    <string name="theme_row_label">Tema</string>
+    <string name="neg_label">Negativo</string>
     <string name="dim_label">Atenuar</string>
     <string name="thickness_label">Grosor</string>
     <string name="size_label">Tamaño</string>
@@ -29,6 +35,9 @@
     <string name="delete_sheet_text">Se borrará de la biblioteca y del dispositivo.</string>
     <string name="sheet_already_in_library">Esa partitura ya está en la biblioteca</string>
     <string name="desc_page">Página %1$d de %2$d</string>
+    <string name="desc_page_range">Páginas %1$d-%2$d de %3$d</string>
+    <string name="display_options_title">Opciones de visualización</string>
+    <string name="keep_screen_on_label">Mantener pantalla encendida</string>
     <string name="err_open_file">No se pudo abrir el archivo</string>
     <string name="err_file_unreadable">El archivo no se pudo leer</string>
     <string name="err_import_failed">Fallo al importar</string>

@@ -76,6 +76,10 @@
     <string name="action_close">Fermer</string>
     <string name="page_section_label">Page</string>
     <string name="screen_section_label">Écran</string>
+    <string name="engraving_section_label">Gravure</string>
+    <string name="note_size_label">Taille des notes</string>
+    <string name="note_size_smaller">Notes plus petites</string>
+    <string name="note_size_larger">Notes plus grandes</string>
     <string name="half_page_label">Demi-page</string>
     <string name="one_page_label">Une page</string>
     <string name="two_pages_label">Deux pages</string>

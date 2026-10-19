@@ -33,6 +33,7 @@ object Settings {
     private const val KEY_INVERT = "invert"
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
     private const val KEY_LAST_PAGE = "last_page_"
+    private const val KEY_MUSIC_SIZE = "music_size_"
     private const val KEY_LANGUAGE = "language"
 
     fun themeMode(context: Context): ThemeMode =
@@ -67,6 +68,14 @@ object Settings {
 
     fun setLastPage(context: Context, uri: String, page: Int) {
         context.prefs().edit { putInt(KEY_LAST_PAGE + uri, page) }
+    }
+
+    /** MusicXML note size, in percent of the size chosen for the screen (100). Per score. */
+    fun musicSize(context: Context, uri: String): Int =
+        context.prefs().getInt(KEY_MUSIC_SIZE + uri, 100)
+
+    fun setMusicSize(context: Context, uri: String, percent: Int) {
+        context.prefs().edit { putInt(KEY_MUSIC_SIZE + uri, percent) }
     }
 
     // LocaleHelper.FOLLOW_DEVICE or a language code from LocaleHelper.SUPPORTED

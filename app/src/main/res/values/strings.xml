@@ -21,6 +21,7 @@
     <!-- Import -->
     <string name="sheet_already_in_library">This sheet is already in the library</string>
     <string name="err_file_unreadable">The file could not be read</string>
+    <string name="err_not_a_score">This file is neither a PDF nor a MusicXML score</string>
     <string name="err_import_failed">Import failed</string>
     <string name="import_error_failed_detail">Import failed: %1$s</string>
 

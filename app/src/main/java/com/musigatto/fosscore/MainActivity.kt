@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
+import com.musigatto.fosscore.score.SheetFormat
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
@@ -164,7 +165,7 @@ private fun FOSScoreNav(
                         repository = repository,
                         onOpen = { nav = nav.copy(sheet = it, libraryOpen = false) },
                         onEdit = { nav = nav.copy(detail = it) },
-                        onImport = { picker.launch(arrayOf("application/pdf")) },
+                        onImport = { picker.launch(SheetFormat.PICKER_TYPES) },
                         onClose = if (s.sheet != null) ({ nav = nav.copy(libraryOpen = false) }) else null
                     )
                     messageRes?.let { res ->

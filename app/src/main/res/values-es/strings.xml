@@ -15,6 +15,7 @@
 
     <string name="sheet_already_in_library">Esa partitura ya está en la biblioteca</string>
     <string name="err_file_unreadable">El archivo no se pudo leer</string>
+    <string name="err_not_a_score">Este archivo no es ni un PDF ni una partitura MusicXML</string>
     <string name="err_import_failed">Fallo al importar</string>
     <string name="import_error_failed_detail">Fallo al importar: %1$s</string>
 

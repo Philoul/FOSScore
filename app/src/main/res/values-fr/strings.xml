@@ -15,6 +15,7 @@
 
     <string name="sheet_already_in_library">Cette partition est déjà dans la bibliothèque</string>
     <string name="err_file_unreadable">Le fichier n’a pas pu être lu</string>
+    <string name="err_not_a_score">Ce fichier n’est ni un PDF ni une partition MusicXML</string>
     <string name="err_import_failed">Échec de l’importation</string>
     <string name="import_error_failed_detail">Échec de l’importation : %1$s</string>
 

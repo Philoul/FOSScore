@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -160,21 +159,19 @@ private fun FOSScoreNav(
         // are their own step — this layering is what they will need.
         if (s.libraryOpen || s.sheet == null) {
             Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.padding(padding)) {
-                        LibraryScreen(
-                            repository = repository,
-                            onOpen = { nav = nav.copy(sheet = it, libraryOpen = false) },
-                            onEdit = { nav = nav.copy(detail = it) },
-                            onImport = { picker.launch(arrayOf("application/pdf")) },
-                            onClose = if (s.sheet != null) ({ nav = nav.copy(libraryOpen = false) }) else null
-                        )
-                        messageRes?.let { res ->
-                            val msg = stringResource(res)
-                            LaunchedEffect(msg) {
-                                snackbar.showSnackbar(msg)
-                                messageRes = null
-                            }
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    LibraryScreen(
+                        repository = repository,
+                        onOpen = { nav = nav.copy(sheet = it, libraryOpen = false) },
+                        onEdit = { nav = nav.copy(detail = it) },
+                        onImport = { picker.launch(arrayOf("application/pdf")) },
+                        onClose = if (s.sheet != null) ({ nav = nav.copy(libraryOpen = false) }) else null
+                    )
+                    messageRes?.let { res ->
+                        val msg = stringResource(res)
+                        LaunchedEffect(msg) {
+                            snackbar.showSnackbar(msg)
+                            messageRes = null
                         }
                     }
                 }
@@ -185,13 +182,11 @@ private fun FOSScoreNav(
         // old title until the score is reopened. Refresh nav.sheet from the DB when the library chrome
         // gets its own step.
         s.detail?.let { sheet ->
-            Surface(modifier = Modifier.fillMaxSize()) {
-                SheetDetailScreen(
-                    repository = repository,
-                    sheet = sheet,
-                    onDone = { nav = nav.copy(detail = null) }
-                )
-            }
+            SheetDetailScreen(
+                repository = repository,
+                sheet = sheet,
+                onDone = { nav = nav.copy(detail = null) }
+            )
         }
 
         // registered after the viewer on purpose: BackHandler resolves last-registered-first, so with

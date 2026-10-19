@@ -104,11 +104,7 @@ fun ViewerTitleBar(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        when {
-                            composer.isBlank() -> title
-                            title.isBlank() -> composer
-                            else -> "$title · $composer"
-                        },
+                        listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium,
@@ -191,20 +187,22 @@ fun DisplayOptionsOverlay(
                 // half wins over two-up (PageFlow.showTwoUp requires !halfEnabled)
                 val twoUpChecked = twoUpVisible && twoUp && !halfEnabled
                 SectionLabel(stringResource(R.string.page_section_label))
-                RadioRow(stringResource(R.string.half_page_label), halfEnabled) { onSetHalf(true) }
-                RadioRow(stringResource(R.string.one_page_label), !halfEnabled && !twoUpChecked) {
+                OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton) {
+                    onSetHalf(true)
+                }
+                OptionRow(stringResource(R.string.one_page_label), !halfEnabled && !twoUpChecked, Role.RadioButton) {
                     onSetHalf(false)
                     onSetTwoUp(false)
                 }
                 if (twoUpVisible) {
-                    RadioRow(stringResource(R.string.two_pages_label), twoUpChecked) {
+                    OptionRow(stringResource(R.string.two_pages_label), twoUpChecked, Role.RadioButton) {
                         onSetHalf(false)
                         onSetTwoUp(true)
                     }
                 }
                 SectionLabel(stringResource(R.string.screen_section_label))
-                CheckRow(stringResource(R.string.neg_label), invert, onToggleInvert)
-                CheckRow(stringResource(R.string.keep_screen_on_label), keepScreenOn, onToggleKeepScreenOn)
+                OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onToggleInvert)
+                OptionRow(stringResource(R.string.keep_screen_on_label), keepScreenOn, Role.Checkbox, onToggleKeepScreenOn)
                 ValueRow(stringResource(R.string.theme_row_label), themeLabel, onToggleTheme)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyLarge)
@@ -240,28 +238,15 @@ private fun SectionLabel(text: String) {
  * (and may wrap) — the row never changes width under the finger.
  */
 @Composable
-private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun OptionRow(label: String, checked: Boolean, role: Role, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+            .selectable(selected = checked, role = role, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = null)
-        Spacer(Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-@Composable
-private fun CheckRow(label: String, checked: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = checked, role = Role.Checkbox, onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(checked = checked, onCheckedChange = null)
+        if (role == Role.RadioButton) RadioButton(selected = checked, onClick = null)
+        else Checkbox(checked = checked, onCheckedChange = null)
         Spacer(Modifier.width(4.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge)
     }

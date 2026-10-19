@@ -104,8 +104,8 @@ configuration opens by default.
 
 ### 3.5 Settings screen (app-wide)
 
-A real settings screen replaces the temporary controls added by recent pull requests:
-- language (today a dropdown at the top of the library);
+A real settings screen replaces the temporary controls added by recent pull requests. It opens from the **menu at the top left of the library** (hamburger ☰ and side drawer, started by the library export / import PR), which also holds the export / import of the library and, later, "About":
+- language: the in-app choice (`LocaleHelper`, kept in the code) comes back here; until then the app follows the device language (the temporary menu in the library header was removed);
 - keep the screen on (today a ☀ toggle in the viewer);
 - page-turn keys: which keys turn pages, for keyboards and pedals that send other keys;
 - defaults for new scores: display mode, metronome sound, music size.

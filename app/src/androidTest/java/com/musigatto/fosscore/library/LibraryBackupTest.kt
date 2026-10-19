@@ -37,6 +37,7 @@ class LibraryBackupTest {
     private val backup = LibraryBackup(context, dbName)
     private val sheetsDir = File(context.filesDir, LibraryBackup.SHEETS_DIR)
     private val pdfBytes = "%PDF-1.4 test score".toByteArray()
+    private val scoreBytes = "<score-partwise version=\"4.0\"/>".toByteArray()
 
     @get:Rule
     val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), AppDatabase::class.java)
@@ -100,6 +101,28 @@ class LibraryBackupTest {
         // The library replaced by the import is kept.
         assertTrue(File(context.filesDir, "${LibraryBackup.SHEETS_BEFORE_IMPORT}/some-uuid.pdf").isFile)
         assertTrue(DatabaseSafety.backups(context).any { it.name.startsWith("backup-test-") && it.name.endsWith("-before-import.db") })
+    }
+
+    @Test
+    fun aSheetKeepsTheExtensionOfItsFile() = runBlocking {
+        val db = open()
+        val score = File(sheetsDir, "some-uuid.musicxml").apply {
+            parentFile?.mkdirs()
+            writeBytes(scoreBytes)
+        }
+        db.sheetDao().insert(sheet(score.path))
+        val archive = ByteArrayOutputStream()
+        backup.export(db, archive)
+        assertTrue(entries(archive.toByteArray()).contains("sheets/$HASH.musicxml"))
+        db.close()
+
+        backup.stage(backup.inspect(ByteArrayInputStream(archive.toByteArray())))
+        assertTrue(LibraryBackup.applyPending(context, dbName))
+        val restored = open()
+        val sheet = restored.sheetDao().byHash(HASH)!!
+        assertEquals(File(sheetsDir, "$HASH.musicxml").path, sheet.path)
+        assertArrayEquals(scoreBytes, File(sheet.path).readBytes())
+        restored.close()
     }
 
     @Test

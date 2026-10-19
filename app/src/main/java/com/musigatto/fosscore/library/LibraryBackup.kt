@@ -18,13 +18,14 @@ import java.util.zip.ZipOutputStream
 private const val LOG_TAG = "FOSScore-Backup"
 
 /**
- * Export and import of the whole library: the database file itself, its schema, and the PDFs.
+ * Export and import of the whole library: the database file itself, its schema, and the score files.
  *
  * **Export** ([export]) writes a ZIP archive:
  * - `manifest.json`: [BackupManifest] (schema version, app version, date, device, counts);
  * - `database/fosscore.db`: a consistent copy of the database, taken while writes are blocked;
  * - `database/schema.sql`: the schema of that database, for people;
- * - `sheets/<hash>.pdf`: the PDF of each sheet, named by its MD5 hash.
+ * - `sheets/<hash>.<extension>`: the file of each sheet, named by its MD5 hash. It keeps its
+ *   extension (`pdf`, or another score format), which is how the app tells the formats apart.
  *
  * **Import** happens in three steps, as in AndroidAPS's settings import:
  * 1. [inspect] unpacks the archive aside and checks it ([BackupChecks]): an ERROR (newer schema,
@@ -32,7 +33,7 @@ private const val LOG_TAG = "FOSScore-Backup"
  * 2. [stage] marks it to be applied, then the app restarts;
  * 3. at the next start, before Room opens the database, [applyPending] saves the current library
  *    and puts the imported one in place. An older schema is then migrated by Room with the same
- *    migrations as an app update, and [relinkIfNeeded] points the sheets to their new PDF files.
+ *    migrations as an app update, and [relinkIfNeeded] points the sheets to their new files.
  *
  * All functions do file work: call them off the main thread.
  */
@@ -60,13 +61,13 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
             var missing = 0
             ZipOutputStream(out.buffered()).use { zip ->
                 for ((hash, path) in content.files) {
-                    val pdf = File(path)
-                    if (!pdf.isFile) {
+                    val file = File(path)
+                    if (!file.isFile) {
                         missing++
                         continue
                     }
-                    zip.putNextEntry(ZipEntry("${BackupManifest.SHEETS_DIR}$hash.pdf"))
-                    pdf.inputStream().use { it.copyTo(zip) }
+                    zip.putNextEntry(ZipEntry("${BackupManifest.SHEETS_DIR}$hash.${extensionOf(path)}"))
+                    file.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
                 zip.putNextEntry(ZipEntry(BackupManifest.DATABASE))
@@ -117,7 +118,7 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
         val sheets: Int,
         val stamps: Int,
         val strokes: Int,
-        /** Hash → PDF path, one per distinct hash. */
+        /** Hash → file path, one per distinct hash. */
         val files: Map<String, String>
     )
 
@@ -237,7 +238,12 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
         private const val RELINK = "import-relink"
 
         private val HASH = Regex("[0-9a-f]{32}")
-        private val SHEET_ENTRY = Regex("""${BackupManifest.SHEETS_DIR}[0-9a-f]{32}\.pdf""")
+        private val EXTENSION = Regex("[a-z0-9]{1,8}")
+        private val SHEET_ENTRY = Regex("""${BackupManifest.SHEETS_DIR}[0-9a-f]{32}\.[a-z0-9]{1,8}""")
+
+        /** The extension a sheet's file keeps in the archive and after an import (`pdf` if it has none). */
+        internal fun extensionOf(path: String): String =
+            File(path).extension.lowercase().takeIf { EXTENSION.matches(it) } ?: "pdf"
 
         internal fun isExpected(name: String): Boolean =
             name == BackupManifest.MANIFEST || name == BackupManifest.DATABASE || name == BackupManifest.SCHEMA ||
@@ -304,15 +310,23 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
         }
 
         /**
-         * After an import, points every sheet to its PDF in this app's folder (the paths in the
-         * archive belong to the device that exported it). Called when Room opens the database,
-         * after the migrations, so it uses the current schema.
+         * After an import, points every sheet to its file in this app's folder (the paths in the
+         * archive belong to the device that exported it), keeping the extension of its old path,
+         * as the export did. Called when Room opens the database, after the migrations, so it
+         * uses the current schema.
          */
         fun relinkIfNeeded(context: Context, db: SupportSQLiteDatabase) {
             val marker = File(context.filesDir, RELINK)
             if (!marker.exists()) return
-            val dir = File(context.filesDir, SHEETS_DIR).absolutePath + File.separator
-            db.execSQL("UPDATE sheets SET path = ? || hash || '.pdf'", arrayOf<Any>(dir))
+            val dir = File(context.filesDir, SHEETS_DIR)
+            val links = mutableListOf<Pair<Long, String>>()
+            db.query("SELECT id, hash, path FROM sheets").use { c ->
+                while (c.moveToNext()) {
+                    val file = File(dir, "${c.getString(1)}.${extensionOf(c.getString(2))}")
+                    links += c.getLong(0) to file.absolutePath
+                }
+            }
+            for ((id, path) in links) db.execSQL("UPDATE sheets SET path = ? WHERE id = ?", arrayOf<Any>(path, id))
             marker.delete()
         }
     }

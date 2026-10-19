@@ -39,7 +39,9 @@ fun LibraryScreen(
     onEdit: (Sheet) -> Unit,
     onImport: () -> Unit,
     /** ✕ is shown only when the library floats over a score, where it means "back to the page". */
-    onClose: (() -> Unit)? = null
+    onClose: (() -> Unit)? = null,
+    /** ☰ opens the side menu with what concerns the whole app (export / import of the library...). */
+    onOpenMenu: () -> Unit = {}
 ) {
     val sheets by repository.sheets().collectAsState(initial = emptyList())
     var query by rememberSaveable { mutableStateOf("") }
@@ -53,7 +55,13 @@ fun LibraryScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val menuDescription = stringResource(R.string.menu_open)
+                TextButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = menuDescription }) {
+                    Text("☰", style = MaterialTheme.typography.headlineSmall)
+                }
+                Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 onClose?.let { close ->
                     val closeLabel = stringResource(R.string.action_close)

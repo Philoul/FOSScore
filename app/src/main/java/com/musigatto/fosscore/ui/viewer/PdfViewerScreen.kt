@@ -210,6 +210,7 @@ fun PdfViewerScreen(
     val format = remember(pdfUri) { SheetFormat.of(pdfUri.path.orEmpty()) }
     // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
     var layoutVersion by remember { mutableIntStateOf(0) }
+    var musicSize by remember(pdfUri) { mutableIntStateOf(Settings.musicSize(context, pdfUri.toString())) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
@@ -607,14 +608,15 @@ fun PdfViewerScreen(
     // of the score: the page breaks move, not the music.
     val densityDpi = configuration.densityDpi
     val twoUpSlots = isLandscape && twoUp && !halfEnabled
-    LaunchedEffect(pageSource, viewport, twoUpSlots) {
+    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
         val spec = LayoutSpec(
             width = if (twoUpSlots) viewport.width / 2 else viewport.width,
             height = viewport.height,
             // the music size follows the whole screen, so two-up does not shrink the notes
-            scale = LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi),
+            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * musicSize / 100)
+                .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
         )
         val before = pageCount
         try {
@@ -1974,6 +1976,11 @@ fun PdfViewerScreen(
                 onDimChange = { dimPct = it },
                 onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
                 onDismiss = { optionsOpen = false },
+                musicSize = if (format.isMusicXml) musicSize else null,
+                onMusicSizeChange = {
+                    musicSize = it.coerceIn(MIN_MUSIC_SIZE, MAX_MUSIC_SIZE)
+                    Settings.setMusicSize(context, pdfUri.toString(), musicSize)
+                },
             )
         }
     }

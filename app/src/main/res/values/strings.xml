@@ -24,6 +24,10 @@
     <string name="field_tags">Tags</string>
     <string name="page_section_label">Page</string>
     <string name="screen_section_label">Screen</string>
+    <string name="engraving_section_label">Engraving</string>
+    <string name="note_size_label">Note size</string>
+    <string name="note_size_smaller">Smaller notes</string>
+    <string name="note_size_larger">Larger notes</string>
     <string name="half_page_label">Half-page turn</string>
     <string name="one_page_label">One page</string>
     <string name="two_pages_label">Two pages</string>

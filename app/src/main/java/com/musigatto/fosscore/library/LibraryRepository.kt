@@ -35,11 +35,11 @@ class LibraryRepository(context: Context) {
         val destination = File(dir, "${UUID.randomUUID()}.pdf")
         val hash = try {
             val input = appContext.contentResolver.openInputStream(uri)
-            if (input == null) return ImportResult.Error(R.string.error_file_open)
+            if (input == null) return ImportResult.Error(R.string.err_open_file)
             SheetImporter.import(input, destination)
         } catch (e: IOException) {
             destination.delete()
-            return ImportResult.Error(R.string.import_error_read)
+            return ImportResult.Error(R.string.err_file_unreadable)
         }
 
         dao.byHash(hash)?.let { existing ->
@@ -59,7 +59,7 @@ class LibraryRepository(context: Context) {
         )
         ImportResult.Ok(sheet.copy(id = dao.insert(sheet)))
     } catch (e: Exception) {
-        ImportResult.Error(R.string.import_error_failed, e.message)
+        ImportResult.Error(R.string.err_import_failed, e.message)
     }
 
     suspend fun save(sheet: Sheet) = dao.update(sheet)

@@ -241,7 +241,7 @@ class MuPdfDoc private constructor(
                 initialized = true
             }
             val fd = context.contentResolver.openFileDescriptor(uri, "r")
-                ?: throw IOException(context.getString(R.string.error_file_open))
+                ?: throw IOException(context.getString(R.string.err_open_file))
             val stream = FdSeekable(fd)
             val doc = try {
                 Document.openDocument(stream, "application/pdf")

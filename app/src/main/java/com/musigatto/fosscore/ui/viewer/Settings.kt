@@ -19,7 +19,7 @@ enum class ThemeMode {
     @get:StringRes
     val labelRes: Int
         get() = when (this) {
-            SYSTEM -> R.string.theme_system
+            SYSTEM -> R.string.theme_auto
             LIGHT -> R.string.theme_light
             DARK -> R.string.theme_dark
         }

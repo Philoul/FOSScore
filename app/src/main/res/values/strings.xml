@@ -14,42 +14,42 @@
 
     <!-- Library -->
     <string name="library_title">Library</string>
-    <string name="library_search">Search</string>
-    <string name="library_empty">No sheets yet. Use the Import button to add one.</string>
-    <string name="library_no_results">No results for “%1$s”</string>
+    <string name="search_label">Search</string>
+    <string name="empty_library">No sheets yet. Use the Import button to add one.</string>
+    <string name="no_results">No results for “%1$s”</string>
 
     <!-- Import -->
-    <string name="import_duplicate">This sheet is already in the library</string>
-    <string name="import_error_read">The file could not be read</string>
-    <string name="import_error_failed">Import failed</string>
+    <string name="sheet_already_in_library">This sheet is already in the library</string>
+    <string name="err_file_unreadable">The file could not be read</string>
+    <string name="err_import_failed">Import failed</string>
     <string name="import_error_failed_detail">Import failed: %1$s</string>
 
     <!-- Sheet details -->
-    <string name="sheet_edit_title">Edit sheet</string>
-    <string name="sheet_field_title">Title</string>
-    <string name="sheet_field_composer">Composer</string>
-    <string name="sheet_field_genre">Genre</string>
-    <string name="sheet_field_key">Key</string>
-    <string name="sheet_field_tags">Tags</string>
-    <string name="sheet_delete_title">Delete this sheet?</string>
-    <string name="sheet_delete_message">It will be removed from the library and from this device.</string>
+    <string name="edit_sheet_title">Edit sheet</string>
+    <string name="field_title">Title</string>
+    <string name="field_composer">Composer</string>
+    <string name="field_genre">Genre</string>
+    <string name="field_key">Key</string>
+    <string name="field_tags">Tags</string>
+    <string name="delete_sheet_title">Delete this sheet?</string>
+    <string name="delete_sheet_text">It will be removed from the library and from this device.</string>
 
     <!-- Viewer -->
-    <string name="error_file_open">The file could not be opened</string>
-    <string name="viewer_error_invalid_pdf">Invalid or corrupted PDF</string>
-    <string name="viewer_error_render">The page could not be rendered</string>
-    <string name="viewer_page_description">Page %1$d of %2$d</string>
-    <string name="viewer_mode">Mode:</string>
+    <string name="err_open_file">The file could not be opened</string>
+    <string name="err_invalid_pdf">Invalid or corrupted PDF</string>
+    <string name="err_render_page">The page could not be rendered</string>
+    <string name="desc_page">Page %1$d of %2$d</string>
+    <string name="mode_label">Mode:</string>
     <!-- Short label of the negative (inverted colours) toggle button -->
-    <string name="viewer_invert">Neg</string>
-    <string name="viewer_dim">Dim</string>
-    <string name="viewer_pen_width">Width</string>
-    <string name="viewer_stamp_size">Size</string>
+    <string name="neg_label">Neg</string>
+    <string name="dim_label">Dim</string>
+    <string name="thickness_label">Width</string>
+    <string name="size_label">Size</string>
     <!-- A percentage, e.g. "40%" -->
     <string name="percent_value">%1$d%%</string>
 
     <!-- Theme -->
-    <string name="theme_system">Auto</string>
+    <string name="theme_auto">Auto</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
 

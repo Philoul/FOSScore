@@ -52,12 +52,12 @@ fun SheetDetailScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(stringResource(R.string.sheet_edit_title), style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
-        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text(stringResource(R.string.sheet_field_title)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = composer, onValueChange = { composer = it }, label = { Text(stringResource(R.string.sheet_field_composer)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text(stringResource(R.string.sheet_field_genre)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = musicalKey, onValueChange = { musicalKey = it }, label = { Text(stringResource(R.string.sheet_field_key)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = tags, onValueChange = { tags = it }, label = { Text(stringResource(R.string.sheet_field_tags)) }, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.edit_sheet_title), style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text(stringResource(R.string.field_title)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = composer, onValueChange = { composer = it }, label = { Text(stringResource(R.string.field_composer)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text(stringResource(R.string.field_genre)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = musicalKey, onValueChange = { musicalKey = it }, label = { Text(stringResource(R.string.field_key)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = tags, onValueChange = { tags = it }, label = { Text(stringResource(R.string.field_tags)) }, modifier = Modifier.fillMaxWidth())
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Button(
@@ -80,8 +80,8 @@ fun SheetDetailScreen(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text(stringResource(R.string.sheet_delete_title)) },
-            text = { Text(stringResource(R.string.sheet_delete_message)) },
+            title = { Text(stringResource(R.string.delete_sheet_title)) },
+            text = { Text(stringResource(R.string.delete_sheet_text)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false

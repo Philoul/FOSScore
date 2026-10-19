@@ -9,36 +9,36 @@
     <string name="action_save">Guardar</string>
 
     <string name="library_title">Biblioteca</string>
-    <string name="library_search">Buscar</string>
-    <string name="library_empty">Aún no hay partituras. Importa una con el botón Importar.</string>
-    <string name="library_no_results">Sin resultados para “%1$s”</string>
+    <string name="search_label">Buscar</string>
+    <string name="empty_library">Aún no hay partituras. Importa una con el botón Importar.</string>
+    <string name="no_results">Sin resultados para “%1$s”</string>
 
-    <string name="import_duplicate">Esa partitura ya está en la biblioteca</string>
-    <string name="import_error_read">El archivo no se pudo leer</string>
-    <string name="import_error_failed">Fallo al importar</string>
+    <string name="sheet_already_in_library">Esa partitura ya está en la biblioteca</string>
+    <string name="err_file_unreadable">El archivo no se pudo leer</string>
+    <string name="err_import_failed">Fallo al importar</string>
     <string name="import_error_failed_detail">Fallo al importar: %1$s</string>
 
-    <string name="sheet_edit_title">Editar partitura</string>
-    <string name="sheet_field_title">Título</string>
-    <string name="sheet_field_composer">Compositor</string>
-    <string name="sheet_field_genre">Género</string>
-    <string name="sheet_field_key">Tonalidad</string>
-    <string name="sheet_field_tags">Etiquetas</string>
-    <string name="sheet_delete_title">¿Eliminar esta partitura?</string>
-    <string name="sheet_delete_message">Se borrará de la biblioteca y del dispositivo.</string>
+    <string name="edit_sheet_title">Editar partitura</string>
+    <string name="field_title">Título</string>
+    <string name="field_composer">Compositor</string>
+    <string name="field_genre">Género</string>
+    <string name="field_key">Tonalidad</string>
+    <string name="field_tags">Etiquetas</string>
+    <string name="delete_sheet_title">¿Eliminar esta partitura?</string>
+    <string name="delete_sheet_text">Se borrará de la biblioteca y del dispositivo.</string>
 
-    <string name="error_file_open">No se pudo abrir el archivo</string>
-    <string name="viewer_error_invalid_pdf">PDF inválido o corrupto</string>
-    <string name="viewer_error_render">No se pudo renderizar la página</string>
-    <string name="viewer_page_description">Página %1$d de %2$d</string>
-    <string name="viewer_mode">Modo:</string>
-    <string name="viewer_invert">Neg</string>
-    <string name="viewer_dim">Atenuar</string>
-    <string name="viewer_pen_width">Grosor</string>
-    <string name="viewer_stamp_size">Tamaño</string>
+    <string name="err_open_file">No se pudo abrir el archivo</string>
+    <string name="err_invalid_pdf">PDF inválido o corrupto</string>
+    <string name="err_render_page">No se pudo renderizar la página</string>
+    <string name="desc_page">Página %1$d de %2$d</string>
+    <string name="mode_label">Modo:</string>
+    <string name="neg_label">Neg</string>
+    <string name="dim_label">Atenuar</string>
+    <string name="thickness_label">Grosor</string>
+    <string name="size_label">Tamaño</string>
     <string name="percent_value">%1$d%%</string>
 
-    <string name="theme_system">Auto</string>
+    <string name="theme_auto">Auto</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
 

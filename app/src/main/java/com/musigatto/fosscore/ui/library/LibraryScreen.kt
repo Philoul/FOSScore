@@ -56,7 +56,7 @@ fun LibraryScreen(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            label = { Text(stringResource(R.string.library_search)) },
+            label = { Text(stringResource(R.string.search_label)) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
@@ -64,13 +64,13 @@ fun LibraryScreen(
 
         if (sheets.isEmpty()) {
             Text(
-                stringResource(R.string.library_empty),
+                stringResource(R.string.empty_library),
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyLarge
             )
         } else if (visible.isEmpty()) {
             Text(
-                stringResource(R.string.library_no_results, query),
+                stringResource(R.string.no_results, query),
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyLarge
             )

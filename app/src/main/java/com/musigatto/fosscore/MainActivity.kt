@@ -116,7 +116,7 @@ private fun FOSScoreNav(
             scope.launch {
                 when (val result = repository.importSheet(uri)) {
                     is ImportResult.Ok -> screen = Screen.Detail(result.sheet)
-                    is ImportResult.Duplicate -> message = Message(R.string.import_duplicate)
+                    is ImportResult.Duplicate -> message = Message(R.string.sheet_already_in_library)
                     is ImportResult.Error -> message = if (result.detail == null) {
                         Message(result.messageRes)
                     } else {

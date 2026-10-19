@@ -7,13 +7,13 @@ import org.junit.Test
 
 class SelectionGeometryTest {
     private val fit = RectPx(0f, 0f, 1000f, 1000f)
-    private val sel = RectPx(400f, 400f, 200f, 200f)  // centro (500,500)
+    private val sel = RectPx(400f, 400f, 200f, 200f)  // centre (500,500)
 
     @Test
     fun handlesSitOutsideTheCorners() {
         val cs = handleCenters(sel, fit)
         assertEquals(4, cs.size)
-        // los tiradores caen FUERA del recuadro, para que arrastrar dentro siga moviendo
+        // the handles sit OUTSIDE the box, so that dragging inside keeps moving
         assertEquals(true, cs[0].x < sel.left && cs[0].y < sel.top)
         assertEquals(true, cs[1].x > sel.right && cs[1].y < sel.top)
         assertEquals(true, cs[2].x > sel.right && cs[2].y > sel.bottom)
@@ -25,7 +25,7 @@ class SelectionGeometryTest {
         handleCenters(sel, fit).forEachIndexed { i, c ->
             assertEquals(i, hitHandle(c, sel, fit))
         }
-        // dentro del recuadro pero lejos de las esquinas = mover, no escalar
+        // inside the box but far from the corners = move, not scale
         assertNull(hitHandle(Offset(500f, 500f), sel, fit))
     }
 
@@ -44,7 +44,7 @@ class SelectionGeometryTest {
 
     @Test
     fun scaleFactorIsClampedNearTheCenter() {
-        // el tirador pegado al centro no dispara la escala, y colapsarlo no da 0
+        // a handle right at the centre doesn't blow up the scale, and collapsing it doesn't give 0
         assertEquals(1f, scaleFactor(Offset(500f, 500f), Offset(500f, 500f), Offset(520f, 500f)), 1e-4f)
         assertEquals(MIN_SCALE_FACTOR, scaleFactor(Offset(0f, 0f), Offset(10f, 0f), Offset(0f, 0f)), 1e-4f)
     }

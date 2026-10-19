@@ -16,10 +16,10 @@ class StrokeRepository(context: Context) {
 
     suspend fun deleteAll(strokes: List<Stroke>) = dao.deleteAll(strokes)
 
-    // la goma parte un trazo en varios: se reinsertan los tramos supervivientes
+    // the eraser splits a stroke into several: the surviving segments are re-inserted
     suspend fun insertAll(strokes: List<Stroke>) = dao.insertAll(strokes)
 
-    // restaura una página a un snapshot (undo): borra lo actual e inserta el snapshot
+    // restores a page to a snapshot (undo): deletes the current state and inserts the snapshot
     suspend fun restorePage(hash: String, page: Int, strokes: List<Stroke>) {
         dao.deletePage(hash, page)
         dao.insertAll(strokes)

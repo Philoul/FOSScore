@@ -2,6 +2,8 @@ package com.musigatto.fosscore.library
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.StringRes
+import com.musigatto.fosscore.R
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -10,7 +12,8 @@ import kotlinx.coroutines.flow.Flow
 sealed class ImportResult {
     data class Ok(val sheet: Sheet) : ImportResult()
     data class Duplicate(val existing: Sheet) : ImportResult()
-    data class Error(val reason: String) : ImportResult()
+    // The UI resolves messageRes in the selected language; detail is an untranslated system message
+    data class Error(@StringRes val messageRes: Int, val detail: String? = null) : ImportResult()
 }
 
 class LibraryRepository(context: Context) {
@@ -23,16 +26,16 @@ class LibraryRepository(context: Context) {
     suspend fun importSheet(uri: Uri): ImportResult = try {
         val fileName = appContext.contentResolver.query(uri, arrayOf("_display_name"), null, null, null)
             ?.use { if (it.moveToFirst()) it.getString(0) else null }
-            ?: uri.lastPathSegment ?: "partitura.pdf"
+            ?: uri.lastPathSegment ?: "score.pdf"
         val dir = File(appContext.filesDir, "sheets").apply { mkdirs() }
         val destination = File(dir, "${UUID.randomUUID()}.pdf")
         val hash = try {
             val input = appContext.contentResolver.openInputStream(uri)
-            if (input == null) return ImportResult.Error("No se pudo abrir el archivo")
+            if (input == null) return ImportResult.Error(R.string.error_file_open)
             SheetImporter.import(input, destination)
         } catch (e: IOException) {
             destination.delete()
-            return ImportResult.Error("El archivo no se pudo leer")
+            return ImportResult.Error(R.string.import_error_read)
         }
 
         dao.byHash(hash)?.let { existing ->
@@ -52,7 +55,7 @@ class LibraryRepository(context: Context) {
         )
         ImportResult.Ok(sheet.copy(id = dao.insert(sheet)))
     } catch (e: Exception) {
-        ImportResult.Error(e.message ?: "Fallo al importar")
+        ImportResult.Error(R.string.import_error_failed, e.message)
     }
 
     suspend fun save(sheet: Sheet) = dao.update(sheet)
@@ -63,7 +66,7 @@ class LibraryRepository(context: Context) {
         try {
             File(sheet.path).delete()
         } catch (_: Exception) {
-            // ponytail: fila ya borrada; si el archivo no existe/falla, no bloquea el borrado
+            // ponytail: row already deleted; a missing/failing file doesn't block the deletion
         }
     }
 }

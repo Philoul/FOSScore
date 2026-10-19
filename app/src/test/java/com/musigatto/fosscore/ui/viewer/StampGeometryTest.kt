@@ -66,7 +66,7 @@ class StampGeometryTest {
     fun outOfRangeStampClampedInside() {
         val fit = fitOf(800f, 1000f, 1.5f)
         val r = stampRect(stamp(-0.2f, 1.3f, 0.9f), fit)
-        // x/y son el CENTRO normalizado: tras clamp, el centro queda dentro del fit
+        // x/y are the normalized CENTRE: after clamping, the centre stays inside the fit
         assertTrue(r.left + r.width / 2f >= fit.left && r.left + r.width / 2f <= fit.left + fit.width)
         assertTrue(r.top + r.height / 2f >= fit.top && r.top + r.height / 2f <= fit.top + fit.height)
     }

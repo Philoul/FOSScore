@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.musicxml.MusicXmlScore
+import com.musigatto.fosscore.score.SheetFormat
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -31,7 +33,8 @@ class LibraryRepository(context: Context) {
             ?.use { if (it.moveToFirst()) it.getString(0) else null }
             ?: uri.lastPathSegment ?: "partitura.pdf"
         val dir = File(appContext.filesDir, "sheets").apply { mkdirs() }
-        val destination = File(dir, "${UUID.randomUUID()}.pdf")
+        val name = UUID.randomUUID().toString()
+        var destination = File(dir, "$name.pdf")
         val hash = try {
             val input = appContext.contentResolver.openInputStream(uri)
                 ?: return ImportResult.Error(R.string.err_open_file)
@@ -46,12 +49,32 @@ class LibraryRepository(context: Context) {
             return ImportResult.Duplicate
         }
 
+        // the copy is named after what it holds, which is how the viewer picks PDF or MusicXML
+        val format = SheetFormat.detect(destination) ?: run {
+            destination.delete()
+            return ImportResult.Error(R.string.err_not_a_score)
+        }
+        var title = SheetImporter.titleFrom(fileName)
+        var composer = ""
+        if (format.isMusicXml) {
+            val copy = destination
+            destination = File(dir, "$name.${format.extension}").takeIf { copy.renameTo(it) } ?: run {
+                copy.delete()
+                return ImportResult.Error(R.string.err_file_unreadable)
+            }
+            // the details the score carries beat the file name
+            runCatching { MusicXmlScore.parse(destination.readBytes()).info }.getOrNull()?.let { info ->
+                info.title?.takeIf { it.isNotBlank() }?.let { title = it.trim() }
+                info.composer?.takeIf { it.isNotBlank() }?.let { composer = it.trim() }
+            }
+        }
+
         val sheet = Sheet(
             fileName = fileName,
             path = destination.absolutePath,
             hash = hash,
-            title = SheetImporter.titleFrom(fileName),
-            composer = "",
+            title = title,
+            composer = composer,
             genre = "",
             musicalKey = "",
             tags = ""

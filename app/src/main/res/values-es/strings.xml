@@ -45,6 +45,7 @@
     <string name="keep_screen_on_label">Mantener pantalla encendida</string>
     <string name="err_open_file">No se pudo abrir el archivo</string>
     <string name="err_file_unreadable">El archivo no se pudo leer</string>
+    <string name="err_not_a_score">Este archivo no es ni un PDF ni una partitura MusicXML</string>
     <string name="err_import_failed">Fallo al importar</string>
     <string name="err_invalid_pdf">PDF inválido o corrupto</string>
     <string name="err_render_page">No se pudo renderizar la página</string>

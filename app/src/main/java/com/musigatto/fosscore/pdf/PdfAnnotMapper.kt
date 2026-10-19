@@ -4,16 +4,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
-/** Espacio de página PDF para anotaciones: MediaBox + /Rotate normalizado a 0/90/180/270. */
+/** PDF page space for annotations: MediaBox + /Rotate normalized to 0/90/180/270. */
 data class PdfPageSpace(val x0: Float, val y0: Float, val x1: Float, val y1: Float, val rotation: Int) {
     val w: Float get() = x1 - x0
     val h: Float get() = y1 - y0
 }
 
 /**
- * Mapeo entre coordenadas normalizadas de encaje (0..1, y-hacia-abajo: las que guardan los
- * trazos/sellos) y puntos de página PDF (MediaBox, y-hacia-arriba, sin rotar: donde viven
- * los /Annots). Puro, sin JNI: unit-testeable en JVM.
+ * Mapping between normalized fit coordinates (0..1, y pointing down: what strokes and stamps
+ * store) and PDF page points (MediaBox, y pointing up, unrotated: where /Annots live).
+ * Pure, no JNI: unit-testable on the JVM.
  */
 object PdfAnnotMapper {
 
@@ -22,7 +22,7 @@ object PdfAnnotMapper {
         return Offset(s.x0 + ux * s.w, s.y0 + uy * s.h)
     }
 
-    // fracciones y-hacia-arriba: display <-> sin rotar (rotación horaria del /Rotate)
+    // y-up fractions: displayed <-> unrotated (/Rotate turns clockwise)
     private fun displayedToUnrotated(dx: Float, dyDown: Float, rot: Int): Pair<Float, Float> {
         val dxUp = dx
         val dyUp = 1f - dyDown
@@ -41,7 +41,7 @@ object PdfAnnotMapper {
         return floatArrayOf(c.red, c.green, c.blue)
     }
 
-    // ancho del trazo: fracción del alto de encaje <-> puntos (el encaje mide lo rotado)
+    // stroke width: share of the fit height <-> points (the fit measures the rotated page)
     fun widthFracToPt(frac: Float, s: PdfPageSpace): Float =
         frac * if (s.rotation == 90 || s.rotation == 270) s.w else s.h
 }

@@ -5,9 +5,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Mapeo encaje-normalizado (0..1, y-hacia-abajo, el que usa el overlay) ->
- * espacio de página PDF (MediaBox, y-hacia-arriba, con /Rotate).
- * Solo el sentido de escritura (las inversas se re-añaden con el import desde PDF).
+ * Mapping from normalized fit coordinates (0..1, y pointing down, as the overlay uses) to
+ * PDF page space (MediaBox, y pointing up, with /Rotate).
+ * Only the writing direction (the inverses come back with the import from PDF).
  */
 class PdfAnnotMapperTest {
 
@@ -15,7 +15,7 @@ class PdfAnnotMapperTest {
 
     @Test
     fun cornersNoRotation() {
-        // arriba-izq del encaje = arriba-izq de la página (y-hacia-arriba)
+        // top-left of the fit = top-left of the page (y pointing up)
         val tl = PdfAnnotMapper.normalizedToPdf(Offset(0f, 0f), box)
         assertEquals(0f, tl.x, 1e-4f)
         assertEquals(792f, tl.y, 1e-4f)

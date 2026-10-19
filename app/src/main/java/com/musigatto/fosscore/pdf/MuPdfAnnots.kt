@@ -13,7 +13,7 @@ import java.io.File
 
 private const val LOG_TAG = "FOSScore-Annots"
 
-/** Error tipado de exportar tinta: cada caso lleva su string (ver values/strings.xml). */
+/** Typed ink-export error: each case carries its string (see values/strings.xml). */
 sealed class ExportError(val res: Int) : Exception() {
     data object NoLocalFile : ExportError(R.string.err_no_local_file)
     data object NotEditable : ExportError(R.string.err_pdf_not_editable)
@@ -22,24 +22,25 @@ sealed class ExportError(val res: Int) : Exception() {
 }
 
 /**
- * Tinta en coordenadas normalizadas de encaje (0..1, y-hacia-abajo): lo que guarda la BD.
- * Sin IDs ni metadatos de Room para no acoplar este paquete a la capa de datos.
+ * Ink in normalized fit coordinates (0..1, y pointing down): what the database stores.
+ * No Room ids or metadata, so this package does not depend on the data layer.
  */
 data class InkStroke(val points: List<Offset>, val widthFrac: Float, val colorArgb: Int?)
 
 /**
- * Anotaciones dentro del propio PDF (/Annots), estilo Xodo: la tinta deja de vivir solo en el
- * sidecar SQLite y pasa a formar parte del documento (vale en cualquier visor).
+ * Annotations inside the PDF itself (/Annots), as Xodo does: the ink no longer lives only in
+ * the SQLite sidecar and becomes part of the document (it shows in any viewer).
  *
- * v1: solo tinta (Ink). Todo es síncrono y toca JNI: llamar bajo el mutex de render del visor
- * y desde un dispatcher de fondo. No toca la BD: quien llama borra el sidecar exportado.
+ * v1: ink only (Ink). Everything is synchronous and goes through JNI: call it under the viewer's
+ * render mutex, from a background dispatcher. It does not touch the database: the caller deletes
+ * the exported sidecar.
  */
 object MuPdfAnnots {
 
     /**
-     * Escribe [strokes] por página como anotaciones Ink y guarda el archivo.
-     * Devuelve las páginas escritas con éxito (para que el llamador borre ese sidecar).
-     * No edita nada si el documento no abre como PDF editable.
+     * Writes [strokes] per page as Ink annotations and saves the file.
+     * Returns the pages written successfully (so the caller deletes that sidecar).
+     * Edits nothing if the document does not open as an editable PDF.
      */
     fun exportInk(
         filePath: String,
@@ -59,9 +60,9 @@ object MuPdfAnnots {
                 if (writePageInk(doc, pageIdx, usable, fallbackBox(pageIdx))) done += pageIdx
             }
             if (done.isEmpty()) return emptySet()
-            // guardado completo a tmp + reemplazo: sin el peligro de reescribir el mismo
-            // archivo que se está leyendo (el incremental lo evita, pero exige el doc abierto
-            // del propio fichero y falla en PDFs reparados).
+            // full save to a temp file + replace: no risk of rewriting the file being read
+            // (an incremental save avoids that, but needs the document opened from that very
+            // file and fails on repaired PDFs).
             val tmp = File("$filePath.fosscore-tmp")
             try {
                 doc.save(tmp.absolutePath, "")
@@ -125,7 +126,7 @@ object MuPdfAnnots {
             )
         }.getOrNull()
         if (parsed != null) return parsed
-        // último recurso: caja de dibujo (ya rotada) como si no hubiera rotación
+        // last resort: the drawing box (already rotated), as if there were no rotation
         Log.w(LOG_TAG, "MediaBox ilegible, uso caja de dibujo")
         return fallback?.let { PdfPageSpace(0f, 0f, it.width, it.height, 0) }
     }

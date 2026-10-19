@@ -15,6 +15,10 @@ import java.util.Locale
  * activity passes its base context through [wrap] in `attachBaseContext`, so every resource lookup
  * (including Compose `stringResource`) resolves against the chosen locale. Changing the preference
  * takes effect when the activity is recreated.
+ *
+ * Not connected at the moment: the temporary language menu left the library header, and the app
+ * follows the device language. The choice comes back in the app settings screen, which calls
+ * [wrap] from `attachBaseContext` again.
  */
 object LocaleHelper {
 

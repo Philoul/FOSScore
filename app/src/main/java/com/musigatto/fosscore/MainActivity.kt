@@ -1,6 +1,5 @@
 package com.musigatto.fosscore
 
-import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -30,7 +29,6 @@ import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
-import com.musigatto.fosscore.locale.LocaleHelper
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
@@ -41,11 +39,6 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    // Every resource lookup in this activity, Compose included, uses the selected language
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LocaleHelper.wrap(newBase))
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -59,17 +52,9 @@ class MainActivity : ComponentActivity() {
             val repository = (context.applicationContext as FOSScoreApp).repository
 
             FOSScoreTheme(darkTheme = themeMode.darkTheme(isSystemInDarkTheme())) {
-                FOSScoreNav(repository, themeMode, toggleTheme, ::changeLanguage)
+                FOSScoreNav(repository, themeMode, toggleTheme)
             }
         }
-    }
-
-    // Resources are bound to the context built in attachBaseContext, so a new language needs a
-    // new activity
-    private fun changeLanguage(language: String) {
-        if (language == LocaleHelper.selectedLanguage(this)) return
-        LocaleHelper.setSelectedLanguage(this, language)
-        recreate()
     }
 }
 
@@ -120,8 +105,7 @@ private fun sheetFromSaveable(v: List<Any>) = Sheet(
 private fun FOSScoreNav(
     repository: LibraryRepository,
     themeMode: ThemeMode,
-    toggleTheme: () -> Unit,
-    onLanguageChange: (String) -> Unit
+    toggleTheme: () -> Unit
 ) {
     var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf<Screen>(Screen.Library) }
     var message by remember { mutableStateOf<Message?>(null) }
@@ -164,8 +148,7 @@ private fun FOSScoreNav(
                     repository = repository,
                     onOpen = { screen = Screen.Viewer(it) },
                     onEdit = { screen = Screen.Detail(it) },
-                    onImport = { picker.launch(arrayOf("application/pdf")) },
-                    onLanguageChange = onLanguageChange
+                    onImport = { picker.launch(arrayOf("application/pdf")) }
                 )
                 message?.let { msg ->
                     val text = if (msg.arg == null) stringResource(msg.res) else stringResource(msg.res, msg.arg)

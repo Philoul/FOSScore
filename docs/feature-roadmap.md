@@ -1,7 +1,7 @@
 # FOSScore: viewer feature roadmap (PDF and MusicXML)
 
 > **Status:** proposal for discussion between the maintainer and contributors.
-> **Date:** 2026-10-16
+> **Date:** 2026-10-16, updated 2026-10-20
 > **Related:** [`musicxml-feasibility.md`](musicxml-feasibility.md) (engine choice, prototype
 > results, technical integration plan) and `docs/architecture-roadmap.md` (code health, on its own
 > branch).
@@ -48,10 +48,10 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 
 | Feature | PDF | MusicXML | Status | Notes |
 |---|---|---|---|---|
-| Page turning by tap zones, swipe, keyboard, pedal | Yes | Same | Today (PDF) · To do (MusicXML) | Shared code. The key mapping should become a setting (see 3.5). |
+| Page turning by tap zones, swipe, keyboard, pedal | Yes | Same | Today (PDF) · Done on a branch (MusicXML) | Shared code. The key mapping should become a setting (see 3.5). |
 | Centre tap shows / hides the menus | Yes | Same | Today (PDF) | Must stay free of other meaning in both formats. |
-| One page / two pages (landscape) / half-page turn (portrait) | Yes | Same | Today (PDF) · To do (MusicXML) | MusicXML: two-up lays out pages for half the screen width. **Half-page turn must behave exactly as for PDF** (same `PageFlow`, same steps, same keys and pedal): it is the only mode where the part being played and the part coming next are both visible at all times, so musicians rely on it. Keep its asymmetry: *next* goes half by half, *previous* goes back to the whole previous page in one step (the user prefers it). MusicXML limit: a page must hold at least 2 systems (lines) for a half to make sense, so the music size has to leave room for 2 systems per page in this mode. Improvement over PDF: cut the page at a system boundary (system positions come from `PageGeometry`) so no system is split between the two halves. |
-| Zoom | Bitmap zoom | **Music size** (re-layout, the music reflows) + the same bitmap zoom | Spike | In the display menu next to the modes. MusicXML zoom is a setting saved per configuration. |
+| One page / two pages (landscape) / half-page turn (portrait) | Yes | Same | Today (PDF) · Done on a branch (MusicXML, plain half cut) | MusicXML: two-up lays out pages for half the screen width. **Half-page turn must behave exactly as for PDF** (same `PageFlow`, same steps, same keys and pedal): it is the only mode where the part being played and the part coming next are both visible at all times, so musicians rely on it. Keep its asymmetry: *next* goes half by half, *previous* goes back to the whole previous page in one step (the user prefers it). MusicXML limit: a page must hold at least 2 systems (lines) for a half to make sense, so the music size has to leave room for 2 systems per page in this mode. Improvement over PDF: cut the page at a system boundary (system positions come from `PageGeometry`) so no system is split between the two halves. |
+| Zoom | Bitmap zoom | **Music size** (re-layout, the music reflows) + the same bitmap zoom | Done on a branch ("Note size" in the display options, saved per score) | In the display menu next to the modes. MusicXML zoom is a setting saved per configuration. |
 | Rotation | Same page, new fit | Re-layout for the new shape | Today (PDF) · Spike | |
 | Parts shown | — | Choose the parts to display; default = staves the author left visible | Spike | MuseScore exports the whole arrangement. |
 | Lyrics placement | — | As in file / above / below the staff / under the system | Spike | Done in the MEI, without patching Verovio (section 7 of the study). |
@@ -76,7 +76,7 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 
 | Feature | PDF | MusicXML | Status | Notes |
 |---|---|---|---|---|
-| One library for both formats | Yes | Same list, with a format icon | To do | |
+| One library for both formats | Yes | Same list, with a format icon | Import done on a branch · icon to do | See 3.6. |
 | Details filled in automatically | Title from the file name | **Title, subtitle, composer, lyricist, arranger, key, time signature, tempo, parts**, read from the file | To do | The user can still edit them. |
 | New detail fields, for both formats | — | — | To do | Lyricist / performer, time signature, tempo (BPM), approximate duration. Needs a database migration. |
 | Link a PDF and a MusicXML of the same piece | — | — | To do | For example after converting the PDF with Audiveris (milestone M6). |
@@ -109,6 +109,59 @@ A real settings screen replaces the temporary controls added by recent pull requ
 - keep the screen on (today a ☀ toggle in the viewer);
 - page-turn keys: which keys turn pages, for keyboards and pedals that send other keys;
 - defaults for new scores: display mode, metronome sound, music size.
+
+### 3.6 Library screen (main screen)
+
+Feedback from testing on a tablet (2026-10-20). The list should be lighter and work for one or
+several scores at once:
+- **No "Open" / "Edit" buttons on every row.** A tap on a row opens the score.
+- **A long press enters selection mode**: a checked box appears on the left of the row, and other
+  rows can be ticked. The top bar then shows **edit** (pencil) and **delete** (trash), for the
+  selected scores.
+- **Editing several scores at once** changes every field except the title (composer, genre, key,
+  tags...).
+- **A small format icon on each row**: PDF or MusicXML. For a PDF, the icon also shows when a
+  MIDI file is attached (see 3.2).
+- **After an import**, the title and composer read from the file are confirmed in the score's
+  **details screen**, a real full screen, the same for PDF and MusicXML, never drawn over the
+  library list. (Today the details screen is drawn over the list without a background since the
+  pills rework, so both are mixed up.)
+- The score title in the page header of a MusicXML score must stay readable without taking the
+  whole width of a tablet in portrait (fixed on a branch: header lines at most 150 % of the lyrics
+  size); to check on a phone.
+
+### 3.7 Viewer menu
+
+Agreed with a clickable mockup (2026-10-19/20); to be turned into issues:
+- **One menu button** at the top left of the viewer instead of the three pills, opening a vertical
+  list: Library, Display | Metronome, Playback (greyed out without MIDI or MusicXML), Links and
+  repeats | Annotate, Pages | Print / export PDF, Share.
+- **One rule for every entry**: a full page to go somewhere else (Library, Links and repeats,
+  Pages, Settings), a panel to change settings (Display, playback options, metronome settings), a
+  bottom band to act while playing (Metronome, Playback, Annotate). One band at a time; the page is
+  laid out **between** the top bar and the band, never under them.
+- **One tempo** (♩ = N), shared by playback and the metronome. Metronome: tick sound and/or a
+  coloured flash on the page border (another colour on the first beat).
+- **A minimal playback band** stays visible in reading mode when the score has MIDI or MusicXML:
+  play / pause (long press: back to A, or to the start), current bar, **A and B markers** set while
+  playing (tap marks the current bar, a second tap clears it; defaults: start and end), a loop
+  toggle (the usual "repeat" icon), and a link to the full playback band.
+- **Playback options panel**: configuration (named, see 3.4), source, tempo, transposition, follow
+  options, then the **parts list last, in its own scroll box** (it can be long): show (eye) and
+  hear (speaker) each part separately, volume.
+- **Annotate** (renamed from "Edit", which already means the score details in the library): pen,
+  eraser, stamps, and a **text tool** (for example to add lyrics).
+- **Links and repeats**: an ordered **play route** made of passages (from a point to a point; the
+  end is not always the end of the score). For a PDF the user builds it; for MusicXML it comes from
+  the score (Verovio builds the playing order from repeats, voltas, D.C., D.S., coda and fine). A
+  link target keeps its vertical position, so half-page mode shows the right half.
+- **Pages**: copy, move, remove pages, and insert a blank page (another way to unfold repeats in a
+  PDF). The PDF file itself is never changed, only the display order.
+- **Settings screen** (app-wide only, nothing that belongs to a score): a vertical list of
+  sections that unfold (Display, Metronome sound, Keyboard and pedal, Playback, Language, Backup),
+  never a row of chips, which overflows on a phone. Pedals are keyboards: page-turn keys are chosen
+  as **pairs** (Down/Up, Right/Left, Page Down/Page Up, Space/Enter, mouse left/right click) plus
+  "detect".
 
 ## 4. What the user interface and code must allow for now
 

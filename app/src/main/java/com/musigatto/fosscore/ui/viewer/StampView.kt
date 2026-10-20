@@ -1,7 +1,6 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.graphics.Typeface
-import android.os.Build
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -28,7 +27,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
 
@@ -123,20 +123,16 @@ private var musicTypefaceLoaded = false
 
 @Composable
 private fun musicTypeface(): Typeface? {
-    val resources = LocalResources.current
-    // Resources.getFont is API 26+: on 23-25 we skip it (a NoSuchMethodError is not caught by
-    // catch(Exception)) and the glyphs fall through to the Canvas drawing, which is already
-    // the fallback.
+    val context = LocalContext.current
+    // ResourcesCompat.getFont also works on API 23-25, where Resources.getFont does not exist, so
+    // Android 6 and 7 get the real glyphs too. If the font cannot load, the glyphs fall through to
+    // the Canvas drawing, which is already the fallback.
     if (!musicTypefaceLoaded) {
         musicTypefaceLoaded = true
-        musicTypefaceCache = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        musicTypefaceCache = try {
+            ResourcesCompat.getFont(context, R.font.noto_music)
+        } catch (_: Exception) {
             null
-        } else {
-            try {
-                resources.getFont(R.font.noto_music)
-            } catch (_: Exception) {
-                null
-            }
         }
     }
     return musicTypefaceCache

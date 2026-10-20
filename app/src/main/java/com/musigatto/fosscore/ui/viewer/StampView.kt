@@ -6,13 +6,18 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -34,9 +39,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.R
+import kotlin.math.roundToInt
 
 // label = the text drawn on the page (only the dynamics use it, and it is notation, so it does
 // not translate); descRes = the name a screen reader speaks, translated in strings.xml
+//
+// TODO: placeholder for a future .PNG — the stamps will be raster images instead of typeface
+// glyphs, so every device draws the same shapes (no font substitution per brand or Android version)
 enum class StampSymbol(val label: String, @param:StringRes val descRes: Int) {
     PP("pp", R.string.stamp_pp),
     P("p", R.string.stamp_p),
@@ -105,14 +114,22 @@ val SWATCH_COLORS = listOf(
 // null = theme color; otherwise the ARGB that was saved
 fun stampColor(color: Int?, fallback: Color): Color = color?.let(::Color) ?: fallback
 
+// Resources.getFont builds a fresh Typeface on every call, and Compose's own docs for the font
+// resolver say "this function caches the internal native Typeface but always creates the new
+// Typeface object. Caller should cache if necessary" — every StampView asks for it (19 of them in
+// the palette), so one per process is what keeps the palette from taking a few ms to open.
+private var musicTypefaceCache: Typeface? = null
+private var musicTypefaceLoaded = false
+
 @Composable
 private fun musicTypeface(): Typeface? {
     val resources = LocalResources.current
     // Resources.getFont is API 26+: on 23-25 we skip it (a NoSuchMethodError is not caught by
     // catch(Exception)) and the glyphs fall through to the Canvas drawing, which is already
     // the fallback.
-    return remember {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+    if (!musicTypefaceLoaded) {
+        musicTypefaceLoaded = true
+        musicTypefaceCache = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             null
         } else {
             try {
@@ -122,6 +139,7 @@ private fun musicTypeface(): Typeface? {
             }
         }
     }
+    return musicTypefaceCache
 }
 
 /**
@@ -138,7 +156,7 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
             // ponytail: each label is shrunk by a fixed factor (eyeballed against the box)
             // instead of measuring the text at runtime. Upgrade: Canvas.drawText with a real measure.
             val maxSp = (sizePx * (TEXT_FILL[symbol] ?: 0.7f) / density.density).sp
-            androidx.compose.material3.Text(
+            Text(
                 text = symbol.label,
                 maxLines = 1,
                 softWrap = false,
@@ -260,5 +278,75 @@ fun ColorSwatchButton(color: Color, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier.clickable(onClick = onClick)
     ) {
         Box(Modifier.size(28.dp))
+    }
+}
+
+/**
+ * Stamps palette (spec §5): the symbols in a grid, the placement size at the bottom — forScore's
+ * Stamps panel. The bar only carries the tool button; the panel drops from it, stays a compact
+ * block (4 columns, see-through) instead of a band across the page, and steps aside while a finger
+ * is on the page.
+ */
+@Composable
+fun StampPalettePanel(
+    active: StampSymbol,
+    sizePx: Float,
+    onSymbol: (StampSymbol) -> Unit,
+    onSize: (Float) -> Unit,
+    onSaveDefault: () -> Unit,
+    isDefault: Boolean,
+) {
+    ToolBlock {
+        StampSymbol.entries.chunked(4).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                row.forEach { sym ->
+                    StampPaletteButton(
+                        symbol = sym,
+                        selected = sym == active,
+                        onClick = { onSymbol(sym) }
+                    )
+                }
+            }
+        }
+        Text(
+            "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
+            style = MaterialTheme.typography.bodySmall
+        )
+        // the slider is the coarse control; the arrows step 1 px for the last few
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StepArrow(label = "−", onClick = { onSize((sizePx - 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
+            Slider(
+                value = sizePx,
+                onValueChange = onSize,
+                valueRange = MIN_STAMP_PX..MAX_STAMP_PX,
+                steps = (MAX_STAMP_PX - MIN_STAMP_PX).toInt() - 1,
+                modifier = Modifier.weight(1f),
+            )
+            StepArrow(label = "+", onClick = { onSize((sizePx + 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
+        }
+        // persists in Settings: the next session starts with this size
+        TextButton(
+            onClick = onSaveDefault,
+            enabled = !isDefault,
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+        ) {
+            Text(
+                stringResource(R.string.stamp_default_save),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** 1 px step button beside the slider: 32 dp of chrome, no ripple ring stealing the tap. */
+@Composable
+private fun StepArrow(label: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(0.dp),
+        modifier = Modifier.size(32.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1)
     }
 }

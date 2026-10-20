@@ -54,6 +54,21 @@ object DatabaseSafety {
         prune(dir)
     }
 
+    /**
+     * Saves a complete copy of the database [name] to the backup folder, tagged with [reason].
+     * Only while Room has not opened it (at startup). Returns the copy, or null without a database.
+     */
+    fun saveCopy(context: Context, name: String, reason: String): File? {
+        val db = context.getDatabasePath(name)
+        if (!db.isFile) return null
+        val version = checkpointAndReadVersion(db)
+        val dir = File(context.filesDir, BACKUP_DIR)
+        val target = File(dir, backupName(name, version, reason))
+        copy(db, target)
+        prune(dir)
+        return target
+    }
+
     /** The saved databases, newest first. */
     fun backups(context: Context): List<File> =
         File(context.filesDir, BACKUP_DIR).listFiles().orEmpty().filter { it.isFile }.sortedByDescending { it.name }
@@ -62,7 +77,7 @@ object DatabaseSafety {
      * Writes the content of the write-ahead log into the main file, so that copying that file
      * alone gives a complete database, and returns the schema version stored in the file.
      */
-    private fun checkpointAndReadVersion(db: File): Int =
+    internal fun checkpointAndReadVersion(db: File): Int =
         SQLiteDatabase.openDatabase(db.path, null, SQLiteDatabase.OPEN_READWRITE).use { sqlite ->
             sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
             sqlite.version

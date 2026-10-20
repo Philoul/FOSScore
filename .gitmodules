@@ -1,4 +1,0 @@
-[submodule "musicxml/verovio"]
-	path = musicxml/verovio
-	url = https://github.com/rism-digital/verovio.git
-	shallow = true

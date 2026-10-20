@@ -75,13 +75,14 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
             loadedFor = null
             val xml = doc.prepare(ScoreFilter(spec.parts, spec.lyrics))
             val above = doc.lyricsAbove(spec.lyrics)
-            if (MeiFixes.needed(above, doc.creditSizes)) {
+            val credits = MeiFixes.forScreen(doc.creditSizes)
+            if (MeiFixes.needed(above, credits)) {
                 // Load once only to get the MEI (one endless system is the cheapest layout), fix
                 // what the MusicXML import dropped, then load the MEI for real. The MEI is
                 // already transposed, so it must not be transposed again.
                 t.setOptions(VerovioOptions.unpaged(spec.semitones).toString())
                 load(t, xml)
-                val mei = MeiFixes.apply(t.mei(), above, doc.creditSizes)
+                val mei = MeiFixes.apply(t.mei(), above, credits)
                 t.setOptions(options.put("transpose", "").toString())
                 load(t, mei)
             } else {

@@ -10,6 +10,17 @@ internal object MeiFixes {
     private val REND = Regex("""<rend\b""")
     private val UNPLACED_VERSE = Regex("""<verse\b(?![^>]*\bplace=)""")
 
+    // On a screen page a header line as large as on paper (a 24 pt title over 10 pt lyrics) takes
+    // the whole width: the largest line is brought down to this size, the others in proportion.
+    const val MAX_HEADER_PERCENT = 150
+
+    /** [creditSizes] for a screen: scaled down together so the largest is at most [MAX_HEADER_PERCENT]. */
+    fun forScreen(creditSizes: List<Int?>): List<Int?> {
+        val largest = creditSizes.filterNotNull().maxOrNull() ?: return creditSizes
+        if (largest <= MAX_HEADER_PERCENT) return creditSizes
+        return creditSizes.map { size -> size?.let { Math.round(it * MAX_HEADER_PERCENT.toFloat() / largest) } }
+    }
+
     /** Whether [apply] would change anything, so the MEI round trip can be skipped otherwise. */
     fun needed(lyricsAbove: Boolean, creditSizes: List<Int?>): Boolean =
         lyricsAbove || creditSizes.any { it != null }

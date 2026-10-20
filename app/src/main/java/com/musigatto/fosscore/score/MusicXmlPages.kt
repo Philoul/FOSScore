@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.musigatto.fosscore.musicxml.LayoutSpec
+import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.ScoreEngine
 import com.musigatto.fosscore.pdf.MAX_RENDER_PIXELS
 import com.musigatto.fosscore.pdf.PageBox
@@ -23,7 +24,11 @@ private const val MAX_CACHED_BITMAPS = 4
  *
  * The music is laid out and drawn by the musicxml module (Verovio, then MuPDF for the bitmap).
  */
-class MusicXmlPages private constructor(private val engine: ScoreEngine) : PageSource {
+class MusicXmlPages private constructor(
+    private val engine: ScoreEngine,
+    /** The score's parts, in the file's order. */
+    val parts: List<Part>,
+) : PageSource {
 
     @Volatile
     override var pageCount: Int = 0
@@ -84,13 +89,13 @@ class MusicXmlPages private constructor(private val engine: ScoreEngine) : PageS
         /** Reads the score in [file]. Nothing is laid out yet: call [layout] once the viewport is known. */
         suspend fun open(context: Context, file: File): MusicXmlPages {
             val engine = ScoreEngine(context)
-            try {
+            val summary = try {
                 engine.open(file.readBytes())
             } catch (e: Exception) {
                 engine.close()
                 throw e
             }
-            return MusicXmlPages(engine)
+            return MusicXmlPages(engine, summary.parts)
         }
     }
 }

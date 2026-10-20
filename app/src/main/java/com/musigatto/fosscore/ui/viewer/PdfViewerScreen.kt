@@ -109,6 +109,7 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.pdf.MuPdfDoc
+import com.musigatto.fosscore.score.PageSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -200,7 +201,7 @@ fun PdfViewerScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    var mupdfDoc by remember { mutableStateOf<MuPdfDoc?>(null) }
+    var pageSource by remember { mutableStateOf<PageSource?>(null) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
@@ -340,7 +341,7 @@ fun PdfViewerScreen(
     // marks and stamps of the current page, shared between the overlay and the gestures.
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
     // the first frame and the overlay does not wait for a draw to land.
-    val pageBox = mupdfDoc?.pageSize(currentPage)
+    val pageBox = pageSource?.pageSize(currentPage)
     val pageStamps = if (sheetHash != null) {
         stamps.filter { it.page == currentPage && it.id !in hiddenStampIds }
     } else emptyList()
@@ -575,7 +576,7 @@ fun PdfViewerScreen(
             }
             pageCount = doc.pageCount
             if (pageCount > 0) currentPage = currentPage.coerceIn(0, pageCount - 1)
-            mupdfDoc = doc
+            pageSource = doc
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
@@ -600,7 +601,7 @@ fun PdfViewerScreen(
     // viewers, the bitmap follows the zoom so the GPU never rescales it. During a pinch it only
     // goes UP a step, with a 150 ms minimum between draws; once it settles (no scale change for
     // 250 ms) the final step is tuned in, which can also go DOWN after zooming out.
-    LaunchedEffect(mupdfDoc, viewport) {
+    LaunchedEffect(pageSource, viewport) {
         var lastUpgradeMs = 0L
         snapshotFlow { scale }.collectLatest { s ->
             val target = ZoomMath.renderBucket(s)
@@ -618,9 +619,9 @@ fun PdfViewerScreen(
 
     // viewport matters: on the first frame it is still IntSize.Zero, and with no size there is no draw
     LaunchedEffect(
-        mupdfDoc, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
+        pageSource, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
     ) {
-        val r = mupdfDoc ?: return@LaunchedEffect
+        val r = pageSource ?: return@LaunchedEffect
         val gen = ++renderGeneration
         val needed = when {
             branch.showTwoUp -> listOf(currentPage, currentPage + 1).filter { it < pageCount }
@@ -685,8 +686,8 @@ fun PdfViewerScreen(
     // ahead of time makes the turn a cache hit in MuPdfDoc (same page, same width key).
     // Only at 1x: a turn resets the zoom, so a draw at a zoomed slot would never be reused.
     // The delay gives a quick turn the lock: turning before it fires cancels this effect.
-    LaunchedEffect(mupdfDoc, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf) {
-        val r = mupdfDoc ?: return@LaunchedEffect
+    LaunchedEffect(pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf) {
+        val r = pageSource ?: return@LaunchedEffect
         if (branch.showTwoUp || (branch.showHalf && halfTurned)) return@LaunchedEffect
         if (renderScale != 1f || viewport == IntSize.Zero) return@LaunchedEffect
         delay(RENDER_SETTLE_MS.milliseconds)
@@ -708,8 +709,8 @@ fun PdfViewerScreen(
         }
     }
 
-    DisposableEffect(mupdfDoc) {
-        val current = mupdfDoc
+    DisposableEffect(pageSource) {
+        val current = pageSource
         onDispose {
             // never block the main thread waiting for a draw in flight (ANR): close() goes to
             // applicationScope; the mutex's FIFO queue makes sure it runs after the draw.

@@ -28,6 +28,13 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    lint {
+        // Translations follow the code at their own pace (contributors, Crowdin): a string not
+        // translated yet shows in English, a key left in a translation is never shown. Reported,
+        // but not blocking the build.
+        warning += setOf("MissingTranslation", "ExtraTranslation")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -35,6 +42,16 @@ android {
     buildFeatures {
         compose = true
     }
+    // Migration tests create old databases from the exported schemas.
+    sourceSets {
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    }
+}
+
+// Room writes the schema of each database version here. These files are committed: they let
+// tests check every migration, and Room generate automatic migrations.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -48,4 +65,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.mupdf.fitz)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }

@@ -28,6 +28,13 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    lint {
+        // Translations follow the code at their own pace (contributors, Crowdin): a string not
+        // translated yet shows in English, a key left in a translation is never shown. Reported,
+        // but not blocking the build.
+        warning += setOf("MissingTranslation", "ExtraTranslation")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

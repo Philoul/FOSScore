@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(fosscore_musicxml)
 
-# Verovio as released (the pinned submodule), built as an Android shared library. Humdrum and
+# Verovio as released (the source the build downloads), built as an Android shared library. Humdrum and
 # DARMS are only other input formats: leaving them out saves build time and APK size.
 set(BUILD_AS_ANDROID_LIBRARY ON CACHE BOOL "" FORCE)
 set(NO_HUMDRUM_SUPPORT ON CACHE BOOL "" FORCE)

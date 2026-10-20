@@ -1,11 +1,59 @@
+import java.io.IOException
+import java.net.URI
+import java.security.MessageDigest
+
 // MusicXML support: lays out MusicXML scores for the screen with Verovio (LGPL-3.0, built from
-// the pinned submodule in verovio/, without any change) and draws the pages through MuPDF.
-// See README.md.
+// its release source, without any change) and draws the pages through MuPDF. See README.md.
 plugins {
     alias(libs.plugins.android.library)
 }
 
-val verovioDir: File = file("verovio")
+// Verovio's release, as RISM publishes it on GitHub. To update it: change both values (the
+// checksum is the SHA-256 of the .zip below) and DATA_VERSION in Verovio.kt.
+val verovioVersion = "6.3.0"
+val verovioSha256 = "c6d64d024febd233152c69a7ed9cb67f1a2bae0c15d2248f6ac1727f96dff25a"
+
+/**
+ * The source of Verovio [version], downloaded by the first build like any other library, and
+ * checked against [sha256] before use. It is kept in `third_party/` (ignored by Git and by
+ * Clean), so later builds work offline.
+ *
+ * This runs while Gradle reads the build, not in a task: Android Studio runs CMake as soon as it
+ * syncs the project, and CMake needs the source then.
+ */
+fun verovioSource(version: String, sha256: String): File {
+    val parent = file("third_party")
+    val dir = parent.resolve("verovio-$version")
+    if (dir.resolve("cmake/CMakeLists.txt").isFile) return dir
+
+    val url = "https://github.com/rism-digital/verovio/archive/refs/tags/version-$version.zip"
+    logger.lifecycle("Downloading Verovio $version (first build only): $url")
+    parent.mkdirs()
+    val zip = parent.resolve("verovio-$version.zip.part")
+    try {
+        URI(url).toURL().openStream().use { input -> zip.outputStream().use { input.copyTo(it) } }
+    } catch (e: IOException) {
+        zip.delete()
+        throw GradleException("Could not download Verovio $version from $url: the first build needs an internet connection", e)
+    }
+    val actual = MessageDigest.getInstance("SHA-256").digest(zip.readBytes()).joinToString("") { "%02x".format(it) }
+    if (actual != sha256) {
+        zip.delete()
+        throw GradleException("Verovio $version from $url is not the expected file (SHA-256 $actual)")
+    }
+    // unpacked beside, then renamed: an interrupted build never leaves a half source tree behind
+    val unpacked = parent.resolve("verovio-$version.part")
+    delete(unpacked)
+    copy {
+        from(zipTree(zip))
+        into(unpacked)
+    }
+    check(unpacked.resolve("verovio-version-$version").renameTo(dir)) { "could not move Verovio into $dir" }
+    delete(unpacked, zip)
+    return dir
+}
+
+val verovioDir: File = verovioSource(verovioVersion, verovioSha256)
 
 android {
     namespace = "com.musigatto.fosscore.musicxml"

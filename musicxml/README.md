@@ -43,9 +43,11 @@ their page, and `RenderedPage.geometry.head(noteId)` where they are on the bitma
 
 ## Verovio
 
-Verovio (LGPL-3.0, compatible with FOSScore's AGPL-3.0) is a Git submodule in `verovio/`, pinned to
-release **6.3.0**, and built **without any change** by `src/main/cpp/CMakeLists.txt` (without the
-Humdrum and DARMS input formats, which FOSScore does not need). The JNI bridge is hand-written
+Verovio (LGPL-3.0, compatible with FOSScore's AGPL-3.0) is pinned to release **6.3.0**. The first
+build downloads its source as RISM publishes it on GitHub, checks it against the SHA-256 written in
+`build.gradle.kts`, keeps it in `third_party/verovio-6.3.0/`, and builds it **without any change**
+with `src/main/cpp/CMakeLists.txt` (without the Humdrum and DARMS input formats, which FOSScore
+does not need). The JNI bridge is hand-written
 (`verovio_jni.cpp`, no SWIG).
 
 Two things Verovio's MusicXML import drops are put back without patching it: the score is loaded
@@ -54,17 +56,17 @@ lines, then loaded again (`MeiFixes`). Fixing these two gaps in Verovio itself w
 unnecessary.
 
 Only the music fonts Leipzig (default) and Bravura (fallback) and the Liberation text font are
-shipped, copied from `verovio/data` into the assets at build time, and copied to the app's files
-on first use. All three are under the SIL Open Font License 1.1 (see `verovio/fonts/README.md`).
+shipped, copied from Verovio's `data/` into the assets at build time, and copied to the app's files
+on first use. All three are under the SIL Open Font License 1.1 (see Verovio's `fonts/README.md`).
 
-**Build:**
-- `git submodule update --init` once after cloning;
-- the Android NDK 27.2.12479018 and CMake 3.22.1 (Android Studio's SDK Manager);
-- the first native build takes 15 to 30 minutes depending on the computer; later builds reuse
-  `musicxml/.cxx`.
+**Build:** nothing to do by hand. The first build needs an internet connection: it downloads
+Verovio's source (7.5 MB), and Gradle installs the NDK 27.2.12479018 and CMake 3.22.1 if they are
+missing, as it does for the rest of the Android SDK. The first native build takes 15 to 30 minutes
+depending on the computer; later builds reuse `musicxml/.cxx` and work offline.
 
-**Updating Verovio:** check out the new release tag in `verovio/`, commit the new submodule
-pointer, change `DATA_VERSION` in `Verovio.kt`, and run the tests below.
+**Updating Verovio:** change `verovioVersion` and `verovioSha256` in `build.gradle.kts` (the
+SHA-256 of the release's source .zip), change `DATA_VERSION` in `Verovio.kt`, and run the tests
+below. The next build downloads the new source beside the old one.
 
 **Size** (release build): about 10 MB of native code per ABI (arm64: Verovio 8.9 MB, C++ runtime
 1.3 MB) and 1.1 MB of fonts. The module builds the four Android ABIs; the app keeps only the ones

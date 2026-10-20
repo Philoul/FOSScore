@@ -91,7 +91,6 @@
     <string name="menu_hint_soon">Bientôt</string>
     <string name="menu_hint_musicxml_only">Partitions MusicXML seulement</string>
     <string name="menu_hint_not_on_musicxml">Pas encore pour les partitions MusicXML</string>
-    <string name="menu_hint_one_page">Seulement avec une page à l’écran</string>
     <string name="transposition_section_label">Transposition</string>
     <string name="transpose_label">Demi-tons</string>
     <string name="transpose_none">Comme écrit</string>

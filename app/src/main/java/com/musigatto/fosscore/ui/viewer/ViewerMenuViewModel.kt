@@ -37,21 +37,15 @@ enum class ViewerMenuItem(val group: Int) {
 }
 
 /** Why an entry can or cannot be used now. Only [READY] entries react to a tap. */
-enum class MenuItemState { READY, SOON, MUSICXML_ONLY, NOT_ON_MUSICXML, ONE_PAGE_ONLY }
+enum class MenuItemState { READY, SOON, MUSICXML_ONLY, NOT_ON_MUSICXML }
 
-/**
- * Which entries work for this score and this view. [canAnnotate] is the viewer's own gate (a
- * PDF, shown one page at a time).
- */
-fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean, canAnnotate: Boolean): MenuItemState =
+/** Which entries work for this score. */
+fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
     when (item) {
         ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY -> MenuItemState.READY
         ViewerMenuItem.LAYOUT -> if (isMusicXml) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
-        ViewerMenuItem.ANNOTATE -> when {
-            isMusicXml -> MenuItemState.NOT_ON_MUSICXML
-            canAnnotate -> MenuItemState.READY
-            else -> MenuItemState.ONE_PAGE_ONLY
-        }
+        // annotations are stored per page, and a MusicXML page changes with the screen
+        ViewerMenuItem.ANNOTATE -> if (isMusicXml) MenuItemState.NOT_ON_MUSICXML else MenuItemState.READY
         else -> MenuItemState.SOON
     }
 

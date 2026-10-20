@@ -107,19 +107,17 @@ class ViewerMenuViewModelTest {
     @Test
     fun onlyWhatWorksTodayCanBeChosen() {
         val ready = ViewerMenuItem.entries.filter {
-            menuItemState(it, isMusicXml = true, canAnnotate = false) == MenuItemState.READY
+            menuItemState(it, isMusicXml = true) == MenuItemState.READY
         }
         assertEquals(listOf(ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT), ready)
-        assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false, canAnnotate = true))
+        assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false))
     }
 
     @Test
     fun theLayoutPanelIsForMusicXmlAndAnnotationsForPdf() {
-        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false, canAnnotate = true))
-        assertEquals(MenuItemState.NOT_ON_MUSICXML, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = true, canAnnotate = false))
-        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false, canAnnotate = true))
-        // two pages or a turned half page: nothing to annotate
-        assertEquals(MenuItemState.ONE_PAGE_ONLY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false, canAnnotate = false))
+        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false))
+        assertEquals(MenuItemState.NOT_ON_MUSICXML, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = true))
+        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false))
     }
 
     @Test

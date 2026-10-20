@@ -94,7 +94,6 @@
     <string name="menu_hint_soon">Coming soon</string>
     <string name="menu_hint_musicxml_only">MusicXML scores only</string>
     <string name="menu_hint_not_on_musicxml">Not on MusicXML scores yet</string>
-    <string name="menu_hint_one_page">Only when one page is shown</string>
     <string name="transposition_section_label">Transposition</string>
     <string name="transpose_label">Semitones</string>
     <string name="transpose_none">As written</string>

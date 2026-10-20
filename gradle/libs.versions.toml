@@ -9,8 +9,6 @@ ksp = "2.2.10-2.0.2"
 mupdf = "1.28.5"
 coroutines = "1.10.2"
 orgJson = "20240303"
-androidxTestRunner = "1.6.2"
-androidxTestJunit = "1.2.1"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }

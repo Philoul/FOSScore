@@ -53,11 +53,12 @@ class ScoreEngineTest {
     fun theMeiRoundTripKeepsTheBigTitle() = runBlocking {
         engine.open(demo())
         engine.layout(LayoutSpec(width = 800, height = 1200))
-        // The 22 pt title is put back in the MEI: Verovio writes it as a bigger font size.
+        // The 22 pt title is put back in the MEI, brought down to the screen's cap: 150 % of
+        // the composer's 10 pt (MeiFixes.forScreen), the font sizes being rounded to the pixel.
         val svg = engine.pageSvg(1)
         val title = sizeBefore(svg, "Au clair de la lune")
         val composer = sizeBefore(svg, "Traditionnel")
-        assertTrue("title $title, composer $composer", title > composer * 1.5)
+        assertEquals("title $title, composer $composer", MeiFixes.MAX_HEADER_PERCENT / 100.0, title.toDouble() / composer, 0.02)
     }
 
     @Test

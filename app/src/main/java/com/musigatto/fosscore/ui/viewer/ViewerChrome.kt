@@ -13,15 +13,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
@@ -41,19 +41,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 
-// M3's touch target (IconButton's box): the ⊞ slot is mirrored on the right so the centered title
-// stays centered in the pill.
-private val OPTIONS_SLOT = 48.dp
-
 /**
- * Title bar of the viewer: three floating pills (left · center · right) drawn over the page. No state
- * of its own: everything comes in as a parameter and goes out as a lambda.
+ * Title bar of the viewer, drawn over the page: the menu button on the left, the score and page in
+ * the middle, and while annotating a "Done" pill on the right. No state of its own: everything comes
+ * in as a parameter and goes out as a lambda.
  *
  * The row deliberately has NO clickable full-width background: it would eat the page taps in the gaps
  * between pills, which are the navigation (spec §3).
- *
- * ponytail: forScore *replaces* this bar with the annotation one (spec §5); here they coexist, the bar
- * on top and PdfViewerScreen's annotation panel below. The 2-row bar is its own step.
  */
 @Composable
 fun ViewerTitleBar(
@@ -61,9 +55,8 @@ fun ViewerTitleBar(
     composer: String,
     pageLabel: String,
     editing: Boolean,
-    onOpenLibrary: () -> Unit,
-    onToggleEdit: () -> Unit,
-    onShowOptions: () -> Unit,
+    onOpenMenu: () -> Unit,
+    onStopEditing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -72,76 +65,47 @@ fun ViewerTitleBar(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // left pill: "where am I". forScore stacks Scores · Bookmarks · Setlists here; today only
-        // the library exists, so the pill has one entry and grows when the others do.
+        // one entry for everything else (library, display, layout, annotate...): ViewerMenuPanel
         Pill {
-            PillEntry("♪", stringResource(R.string.library_title), onClick = onOpenLibrary)
+            PillEntry("☰", stringResource(R.string.menu_label), onClick = onOpenMenu)
         }
         Spacer(Modifier.width(8.dp))
         // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
         // reads as the main zone.
         Pill(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // always drawn — disabled while annotating (page modes are frozen then) — so the title
-                // keeps its left inset and never runs under the pill's rounded corner
-                val optionsLabel = stringResource(R.string.display_options_title)
-                IconButton(
-                    onClick = onShowOptions,
-                    enabled = !editing,
-                    // the accent goes in the component's slot, not on the Text: otherwise the disabled
-                    // state (annotating) loses M3's greyed-out color
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    modifier = Modifier
-                        .size(OPTIONS_SLOT)
-                        .semantics { contentDescription = optionsLabel },
-                ) {
-                    Text("⊞", style = MaterialTheme.typography.titleLarge)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 40.dp)
+                    .padding(horizontal = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (pageLabel.isNotEmpty()) {
+                    Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
                 }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    if (pageLabel.isNotEmpty()) {
-                        Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                // the ⊞'s box, mirrored: without it the weighted title is centerd on what is LEFT of
-                // the glyph and reads off-center by half a slot
-                Spacer(Modifier.size(OPTIONS_SLOT))
             }
         }
-        Spacer(Modifier.width(8.dp))
-        // right pill: "make something happen". Editing tints the whole pill with the accent container:
-        // that is the M3 "active" tone, and it reads from across the room.
-        Pill(
-            color = if (editing) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surface,
-        ) {
-            PillEntry(
-                "✎",
-                stringResource(R.string.action_edit),
-                selected = editing,
-                onClick = onToggleEdit,
-            )
+        // while annotating, the way out stays in sight: the accent container is the M3 "active"
+        // tone, and it reads from across the room
+        if (editing) {
+            Spacer(Modifier.width(8.dp))
+            Pill(color = MaterialTheme.colorScheme.primaryContainer) {
+                PillEntry("✓", stringResource(R.string.annotate_done), selected = true, onClick = onStopEditing)
+            }
         }
     }
 }
 
 /**
- * Display overlay, as a checklist: one row per option, the control in a fixed left slot, so the rows
- * never change width with their label. Closes on tap outside or with back.
- *
- * ponytail: it does not carry spec §7's modal ✕/✓ chrome — it is an overlay, not an inspector, and it
- * holds nothing that can be discarded. If it ever holds unapplied changes, that chrome becomes
- * mandatory.
+ * Display panel, as a checklist: one row per option, the control in a fixed left slot, so the rows
+ * never change width with their label.
  */
 @Composable
 fun DisplayOptionsOverlay(
@@ -163,6 +127,60 @@ fun DisplayOptionsOverlay(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    PanelOverlay(stringResource(R.string.display_options_title), onDismiss, modifier) {
+        // the page modes are exclusive, and what is ticked is what the viewer is showing:
+        // half wins over two-up (PageFlow.showTwoUp requires !halfEnabled)
+        val twoUpChecked = twoUpVisible && twoUp && !halfEnabled
+        SectionLabel(stringResource(R.string.page_section_label))
+        OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton) {
+            onSetHalf(true)
+        }
+        OptionRow(stringResource(R.string.one_page_label), !halfEnabled && !twoUpChecked, Role.RadioButton) {
+            onSetHalf(false)
+            onSetTwoUp(false)
+        }
+        if (twoUpVisible) {
+            OptionRow(stringResource(R.string.two_pages_label), twoUpChecked, Role.RadioButton) {
+                onSetHalf(false)
+                onSetTwoUp(true)
+            }
+        }
+        SectionLabel(stringResource(R.string.screen_section_label))
+        OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onClick = onToggleInvert)
+        OptionRow(stringResource(R.string.keep_screen_on_label), keepScreenOn, Role.Checkbox, onClick = onToggleKeepScreenOn)
+        ValueRow(stringResource(R.string.theme_row_label), themeLabel, onToggleTheme)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyLarge)
+            Slider(
+                value = dimPct,
+                onValueChange = onDimChange,
+                onValueChangeFinished = onDimChangeFinished,
+                valueRange = 0f..80f,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            )
+            Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+/**
+ * The frame of every settings panel of the viewer: a scrim that closes on tap, and a centered card
+ * with a title, a close button and [content]. The card scrolls when the screen is short (a phone in
+ * landscape). Closes with back too.
+ *
+ * ponytail: it does not carry spec §7's modal ✕/✓ chrome — it is an overlay, not an inspector, and it
+ * holds nothing that can be discarded: every change applies at once. If a panel ever holds unapplied
+ * changes, that chrome becomes mandatory.
+ */
+@Composable
+internal fun PanelOverlay(
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     BackHandler(onBack = onDismiss)
     Box(
         modifier = modifier
@@ -180,43 +198,19 @@ fun DisplayOptionsOverlay(
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // the page modes are exclusive, and what is ticked is what the viewer is showing:
-                // half wins over two-up (PageFlow.showTwoUp requires !halfEnabled)
-                val twoUpChecked = twoUpVisible && twoUp && !halfEnabled
-                SectionLabel(stringResource(R.string.page_section_label))
-                OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton) {
-                    onSetHalf(true)
-                }
-                OptionRow(stringResource(R.string.one_page_label), !halfEnabled && !twoUpChecked, Role.RadioButton) {
-                    onSetHalf(false)
-                    onSetTwoUp(false)
-                }
-                if (twoUpVisible) {
-                    OptionRow(stringResource(R.string.two_pages_label), twoUpChecked, Role.RadioButton) {
-                        onSetHalf(false)
-                        onSetTwoUp(true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    val closeLabel = stringResource(R.string.action_close)
+                    TextButton(onClick = onDismiss, modifier = Modifier.semantics { contentDescription = closeLabel }) {
+                        Text("✕", style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                SectionLabel(stringResource(R.string.screen_section_label))
-                OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onToggleInvert)
-                OptionRow(stringResource(R.string.keep_screen_on_label), keepScreenOn, Role.Checkbox, onToggleKeepScreenOn)
-                ValueRow(stringResource(R.string.theme_row_label), themeLabel, onToggleTheme)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = dimPct,
-                        onValueChange = onDimChange,
-                        onValueChangeFinished = onDimChangeFinished,
-                        valueRange = 0f..80f,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp),
-                    )
-                    Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyLarge)
-                }
+                content()
             }
         }
     }
@@ -224,7 +218,7 @@ fun DisplayOptionsOverlay(
 
 /** Group header of the checklist. */
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelLarge,
@@ -238,17 +232,47 @@ private fun SectionLabel(text: String) {
  * (and may wrap) — the row never changes width under the finger.
  */
 @Composable
-private fun OptionRow(label: String, checked: Boolean, role: Role, onClick: () -> Unit) {
+internal fun OptionRow(
+    label: String,
+    checked: Boolean,
+    role: Role,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = checked, role = role, onClick = onClick),
+            .selectable(selected = checked, enabled = enabled, role = role, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (role == Role.RadioButton) RadioButton(selected = checked, onClick = null)
-        else Checkbox(checked = checked, onCheckedChange = null)
+        if (role == Role.RadioButton) RadioButton(selected = checked, onClick = null, enabled = enabled)
+        else Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
         Spacer(Modifier.width(4.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** − value + on the right of the label; each tap is one step, so the value never jumps under the finger. */
+@Composable
+internal fun StepperRow(
+    label: String,
+    value: String,
+    lessLabel: String,
+    moreLabel: String,
+    canLess: Boolean,
+    canMore: Boolean,
+    onLess: () -> Unit,
+    onMore: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        TextButton(onClick = onLess, enabled = canLess, modifier = Modifier.semantics { contentDescription = lessLabel }) {
+            Text("−", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+        TextButton(onClick = onMore, enabled = canMore, modifier = Modifier.semantics { contentDescription = moreLabel }) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
+        }
     }
 }
 

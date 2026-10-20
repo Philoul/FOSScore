@@ -21,6 +21,7 @@
     <!-- Import -->
     <string name="sheet_already_in_library">This sheet is already in the library</string>
     <string name="err_file_unreadable">The file could not be read</string>
+    <string name="err_not_a_score">This file is neither a PDF nor a MusicXML score</string>
     <string name="err_import_failed">Import failed</string>
     <string name="import_error_failed_detail">Import failed: %1$s</string>
 
@@ -90,6 +91,10 @@
     <string name="action_close">Close</string>
     <string name="page_section_label">Page</string>
     <string name="screen_section_label">Screen</string>
+    <string name="engraving_section_label">Engraving</string>
+    <string name="note_size_label">Note size</string>
+    <string name="note_size_smaller">Smaller notes</string>
+    <string name="note_size_larger">Larger notes</string>
     <string name="half_page_label">Half-page turn</string>
     <string name="one_page_label">One page</string>
     <string name="two_pages_label">Two pages</string>
@@ -124,4 +129,31 @@
     <string name="backup_check_device_other">Exported from another device (%1$s)</string>
     <string name="backup_check_files_ok">All PDF files included</string>
     <string name="backup_check_files_missing">%1$d PDF files were missing when this export was made.</string>
+    <string name="menu_label">Menu</string>
+    <string name="annotate_done">Done</string>
+    <string name="menu_display">Display</string>
+    <string name="menu_layout">Score layout</string>
+    <string name="menu_metronome">Metronome</string>
+    <string name="menu_playback">Playback</string>
+    <string name="menu_links">Links and repeats</string>
+    <string name="menu_annotate">Annotate</string>
+    <string name="menu_pages">Pages</string>
+    <string name="menu_export">Print or export as PDF</string>
+    <string name="menu_share">Share</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_hint_soon">Coming soon</string>
+    <string name="menu_hint_musicxml_only">MusicXML scores only</string>
+    <string name="menu_hint_not_on_musicxml">Not on MusicXML scores yet</string>
+    <string name="transposition_section_label">Transposition</string>
+    <string name="transpose_label">Semitones</string>
+    <string name="transpose_none">As written</string>
+    <string name="transpose_value">%1$+d</string>
+    <string name="transpose_down">Down a semitone</string>
+    <string name="transpose_up">Up a semitone</string>
+    <string name="lyrics_section_label">Lyrics</string>
+    <string name="lyrics_file">As in the file</string>
+    <string name="lyrics_above">Above the staff</string>
+    <string name="lyrics_below">Below the staff</string>
+    <string name="lyrics_bottom">Below the lowest staff</string>
+    <string name="parts_section_label">Parts shown</string>
 </resources>

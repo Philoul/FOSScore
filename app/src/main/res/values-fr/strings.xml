@@ -15,6 +15,7 @@
 
     <string name="sheet_already_in_library">Cette partition est déjà dans la bibliothèque</string>
     <string name="err_file_unreadable">Le fichier n’a pas pu être lu</string>
+    <string name="err_not_a_score">Ce fichier n’est ni un PDF ni une partition MusicXML</string>
     <string name="err_import_failed">Échec de l’importation</string>
     <string name="import_error_failed_detail">Échec de l’importation : %1$s</string>
 
@@ -75,6 +76,10 @@
     <string name="action_close">Fermer</string>
     <string name="page_section_label">Page</string>
     <string name="screen_section_label">Écran</string>
+    <string name="engraving_section_label">Gravure</string>
+    <string name="note_size_label">Taille des notes</string>
+    <string name="note_size_smaller">Notes plus petites</string>
+    <string name="note_size_larger">Notes plus grandes</string>
     <string name="half_page_label">Demi-page</string>
     <string name="one_page_label">Une page</string>
     <string name="two_pages_label">Deux pages</string>
@@ -110,4 +115,31 @@
     <string name="backup_check_device_other">Exportée depuis un autre appareil (%1$s)</string>
     <string name="backup_check_files_ok">Tous les PDF sont inclus</string>
     <string name="backup_check_files_missing">%1$d fichiers PDF manquaient au moment de cet export.</string>
+    <string name="menu_label">Menu</string>
+    <string name="annotate_done">Terminé</string>
+    <string name="menu_display">Affichage</string>
+    <string name="menu_layout">Mise en page</string>
+    <string name="menu_metronome">Métronome</string>
+    <string name="menu_playback">Lecture</string>
+    <string name="menu_links">Liens et reprises</string>
+    <string name="menu_annotate">Annoter</string>
+    <string name="menu_pages">Pages</string>
+    <string name="menu_export">Imprimer ou exporter en PDF</string>
+    <string name="menu_share">Partager</string>
+    <string name="menu_settings">Préférences</string>
+    <string name="menu_hint_soon">Bientôt</string>
+    <string name="menu_hint_musicxml_only">Partitions MusicXML seulement</string>
+    <string name="menu_hint_not_on_musicxml">Pas encore pour les partitions MusicXML</string>
+    <string name="transposition_section_label">Transposition</string>
+    <string name="transpose_label">Demi-tons</string>
+    <string name="transpose_none">Comme écrit</string>
+    <string name="transpose_value">%1$+d</string>
+    <string name="transpose_down">Un demi-ton plus bas</string>
+    <string name="transpose_up">Un demi-ton plus haut</string>
+    <string name="lyrics_section_label">Paroles</string>
+    <string name="lyrics_file">Comme dans le fichier</string>
+    <string name="lyrics_above">Au-dessus de la portée</string>
+    <string name="lyrics_below">Sous la portée</string>
+    <string name="lyrics_bottom">Sous la portée du bas</string>
+    <string name="parts_section_label">Parties affichées</string>
 </resources>

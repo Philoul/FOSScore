@@ -15,6 +15,7 @@
 
     <string name="sheet_already_in_library">Esa partitura ya está en la biblioteca</string>
     <string name="err_file_unreadable">El archivo no se pudo leer</string>
+    <string name="err_not_a_score">Este archivo no es ni un PDF ni una partitura MusicXML</string>
     <string name="err_import_failed">Fallo al importar</string>
     <string name="import_error_failed_detail">Fallo al importar: %1$s</string>
 
@@ -77,6 +78,10 @@
     <string name="action_close">Cerrar</string>
     <string name="page_section_label">Página</string>
     <string name="screen_section_label">Pantalla</string>
+    <string name="engraving_section_label">Grabado</string>
+    <string name="note_size_label">Tamaño de las notas</string>
+    <string name="note_size_smaller">Notas más pequeñas</string>
+    <string name="note_size_larger">Notas más grandes</string>
     <string name="half_page_label">Pasar media página</string>
     <string name="one_page_label">Una página</string>
     <string name="two_pages_label">Dos páginas</string>
@@ -112,4 +117,31 @@
     <string name="backup_check_device_other">Exportada desde otro dispositivo (%1$s)</string>
     <string name="backup_check_files_ok">Todos los PDF incluidos</string>
     <string name="backup_check_files_missing">Faltaban %1$d archivos PDF cuando se hizo esta exportación.</string>
+    <string name="menu_label">Menú</string>
+    <string name="annotate_done">Hecho</string>
+    <string name="menu_display">Visualización</string>
+    <string name="menu_layout">Maquetación</string>
+    <string name="menu_metronome">Metrónomo</string>
+    <string name="menu_playback">Reproducción</string>
+    <string name="menu_links">Enlaces y repeticiones</string>
+    <string name="menu_annotate">Anotar</string>
+    <string name="menu_pages">Páginas</string>
+    <string name="menu_export">Imprimir o exportar a PDF</string>
+    <string name="menu_share">Compartir</string>
+    <string name="menu_settings">Ajustes</string>
+    <string name="menu_hint_soon">Próximamente</string>
+    <string name="menu_hint_musicxml_only">Solo partituras MusicXML</string>
+    <string name="menu_hint_not_on_musicxml">Aún no en partituras MusicXML</string>
+    <string name="transposition_section_label">Transposición</string>
+    <string name="transpose_label">Semitonos</string>
+    <string name="transpose_none">Como está escrito</string>
+    <string name="transpose_value">%1$+d</string>
+    <string name="transpose_down">Un semitono más bajo</string>
+    <string name="transpose_up">Un semitono más alto</string>
+    <string name="lyrics_section_label">Letra</string>
+    <string name="lyrics_file">Como en el archivo</string>
+    <string name="lyrics_above">Encima del pentagrama</string>
+    <string name="lyrics_below">Debajo del pentagrama</string>
+    <string name="lyrics_bottom">Debajo del pentagrama inferior</string>
+    <string name="parts_section_label">Partes mostradas</string>
 </resources>

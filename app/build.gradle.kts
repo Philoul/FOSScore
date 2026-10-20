@@ -6,6 +6,9 @@ plugins {
 
 android {
     namespace = "com.musigatto.fosscore"
+    // The same NDK as the musicxml module: packaging strips the native libraries with it. Without
+    // it they ship with their debug symbols (Verovio alone grows from about 10 MB to 100 MB per ABI).
+    ndkVersion = "27.2.12479018"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1

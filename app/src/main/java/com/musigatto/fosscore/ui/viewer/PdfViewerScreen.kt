@@ -746,8 +746,10 @@ fun PdfViewerScreen(
                 // we do not pile up bitmaps of pages that are no longer on screen (16 MB each when sharp)
                 bitmaps.keys.filterNot { it in needed }.forEach { bitmaps.remove(it) }
                 // no bitmap for this page means nothing to show: say so instead of leaving the
-                // spinner turning forever (it happened with a blank page)
-                if (bitmaps[currentPage] == null) {
+                // spinner turning forever (it happened with a blank page). Only for a render made
+                // for this page: a MusicXML score laid out again (two pages -> one) changes the
+                // page numbers while an older render finishes, and the newer one is on its way.
+                if (currentPage in needed && bitmaps[currentPage] == null) {
                     Log.e(LOG_TAG, "la página $currentPage no se pudo renderizar")
                     error = R.string.err_render_page
                 }

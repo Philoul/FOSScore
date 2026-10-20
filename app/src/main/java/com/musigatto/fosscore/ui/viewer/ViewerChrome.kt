@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -40,6 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import kotlin.math.roundToInt
 
 // M3's touch target (IconButton's box): the ⊞ slot is mirrored on the right so the centered title
 // stays centered in the pill.
@@ -66,71 +69,83 @@ fun ViewerTitleBar(
     onShowOptions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        // left pill: "where am I". forScore stacks Scores · Bookmarks · Setlists here; today only
-        // the library exists, so the pill has one entry and grows when the others do.
-        Pill {
-            PillEntry("♪", stringResource(R.string.library_title), onClick = onOpenLibrary)
-        }
-        Spacer(Modifier.width(8.dp))
-        // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
-        // reads as the main zone.
-        Pill(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // always drawn — disabled while annotating (page modes are frozen then) — so the title
-                // keeps its left inset and never runs under the pill's rounded corner
-                val optionsLabel = stringResource(R.string.display_options_title)
-                IconButton(
-                    onClick = onShowOptions,
-                    enabled = !editing,
-                    // the accent goes in the component's slot, not on the Text: otherwise the disabled
-                    // state (annotating) loses M3's greyed-out color
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    modifier = Modifier
-                        .size(OPTIONS_SLOT)
-                        .semantics { contentDescription = optionsLabel },
-                ) {
-                    Text("⊞", style = MaterialTheme.typography.titleLarge)
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    if (pageLabel.isNotEmpty()) {
-                        Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                // the ⊞'s box, mirrored: without it the weighted title is centerd on what is LEFT of
-                // the glyph and reads off-center by half a slot
-                Spacer(Modifier.size(OPTIONS_SLOT))
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        // right pill: "make something happen". Editing tints the whole pill with the accent container:
-        // that is the M3 "active" tone, and it reads from across the room.
-        Pill(
-            color = if (editing) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surface,
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        // rule 7 of the spec: the extra room depends on the width, not on the device. On a phone the
+        // pills keep only their glyphs, or the centre zone is left with no room for the title (#19).
+        val compact = maxWidth < 480.dp
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            PillEntry(
-                "✎",
-                stringResource(R.string.action_edit),
-                selected = editing,
-                onClick = onToggleEdit,
-            )
+            // left pill: "where am I". forScore stacks Scores · Bookmarks · Setlists here; today only
+            // the library exists, so the pill has one entry and grows when the others do.
+            Pill {
+                PillEntry(
+                    "♪",
+                    stringResource(R.string.library_title),
+                    compact = compact,
+                    onClick = onOpenLibrary,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
+            // reads as the main zone.
+            Pill(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // always drawn — disabled while annotating (page modes are frozen then) — so the title
+                    // keeps its left inset and never runs under the pill's rounded corner
+                    val optionsLabel = stringResource(R.string.display_options_title)
+                    IconButton(
+                        onClick = onShowOptions,
+                        enabled = !editing,
+                        // the accent goes in the component's slot, not on the Text: otherwise the disabled
+                        // state (annotating) loses M3's greyed-out color
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        modifier = Modifier
+                            .size(OPTIONS_SLOT)
+                            .semantics { contentDescription = optionsLabel },
+                    ) {
+                        Text("⊞", style = MaterialTheme.typography.titleLarge)
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        if (pageLabel.isNotEmpty()) {
+                            Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    // the ⊞'s box, mirrored: without it the weighted title is centerd on what is LEFT of
+                    // the glyph and reads off-center by half a slot. On a phone the slot is not worth
+                    // the room it takes from the title, so only the wide layout mirrors it.
+                    if (!compact) Spacer(Modifier.size(OPTIONS_SLOT))
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            // right pill: "make something happen". Editing tints the whole pill with the accent container:
+            // that is the M3 "active" tone, and it reads from across the room.
+            Pill(
+                color = if (editing) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+            ) {
+                PillEntry(
+                    "✎",
+                    stringResource(R.string.action_edit),
+                    compact = compact,
+                    selected = editing,
+                    onClick = onToggleEdit,
+                )
+            }
         }
     }
 }
@@ -293,7 +308,13 @@ private fun Pill(
  * container's content color. The label is what a screen reader announces.
  */
 @Composable
-private fun PillEntry(icon: String, label: String, selected: Boolean = false, onClick: () -> Unit) {
+private fun PillEntry(
+    icon: String,
+    label: String,
+    compact: Boolean = false,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
     val glyphColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
     else MaterialTheme.colorScheme.primary
     val labelColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
@@ -301,9 +322,88 @@ private fun PillEntry(icon: String, label: String, selected: Boolean = false, on
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        // without its label the glyph has no name of its own: keep the label spoken
+        modifier = if (compact) Modifier.semantics { contentDescription = label } else Modifier,
     ) {
         Text(icon, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = glyphColor)
-        Spacer(Modifier.width(6.dp))
-        Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = labelColor)
+        if (!compact) {
+            Spacer(Modifier.width(6.dp))
+            Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = labelColor)
+        }
+    }
+}
+
+/**
+ * Tap cycle of a tool button (spec §5: tap a tool to select it, tap the selected one again for its
+ * options): off -> on -> options -> off. Returns (tool on, panel open).
+ */
+fun nextToolTap(active: Boolean, panelOpen: Boolean): Pair<Boolean, Boolean> = when {
+    !active -> true to false
+    panelOpen -> false to false
+    else -> true to true
+}
+
+/**
+ * Compact block that drops from the annotation bar: the shape every tool panel shares (stamps, pen,
+ * eraser, colour). It floats over the page instead of painting a band across it (spec §5), and the
+ * fixed 160 dp keeps all of them the same width so the bar never reshuffles.
+ */
+@Composable
+fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        // ponytail: fixed alpha; make it a setting if it hides the music you are working on
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        tonalElevation = 3.dp,
+        shadowElevation = 4.dp,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .padding(start = 12.dp, bottom = 8.dp)
+            .width(160.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            content = content
+        )
+    }
+}
+
+/** Tool panel with one labelled slider: pen thickness, eraser size. */
+@Composable
+fun ToolSizePanel(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onValue: (Float) -> Unit,
+) {
+    ToolBlock {
+        Text("$label · ${value.roundToInt()} px", style = MaterialTheme.typography.bodySmall)
+        Slider(
+            value = value,
+            onValueChange = onValue,
+            valueRange = range,
+            steps = (range.endInclusive - range.start).toInt() - 1,
+        )
+    }
+}
+
+/**
+ * Colour selector in its own panel (spec §5): the tint for ink and stamps, and for the selected
+ * stamp. Transparent = the theme colour.
+ */
+@Composable
+fun ColorPanel(active: Int?, onPick: (Int?) -> Unit) {
+    ToolBlock {
+        (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(4).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { argb ->
+                    ColorSwatchButton(
+                        color = if (argb == null) Color.Transparent else Color(argb),
+                        selected = active == argb,
+                        onClick = { onPick(argb) }
+                    )
+                }
+            }
+        }
     }
 }

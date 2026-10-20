@@ -8,6 +8,10 @@
     <string name="action_delete">Eliminar</string>
     <string name="action_cancel">Cancelar</string>
     <string name="action_close">Cerrar</string>
+    <string name="action_undo">Deshacer</string>
+    <string name="action_redo">Rehacer</string>
+    <string name="tool_pen">Lápiz</string>
+    <string name="tool_eraser">Goma</string>
     <string name="search_label">Buscar</string>
     <string name="library_title">Biblioteca</string>
     <string name="empty_library">Aún no hay partituras. Importa una con el botón Importar.</string>
@@ -28,6 +32,7 @@
     <string name="dim_label">Atenuar</string>
     <string name="thickness_label">Grosor</string>
     <string name="size_label">Tamaño</string>
+    <string name="stamp_default_save">Guardar por defecto</string>
     <string name="theme_auto">Auto</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>

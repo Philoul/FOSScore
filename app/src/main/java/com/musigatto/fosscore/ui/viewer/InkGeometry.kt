@@ -27,8 +27,10 @@ const val MAX_PEN_PX = 20f
 fun penWidthPxToFrac(px: Float, fit: RectPx): Float =
     (px / max(1f, fit.height)).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
 
-// eraser radius as a share of the page height (px = frac * fit.height)
-const val ERASE_RADIUS_FRAC = 0.02f
+// eraser radius in px at fit (same space as the pen width): the panel sets it
+const val MIN_ERASER_PX = 6f
+const val MAX_ERASER_PX = 60f
+const val DEFAULT_ERASER_PX = 16f
 
 // Writing without fully letting go: if the next stroke starts less than STROKE_MERGE_MS after
 // the previous one, and close to where it ended, it joins onto it (one word = one stroke, even
@@ -108,8 +110,8 @@ fun minDistanceToPolyline(p: Offset, poly: List<Offset>): Float {
 // removes from a stroke the points that fall within radius of the eraser trail and returns the
 // surviving pieces (separated ends become separate strokes); empty = the whole thing went.
 // ponytail: the eraser is always partial (you graze what you want gone). To remove a whole
-// word: tap it (that selects it) and press 🗑. Upgrade if it ever matters: a "delete the whole
-// stroke" mode as an eraser setting; nobody asked for it and 🗑 already covers it.
+// word: tap it (that selects it) and press the bin. Upgrade if it ever matters: a "delete the whole
+// stroke" mode as an eraser setting; nobody asked for it and the bin already covers it.
 fun eraseStrokePoints(pts: List<Offset>, eraser: List<Offset>, radius: Float): List<List<Offset>> {
     if (eraser.isEmpty() || pts.isEmpty()) return listOf(pts)
     val keep = pts.map { minDistanceToPolyline(it, eraser) >= radius }

@@ -136,6 +136,10 @@ Agreed with a clickable mockup (2026-10-19/20); to be turned into issues:
 - **One menu button** at the top left of the viewer instead of the three pills, opening a vertical
   list: Library, Display | Metronome, Playback (greyed out without MIDI or MusicXML), Links and
   repeats | Annotate, Pages | Print / export PDF, Share.
+- **A tap in the top-left corner opens the menu directly** (feedback from tablet use, 2026-10-20),
+  where the ☰ button sits when the bars are shown: no need to show the bars first with the centre
+  tap. One tap less to reach the settings, and one less to hide everything again before playing.
+  The corner zone must stay small enough not to take page turns from the left third.
 - **One rule for every entry**: a full page to go somewhere else (Library, Links and repeats,
   Pages, Settings), a panel to change settings (Display, playback options, metronome settings), a
   bottom band to act while playing (Metronome, Playback, Annotate). One band at a time; the page is

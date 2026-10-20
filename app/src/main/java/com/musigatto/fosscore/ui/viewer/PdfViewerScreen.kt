@@ -396,12 +396,13 @@ fun PdfViewerScreen(
         undoStack = (undoStack + listOf(page to snapshot)).takeLast(10)
     }
 
-    // what the ✎ pill does. Leaving edit mode must not leave anything armed or selected behind.
+    // what Annotate (menu) and Done (pill) do. Leaving edit mode must not leave anything armed or
+    // selected behind.
     fun toggleEditing() {
-        // the old "Editar" button carried `enabled = canEdit`; a pill entry has no enabled state, so
-        // the gate lives here instead — which also covers the entry paths that are coming (Apple
-        // Pencil, long press). In two-up or a turned half page there is nothing to annotate.
-        if (!editing && !canEdit) return
+        // the gate lives here, so it also covers the entry paths that are coming (Apple Pencil, long
+        // press). Two-up or a turned half page is no reason to refuse: annotating goes back to one
+        // page, below.
+        if (!editing && (sheetHash == null || format.isMusicXml)) return
         editing = !editing
         if (editing) {
             twoUp = false
@@ -1736,7 +1737,6 @@ fun PdfViewerScreen(
             ViewerSurface.NONE -> Unit
             ViewerSurface.MENU -> ViewerMenuPanel(
                 isMusicXml = format.isMusicXml,
-                canAnnotate = canEdit,
                 onSelect = { item ->
                     menu.dismiss()
                     when (item) {

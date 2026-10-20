@@ -104,7 +104,6 @@
     <string name="menu_hint_soon">Próximamente</string>
     <string name="menu_hint_musicxml_only">Solo partituras MusicXML</string>
     <string name="menu_hint_not_on_musicxml">Aún no en partituras MusicXML</string>
-    <string name="menu_hint_one_page">Solo con una página en pantalla</string>
     <string name="transposition_section_label">Transposición</string>
     <string name="transpose_label">Semitonos</string>
     <string name="transpose_none">Como está escrito</string>

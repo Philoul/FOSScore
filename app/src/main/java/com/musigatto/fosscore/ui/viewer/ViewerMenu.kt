@@ -75,7 +75,6 @@ private fun MenuItemState.hint(): String? = when (this) {
     MenuItemState.SOON -> stringResource(R.string.menu_hint_soon)
     MenuItemState.MUSICXML_ONLY -> stringResource(R.string.menu_hint_musicxml_only)
     MenuItemState.NOT_ON_MUSICXML -> stringResource(R.string.menu_hint_not_on_musicxml)
-    MenuItemState.ONE_PAGE_ONLY -> stringResource(R.string.menu_hint_one_page)
 }
 
 /**
@@ -87,7 +86,6 @@ private fun MenuItemState.hint(): String? = when (this) {
 @Composable
 fun ViewerMenuPanel(
     isMusicXml: Boolean,
-    canAnnotate: Boolean,
     onSelect: (ViewerMenuItem) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -122,7 +120,7 @@ fun ViewerMenuPanel(
                         HorizontalDivider(Modifier.padding(vertical = 4.dp))
                         group = item.group
                     }
-                    val state = menuItemState(item, isMusicXml, canAnnotate)
+                    val state = menuItemState(item, isMusicXml)
                     MenuRow(item.glyph, item.label(), state.hint(), state == MenuItemState.READY) {
                         onSelect(item)
                     }

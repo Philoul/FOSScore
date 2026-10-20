@@ -53,8 +53,9 @@ once, exported as MEI (Verovio's own format), given the lyrics placement and the
 lines, then loaded again (`MeiFixes`). Fixing these two gaps in Verovio itself would make this step
 unnecessary.
 
-Only the music fonts Leipzig (default) and Bravura (fallback) are shipped, copied from
-`verovio/data` into the assets at build time, and copied to the app's files on first use.
+Only the music fonts Leipzig (default) and Bravura (fallback) and the Liberation text font are
+shipped, copied from `verovio/data` into the assets at build time, and copied to the app's files
+on first use. All three are under the SIL Open Font License 1.1 (see `verovio/fonts/README.md`).
 
 **Build:**
 - `git submodule update --init` once after cloning;

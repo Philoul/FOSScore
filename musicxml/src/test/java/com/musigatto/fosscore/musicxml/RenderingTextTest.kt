@@ -13,6 +13,13 @@ import org.junit.Test
 class RenderingTextTest {
 
     @Test
+    fun headerLinesAreBroughtDownTogetherForTheScreen() {
+        assertEquals(listOf(150, null, 68), MeiFixes.forScreen(listOf(220, null, 100)))
+        assertEquals(listOf(120, null), MeiFixes.forScreen(listOf(120, null)))
+        assertEquals(listOf(null), MeiFixes.forScreen(listOf(null)))
+    }
+
+    @Test
     fun meiFixesPlaceVersesAboveAndSizeHeaderLines() {
         val mei = """<mei><pgHead><rend xml:id="r1">Title</rend><rend xml:id="r2">Composer</rend></pgHead>""" +
             """<verse xml:id="v1" n="1"/><verse place="below" n="2"/></mei>"""

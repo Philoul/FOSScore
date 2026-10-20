@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -102,6 +103,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import com.musigatto.fosscore.FOSScoreApp
@@ -608,12 +610,19 @@ fun PdfViewerScreen(
     // of the score: the page breaks move, not the music.
     val densityDpi = configuration.densityDpi
     val twoUpSlots = isLandscape && twoUp && !halfEnabled
-    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize) {
+    // A MusicXML page fills the viewport, so the system bars would cover its first and last
+    // lines (a PDF has a paper margin there): the pages leave the same room on both sides.
+    val density = LocalDensity.current
+    val bars = WindowInsets.safeDrawing
+    val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
+    val barsY = max(bars.getTop(density), bars.getBottom(density))
+    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize, barsX, barsY) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
+        val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
         val spec = LayoutSpec(
-            width = if (twoUpSlots) viewport.width / 2 else viewport.width,
-            height = viewport.height,
+            width = if (twoUpSlots) usableW / 2 else usableW,
+            height = (viewport.height - 2 * barsY).coerceAtLeast(1),
             // the music size follows the whole screen, so two-up does not shrink the notes
             scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * musicSize / 100)
                 .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),

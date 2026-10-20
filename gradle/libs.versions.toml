@@ -7,8 +7,6 @@ composeBom = "2026.02.01"
 room = "2.7.2"
 ksp = "2.2.10-2.0.2"
 mupdf = "1.28.5"
-androidxTestRunner = "1.6.2"
-androidxTestJunit = "1.2.1"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }

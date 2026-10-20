@@ -141,6 +141,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 // resolution we ask for, so zoom looks sharp instead of slightly soft.
 private const val LOG_TAG = "FOSScore-PDF"
 
+// Room the reading chrome takes over a MusicXML page, below the status bar and above the
+// navigation bar: the title bar (8 dp of air, a 48 dp pill, 8 dp) and the page selector (48 dp
+// track with 10 dp above and below). Keep in step with ViewerTitleBar and PageSelector.
+private val TITLE_BAR_ROOM = 64.dp
+private val SELECTOR_ROOM = 68.dp
+
 // Touch noise with still fingers: ±1 px over ~400 px between fingers ≈ 0.25%. A 0.4% dead zone
 // stops the zoom reacting to that noise (without it the content "breathes" and looks shaky).
 private const val ZOOM_NOISE_RATIO = 0.004f
@@ -610,22 +616,28 @@ fun PdfViewerScreen(
     // of the score: the page breaks move, not the music.
     val densityDpi = configuration.densityDpi
     val twoUpSlots = isLandscape && twoUp && !halfEnabled
-    // A MusicXML page fills the viewport, so the system bars would cover its first and last
-    // lines (a PDF has a paper margin there): the pages leave the same room on both sides.
+    // A MusicXML page fills the viewport, while the system bars, and the title bar and page
+    // selector when the centre tap shows them, are drawn over it (a PDF has a paper margin there).
+    // The music keeps their room free: the side bars on both sides, the top and bottom chrome as
+    // page margins. Fixed, so showing the bars never lays the music out again.
     val density = LocalDensity.current
     val bars = WindowInsets.safeDrawing
     val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
-    val barsY = max(bars.getTop(density), bars.getBottom(density))
-    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize, barsX, barsY) {
+    val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
+    val chromeBottom = bars.getBottom(density) + with(density) { SELECTOR_ROOM.roundToPx() }
+    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize, barsX, chromeTop, chromeBottom) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
         val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
         val spec = LayoutSpec(
             width = if (twoUpSlots) usableW / 2 else usableW,
-            height = (viewport.height - 2 * barsY).coerceAtLeast(1),
+            height = viewport.height,
             // the music size follows the whole screen, so two-up does not shrink the notes
             scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * musicSize / 100)
                 .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
+            // a very short window keeps at least half its height for the music
+            marginTop = chromeTop.coerceAtMost(viewport.height / 4),
+            marginBottom = chromeBottom.coerceAtMost(viewport.height / 4),
         )
         val before = pageCount
         try {

@@ -91,6 +91,20 @@ class PlaybackAndOptionsTest {
         assertEquals(107, LayoutSpec.defaultScale(1080, 2340, 420))
     }
 
+    @Test
+    fun barsOverThePageBecomeVerovioMarginsAtTheScale() {
+        // at scale 50 one pixel is 2 Verovio units: 120 px at the top, 140 at the bottom
+        val o = VerovioOptions.layout(LayoutSpec(width = 1200, height = 1800, scale = 50, marginTop = 120, marginBottom = 140))
+        assertEquals(3600, o.getInt("pageHeight"))
+        assertEquals(VerovioOptions.layout(LayoutSpec(1200, 1800, 50)).getInt("pageMarginTop") + 240, o.getInt("pageMarginTop"))
+        assertEquals(VerovioOptions.layout(LayoutSpec(1200, 1800, 50)).getInt("pageMarginBottom") + 280, o.getInt("pageMarginBottom"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun marginsLargerThanThePageAreRefused() {
+        LayoutSpec(width = 800, height = 600, marginTop = 300, marginBottom = 300)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun emptyViewportIsRefused() {
         LayoutSpec(width = 0, height = 100)

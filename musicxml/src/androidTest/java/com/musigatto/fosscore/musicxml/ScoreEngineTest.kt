@@ -101,10 +101,51 @@ class ScoreEngineTest {
         assertTrue(both.msAt(last) > playback.msAt(last))
     }
 
+    @Test
+    fun aSizeGivesTheSameLinesWhateverSizeCameBefore() = runBlocking {
+        engine.open(demo())
+        // the sizes of a tablet in portrait (defaultScale × the note size, 80 to 120 %)
+        val sizes = listOf(30, 34, 38, 42, 46)
+        val fresh = sizes.associateWith { scale ->
+            ScoreEngine(context).use { e ->
+                e.open(demo())
+                measuresPerPage(e, e.layout(LayoutSpec(width = 800, height = 1150, scale = scale)))
+            }
+        }
+        // every size after every other one: the same page breaks as a score opened at that size
+        for (before in sizes) for (scale in sizes) {
+            engine.layout(LayoutSpec(width = 800, height = 1150, scale = before))
+            val pages = engine.layout(LayoutSpec(width = 800, height = 1150, scale = scale))
+            assertEquals("$scale % after $before %", fresh.getValue(scale), measuresPerPage(engine, pages))
+        }
+    }
+
+    @Test
+    fun turningTheScreenAndBackGivesTheSameLines() = runBlocking {
+        val portrait = LayoutSpec(width = 800, height = 1150, scale = 38)
+        val fresh = ScoreEngine(context).use { e ->
+            e.open(demo())
+            measuresPerPage(e, e.layout(portrait))
+        }
+        engine.open(demo())
+        engine.layout(portrait)
+        // landscape, then two pages side by side, then back: only the viewport changed
+        engine.layout(portrait.copy(width = 1150, height = 800))
+        engine.layout(portrait.copy(width = 575, height = 800))
+        assertEquals(fresh, measuresPerPage(engine, engine.layout(portrait)))
+    }
+
     @Test(expected = MusicXmlException::class)
     fun aFileThatIsNotMusicXmlIsRefused(): Unit = runBlocking {
         engine.open("%PDF-1.7".toByteArray())
     }
+
+    // How many measures each line of each page holds: the page and line breaks, without the drawing.
+    private suspend fun measuresPerPage(e: ScoreEngine, pages: Int): List<List<Int>> =
+        (1..pages).map { page ->
+            e.pageSvg(page).split("""class="system"""").drop(1)
+                .map { Regex("""class="measure""").findAll(it).count() }
+        }
 
     // The last font size written before [text]: the size it is drawn with.
     private fun sizeBefore(svg: String, text: String): Int {

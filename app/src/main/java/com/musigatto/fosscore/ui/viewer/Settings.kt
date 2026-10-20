@@ -34,6 +34,9 @@ object Settings {
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
     private const val KEY_LAST_PAGE = "last_page_"
     private const val KEY_MUSIC_SIZE = "music_size_"
+    private const val KEY_TRANSPOSE = "transpose_"
+    private const val KEY_PARTS = "parts_"
+    private const val KEY_LYRICS = "lyrics_"
     private const val KEY_LANGUAGE = "language"
 
     fun themeMode(context: Context): ThemeMode =
@@ -68,6 +71,32 @@ object Settings {
 
     fun setLastPage(context: Context, uri: String, page: Int) {
         context.prefs().edit { putInt(KEY_LAST_PAGE + uri, page) }
+    }
+
+    /** MusicXML transposition in semitones. Per score. */
+    fun transpose(context: Context, uri: String): Int =
+        context.prefs().getInt(KEY_TRANSPOSE + uri, 0)
+
+    fun setTranspose(context: Context, uri: String, semitones: Int) {
+        context.prefs().edit { putInt(KEY_TRANSPOSE + uri, semitones) }
+    }
+
+    /** Ids of the MusicXML parts shown, or null for the parts the author left visible. Per score. */
+    fun shownParts(context: Context, uri: String): Set<String>? =
+        context.prefs().getStringSet(KEY_PARTS + uri, null)?.toSet()
+
+    fun setShownParts(context: Context, uri: String, ids: Set<String>?) {
+        context.prefs().edit {
+            if (ids == null) remove(KEY_PARTS + uri) else putStringSet(KEY_PARTS + uri, ids)
+        }
+    }
+
+    /** Name of a LyricsPlacement, or null for the file's own placement. Per score. */
+    fun lyrics(context: Context, uri: String): String? =
+        context.prefs().getString(KEY_LYRICS + uri, null)
+
+    fun setLyrics(context: Context, uri: String, placement: String) {
+        context.prefs().edit { putString(KEY_LYRICS + uri, placement) }
     }
 
     /** MusicXML note size, in percent of the size chosen for the screen (100). Per score. */

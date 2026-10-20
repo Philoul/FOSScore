@@ -94,6 +94,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
@@ -201,12 +202,20 @@ fun PdfViewerScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    // the menu, its panels and the score's layout settings: one ViewModel per score
+    val menu: ViewerMenuViewModel = viewModel(
+        key = "viewer-menu:$pdfUri",
+        factory = ViewerMenuViewModel.factory(context, pdfUri.toString()),
+    )
+    val surface by menu.surface.collectAsState()
+    val scoreLayout by menu.layout.collectAsState()
+    val parts by menu.parts.collectAsState()
+
     var pageSource by remember { mutableStateOf<PageSource?>(null) }
     // a MusicXML score has no pages of its own: they are laid out for this screen (MusicXmlPages)
     val format = remember(pdfUri) { SheetFormat.of(pdfUri.path.orEmpty()) }
     // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
     var layoutVersion by remember { mutableIntStateOf(0) }
-    var musicSize by remember(pdfUri) { mutableIntStateOf(Settings.musicSize(context, pdfUri.toString())) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
@@ -216,7 +225,6 @@ fun PdfViewerScreen(
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     // the chrome starts hidden: the app is the page (spec §0)
     var navVisible by rememberSaveable { mutableStateOf(false) }
-    var optionsOpen by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<Int?>(null) }
     // double tap: fit <-> zoom. We keep the time and the point of the previous tap.
     var lastTapMs by remember { mutableLongStateOf(0L) }
@@ -525,6 +533,7 @@ fun PdfViewerScreen(
             }
             pageCount = doc.pageCount
             if (pageCount > 0) currentPage = currentPage.coerceIn(0, pageCount - 1)
+            if (doc is MusicXmlPages) menu.onScoreRead(doc.parts)
             pageSource = doc
         } catch (e: CancellationException) {
             throw e
@@ -548,7 +557,7 @@ fun PdfViewerScreen(
     val bars = WindowInsets.safeDrawing
     val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
     val barsY = max(bars.getTop(density), bars.getBottom(density))
-    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize, barsX, barsY) {
+    LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, barsY) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
         val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
@@ -556,8 +565,11 @@ fun PdfViewerScreen(
             width = if (twoUpSlots) usableW / 2 else usableW,
             height = (viewport.height - 2 * barsY).coerceAtLeast(1),
             // the music size follows the whole screen, so two-up does not shrink the notes
-            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * musicSize / 100)
+            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * scoreLayout.musicSize / 100)
                 .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
+            semitones = scoreLayout.semitones,
+            parts = scoreLayout.layoutParts(parts),
+            lyrics = scoreLayout.lyrics,
         )
         val before = pageCount
         try {
@@ -1531,9 +1543,8 @@ fun PdfViewerScreen(
                 composer = composer,
                 pageLabel = pageLabel,
                 editing = editing,
-                onOpenLibrary = onOpenLibrary,
-                onToggleEdit = { toggleEditing() },
-                onShowOptions = { if (!editing) optionsOpen = true },
+                onOpenMenu = { menu.show(ViewerSurface.MENU) },
+                onStopEditing = { toggleEditing() },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
 
@@ -1721,8 +1732,25 @@ fun PdfViewerScreen(
         // moved into the center pill and page turning is the tap zones (spec §3); the dot selector
         // is its own step.
         // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
-        if (optionsOpen) {
-            DisplayOptionsOverlay(
+        when (surface) {
+            ViewerSurface.NONE -> Unit
+            ViewerSurface.MENU -> ViewerMenuPanel(
+                isMusicXml = format.isMusicXml,
+                canAnnotate = canEdit,
+                onSelect = { item ->
+                    menu.dismiss()
+                    when (item) {
+                        ViewerMenuItem.LIBRARY -> onOpenLibrary()
+                        ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
+                        ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
+                        ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
+                        // greyed out in the menu: never chosen
+                        else -> Unit
+                    }
+                },
+                onDismiss = menu::dismiss,
+            )
+            ViewerSurface.DISPLAY -> DisplayOptionsOverlay(
                 halfEnabled = halfEnabled,
                 onSetHalf = {
                     halfEnabled = it
@@ -1746,12 +1774,16 @@ fun PdfViewerScreen(
                 dimPct = dimPct,
                 onDimChange = { dimPct = it },
                 onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
-                onDismiss = { optionsOpen = false },
-                musicSize = if (format.isMusicXml) musicSize else null,
-                onMusicSizeChange = {
-                    musicSize = it.coerceIn(MIN_MUSIC_SIZE, MAX_MUSIC_SIZE)
-                    Settings.setMusicSize(context, pdfUri.toString(), musicSize)
-                },
+                onDismiss = menu::dismiss,
+            )
+            ViewerSurface.LAYOUT -> ScoreLayoutOverlay(
+                layout = scoreLayout,
+                parts = parts,
+                onMusicSize = menu::setMusicSize,
+                onTranspose = menu::transpose,
+                onLyrics = menu::setLyrics,
+                onPartShown = menu::setPartShown,
+                onDismiss = menu::dismiss,
             )
         }
     }

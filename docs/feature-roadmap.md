@@ -130,14 +130,30 @@ several scores at once:
 - The score title in the page header of a MusicXML score must stay readable without taking the
   whole width of a tablet in portrait (fixed on a branch: header lines at most 150 % of the lyrics
   size); to check on a phone.
+- **The library menu (☰)**, after the export / import PR (#28): besides export / import, settings
+  and "About", it gets **Setlists** (make, order and play lists of scores; a score opened from a
+  list shows the previous / next score), **Tags** (rename, merge, delete) and **Practice** (time
+  spent on each score, the README's practice dashboard). Search and filters stay at the top of
+  the list, not in the menu.
 
 ### 3.7 Viewer menu
 
 Agreed with a clickable mockup (2026-10-19/20), proposed upstream in issue #31; the menu and the
 playback band are done in PR #32:
 - **One menu button** at the top left of the viewer instead of the three pills, opening a vertical
-  list: Library, Display | Metronome, Playback (greyed out without MIDI or MusicXML), Links and
-  repeats | Annotate, Pages | Print / export PDF, Share.
+  list: Library, Setlist, Bookmarks, Display, Score layout | Metronome, Tuner, Piano, Playback
+  (greyed out without MIDI or MusicXML) | Links and repeats | Annotate, Pages | Print / export PDF,
+  Share | Settings. What is not built yet is greyed out with "Coming soon".
+- **Where the other pending features of the README go**, without more entries: the pitch pipe in
+  the tuner (listen to a string, or play the reference note); the performance mode and the reflow
+  (teleprompter) in Display; audio tracks as a source in the playback options; stamps and text in
+  Annotate; MIDI / Bluetooth pedals in the settings.
+- **The tuner**: the microphone hears a string (guitar, violin...) and shows the note, with a
+  needle for in tune, flat or sharp.
+- **Drawn icons for the menu.** The entries show font characters today (♪ ⊞ ♫ ♩ Ψ ▥ ▶ ✎ ⚙...), like
+  the rest of the viewer chrome, because they exist on Android 6. Some only look like what they
+  mean (Ψ for a tuning fork, ▥ for a keyboard). To do: small drawn vector icons (a real tuning
+  fork, a piece of keyboard...), a little larger than today, without spacing the entries more.
 - **A tap in the top-left corner opens the menu directly** (feedback from tablet use, 2026-10-20),
   where the ☰ button sits when the bars are shown: no need to show the bars first with the centre
   tap. One tap less to reach the settings, and one less to hide everything again before playing.

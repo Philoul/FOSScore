@@ -84,6 +84,7 @@
     <string name="menu_display">Visualización</string>
     <string name="menu_layout">Maquetación</string>
     <string name="menu_metronome">Metrónomo</string>
+    <string name="menu_tuner">Afinador</string>
     <string name="menu_playback">Reproducción</string>
     <string name="menu_links">Enlaces y repeticiones</string>
     <string name="menu_annotate">Anotar</string>

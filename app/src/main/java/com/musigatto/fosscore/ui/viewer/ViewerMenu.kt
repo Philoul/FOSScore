@@ -43,6 +43,8 @@ private val ViewerMenuItem.glyph: String
         ViewerMenuItem.DISPLAY -> "⊞"
         ViewerMenuItem.LAYOUT -> "♫"
         ViewerMenuItem.METRONOME -> "♩"
+        // a tuning fork
+        ViewerMenuItem.TUNER -> "Ψ"
         ViewerMenuItem.PLAYBACK -> "▶"
         ViewerMenuItem.LINKS -> "↪"
         ViewerMenuItem.ANNOTATE -> "✎"
@@ -59,6 +61,7 @@ private fun ViewerMenuItem.label(): String = stringResource(
         ViewerMenuItem.DISPLAY -> R.string.menu_display
         ViewerMenuItem.LAYOUT -> R.string.menu_layout
         ViewerMenuItem.METRONOME -> R.string.menu_metronome
+        ViewerMenuItem.TUNER -> R.string.menu_tuner
         ViewerMenuItem.PLAYBACK -> R.string.menu_playback
         ViewerMenuItem.LINKS -> R.string.menu_links
         ViewerMenuItem.ANNOTATE -> R.string.menu_annotate

@@ -84,6 +84,7 @@
     <string name="menu_display">Display</string>
     <string name="menu_layout">Score layout</string>
     <string name="menu_metronome">Metronome</string>
+    <string name="menu_tuner">Tuner</string>
     <string name="menu_playback">Playback</string>
     <string name="menu_links">Links and repeats</string>
     <string name="menu_annotate">Annotate</string>

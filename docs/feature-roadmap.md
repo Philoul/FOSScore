@@ -146,10 +146,12 @@ Agreed with a clickable mockup (2026-10-19/20); to be turned into issues:
   laid out **between** the top bar and the band, never under them.
 - **One tempo** (♩ = N), shared by playback and the metronome. Metronome: tick sound and/or a
   coloured flash on the page border (another colour on the first beat).
-- **A minimal playback band** stays visible in reading mode when the score has MIDI or MusicXML:
-  play / pause (long press: back to A, or to the start), current bar, **A and B markers** set while
-  playing (tap marks the current bar, a second tap clears it; defaults: start and end), a loop
-  toggle (the usual "repeat" icon), and a link to the full playback band.
+- **The playback band** sits in the bottom bar, **above the page dots**, when the score has MIDI or
+  MusicXML: back to the start (or to A), play / pause, **one loop button** (the usual "repeat"
+  icon) and the tempo, which opens the playback options. The loop button cycles as in common
+  players: the first tap marks A where the music is, the second marks B and loops between them,
+  the third turns the loop off (decided 2026-10-20, done on `feature/musicxml-playback`).
+  Still to try: the current bar number, and start / end jump buttons if the tests ask for them.
 - **Playback options panel**: configuration (named, see 3.4), source, tempo, transposition, follow
   options, then the **parts list last, in its own scroll box** (it can be long): show (eye) and
   hear (speaker) each part separately, volume.

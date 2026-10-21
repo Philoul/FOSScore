@@ -109,13 +109,18 @@ class ViewerMenuViewModelTest {
         val ready = ViewerMenuItem.entries.filter {
             menuItemState(it, isMusicXml = true) == MenuItemState.READY
         }
-        assertEquals(listOf(ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT), ready)
+        assertEquals(
+            listOf(ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK),
+            ready,
+        )
         assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false))
     }
 
     @Test
     fun theLayoutPanelIsForMusicXmlAndAnnotationsForPdf() {
         assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false))
+        // a PDF plays once it has a MIDI file attached (roadmap 3.2)
+        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.PLAYBACK, isMusicXml = false))
         assertEquals(MenuItemState.NOT_ON_MUSICXML, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = true))
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false))
     }

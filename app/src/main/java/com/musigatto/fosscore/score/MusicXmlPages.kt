@@ -4,11 +4,16 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.musigatto.fosscore.musicxml.LayoutSpec
+import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Part
+import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.musicxml.ScoreEngine
+import com.musigatto.fosscore.musicxml.ScoreInfo
+import com.musigatto.fosscore.musicxml.SoundSpec
 import com.musigatto.fosscore.pdf.MAX_RENDER_PIXELS
 import com.musigatto.fosscore.pdf.PageBox
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
 import kotlinx.coroutines.runBlocking
 
@@ -28,6 +33,8 @@ class MusicXmlPages private constructor(
     private val engine: ScoreEngine,
     /** The score's parts, in the file's order. */
     val parts: List<Part>,
+    /** Title, tempo, key... as the file gives them. */
+    val info: ScoreInfo,
 ) : PageSource {
 
     @Volatile
@@ -38,6 +45,8 @@ class MusicXmlPages private constructor(
     @Volatile
     private var box: PageBox? = null
     private var laidOut: LayoutSpec? = null
+    // where the notes are on each page drawn since the last layout, for the playback cursor
+    private val geometries = ConcurrentHashMap<Int, PageGeometry>()
     private val bitmaps = object : LinkedHashMap<Long, Bitmap>(MAX_CACHED_BITMAPS + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Bitmap>?) =
             size > MAX_CACHED_BITMAPS
@@ -53,6 +62,7 @@ class MusicXmlPages private constructor(
         // the old bitmaps show the old page breaks; the viewer may still be showing one, so they
         // are dropped, not recycled
         bitmaps.clear()
+        geometries.clear()
         box = PageBox(0f, 0f, spec.width.toFloat(), spec.height.toFloat())
         laidOut = spec
         pageCount = count
@@ -73,15 +83,27 @@ class MusicXmlPages private constructor(
         bitmaps[key]?.let { return it }
         return try {
             // the engine runs Verovio on its own thread; the viewer already calls us off the main one
-            runBlocking { engine.renderPage(index + 1, w, h) }.bitmap.also { bitmaps[key] = it }
+            runBlocking { engine.renderPage(index + 1, w, h) }
+                .also { geometries[index] = it.geometry }
+                .bitmap.also { bitmaps[key] = it }
         } catch (e: Exception) {
             Log.e(LOG_TAG, "page $index could not be drawn: ${e.message}", e)
             null
         }
     }
 
+    /** Where the notes of page [index] are, once the page has been drawn. Positions in SVG units. */
+    fun geometry(index: Int): PageGeometry? = geometries[index]
+
+    /** Page (0-based) of the note [id] in the current layout, or -1. */
+    suspend fun pageOf(id: String): Int = engine.pageOf(id) - 1
+
+    /** The MIDI and the timing maps for the current layout and [sound]. */
+    suspend fun playback(sound: SoundSpec): Playback = engine.playback(sound)
+
     override fun close() {
         bitmaps.clear()
+        geometries.clear()
         engine.close()
     }
 
@@ -95,7 +117,7 @@ class MusicXmlPages private constructor(
                 engine.close()
                 throw e
             }
-            return MusicXmlPages(engine, summary.parts)
+            return MusicXmlPages(engine, summary.parts, summary.info)
         }
     }
 }

@@ -103,4 +103,19 @@
     <string name="lyrics_below">Sous la portée</string>
     <string name="lyrics_bottom">Sous la portée du bas</string>
     <string name="parts_section_label">Parties affichées</string>
+    <string name="playback_play">Lire</string>
+    <string name="playback_pause">Pause</string>
+    <string name="playback_to_start">Retour au début</string>
+    <string name="playback_to_a">Retour à A</string>
+    <string name="loop_mark_a">Boucle : marquer A ici</string>
+    <string name="loop_mark_b">Boucle : marquer B ici et boucler</string>
+    <string name="loop_off">Arrêter la boucle</string>
+    <string name="tempo_section_label">Tempo</string>
+    <string name="tempo_label">Vitesse</string>
+    <string name="tempo_value">♩ = %1$d</string>
+    <string name="tempo_slower">Plus lent</string>
+    <string name="tempo_faster">Plus rapide</string>
+    <string name="tempo_as_written">Comme écrit (♩ = %1$d)</string>
+    <string name="heard_section_label">Parties entendues</string>
+    <string name="playback_failed">La lecture n’a pas pu démarrer</string>
 </resources>

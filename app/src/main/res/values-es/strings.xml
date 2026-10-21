@@ -106,4 +106,19 @@
     <string name="lyrics_below">Debajo del pentagrama</string>
     <string name="lyrics_bottom">Debajo del pentagrama inferior</string>
     <string name="parts_section_label">Partes mostradas</string>
+    <string name="playback_play">Reproducir</string>
+    <string name="playback_pause">Pausa</string>
+    <string name="playback_to_start">Volver al principio</string>
+    <string name="playback_to_a">Volver a A</string>
+    <string name="loop_mark_a">Bucle: marcar A aquí</string>
+    <string name="loop_mark_b">Bucle: marcar B aquí y repetir</string>
+    <string name="loop_off">Quitar el bucle</string>
+    <string name="tempo_section_label">Tempo</string>
+    <string name="tempo_label">Velocidad</string>
+    <string name="tempo_value">♩ = %1$d</string>
+    <string name="tempo_slower">Más lento</string>
+    <string name="tempo_faster">Más rápido</string>
+    <string name="tempo_as_written">Como está escrito (♩ = %1$d)</string>
+    <string name="heard_section_label">Partes que suenan</string>
+    <string name="playback_failed">No se pudo iniciar la reproducción</string>
 </resources>

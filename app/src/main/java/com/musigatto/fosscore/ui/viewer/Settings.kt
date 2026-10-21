@@ -37,6 +37,8 @@ object Settings {
     private const val KEY_TRANSPOSE = "transpose_"
     private const val KEY_PARTS = "parts_"
     private const val KEY_LYRICS = "lyrics_"
+    private const val KEY_TEMPO = "tempo_"
+    private const val KEY_HEARD = "heard_"
 
     fun themeMode(context: Context): ThemeMode =
         ThemeMode.entries[context.prefs().getInt(KEY_THEME, ThemeMode.SYSTEM.ordinal)]
@@ -104,6 +106,24 @@ object Settings {
 
     fun setLyrics(context: Context, uri: String, placement: String) {
         context.prefs().edit { putString(KEY_LYRICS + uri, placement) }
+    }
+
+    /** Playback tempo, as a factor of the tempo written in the score (1 = as written). Per score. */
+    fun tempo(context: Context, uri: String): Float =
+        context.prefs().getFloat(KEY_TEMPO + uri, 1f)
+
+    fun setTempo(context: Context, uri: String, factor: Float) {
+        context.prefs().edit { putFloat(KEY_TEMPO + uri, factor) }
+    }
+
+    /** Ids of the MusicXML parts heard, or null for the parts shown. Per score. */
+    fun heardParts(context: Context, uri: String): Set<String>? =
+        context.prefs().getStringSet(KEY_HEARD + uri, null)?.toSet()
+
+    fun setHeardParts(context: Context, uri: String, ids: Set<String>?) {
+        context.prefs().edit {
+            if (ids == null) remove(KEY_HEARD + uri) else putStringSet(KEY_HEARD + uri, ids)
+        }
     }
 
     /** MusicXML note size, in percent of the size chosen for the screen (100). Per score. */

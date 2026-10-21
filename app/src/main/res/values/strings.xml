@@ -74,4 +74,12 @@
     <string name="stamp_natural">Natural</string>
     <string name="stamp_double_sharp">Double sharp</string>
     <string name="stamp_double_flat">Double flat</string>
+    <string name="stamp_ppp">Pianississimo (ppp)</string>
+    <string name="stamp_fff">Fortississimo (fff)</string>
+    <string name="stamp_sfz">Sforzando (sfz)</string>
+    <string name="stamp_trill">Trill</string>
+    <string name="stamp_mordent_up">Upper mordent</string>
+    <string name="stamp_mordent_down">Lower mordent</string>
+    <string name="stamp_acciaccatura">Acciaccatura</string>
+    <string name="stamp_appoggiatura">Appoggiatura</string>
 </resources>

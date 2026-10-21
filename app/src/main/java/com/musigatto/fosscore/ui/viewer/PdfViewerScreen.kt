@@ -159,10 +159,10 @@ private const val MAX_ZOOM = 2.5f
 private const val RENDER_DURING_ZOOM_MS = 150L
 private const val RENDER_SETTLE_MS = 250L
 
-// state of the "stretch a stroke" gesture: which stroke scales from which corner
+// state of the "stretch" gesture: which strokes (a whole word) scale from which corner
 private data class Resizing(
-    val stroke: Stroke,
-    val ptsPx: List<Offset>,
+    val strokes: List<Stroke>,
+    val ptsPx: List<List<Offset>>,
     val center: Offset,   // center of the box: the scale grows outwards from here
     val startPos: Offset
 )
@@ -284,8 +284,8 @@ fun PdfViewerScreen(
         delay(longPressMs.milliseconds)
         if (loupeAnchor == anchor) loupeAt = anchor
     }
-    // selected stamp (for the box with handles) or selected stroke
-    var selectedStrokeId by remember { mutableStateOf<Long?>(null) }
+    // selected stamp (for the box with handles) or the selected word of ink
+    var selectedStrokeIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     // handle in use: (base object, grabbed corner) while scaling
     var resizing by remember { mutableStateOf<Resizing?>(null) }
     var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // tint ARGB; null = theme
@@ -293,14 +293,11 @@ fun PdfViewerScreen(
     var eraserTool by rememberSaveable { mutableStateOf(false) }      // eraser mode: removes stamps and strokes
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
     var dragStamp by remember { mutableStateOf<Stamp?>(null) }
-    var dragStroke by remember { mutableStateOf<Stroke?>(null) }   // preview of a stroke being moved/stretched
+    var dragStrokes by remember { mutableStateOf<List<Stroke>?>(null) }   // preview of the ink being moved/stretched
     var selectedId by remember { mutableStateOf<Long?>(null) }
     var undoStack by remember { mutableStateOf<List<Pair<Int, PageEdit>>>(emptyList()) }
     var redoStack by remember { mutableStateOf<List<Pair<Int, PageEdit>>>(emptyList()) }
     var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
-    // so the next stroke can join the last one if the pen only lifts for a few ms
-    val inkTail = remember { InkTail() }
-    LaunchedEffect(currentPage, editing) { inkTail.last = null }
     // ink already lifted that the DB has not handed back yet: without this the stroke blinks ~20 ms
     var pendingInk by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     LaunchedEffect(currentPage, editing) { pendingInk = emptyList() }
@@ -358,6 +355,10 @@ fun PdfViewerScreen(
     // PURE fit rect (origin 0,0): content coordinates (the page itself, without pageFit's
     // centring margin). The whole overlay and the edit gesture live here.
     val hitFit = RectPx(0f, 0f, pageFit.width, pageFit.height)
+    // the ink that is on screen: what the DB returned plus what it has not handed back yet
+    // (pendingInk). Drawing, hit-testing and grouping must all see the same set, or a letter
+    // written a second ago is not selectable and the word's box comes out short.
+    val inkStrokes = (pendingInk + pageStrokes).distinctBy { it.id }
     val currentEditing by rememberUpdatedState(editing)
     val currentCanEdit by rememberUpdatedState(canEdit)
     val currentActiveSymbol by rememberUpdatedState(activeSymbol)
@@ -376,33 +377,30 @@ fun PdfViewerScreen(
     val currentSpread by rememberUpdatedState(branch.showTwoUp || (branch.showHalf && halfTurned))
 
     val selectedStamp = pageStamps.firstOrNull { it.id == selectedId }
-    val selectedStroke = pageStrokes.firstOrNull { it.id == selectedStrokeId }
+    val selectedStrokes = inkStrokes.filter { it.id in selectedStrokeIds }
+    // the words of the page: a tap selects the group, not the single stroke (InkGeometry.groupInk)
+    val inkGroups = remember(inkStrokes, hitFit) { groupInk(inkStrokes, hitFit) }
 
-    // selection box in px: the stamp's or the stroke's. While dragging or stretching we use the
-    // live position (dragStamp/dragStroke) so the box follows the object.
+    // selection box in px: the stamp's or the ink's. While dragging or stretching we use the
+    // live position (dragStamp/dragStrokes) so the box follows the object.
     val selectionRect: RectPx? = when {
         dragStamp != null -> stampRect(dragStamp!!, hitFit)
-        dragStroke != null -> strokeSelectionRect(
-            decodePoints(dragStroke!!.points).map { normalizedToPx(it, hitFit) },
-            dragStroke!!.width * hitFit.height
-        )
+        dragStrokes != null -> inkBounds(dragStrokes!!, hitFit)
         selectedStamp != null -> stampRect(selectedStamp, hitFit)
-        selectedStroke != null -> strokeSelectionRect(
-            decodePoints(selectedStroke.points).map { normalizedToPx(it, hitFit) },
-            selectedStroke.width * hitFit.height
-        )
-        else -> null
+        else -> inkBounds(selectedStrokes, hitFit)
     }
     val currentSelectionRect by rememberUpdatedState(selectionRect)
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
-    val currentSelectedStroke by rememberUpdatedState(selectedStroke)
+    val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
+    val currentInkStrokes by rememberUpdatedState(inkStrokes)
+    val currentInkGroups by rememberUpdatedState(inkGroups)
 
     // while a drag or a stretch is in progress we draw the object at its live position, not the box
     val showSelection = selectionRect != null && editing && canEdit &&
         !drawingTool && !eraserTool
-    // corner handles belong to a STROKE selection: a stamp's size is the palette slider, and forScore
+    // corner handles belong to an INK selection: a stamp's size is the palette slider, and forScore
     // moves a placed stamp with the selection tool instead of resizing it by its corners (spec §5)
-    val strokeSelection = selectedStamp == null && (selectedStroke != null || dragStroke != null)
+    val strokeSelection = selectedStamp == null && (selectedStrokes.isNotEmpty() || dragStrokes != null)
 
     // stacks snapshots BEFORE every change, each with its page; 10 levels. A new change throws the
     // redo branch away, like any editor.
@@ -426,9 +424,9 @@ fun PdfViewerScreen(
             undoStack = emptyList()
             redoStack = emptyList()
             selectedId = null
-            selectedStrokeId = null
+            selectedStrokeIds = emptySet()
             dragStamp = null
-            dragStroke = null
+            dragStrokes = null
             drawingTool = false
             eraserTool = false
             // leaving edit mode must not leave a stamp tool armed for the next time we come back in
@@ -555,8 +553,13 @@ fun PdfViewerScreen(
         dragStamp?.let { d ->
             if (stamps.any { it.id == d.id && it.x == d.x && it.y == d.y && it.size == d.size }) dragStamp = null
         }
-        dragStroke?.let { d ->
-            if (strokes.any { it.id == d.id && it.points == d.points && it.width == d.width }) dragStroke = null
+        dragStrokes?.let { list ->
+            // all or nothing: dropping strokes one by one shrank the box to the rows that had not
+            // landed yet, which looked like the box jumping from the word to a single stroke
+            val settled = list.all { d ->
+                strokes.any { s -> s.id == d.id && s.points == d.points && s.width == d.width }
+            }
+            if (settled) dragStrokes = null
         }
         // the DB has this ink already: drop it from the optimistic layer
         pendingInk = pendingInk.filter { p -> strokes.none { it.id == p.id && it.points == p.points } }
@@ -812,14 +815,13 @@ fun PdfViewerScreen(
                             var movingStamp: Stamp? = null
                             var movingOrigin: Stamp? = null
                             var moveTrackingPos = downF
-                            var movingStroke: Stroke? = null
-                            var movingStrokeBase: Stroke? = null
+                            var movingStrokes: List<Stroke>? = null
+                            var movingStrokesBase: List<Stroke>? = null
                             var moveStrokeLastPos = downF
                             var inkActive = false
                             var inkPts = mutableListOf<Offset>()
                             var eraserActive = false
                             var eraserPath = mutableListOf<Offset>()
-                            var eraserUndoPushed = false   // one undo step per eraser stroke
                             var scaleF = 1f   // accumulated handle factor (always from startPos)
                             if (currentEditing && currentCanEdit && !currentDrawingTool && !currentEraserTool) {
                                 // 1) a handle on a STROKE's selection box wins over everything else:
@@ -831,37 +833,51 @@ fun PdfViewerScreen(
                                     hitHandle(downF, sel, currentHitFit)
                                 } else null
                                 if (corner != null) {
-                                    currentSelectedStroke?.let { st ->
-                                        val ptsPx = decodePoints(st.points)
-                                            .map { normalizedToPx(it, currentHitFit) }
+                                    val word = currentSelectedStrokes
+                                    val box = inkBounds(word, currentHitFit)
+                                    if (word.isNotEmpty() && box != null) {
                                         resizing = Resizing(
-                                            stroke = st,
-                                            ptsPx = ptsPx,
-                                            center = strokeBounds(ptsPx).center(),
+                                            strokes = word,
+                                            ptsPx = word.map { st ->
+                                                strokePointsPx(st, currentHitFit)
+                                            },
+                                            center = box.center(),
                                             startPos = downF
                                         )
                                     }
                                 }
                                 if (resizing == null) {
                                     val hitS = hitStamp(downF, currentPageStamps, currentHitFit)
-                                    val hitT = if (hitS == null) {
-                                        hitStroke(downF, currentPageStrokes, currentHitFit)
-                                    } else null
+                                    // A tap selects the WORD, not the single stroke (groupInk). If no
+                                    // stroke is hit, the word's box still catches it: the hole of an
+                                    // 'o' and the space between two letters have no ink to aim at.
+                                    val group = if (hitS != null) null else {
+                                        val st = hitStroke(downF, currentInkStrokes, currentHitFit)
+                                        st?.let { hit ->
+                                            currentInkGroups.firstOrNull { g ->
+                                                g.strokes.any { it.id == hit.id }
+                                            }
+                                        } ?: groupAt(
+                                            downF, currentInkGroups, handleRadiusPx(currentHitFit)
+                                        )
+                                    }
                                     if (hitS != null) {
                                         movingStamp = hitS
                                         movingOrigin = hitS
                                         selectedId = hitS.id
-                                        selectedStrokeId = null
+                                        selectedStrokeIds = emptySet()
                                         // Selecting a stamp must NOT arm its symbol, or the next tap
                                         // outside it silently stamps a second copy.
                                         dragStamp = hitS
-                                    } else if (hitT != null) {
-                                        movingStroke = hitT
-                                        movingStrokeBase = hitT
+                                    } else if (group != null) {
+                                        movingStrokes = group.strokes
+                                        movingStrokesBase = group.strokes
                                         moveStrokeLastPos = downF
-                                        selectedStrokeId = hitT.id
+                                        selectedStrokeIds = group.strokes.map { it.id }.toSet()
                                         selectedId = null
-                                        dragStroke = hitT
+                                        // no preview yet: the box comes from the ids, which are
+                                        // already the whole word. The preview is armed on the first
+                                        // real movement (see the move branch).
                                     }
                                 }
                             }
@@ -879,7 +895,7 @@ fun PdfViewerScreen(
                             // does not hide the exact place the stamp lands
                             var lastPlacePos = down.position
                             if (currentEditing && currentCanEdit && currentActiveSymbol != null &&
-                                movingStamp == null && movingStroke == null
+                                movingStamp == null && movingStrokes == null
                             ) {
                                 loupeAnchor = down.position
                             }
@@ -898,23 +914,24 @@ fun PdfViewerScreen(
                                     val rz = resizing
                                     if (rz != null) {
                                         resizing = null
-                                        val base = rz.stroke
-                                        val pts = scalePoints(rz.ptsPx, rz.center, scaleF)
-                                        val newW = (base.width * scaleF)
-                                            .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
-                                        if (abs(newW - base.width) > 1e-5f ||
-                                            pts != rz.ptsPx
-                                        ) {
+                                        val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
+                                        val changed = pts != rz.ptsPx
+                                        if (changed) {
                                             pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                             editScope.launch {
-                                                strokeRepo.update(
-                                                    base.copy(
-                                                        points = encodePoints(
-                                                            pts.map { pxToNormalized(it, currentHitFit) }
-                                                        ),
-                                                        width = newW
+                                                rz.strokes.forEachIndexed { i, base ->
+                                                    strokeRepo.update(
+                                                        base.copy(
+                                                            points = encodePoints(
+                                                                pts[i].map {
+                                                                    pxToNormalized(it, currentHitFit)
+                                                                }
+                                                            ),
+                                                            width = (base.width * scaleF)
+                                                                .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+                                                        )
                                                     )
-                                                )
+                                                }
                                             }
                                         }
                                     } else if (inkActive) {
@@ -924,57 +941,25 @@ fun PdfViewerScreen(
                                         inkPreview = emptyList()
                                         if (pts.size >= 2 && sheetHash != null && currentPageFit.width > 0f) {
                                             pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                            val norm = pts.map { pxToNormalized(it, currentHitFit) }
-                                            val fit = currentHitFit
-                                            val page = currentPage
-                                            val width = penWidthPxToFrac(penWidthPx, currentHitFit)
-                                            val color = activeColor
-                                            val startPx = pts.first()   // compared in px, not normalized
+                                            val s = Stroke(
+                                                sheetHash = sheetHash,
+                                                page = currentPage,
+                                                points = encodePoints(
+                                                    pts.map { pxToNormalized(it, currentHitFit) }
+                                                ),
+                                                width = penWidthPxToFrac(penWidthPx, currentHitFit),
+                                                color = activeColor
+                                            )
                                             editScope.launch {
-                                                val now = android.os.SystemClock.uptimeMillis()
-                                                val prev = inkTail.last
-                                                val prevPts = prev?.points?.let { decodePoints(it) }
-                                                    ?.map { normalizedToPx(it, fit) } ?: emptyList()
-                                                val canMerge = prev != null && prevPts.isNotEmpty() &&
-                                                    shouldMergeStroke(
-                                                        prevPts.last(),
-                                                        startPx,
-                                                        fit,
-                                                        now - inkTail.at,
-                                                        prev.width == width && prev.color == color
-                                                    )
-                                                Log.d(LOG_TAG, "ink: merge=$canMerge gap=${now - inkTail.at}ms prev=${prev != null} dist=${if (prevPts.isNotEmpty()) (startPx - prevPts.last()).getDistance() else -1f}px limit=${STROKE_MERGE_DIST_FRAC * fit.height}px")
-                                                if (canMerge) {
-                                                    val merged = prev.copy(
-                                                        points = encodePoints(decodePoints(prev.points) + norm)
-                                                    )
-                                                    strokeRepo.update(merged)
-                                                    inkTail.last = merged
-                                                    pendingInk = pendingInk.filter { it.id != merged.id } + merged
-                                                } else {
-                                                    val s = Stroke(
-                                                        sheetHash = sheetHash,
-                                                        page = page,
-                                                        points = encodePoints(norm),
-                                                        width = width,
-                                                        color = color
-                                                    )
-                                                    val stored = s.copy(id = strokeRepo.insert(s))
-                                                    inkTail.last = stored
-                                                    pendingInk = pendingInk + stored
-                                                }
-                                                inkTail.at = now
+                                                val stored = s.copy(id = strokeRepo.insert(s))
+                                                pendingInk = pendingInk + stored
                                             }
                                         }
                                     } else if (eraserActive) {
                                         val path = eraserPath
                                         inkPreview = emptyList()
                                         if (path.isNotEmpty() && sheetHash != null && currentPageFit.width > 0f) {
-                                            // stamps may already be gone (deleted live while dragging):
-                                            // one undo step covers the whole stroke either way
-                                            if (!eraserUndoPushed) {
-                                                pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                            }
+                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                             val radiusPx = currentEraserPx
                                             // the eraser always deletes what it grazes: to remove a whole
                                             // word, tap it (that selects it) and press the bin
@@ -984,7 +969,7 @@ fun PdfViewerScreen(
                                             val goneStrokes = mutableListOf<Stroke>()
                                             val newRuns = mutableListOf<Stroke>()
                                             for (st in currentPageStrokes) {
-                                                val ptsPx = decodePoints(st.points).map { normalizedToPx(it, currentHitFit) }
+                                                val ptsPx = strokePointsPx(st, currentHitFit)
                                                 val runs = eraseStrokePoints(ptsPx, path, radiusPx)
                                                 if (runs.size == 1 && runs[0].size == ptsPx.size) {
                                                     // untouched
@@ -1001,8 +986,7 @@ fun PdfViewerScreen(
                                                 }
                                             }
                                             selectedId = null
-                                            selectedStrokeId = null
-                                            inkTail.last = null   // the previous stroke is gone
+                                            selectedStrokeIds = emptySet()
                                             // make it look deleted NOW: the DB lags behind (~20 ms)
                                             hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
                                             hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
@@ -1014,18 +998,17 @@ fun PdfViewerScreen(
                                                 }
                                             }
                                         }
-                                    } else if (movingStroke != null) {
-                                        val done = movingStroke
-                                        val base = movingStrokeBase
-                                        // keep the final position: clearing it here would make the
-                                        // overlay draw the DB's old position for a few ms until the flow
-                                        // emits again (a glitch).
-                                        dragStroke = done
-                                        if (base != null) {
-                                            if (done.points != base.points) {
-                                                pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                                editScope.launch { strokeRepo.update(done) }
-                                            }
+                                    } else if (movingStrokes != null) {
+                                        val done = movingStrokes
+                                        val base = movingStrokesBase
+                                        val moved = base != null &&
+                                            done.map { it.points } != base.map { it.points }
+                                        if (moved) {
+                                            // keep the final position until the DB confirms it, or
+                                            // the overlay would draw the old one for a few ms
+                                            dragStrokes = done
+                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
+                                            editScope.launch { done.forEach { strokeRepo.update(it) } }
                                         }
                                     } else if (movingStamp != null) {
                                         val done = movingStamp
@@ -1064,9 +1047,9 @@ fun PdfViewerScreen(
                                             if (sym == null) {
                                                 // no tool: just deselect
                                                 selectedId = null
-                                                selectedStrokeId = null
+                                                selectedStrokeIds = emptySet()
                                                 dragStamp = null
-                                                dragStroke = null
+                                                dragStrokes = null
                                             }
                                             if (sym != null && sheetHash != null &&
                                                 (aimed || totalPan.getDistance() <= touchSlopPx)
@@ -1132,37 +1115,47 @@ fun PdfViewerScreen(
                                 }
 
                                 if (resizing != null) {
-                                    // stretching a stroke by a handle: one pointer, scaling around the
-                                    // center. the factor is worked out from the starting position,
-                                    // never accumulated
+                                    // stretching the selected word by a handle: one pointer, scaling
+                                    // around the box center. the factor is worked out from the
+                                    // starting position, never accumulated
                                     val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                     val rz = resizing!!
                                     val f = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
                                     scaleF = f
-                                    val pts = scalePoints(rz.ptsPx, rz.center, f)
-                                    dragStroke = rz.stroke.copy(
-                                        points = encodePoints(pts.map { pxToNormalized(it, currentHitFit) }),
-                                        width = (rz.stroke.width * f).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
-                                    )
+                                    dragStrokes = rz.strokes.mapIndexed { i, st ->
+                                        st.copy(
+                                            points = encodePoints(
+                                                scalePoints(rz.ptsPx[i], rz.center, f)
+                                                    .map { pxToNormalized(it, currentHitFit) }
+                                            ),
+                                            width = (st.width * f)
+                                                .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+                                        )
+                                    }
                                     prevCentroid = tracking.position
                                     event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                                     continue
                                 }
 
-                                if (movingStroke != null) {
+                                if (movingStrokes != null) {
                                     val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                     val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
                                         pxToNormalized(moveStrokeLastPos, currentHitFit)
                                     moveStrokeLastPos = fitPoint(tracking.position)
-                                    val ns = movingStroke.copy(
-                                        points = encodePoints(
-                                            decodePoints(movingStroke.points).map {
-                                                Offset((it.x + m.x).coerceIn(0f, 1f), (it.y + m.y).coerceIn(0f, 1f))
-                                            }
+                                    val ns = movingStrokes.map { st ->
+                                        st.copy(
+                                            points = encodePoints(
+                                                decodePoints(st.points).map {
+                                                    Offset(
+                                                        (it.x + m.x).coerceIn(0f, 1f),
+                                                        (it.y + m.y).coerceIn(0f, 1f)
+                                                    )
+                                                }
+                                            )
                                         )
-                                    )
-                                    movingStroke = ns
-                                    dragStroke = ns
+                                    }
+                                    movingStrokes = ns
+                                    dragStrokes = ns
                                     prevCentroid = tracking.position
                                     event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                                     continue
@@ -1222,21 +1215,8 @@ fun PdfViewerScreen(
                                         ) {
                                             eraserPath.add(fitPoint(tracking.position))
                                             inkPreview = eraserPath.toList()
-                                            // Stamps go as soon as the trail touches them: one DB call
-                                            // each, but the user sees them disappear while dragging
-                                            // instead of all at once on release.
-                                            val fresh = stampsTouched(
-                                                currentPageStamps, currentHitFit,
-                                                eraserPath, currentEraserPx
-                                            ).filter { it.id !in hiddenStampIds }
-                                            if (fresh.isNotEmpty()) {
-                                                if (!eraserUndoPushed) {
-                                                    pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                                    eraserUndoPushed = true
-                                                }
-                                                hiddenStampIds = hiddenStampIds + fresh.map { it.id }
-                                                editScope.launch { stampRepo.deleteAll(fresh) }
-                                            }
+                                            // stamps are only removed on release, like strokes: the
+                                            // trail may graze one on the way to another
                                         }
                                         prevCentroid = tracking.position
                                         event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
@@ -1492,21 +1472,21 @@ fun PdfViewerScreen(
                                                 )
                                             }
                                             // pendingInk goes first: if the flow still brings the older
-                                            // version (after a merge), the one being written wins
-                                            for ((id, _, _, points, width, color) in (pendingInk + pageStrokes).distinctBy { it.id }) {
-                                                // the one being moved/stretched is drawn only at its live
+                                            // version, the one being written wins
+                                            for ((id, _, _, points, width, color) in inkStrokes) {
+                                                // the ink being moved/stretched is drawn only at its live
                                                 // position (otherwise two copies = a ghost)
-                                                if (dragStroke?.id == id) continue
+                                                if (dragStrokes?.any { it.id == id } == true) continue
                                                 drawStrokePath(
                                                     decodePoints(points).map { normalizedToPx(it, hitFit) },
                                                     inkColor(stampColor(color, themeColor)),
                                                     width * hitFit.height
                                                 )
                                             }
-                                            // selected stroke being moved/stretched live
-                                            dragStroke?.let { ds ->
+                                            // selected ink being moved/stretched live
+                                            dragStrokes?.forEach { ds ->
                                                 drawStrokePath(
-                                                    decodePoints(ds.points).map { normalizedToPx(it, hitFit) },
+                                                    strokePointsPx(ds, hitFit),
                                                     inkColor(stampColor(ds.color, themeColor)),
                                                     ds.width * hitFit.height
                                                 )
@@ -1726,7 +1706,7 @@ fun PdfViewerScreen(
                                     activeSymbol = null
                                     drawingTool = false
                                     selectedId = null
-                                    selectedStrokeId = null
+                                    selectedStrokeIds = emptySet()
                                 }
                                 inkPreview = emptyList()
                                 openPanel = if (panel) ToolPanel.Eraser else null
@@ -1758,10 +1738,9 @@ fun PdfViewerScreen(
                                         PageEdit(currentPageStamps, currentPageStrokes))).takeLast(10)
                                 }
                                 selectedId = null
-                                selectedStrokeId = null
+                                selectedStrokeIds = emptySet()
                                 dragStamp = null
-                                dragStroke = null
-                                inkTail.last = null
+                                dragStrokes = null
                                 // the "looks deleted now" cache is stale after a restore: the
                                 // snapshots go back with their original ids
                                 hiddenStampIds = emptySet()
@@ -1784,10 +1763,9 @@ fun PdfViewerScreen(
                                         PageEdit(currentPageStamps, currentPageStrokes))).takeLast(10)
                                 }
                                 selectedId = null
-                                selectedStrokeId = null
+                                selectedStrokeIds = emptySet()
                                 dragStamp = null
-                                dragStroke = null
-                                inkTail.last = null
+                                dragStrokes = null
                                 hiddenStampIds = emptySet()
                                 hiddenStrokeIds = emptySet()
                                 editScope.launch {
@@ -1801,19 +1779,18 @@ fun PdfViewerScreen(
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                if (selectedStamp == null && selectedStroke == null) return@Button
+                                if (selectedStamp == null && selectedStrokes.isEmpty()) return@Button
                                 pushUndo()
                                 selectedId = null
-                                selectedStrokeId = null
-                                inkTail.last = null
+                                selectedStrokeIds = emptySet()
                                 hiddenStampIds = hiddenStampIds + listOfNotNull(selectedStamp?.id)
-                                hiddenStrokeIds = hiddenStrokeIds + listOfNotNull(selectedStroke?.id)
+                                hiddenStrokeIds = hiddenStrokeIds + selectedStrokes.map { it.id }
                                 editScope.launch {
                                     selectedStamp?.let { stampRepo.delete(it) }
-                                    selectedStroke?.let { strokeRepo.delete(it) }
+                                    if (selectedStrokes.isNotEmpty()) strokeRepo.deleteAll(selectedStrokes)
                                 }
                             },
-                            enabled = selectedStamp != null || selectedStroke != null,
+                            enabled = selectedStamp != null || selectedStrokes.isNotEmpty(),
                             modifier = Modifier.semantics { contentDescription = deleteLabel },
                         ) { ToolIcon(ICON_TRASH) }
                     }

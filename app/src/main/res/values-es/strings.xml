@@ -74,4 +74,12 @@
     <string name="stamp_natural">Becuadro</string>
     <string name="stamp_double_sharp">Doble sostenido</string>
     <string name="stamp_double_flat">Doble bemol</string>
+    <string name="stamp_ppp">Pianississimo (ppp)</string>
+    <string name="stamp_fff">Fortississimo (fff)</string>
+    <string name="stamp_sfz">Sforzando (sfz)</string>
+    <string name="stamp_trill">Trino</string>
+    <string name="stamp_mordent_up">Mordente superior</string>
+    <string name="stamp_mordent_down">Mordente inferior</string>
+    <string name="stamp_acciaccatura">Acciaccatura</string>
+    <string name="stamp_appoggiatura">Apoyatura</string>
 </resources>

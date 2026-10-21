@@ -7,30 +7,44 @@ import org.junit.Test
 class PlaybackLogicTest {
 
     @Test
-    fun theLoopButtonMarksAThenBThenStops() {
-        val a = LoopState.Off.tap(8.0)
-        assertEquals(LoopState.FromA(8.0), a)
-        val looping = a.tap(24.0)
-        assertEquals(LoopState.Looping(8.0, 24.0), looping)
-        assertEquals(LoopState.Off, looping.tap(30.0))
+    fun theLoopAloneRepeatsTheWholePiece() {
+        val loop = Loop().toggle()
+        assertEquals(Loop(on = true), loop)
+        assertEquals(0.0, loop.start, 0.0)
+        assertEquals(null, loop.b)
     }
 
     @Test
-    fun aBMarkedBeforeASwapsThem() {
+    fun aAndBSetTheSectionAndASecondTapClearsThem() {
+        val section = Loop(on = true).tapA(8.0).tapB(24.0)
+        assertEquals(Loop(on = true, a = 8.0, b = 24.0), section)
+        assertEquals(Loop(on = true, b = 24.0), section.tapA(30.0))
+        assertEquals(Loop(on = true, a = 8.0), section.tapB(30.0))
+    }
+
+    @Test
+    fun theMarkersStayWhenTheLoopIsTurnedOff() {
+        val off = Loop(on = true, a = 8.0, b = 24.0).toggle()
+        assertEquals(Loop(on = false, a = 8.0, b = 24.0), off)
+        assertEquals(Loop(on = true, a = 8.0, b = 24.0), off.toggle())
+    }
+
+    @Test
+    fun aMarkerOnTheOtherSideSwapsThem() {
         // the music was taken back between the two taps
-        assertEquals(LoopState.Looping(4.0, 16.0), LoopState.FromA(16.0).tap(4.0))
+        assertEquals(Loop(a = 4.0, b = 16.0), Loop(a = 16.0).tapB(4.0))
     }
 
     @Test
-    fun aSecondTapOnTheSameSpotWaitsForTheMusic() {
-        assertEquals(LoopState.FromA(8.0), LoopState.FromA(8.0).tap(8.0))
+    fun bOnTheSameSpotAsAIsNotSet() {
+        assertEquals(Loop(a = 8.0), Loop(a = 8.0).tapB(8.0))
     }
 
     @Test
-    fun backGoesToAWhenThereIsOne() {
-        assertEquals(0.0, LoopState.Off.restartAt(), 0.0)
-        assertEquals(8.0, LoopState.FromA(8.0).restartAt(), 0.0)
-        assertEquals(8.0, LoopState.Looping(8.0, 24.0).restartAt(), 0.0)
+    fun backGoesToTheStartOfTheLoopWhileLooping() {
+        assertEquals(0.0, Loop(a = 8.0).restartAt(), 0.0)
+        assertEquals(8.0, Loop(on = true, a = 8.0).restartAt(), 0.0)
+        assertEquals(0.0, Loop(on = true, b = 24.0).restartAt(), 0.0)
     }
 
     @Test

@@ -109,10 +109,6 @@
     <string name="playback_play">Play</string>
     <string name="playback_pause">Pause</string>
     <string name="playback_to_start">Back to the start</string>
-    <string name="playback_to_a">Back to A</string>
-    <string name="loop_mark_a">Loop: mark A here</string>
-    <string name="loop_mark_b">Loop: mark B here and loop</string>
-    <string name="loop_off">Loop off</string>
     <string name="tempo_section_label">Tempo</string>
     <string name="tempo_label">Speed</string>
     <string name="tempo_value">♩ = %1$d</string>
@@ -121,4 +117,12 @@
     <string name="tempo_as_written">As written (♩ = %1$d)</string>
     <string name="heard_section_label">Parts heard</string>
     <string name="playback_failed">Playback could not start</string>
+    <string name="playback_to_loop_start">Back to the start of the loop</string>
+    <string name="loop_on">Loop on</string>
+    <string name="loop_off">Loop off</string>
+    <string name="loop_set_a">Mark the loop start (A) here</string>
+    <string name="loop_clear_a">Clear A</string>
+    <string name="loop_set_b">Mark the loop end (B) here</string>
+    <string name="loop_clear_b">Clear B</string>
+    <string name="tempo_range">From %1$d to %2$d</string>
 </resources>

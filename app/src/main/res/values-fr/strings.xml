@@ -106,10 +106,6 @@
     <string name="playback_play">Lire</string>
     <string name="playback_pause">Pause</string>
     <string name="playback_to_start">Retour au début</string>
-    <string name="playback_to_a">Retour à A</string>
-    <string name="loop_mark_a">Boucle : marquer A ici</string>
-    <string name="loop_mark_b">Boucle : marquer B ici et boucler</string>
-    <string name="loop_off">Arrêter la boucle</string>
     <string name="tempo_section_label">Tempo</string>
     <string name="tempo_label">Vitesse</string>
     <string name="tempo_value">♩ = %1$d</string>
@@ -118,4 +114,12 @@
     <string name="tempo_as_written">Comme écrit (♩ = %1$d)</string>
     <string name="heard_section_label">Parties entendues</string>
     <string name="playback_failed">La lecture n’a pas pu démarrer</string>
+    <string name="playback_to_loop_start">Retour au début de la boucle</string>
+    <string name="loop_on">Activer la boucle</string>
+    <string name="loop_off">Arrêter la boucle</string>
+    <string name="loop_set_a">Marquer le début de la boucle (A) ici</string>
+    <string name="loop_clear_a">Effacer A</string>
+    <string name="loop_set_b">Marquer la fin de la boucle (B) ici</string>
+    <string name="loop_clear_b">Effacer B</string>
+    <string name="tempo_range">De %1$d à %2$d</string>
 </resources>

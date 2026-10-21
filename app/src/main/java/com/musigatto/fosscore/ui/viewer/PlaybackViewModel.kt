@@ -37,37 +37,38 @@ const val MAX_TEMPO_FACTOR = 4.0f
 // MIDI's own default, when the score writes no tempo
 const val DEFAULT_BPM = 120.0
 
-// one tap on − / + of the tempo
-const val TEMPO_STEP_BPM = 4
-
-// quick taps on − / + (or on several parts) settle before the music starts again with them
-private const val SETTLE_MS = 400L
+// a held − / + of the tempo repeats; the music takes the new tempo once the taps settle
+private const val SETTLE_MS = 300L
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
 /**
- * The A–B loop. Its one button cycles: the first tap marks A where the music is, the second marks
- * B and loops between them, the third turns the loop off. Positions are in quarter notes.
+ * The loop, as in common players (forScore, MuseScore, media players): [on] repeats a section,
+ * from [a] to [b] in quarter notes. A marker left unset is the start or the end of the piece, so
+ * with none the whole piece loops. The markers stay when the loop is turned off.
  */
-sealed interface LoopState {
-    data object Off : LoopState
-    data class FromA(val a: Double) : LoopState
-    data class Looping(val a: Double, val b: Double) : LoopState
-}
+data class Loop(val on: Boolean = false, val a: Double? = null, val b: Double? = null) {
+    /** Where the section starts. */
+    val start: Double get() = a ?: 0.0
 
-/** One tap on the loop button with the music at [quarters]. A B before A swaps them. */
-fun LoopState.tap(quarters: Double): LoopState = when (this) {
-    LoopState.Off -> LoopState.FromA(quarters)
-    // a second tap on the same spot would make an empty loop: wait for the music to move
-    is LoopState.FromA -> if (quarters == a) this else LoopState.Looping(minOf(a, quarters), maxOf(a, quarters))
-    is LoopState.Looping -> LoopState.Off
-}
+    fun toggle() = copy(on = !on)
 
-/** Where ⏮ goes: back to A when there is one, else to the start. */
-fun LoopState.restartAt(): Double = when (this) {
-    LoopState.Off -> 0.0
-    is LoopState.FromA -> a
-    is LoopState.Looping -> a
+    /** A tap on A with the music at [quarters]: marks the start there, or clears it. */
+    fun tapA(quarters: Double): Loop = if (a != null) copy(a = null) else ordered(copy(a = quarters))
+
+    /** A tap on B with the music at [quarters]: marks the end there, or clears it. */
+    fun tapB(quarters: Double): Loop = if (b != null) copy(b = null) else ordered(copy(b = quarters))
+
+    /** Where ⏮ goes: the start of the section while looping, else the start of the piece. */
+    fun restartAt(): Double = if (on) start else 0.0
+
+    // a marker on the other side of the other one swaps them; on the same spot it is not set
+    private fun ordered(next: Loop): Loop = when {
+        next.a == null || next.b == null -> next
+        next.a == next.b -> this
+        next.a > next.b -> next.copy(a = next.b, b = next.a)
+        else -> next
+    }
 }
 
 /** Beats per minute shown for a tempo [factor] of the score's [writtenBpm]. */
@@ -101,8 +102,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _state = MutableStateFlow(PlayState.STOPPED)
     val state: StateFlow<PlayState> = _state.asStateFlow()
 
-    private val _loop = MutableStateFlow<LoopState>(LoopState.Off)
-    val loop: StateFlow<LoopState> = _loop.asStateFlow()
+    private val _loop = MutableStateFlow(Loop())
+    val loop: StateFlow<Loop> = _loop.asStateFlow()
 
     // ids of the notes that started last: the cursor, and what the page turns follow
     private val _cursor = MutableStateFlow<List<String>>(emptyList())
@@ -118,6 +119,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _failed = MutableStateFlow(false)
     val failed: StateFlow<Boolean> = _failed.asStateFlow()
 
+    // bumped by ⏮ before anything was played: the viewer shows the first page
+    private val _toFirstPage = MutableStateFlow(0)
+    val toFirstPage: StateFlow<Int> = _toFirstPage.asStateFlow()
+
     /** Set by a page turned by hand while playing: the pages stop following until the music is on screen again. */
     var followPaused = false
         private set
@@ -127,12 +132,16 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var attachedFor: Any? = null
     private var player: MediaPlayer? = null
     private var playback: Playback? = null
+    // the last playback of this layout, kept after a stop: ⏮ can still show where it goes
+    private var lastPlayback: Playback? = null
     private var starting: Job? = null
     private var settling: Job? = null
     private var following: Job? = null
     private var position = 0.0
-    // where ▶ starts next, when it is not "the page on screen": after ⏮, or a change while paused
+    // where ▶ starts next, when it is not "the page on screen": after ⏮, or a stop in a loop
     private var resumeAt: Double? = null
+    // the MIDI files alternate: the one playing stays untouched while the next is written
+    private var midiFiles = 0
 
     /**
      * The score to play, with the [shown] parts. [loaded] stands for what the score was loaded
@@ -140,42 +149,54 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
      * size or a turned screen keeps the ids, and the music goes on.
      */
     fun attach(pages: MusicXmlPages?, shown: Set<String>, loaded: Any) {
-        if (pages !== this.pages || loaded != attachedFor) stop()
+        if (pages !== this.pages || loaded != attachedFor) {
+            stop()
+            lastPlayback = null
+            resumeAt = null
+        }
         this.pages = pages
         shownParts = shown
         attachedFor = loaded
     }
 
     /**
-     * ▶ / ⏸. From a pause it goes on; otherwise it starts at A, or at [onScreen], the first
-     * notes of the page shown, so the music starts where the eyes are.
+     * ▶ / ⏸. From a pause it goes on; otherwise it starts where ⏮ put it, at the start of the
+     * loop, or at [onScreen], the first notes of the page shown, so the music starts where the
+     * eyes are.
      */
     fun playPause(onScreen: Set<String>) {
         when (_state.value) {
             PlayState.PLAYING -> pause()
             PlayState.PAUSED -> resume()
             PlayState.PREPARING -> Unit
-            PlayState.STOPPED -> start(fromStart = null, onScreen = onScreen)
+            PlayState.STOPPED -> start(onScreen)
         }
     }
 
-    /** ⏮: back to A, or to the start. Keeps playing if it was. */
+    /**
+     * ⏮: back to the start of the loop, or of the piece. Playing, the music goes on from there;
+     * paused or stopped, the page and the highlight go there at once, and ▶ starts there.
+     */
     fun restart() {
         val at = _loop.value.restartAt()
-        val p = player
-        val pb = playback
-        if (p != null && pb != null) {
-            p.seekTo(pb.msAt(at).toInt())
-            position = at
-            followPaused = false
-        } else {
-            position = at
-            resumeAt = at
-        }
+        position = at
+        followPaused = false
+        val pb = player?.let { playback } ?: lastPlayback
+        player?.seekTo(pb?.msExact(at)?.toInt() ?: 0)
+        if (player == null) resumeAt = at
+        if (pb != null) showNotesAt(pb, at) else _toFirstPage.value++
     }
 
-    fun tapLoop() {
-        _loop.value = _loop.value.tap(position)
+    fun toggleLoop() {
+        _loop.value = _loop.value.toggle()
+    }
+
+    fun tapA() {
+        _loop.value = _loop.value.tapA(position)
+    }
+
+    fun tapB() {
+        _loop.value = _loop.value.tapB(position)
     }
 
     fun setTempo(factor: Float) {
@@ -183,7 +204,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         if (f == _tempo.value) return
         _tempo.value = f
         Settings.setTempo(context, score, f)
-        restartWhereItIs()
+        soundChanged()
     }
 
     fun setHeard(id: String, heard: Boolean, parts: List<Part>) {
@@ -192,7 +213,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         if (next.isEmpty()) return
         _heard.value = next
         Settings.setHeardParts(context, score, next)
-        restartWhereItIs()
+        soundChanged()
     }
 
     /** A page turned by hand during playback: let the reader look ahead or back. */
@@ -208,6 +229,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     fun stop() {
         starting?.cancel()
         starting = null
+        settling?.cancel()
+        settling = null
         following?.cancel()
         following = null
         player?.release()
@@ -231,23 +254,33 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         follow()
     }
 
-    // A new tempo or new parts heard need a new MIDI: start again at the same place, once the
-    // taps settle. The music goes on meanwhile with the old one.
-    private fun restartWhereItIs() {
-        if (_state.value == PlayState.STOPPED && settling == null) return
-        settling?.cancel()
-        settling = viewModelScope.launch {
-            delay(SETTLE_MS)
-            settling = null
-            val state = _state.value
-            if (state == PlayState.STOPPED) return@launch
-            val at = position
-            stop()
-            if (state == PlayState.PAUSED) resumeAt = at else start(fromStart = at, onScreen = emptySet())
-        }
+    private fun sound() = SoundSpec(audible = _heard.value, tempo = _tempo.value.toDouble())
+
+    // the highlight and the page go to the notes at [quarters], without playing
+    private fun showNotesAt(pb: Playback, quarters: Double) {
+        val index = pb.onsetIndexAt(quarters).coerceAtLeast(0)
+        pb.onsets.getOrNull(index)?.let { _cursor.value = it.notes }
     }
 
-    private fun start(fromStart: Double?, onScreen: Set<String>) {
+    private suspend fun preparePlayer(pb: Playback): MediaPlayer {
+        val midi = withContext(Dispatchers.IO) {
+            File(context.cacheDir, "playback-${midiFiles++ % 2}.mid").apply { writeBytes(pb.midi) }
+        }
+        val next = MediaPlayer()
+        try {
+            withContext(Dispatchers.IO) {
+                next.setDataSource(midi.absolutePath)
+                next.prepare()
+            }
+        } catch (e: Exception) {
+            next.release()
+            throw e
+        }
+        next.setOnCompletionListener { onEnd() }
+        return next
+    }
+
+    private fun start(onScreen: Set<String>) {
         val pages = pages ?: return
         // only one start at a time: two quick taps must not end up with two players
         stop()
@@ -255,25 +288,22 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         _failed.value = false
         starting = viewModelScope.launch {
             try {
-                val sound = SoundSpec(audible = _heard.value, tempo = _tempo.value.toDouble())
-                val pb = pages.playback(sound)
-                val midi = withContext(Dispatchers.IO) {
-                    File(context.cacheDir, "playback.mid").apply { writeBytes(pb.midi) }
-                }
-                val from = fromStart
-                    ?: resumeAt
-                    ?: (_loop.value as? LoopState.Looping)?.a
+                val pb = pages.playback(sound())
+                val loop = _loop.value
+                val from = resumeAt
+                    ?: loop.a?.takeIf { loop.on }
                     ?: pb.onsets.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters
                     ?: 0.0
-                if (!isActive) return@launch
-                player = MediaPlayer().apply {
-                    setDataSource(midi.absolutePath)
-                    prepare()
-                    setOnCompletionListener { onEnd() }
-                    if (from > 0) seekTo(pb.msAt(from).toInt())
-                    start()
+                val next = preparePlayer(pb)
+                if (!isActive) {
+                    next.release()
+                    return@launch
                 }
+                if (from > 0) next.seekTo(pb.msExact(from).toInt())
+                next.start()
+                player = next
                 playback = pb
+                lastPlayback = pb
                 position = from
                 resumeAt = null
                 followPaused = false
@@ -289,14 +319,54 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         }
     }
 
+    // A new tempo or new parts heard need a new MIDI. Once the taps settle, it is prepared while
+    // the music goes on, then the new player takes over at the same place: no gap in the music.
+    // Stopped, the next ▶ simply uses the new sound.
+    private fun soundChanged() {
+        settling?.cancel()
+        if (player == null) return
+        settling = viewModelScope.launch {
+            delay(SETTLE_MS)
+            val pages = pages ?: return@launch
+            try {
+                val pb = pages.playback(sound())
+                val next = preparePlayer(pb)
+                val old = player
+                val oldPb = playback
+                if (!isActive || old == null || oldPb == null) {
+                    next.release()
+                    return@launch
+                }
+                val at = oldPb.quartersAt(old.currentPosition.toLong())
+                next.seekTo(pb.msExact(at).toInt())
+                val playing = old.isPlaying
+                if (playing) next.start()
+                old.release()
+                player = next
+                playback = pb
+                lastPlayback = pb
+                position = at
+                if (playing) follow()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // the old player goes on: better the old tempo than silence
+                Log.e(LOG_TAG, "new sound could not be prepared: ${e::class.simpleName}: ${e.message}", e)
+            } finally {
+                if (settling === coroutineContext[Job]) settling = null
+            }
+        }
+    }
+
     // the end of the music: around the loop again, or stop
     private fun onEnd() {
         val loop = _loop.value
         val p = player
         val pb = playback
-        if (loop is LoopState.Looping && p != null && pb != null) {
-            p.seekTo(pb.msAt(loop.a).toInt())
+        if (loop.on && p != null && pb != null) {
+            p.seekTo(pb.msExact(loop.start).toInt())
             p.start()
+            follow()
         } else {
             stop()
         }
@@ -310,12 +380,12 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 val p = player ?: break
                 val pb = playback ?: break
                 if (!p.isPlaying) break
-                val q = pb.quartersAt(p.currentPosition.toLong())
-                position = q
+                position = pb.quartersAt(p.currentPosition.toLong())
                 val loop = _loop.value
-                if (loop is LoopState.Looping && q >= loop.b) {
-                    p.seekTo(pb.msAt(loop.a).toInt())
-                    position = loop.a
+                val end = loop.b
+                if (loop.on && end != null && position >= end) {
+                    p.seekTo(pb.msExact(loop.start).toInt())
+                    position = loop.start
                 }
                 val index = pb.onsetIndexAt(position)
                 if (index != last && index >= 0) {
@@ -333,4 +403,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             initializer { PlaybackViewModel(context.applicationContext as Application, score) }
         }
     }
+}
+
+/**
+ * Audio time of the score position [quarters], between two notes too: `msAt` goes back to the
+ * last note started, which would replay it when the music takes over at a new tempo.
+ */
+private fun Playback.msExact(quarters: Double): Long {
+    val ms0 = msAt(quarters)
+    val q0 = quartersAt(ms0)
+    val q1 = quartersAt(ms0 + 1000)
+    return if (q1 > q0) ms0 + ((quarters - q0) / (q1 - q0) * 1000).toLong() else ms0
 }

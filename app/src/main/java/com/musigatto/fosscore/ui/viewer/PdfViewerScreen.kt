@@ -148,8 +148,10 @@ private const val LOG_TAG = "FOSScore-PDF"
 // track with 10 dp above and below). Keep in step with ViewerTitleBar and PageSelector.
 private val TITLE_BAR_ROOM = 64.dp
 private val SELECTOR_ROOM = 68.dp
-// and, for MusicXML, the playback band above the page dots (48 dp buttons, 4 dp of air)
-private val PLAYBACK_BAND_ROOM = 52.dp
+// and, for MusicXML, the playback band (44 dp buttons) right above the page dots, which then
+// lose their 10 dp of air on top
+private val PLAYBACK_BAND_ROOM = 44.dp
+private val SELECTOR_AIR = 10.dp
 
 // Touch noise with still fingers: ±1 px over ~400 px between fingers ≈ 0.25%. A 0.4% dead zone
 // stops the zoom reacting to that noise (without it the content "breathes" and looks shaky).
@@ -652,7 +654,8 @@ fun PdfViewerScreen(
     val bars = WindowInsets.safeDrawing
     val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
     val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
-    val chromeBottom = bars.getBottom(density) + with(density) { (SELECTOR_ROOM + PLAYBACK_BAND_ROOM).roundToPx() }
+    val chromeBottom = bars.getBottom(density) +
+        with(density) { (SELECTOR_ROOM - SELECTOR_AIR + PLAYBACK_BAND_ROOM).roundToPx() }
     LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
@@ -722,6 +725,13 @@ fun PdfViewerScreen(
                 onPage(currentPage + 1) { g, id -> upper(g, id) } + onPage(currentPage) { g, id -> !upper(g, id) }
             else -> onPage(currentPage)
         }.toSet()
+    }
+
+    val toFirstPage by playbackVm.toFirstPage.collectAsState()
+    LaunchedEffect(toFirstPage) {
+        if (toFirstPage == 0) return@LaunchedEffect
+        currentPage = 0
+        halfTurned = false
     }
 
     // Follow the music: when the notes being played leave the screen, turn to their page. A page
@@ -2058,9 +2068,10 @@ fun PdfViewerScreen(
                             bpm = bpmOf(tempoFactor, writtenBpm),
                             onPlayPause = { playbackVm.playPause(notesOnScreen()) },
                             onRestart = playbackVm::restart,
-                            onLoop = playbackVm::tapLoop,
+                            onLoop = playbackVm::toggleLoop,
+                            onA = playbackVm::tapA,
+                            onB = playbackVm::tapB,
                             onOptions = { menu.show(ViewerSurface.PLAYBACK) },
-                            modifier = Modifier.padding(top = 4.dp),
                         )
                         if (playbackFailed) {
                             Text(
@@ -2080,7 +2091,12 @@ fun PdfViewerScreen(
                         },
                         // air under the knob: flush with the edge it sat inside the system
                         // navigation gesture area and was hard to grab
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(
+                            start = 24.dp,
+                            end = 24.dp,
+                            top = if (format.isMusicXml) 0.dp else 10.dp,
+                            bottom = 10.dp,
+                        ),
                     )
                 }
             }
@@ -2136,10 +2152,9 @@ fun PdfViewerScreen(
                 PlaybackOptionsOverlay(
                     bpm = bpmOf(tempoFactor, writtenBpm),
                     writtenBpm = bpmOf(1f, writtenBpm),
-                    canSlower = tempoFactor > MIN_TEMPO_FACTOR,
-                    canFaster = tempoFactor < MAX_TEMPO_FACTOR,
+                    minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
+                    maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
                     onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
-                    onTempoAsWritten = { playbackVm.setTempo(1f) },
                     parts = parts,
                     heard = heardParts(heardPicked, shownIds, parts),
                     onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },

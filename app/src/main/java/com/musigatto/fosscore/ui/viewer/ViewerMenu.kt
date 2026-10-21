@@ -170,6 +170,7 @@ fun ScoreLayoutOverlay(
     onMusicSize: (Int) -> Unit,
     onTranspose: (Int) -> Unit,
     onLyrics: (LyricsPlacement) -> Unit,
+    onKeepHiddenLyrics: (Boolean) -> Unit,
     onPartShown: (String, Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -203,6 +204,9 @@ fun ScoreLayoutOverlay(
         SectionLabel(stringResource(R.string.lyrics_section_label))
         LyricsPlacement.entries.forEach { placement ->
             OptionRow(placement.label(), layout.lyrics == placement, Role.RadioButton) { onLyrics(placement) }
+        }
+        OptionRow(stringResource(R.string.lyrics_of_hidden_parts), layout.keepHiddenLyrics, Role.Checkbox) {
+            onKeepHiddenLyrics(!layout.keepHiddenLyrics)
         }
 
         // a score with one part has nothing to choose

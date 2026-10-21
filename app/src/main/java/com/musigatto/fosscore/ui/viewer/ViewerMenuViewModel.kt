@@ -59,6 +59,8 @@ data class ScoreLayout(
     val semitones: Int = 0,
     val shownParts: Set<String>? = null,
     val lyrics: LyricsPlacement = LyricsPlacement.FILE,
+    /** The lyrics of the parts hidden stay, as a line of lyrics: the accompanist reads the words. */
+    val keepHiddenLyrics: Boolean = true,
 ) {
     /** The ids of the parts drawn, out of [parts]. Never empty while the score has parts. */
     fun partsShown(parts: List<Part>): Set<String> {
@@ -89,6 +91,7 @@ private class SettingsLayoutStore(private val context: Context, private val scor
         musicSize = Settings.musicSize(context, score),
         semitones = Settings.transpose(context, score),
         shownParts = Settings.shownParts(context, score),
+        keepHiddenLyrics = Settings.keepHiddenLyrics(context, score),
         lyrics = Settings.lyrics(context, score)
             ?.let { name -> LyricsPlacement.entries.firstOrNull { it.name == name } }
             ?: LyricsPlacement.FILE,
@@ -99,6 +102,7 @@ private class SettingsLayoutStore(private val context: Context, private val scor
         Settings.setTranspose(context, score, layout.semitones)
         Settings.setShownParts(context, score, layout.shownParts)
         Settings.setLyrics(context, score, layout.lyrics.name)
+        Settings.setKeepHiddenLyrics(context, score, layout.keepHiddenLyrics)
     }
 }
 
@@ -134,6 +138,8 @@ class ViewerMenuViewModel(private val store: ScoreLayoutStore) : ViewModel() {
     fun transpose(semitones: Int) = change { it.copy(semitones = semitones.coerceIn(-MAX_TRANSPOSE, MAX_TRANSPOSE)) }
 
     fun setLyrics(placement: LyricsPlacement) = change { it.copy(lyrics = placement) }
+
+    fun setKeepHiddenLyrics(keep: Boolean) = change { it.copy(keepHiddenLyrics = keep) }
 
     /** Shows or hides one part. The last part shown stays: a score with no staff is a blank page. */
     fun setPartShown(id: String, shown: Boolean) = change { layout ->

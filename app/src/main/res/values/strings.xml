@@ -102,9 +102,9 @@
     <string name="transpose_up">Up a semitone</string>
     <string name="lyrics_section_label">Lyrics</string>
     <string name="lyrics_file">As in the file</string>
-    <string name="lyrics_above">Above the staff</string>
-    <string name="lyrics_below">Below the staff</string>
-    <string name="lyrics_bottom">Below the lowest staff</string>
+    <string name="lyrics_above">Above the sung notes</string>
+    <string name="lyrics_below">Below the sung notes</string>
+    <string name="lyrics_bottom">Below all the staves</string>
     <string name="parts_section_label">Parts shown</string>
     <string name="playback_play">Play</string>
     <string name="playback_pause">Pause</string>
@@ -125,4 +125,5 @@
     <string name="loop_set_b">Mark the loop end (B) here</string>
     <string name="loop_clear_b">Clear B</string>
     <string name="tempo_range">From %1$d to %2$d</string>
+    <string name="lyrics_of_hidden_parts">Keep the lyrics of hidden parts</string>
 </resources>

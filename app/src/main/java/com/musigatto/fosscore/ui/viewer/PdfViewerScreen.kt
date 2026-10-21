@@ -672,6 +672,7 @@ fun PdfViewerScreen(
             semitones = scoreLayout.semitones,
             parts = scoreLayout.layoutParts(parts),
             lyrics = scoreLayout.lyrics,
+            hiddenLyrics = scoreLayout.keepHiddenLyrics,
         )
         val before = pageCount
         try {
@@ -700,11 +701,11 @@ fun PdfViewerScreen(
     // Playback plays what is loaded: a new transposition, new parts or new lyrics reload the score
     // with new note ids, and stop the music. A new size or a turned screen keeps it playing.
     val shownIds = scoreLayout.partsShown(parts)
-    LaunchedEffect(pageSource, scoreLayout.semitones, shownIds, scoreLayout.lyrics) {
+    LaunchedEffect(pageSource, scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics) {
         playbackVm.attach(
             pageSource as? MusicXmlPages,
             shownIds,
-            Triple(scoreLayout.semitones, shownIds, scoreLayout.lyrics),
+            listOf(scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics),
         )
     }
 
@@ -2167,6 +2168,7 @@ fun PdfViewerScreen(
                 onMusicSize = menu::setMusicSize,
                 onTranspose = menu::transpose,
                 onLyrics = menu::setLyrics,
+                onKeepHiddenLyrics = menu::setKeepHiddenLyrics,
                 onPartShown = menu::setPartShown,
                 onDismiss = menu::dismiss,
             )

@@ -22,7 +22,10 @@ enum class LyricsPlacement {
     ABOVE,
     BELOW,
 
-    /** Below the lowest staff of the part: for a piano part, under the left hand. */
+    /**
+     * Under the whole system: the lyrics of a one-staff part (a voice) go under the lowest staff
+     * of the score, and those of a piano part with a hidden vocal line under its left hand.
+     */
     BOTTOM
 }
 
@@ -53,5 +56,7 @@ data class ScoreFilter(
     val parts: Set<String> = emptySet(),
     val lyrics: LyricsPlacement = LyricsPlacement.FILE,
     /** General MIDI program (1-128) per part id, replacing the file's. */
-    val programs: Map<String, Int> = emptyMap()
+    val programs: Map<String, Int> = emptyMap(),
+    /** The lyrics of the parts left out stay, as a line of lyrics where the part was. */
+    val hiddenLyrics: Boolean = false
 )

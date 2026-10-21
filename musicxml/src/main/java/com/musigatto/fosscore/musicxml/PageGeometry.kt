@@ -53,7 +53,8 @@ class PageGeometry private constructor(
                 System(start, (ys.minOrNull() ?: 0f) + my, (ys.maxOrNull() ?: 0f) + my, space)
             }
 
-            val heads = HEAD.findAll(svg).associate { m ->
+            // an invisible note (a line of lyrics, a hidden voice) gets no cursor: it is not drawn
+            val heads = HEAD.findAll(svg).filterNot { "visibility=\"hidden\"" in it.value }.associate { m ->
                 val system = systems.lastOrNull { it.start < m.range.first }
                 val space = system?.space ?: DEFAULT_SPACE
                 // The notehead glyph starts at x and is about 1.2 staff spaces wide.

@@ -52,6 +52,29 @@ class RenderingTextTest {
     }
 
     @Test
+    fun hiddenElementsAreNotDrawnButTheirLyricsAre() {
+        // an invisible note loses its head and stem but keeps its verse; its visible neighbour stays
+        val verse = """<g class="verse"><g class="syl"><text>la</text></g></g>"""
+        val svg = """<g class="layer"><g id="n1" class="note" visibility="hidden"><g class="notehead"><use/></g>""" +
+            """<g class="stem"><path d="M0 0"/></g>$verse</g><g id="n2" class="note"><use/></g><rect visibility="hidden"/></g>"""
+        assertEquals("""<g class="layer">$verse<g id="n2" class="note"><use/></g></g>""", SvgForMuPdf.dropHidden(svg))
+    }
+
+    @Test
+    fun pageGeometryGivesNoCursorToInvisibleNotes() {
+        val svg = """<svg class="definition-scale" viewBox="0 0 100 100"><g class="system"><g class="staff">""" +
+            """<path d="M0 10 L90 10" stroke-width="2"/><path d="M0 20 L90 20" stroke-width="2"/></g>""" +
+            """<g id="seen" class="note"><g class="notehead"><use transform="translate(10, 15)"/></g></g>""" +
+            """<g id="unseen" class="note" visibility="hidden"><g class="notehead"><use transform="translate(20, 15)"/></g></g>""" +
+            """</g></svg>"""
+        val geometry = PageGeometry.parse(svg)
+        assertTrue(geometry.head("seen") != null)
+        assertEquals(null, geometry.head("unseen"))
+        // still on the page, so the page turns can find it
+        assertTrue("unseen" in geometry.noteIds)
+    }
+
+    @Test
     fun smuflTextGlyphsBecomePaths() {
         val dir = Files.createTempDirectory("verovio-data").toFile()
         try {

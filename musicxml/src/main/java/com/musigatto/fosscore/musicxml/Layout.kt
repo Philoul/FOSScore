@@ -6,8 +6,9 @@ import org.json.JSONObject
 /**
  * How to lay out the score: pages of [width] × [height] pixels (the viewport), music at
  * [scale] percent of Verovio's default size, transposed by [semitones], showing [parts] (empty
- * shows them all) with lyrics placed as [lyrics]. [marginTop] and [marginBottom] pixels of every
- * page stay free of music, for bars the viewer draws over the page.
+ * shows them all) with lyrics placed as [lyrics], keeping the lyrics of the parts left out when
+ * [hiddenLyrics]. [marginTop] and [marginBottom] pixels of every page stay free of music, for
+ * bars the viewer draws over the page.
  */
 data class LayoutSpec(
     val width: Int,
@@ -16,6 +17,7 @@ data class LayoutSpec(
     val semitones: Int = 0,
     val parts: Set<String> = emptySet(),
     val lyrics: LyricsPlacement = LyricsPlacement.FILE,
+    val hiddenLyrics: Boolean = false,
     val marginTop: Int = 0,
     val marginBottom: Int = 0
 ) {

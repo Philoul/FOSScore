@@ -37,6 +37,7 @@ object Settings {
     private const val KEY_TRANSPOSE = "transpose_"
     private const val KEY_PARTS = "parts_"
     private const val KEY_LYRICS = "lyrics_"
+    private const val KEY_HIDDEN_LYRICS = "hidden_lyrics_"
     private const val KEY_TEMPO = "tempo_"
     private const val KEY_HEARD = "heard_"
 
@@ -106,6 +107,14 @@ object Settings {
 
     fun setLyrics(context: Context, uri: String, placement: String) {
         context.prefs().edit { putString(KEY_LYRICS + uri, placement) }
+    }
+
+    /** Whether the lyrics of the MusicXML parts hidden stay, as a line of lyrics. Per score. */
+    fun keepHiddenLyrics(context: Context, uri: String): Boolean =
+        context.prefs().getBoolean(KEY_HIDDEN_LYRICS + uri, true)
+
+    fun setKeepHiddenLyrics(context: Context, uri: String, keep: Boolean) {
+        context.prefs().edit { putBoolean(KEY_HIDDEN_LYRICS + uri, keep) }
     }
 
     /** Playback tempo, as a factor of the tempo written in the score (1 = as written). Per score. */

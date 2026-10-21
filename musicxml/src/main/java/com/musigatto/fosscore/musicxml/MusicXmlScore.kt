@@ -11,6 +11,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 import org.w3c.dom.Document
 import org.w3c.dom.Element
+import org.w3c.dom.NodeList
 import org.xml.sax.InputSource
 
 /**
@@ -78,8 +79,13 @@ class MusicXmlScore private constructor(private val doc: Document) {
         val undo = mutableListOf<() -> Unit>()
         try {
             if (partwise) {
+                // the lyrics of the voices left out move first, while their parts are still there
+                if (filter.hiddenLyrics) keepHiddenLyrics(filter.parts, lyricsAbove(filter.lyrics), undo)
                 keepParts(filter.parts, undo)
-                if (filter.lyrics == LyricsPlacement.BOTTOM) lyricsUnderSystem(undo)
+                if (filter.lyrics == LyricsPlacement.BOTTOM) {
+                    lyricsUnderScore(undo)
+                    lyricsUnderSystem(undo)
+                }
                 setPrograms(filter.programs, undo)
             }
             return serialize()
@@ -111,6 +117,128 @@ class MusicXmlScore private constructor(private val doc: Document) {
         }
         detach(root, undo) { it.tagName == "part" && it.getAttribute("id") !in keep }
     }
+
+    /**
+     * The lyrics of the one-staff parts (voices) left out of [keep] stay: an invisible copy of each
+     * voice, with its lyrics, joins the next part kept (the previous one at the end of the score).
+     * The accompanist reads the words without the tune. They go on its top staff when they are
+     * drawn [above], on its lowest staff otherwise: on the outside of the part, never between two
+     * staves, where the notes run into the words.
+     */
+    private fun keepHiddenLyrics(keep: Set<String>, above: Boolean, undo: MutableList<() -> Unit>) {
+        val all = root.children("part")
+        if (keep.isEmpty() || all.all { it.getAttribute("id") in keep }) return
+        all.forEachIndexed { i, part ->
+            if (part.getAttribute("id") in keep || !part.oneStaff() || !part.hasLyrics()) return@forEachIndexed
+            val into = all.drop(i + 1).firstOrNull { it.getAttribute("id") in keep }
+                ?: all.take(i).lastOrNull { it.getAttribute("id") in keep }
+                ?: return@forEachIndexed
+            carryLyrics(part, into, staff = if (above) 1 else into.staves(), undo)
+        }
+    }
+
+    /**
+     * The lyrics of the one-staff parts (voices) go under the whole score: an invisible copy of each
+     * voice, with its lyrics, joins the lowest staff of the last part, and the voice keeps its
+     * notes without lyrics. With a choir, each voice brings its own verse numbers, so the lines of
+     * lyrics stack instead of drawing over each other.
+     */
+    private fun lyricsUnderScore(undo: MutableList<() -> Unit>) {
+        val parts = root.children("part")
+        val last = parts.lastOrNull() ?: return
+        for (part in parts) {
+            if (part === last || !part.oneStaff() || !part.hasLyrics()) continue
+            if (!carryLyrics(part, last, staff = last.staves(), undo)) continue
+            part.children("measure").flatMap { it.children("note") }.forEach { note ->
+                detach(note, undo) { it.tagName == "lyric" }
+            }
+        }
+    }
+
+    /**
+     * Copies the notes of the one-staff part [from], invisible and with their lyrics, into [staff]
+     * of [into], as a voice of its own. This is how MuseScore keeps the lyrics of a hidden vocal
+     * line, and Verovio draws them under that staff. Returns false, changing nothing, when the
+     * parts do not line up (another number of measures, durations that do not convert).
+     */
+    private fun carryLyrics(from: Element, into: Element, staff: Int, undo: MutableList<() -> Unit>): Boolean {
+        val fromMeasures = from.children("measure")
+        val intoMeasures = into.children("measure")
+        if (fromMeasures.size != intoMeasures.size) return false
+        val voice = (into.getElementsByTagName("voice").texts().mapNotNull { it.toIntOrNull() }.maxOrNull() ?: 0)
+            .plus(1).coerceAtLeast(FIRST_LYRICS_VOICE).toString()
+        // the verses already on [into] stay first; this voice's come after them
+        val verses = into.getElementsByTagName("lyric").elements()
+            .maxOfOrNull { it.getAttribute("number").toIntOrNull() ?: 1 } ?: 0
+        var fromDivisions = 1
+        var intoDivisions = 1
+        // everything is worked out first, so a part that does not line up changes nothing
+        val plan = mutableListOf<Pair<Element, List<Element>>>()
+        for ((fm, im) in fromMeasures.zip(intoMeasures)) {
+            fromDivisions = fm.divisions() ?: fromDivisions
+            intoDivisions = im.divisions() ?: intoDivisions
+            fun convert(e: Element): Int? {
+                val d = e.child("duration")?.text()?.toIntOrNull() ?: return 0
+                return if (d * intoDivisions % fromDivisions == 0) d * intoDivisions / fromDivisions else null
+            }
+            val copies = mutableListOf<Element>()
+            var length = 0
+            for (e in fm.children()) {
+                if (e.tagName !in setOf("note", "forward", "backup") || e.child("grace") != null) continue
+                val d = convert(e) ?: return false
+                when (e.tagName) {
+                    "note" -> if (e.child("chord") == null) length += d
+                    "forward" -> length += d
+                    "backup" -> length -= d
+                }
+                copies += hiddenCopy(e, d, voice, staff, verses)
+            }
+            if (copies.none { it.tagName == "note" }) continue
+            // back to the start of the measure, from the end of what [into] holds
+            val back = doc.createElement("backup").apply {
+                appendChild(doc.createElement("duration").apply { textContent = length.toString() })
+            }
+            plan += im to listOf(back) + copies
+        }
+        for ((measure, nodes) in plan) {
+            // before a closing barline, which MusicXML wants last
+            val end = measure.children().lastOrNull()?.takeIf { it.tagName == "barline" }
+            nodes.forEach { node ->
+                measure.insertBefore(node, end)
+                undo += { measure.removeChild(node) }
+            }
+        }
+        return plan.isNotEmpty()
+    }
+
+    // [e] (a note, forward or backup) for a voice of lyrics: invisible, without marks or id, its
+    // duration in the divisions of the part it joins, its verses after the [verses] already there
+    private fun hiddenCopy(e: Element, duration: Int, voice: String, staff: Int, verses: Int): Element =
+        (e.cloneNode(true) as Element).apply {
+            removeAttribute("id")
+            child("duration")?.textContent = duration.toString()
+            if (tagName == "backup") return@apply
+            children().filter { it.tagName in LYRICS_VOICE_DROPS }.forEach { removeChild(it) }
+            appendChild(doc.createElement("voice").apply { textContent = voice })
+            appendChild(doc.createElement("staff").apply { textContent = staff.toString() })
+            if (tagName != "note") return@apply
+            setAttribute("print-object", "no")
+            children("lyric").forEach { lyric ->
+                lyric.removeAttribute("id")
+                lyric.setAttribute("number", ((lyric.getAttribute("number").toIntOrNull() ?: 1) + verses).toString())
+            }
+        }
+
+    private fun Element.staves(): Int =
+        child("measure")?.children("attributes").orEmpty()
+            .firstNotNullOfOrNull { it.child("staves")?.text()?.toIntOrNull() } ?: 1
+
+    private fun Element.oneStaff(): Boolean = staves() == 1
+
+    private fun Element.hasLyrics(): Boolean = getElementsByTagName("lyric").length > 0
+
+    private fun Element.divisions(): Int? =
+        children("attributes").firstNotNullOfOrNull { it.child("divisions")?.text()?.toIntOrNull() }
 
     // Detach in document order so that, restored in reverse, each node's next sibling is back.
     private fun detach(parent: Element, undo: MutableList<() -> Unit>, drop: (Element) -> Boolean) {
@@ -314,6 +442,15 @@ class MusicXmlScore private constructor(private val doc: Document) {
         }
 
         private val HIDDEN_NOTE_MARKS = setOf("beam", "tie", "tied", "slur", "accidental")
+
+        // a voice carrying lyrics into another part: what its notes lose, and its first number
+        // (MuseScore numbers the voices of a two-staff part 1 to 8)
+        private val LYRICS_VOICE_DROPS = setOf("beam", "tie", "notations", "accidental", "stem", "notehead", "voice", "staff")
+        private const val FIRST_LYRICS_VOICE = 9
+
+        private fun NodeList.elements(): List<Element> = (0 until length).map { item(it) as Element }
+
+        private fun NodeList.texts(): List<String> = elements().map { it.textContent.trim() }
 
         /** True when the first measure marks every staff of this part invisible. */
         private fun Element.allStavesHidden(): Boolean {

@@ -102,9 +102,9 @@
     <string name="transpose_up">Un semitono más alto</string>
     <string name="lyrics_section_label">Letra</string>
     <string name="lyrics_file">Como en el archivo</string>
-    <string name="lyrics_above">Encima del pentagrama</string>
-    <string name="lyrics_below">Debajo del pentagrama</string>
-    <string name="lyrics_bottom">Debajo del pentagrama inferior</string>
+    <string name="lyrics_above">Encima de las notas cantadas</string>
+    <string name="lyrics_below">Debajo de las notas cantadas</string>
+    <string name="lyrics_bottom">Debajo de todos los pentagramas</string>
     <string name="parts_section_label">Partes mostradas</string>
     <string name="playback_play">Reproducir</string>
     <string name="playback_pause">Pausa</string>
@@ -125,4 +125,5 @@
     <string name="loop_set_b">Marcar el final del bucle (B) aquí</string>
     <string name="loop_clear_b">Borrar B</string>
     <string name="tempo_range">De %1$d a %2$d</string>
+    <string name="lyrics_of_hidden_parts">Mantener la letra de las partes ocultas</string>
 </resources>

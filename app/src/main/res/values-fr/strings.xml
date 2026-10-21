@@ -99,9 +99,9 @@
     <string name="transpose_up">Un demi-ton plus haut</string>
     <string name="lyrics_section_label">Paroles</string>
     <string name="lyrics_file">Comme dans le fichier</string>
-    <string name="lyrics_above">Au-dessus de la portée</string>
-    <string name="lyrics_below">Sous la portée</string>
-    <string name="lyrics_bottom">Sous la portée du bas</string>
+    <string name="lyrics_above">Au-dessus des notes chantées</string>
+    <string name="lyrics_below">Sous les notes chantées</string>
+    <string name="lyrics_bottom">Sous toutes les portées</string>
     <string name="parts_section_label">Parties affichées</string>
     <string name="playback_play">Lire</string>
     <string name="playback_pause">Pause</string>
@@ -122,4 +122,5 @@
     <string name="loop_set_b">Marquer la fin de la boucle (B) ici</string>
     <string name="loop_clear_b">Effacer B</string>
     <string name="tempo_range">De %1$d à %2$d</string>
+    <string name="lyrics_of_hidden_parts">Garder les paroles des parties masquées</string>
 </resources>

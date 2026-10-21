@@ -70,7 +70,7 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 | Tempo | Shown as ♩ = N; the user sets the written tempo in the sheet details | Read from the file; ♩ = N, adjustable, reset | PR #32 | Tempo is shown in beats per minute, never as a percentage. |
 | Parts heard, separately from parts shown | — | Mute / unmute each part | PR #32 | Lets a musician play their part with the others as accompaniment. |
 | Instrument per part | — | General MIDI instrument per part | Spike | |
-| **Metronome**, audible and / or visual | Uses the tempo and time signature from the sheet details | Follows the score: tempo and time signature changes from Verovio's timemap | To do | Count-in before playing; visual beat (flash or bar) usable in silence on stage. |
+| **Metronome**, audible and / or visual | Uses the tempo and time signature from the sheet details | Follows the score: tempo and time signature changes from Verovio's timemap | Proposal | Count-in before playing; visual beat (flash or bar) usable in silence on stage. Requirements and proposal: [metronome.md](metronome.md). |
 | Better sound | — | Small SoundFont synthesizer instead of Android's basic MIDI player | To do | Only if the APK size allows. |
 
 ### 3.3 Library and score details

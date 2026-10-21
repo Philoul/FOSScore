@@ -54,7 +54,7 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 | Zoom | Bitmap zoom | **Music size** (re-layout, the music reflows) + the same bitmap zoom | Done on a branch ("Note size" in the display options, saved per score) | In the display menu next to the modes. MusicXML zoom is a setting saved per configuration. |
 | Rotation | Same page, new fit | Re-layout for the new shape | Today (PDF) · Spike | |
 | Parts shown | — | Choose the parts to display; default = staves the author left visible | Spike | MuseScore exports the whole arrangement. |
-| Lyrics placement | — | As in file / above / below the staff / under the system | Spike | Done in the MEI, without patching Verovio (section 7 of the study). |
+| Lyrics placement | — | As in the file / above the sung notes / below the sung notes / below all the staves; the lyrics of hidden voices can stay | PR #32 | Done in the MEI and the MusicXML, without patching Verovio (section 7 of the study). Below all the staves, each voice of a choir keeps its own line. |
 | Transposition | — | ♭ / ♯ by semitone, later by target key | Spike | |
 | Dark / negative / dim | Yes | Same | Today (PDF) | MusicXML can also draw in colours directly (later). |
 | Annotations | Yes | Anchored to measures or notes | Today (PDF) · To do (MusicXML, milestone M5) | Positions on a reflowed page have no stable meaning. |
@@ -63,11 +63,11 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 
 | Feature | PDF | MusicXML | Status | Notes |
 |---|---|---|---|---|
-| Play the score | Only if the user attaches a **MIDI file** to the score | Generated from the score | Spike (MusicXML) · To do (PDF) | Same playback bar for both. |
-| Cursor on the notes being played | — (no note positions in a PDF) | Yes | Spike | |
-| Automatic page turn while playing | Possible later with **page timings** (the user marks when each page starts) | Yes, synchronised with the music | Spike (MusicXML) · To do (PDF) | |
-| Tempo | Shown as ♩ = N; the user sets the written tempo in the sheet details | Read from the file; ♩ = N, adjustable, reset | Spike | Tempo is shown in beats per minute, never as a percentage. |
-| Parts heard, separately from parts shown | — | Mute / unmute each part | Spike | Lets a musician play their part with the others as accompaniment. |
+| Play the score | Only if the user attaches a **MIDI file** to the score | Generated from the score | PR #32 (MusicXML) · To do (PDF) | Same playback bar for both. |
+| Cursor on the notes being played | — (no note positions in a PDF) | Yes | PR #32 | |
+| Automatic page turn while playing | Possible later with **page timings** (the user marks when each page starts) | Yes, synchronised with the music | PR #32 (MusicXML) · To do (PDF) | |
+| Tempo | Shown as ♩ = N; the user sets the written tempo in the sheet details | Read from the file; ♩ = N, adjustable, reset | PR #32 | Tempo is shown in beats per minute, never as a percentage. |
+| Parts heard, separately from parts shown | — | Mute / unmute each part | PR #32 | Lets a musician play their part with the others as accompaniment. |
 | Instrument per part | — | General MIDI instrument per part | Spike | |
 | **Metronome**, audible and / or visual | Uses the tempo and time signature from the sheet details | Follows the score: tempo and time signature changes from Verovio's timemap | To do | Count-in before playing; visual beat (flash or bar) usable in silence on stage. |
 | Better sound | — | Small SoundFont synthesizer instead of Android's basic MIDI player | To do | Only if the APK size allows. |
@@ -132,7 +132,8 @@ several scores at once:
 
 ### 3.7 Viewer menu
 
-Agreed with a clickable mockup (2026-10-19/20); to be turned into issues:
+Agreed with a clickable mockup (2026-10-19/20), proposed upstream in issue #31; the menu and the
+playback band are done in PR #32:
 - **One menu button** at the top left of the viewer instead of the three pills, opening a vertical
   list: Library, Display | Metronome, Playback (greyed out without MIDI or MusicXML), Links and
   repeats | Annotate, Pages | Print / export PDF, Share.
@@ -147,11 +148,14 @@ Agreed with a clickable mockup (2026-10-19/20); to be turned into issues:
 - **One tempo** (♩ = N), shared by playback and the metronome. Metronome: tick sound and/or a
   coloured flash on the page border (another colour on the first beat).
 - **The playback band** sits in the bottom bar, **above the page dots**, when the score has MIDI or
-  MusicXML: back to the start (or to A), play / pause, **one loop button** (the usual "repeat"
-  icon) and the tempo, which opens the playback options. The loop button cycles as in common
-  players: the first tap marks A where the music is, the second marks B and loops between them,
-  the third turns the loop off (decided 2026-10-20, done on `feature/musicxml-playback`).
+  MusicXML: back to the start (or to A while looping), play / pause, a **loop** button (the usual
+  "repeat" icon), **A** and **B** buttons and the tempo, which opens the playback options. As in
+  forScore: A and B mark the start and end of the section where the music is (a second tap clears
+  the marker; without them the whole piece loops), the loop button turns looping on and off and
+  the markers stay. Changes while playing (tempo, parts heard) go on without a break in the sound.
   Still to try: the current bar number, and start / end jump buttons if the tests ask for them.
+- **Tempo** in the playback options: − / + by 1, repeating while held, and a tap on the value to
+  type it.
 - **Playback options panel**: configuration (named, see 3.4), source, tempo, transposition, follow
   options, then the **parts list last, in its own scroll box** (it can be long): show (eye) and
   hear (speaker) each part separately, volume.

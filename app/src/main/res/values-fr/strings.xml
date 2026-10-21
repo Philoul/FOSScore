@@ -78,10 +78,13 @@
     <string name="note_size_larger">Notes plus grandes</string>
     <string name="menu_label">Menu</string>
     <string name="annotate_done">Terminé</string>
+    <string name="menu_setlist">Set list</string>
+    <string name="menu_bookmarks">Signets</string>
     <string name="menu_display">Affichage</string>
     <string name="menu_layout">Mise en page</string>
     <string name="menu_metronome">Métronome</string>
     <string name="menu_tuner">Accordeur</string>
+    <string name="menu_piano">Piano</string>
     <string name="menu_playback">Lecture</string>
     <string name="menu_links">Liens et reprises</string>
     <string name="menu_annotate">Annoter</string>

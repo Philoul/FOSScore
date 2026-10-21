@@ -28,8 +28,8 @@ enum class ViewerSurface { NONE, MENU, DISPLAY, LAYOUT, PLAYBACK }
  * out · the app.
  */
 enum class ViewerMenuItem(val group: Int) {
-    LIBRARY(0), DISPLAY(0), LAYOUT(0),
-    METRONOME(1), TUNER(1), PLAYBACK(1),
+    LIBRARY(0), SETLIST(0), BOOKMARKS(0), DISPLAY(0), LAYOUT(0),
+    METRONOME(1), TUNER(1), PIANO(1), PLAYBACK(1),
     LINKS(2),
     ANNOTATE(3), PAGES(3),
     EXPORT(4), SHARE(4),

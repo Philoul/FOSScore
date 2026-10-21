@@ -115,6 +115,7 @@ class ViewerMenuViewModelTest {
         )
         assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false))
         assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.TUNER, isMusicXml = true))
+        assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.SETLIST, isMusicXml = false))
     }
 
     @Test

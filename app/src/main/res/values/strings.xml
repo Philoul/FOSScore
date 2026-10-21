@@ -81,10 +81,13 @@
     <string name="stamp_double_flat">Double flat</string>
     <string name="menu_label">Menu</string>
     <string name="annotate_done">Done</string>
+    <string name="menu_setlist">Setlist</string>
+    <string name="menu_bookmarks">Bookmarks</string>
     <string name="menu_display">Display</string>
     <string name="menu_layout">Score layout</string>
     <string name="menu_metronome">Metronome</string>
     <string name="menu_tuner">Tuner</string>
+    <string name="menu_piano">Piano</string>
     <string name="menu_playback">Playback</string>
     <string name="menu_links">Links and repeats</string>
     <string name="menu_annotate">Annotate</string>

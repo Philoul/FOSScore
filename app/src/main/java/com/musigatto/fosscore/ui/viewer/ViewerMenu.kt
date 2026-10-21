@@ -40,11 +40,15 @@ import com.musigatto.fosscore.musicxml.Part
 private val ViewerMenuItem.glyph: String
     get() = when (this) {
         ViewerMenuItem.LIBRARY -> "♪"
+        ViewerMenuItem.SETLIST -> "≡"
+        ViewerMenuItem.BOOKMARKS -> "⚑"
         ViewerMenuItem.DISPLAY -> "⊞"
         ViewerMenuItem.LAYOUT -> "♫"
         ViewerMenuItem.METRONOME -> "♩"
         // a tuning fork
         ViewerMenuItem.TUNER -> "Ψ"
+        // keys
+        ViewerMenuItem.PIANO -> "▥"
         ViewerMenuItem.PLAYBACK -> "▶"
         ViewerMenuItem.LINKS -> "↪"
         ViewerMenuItem.ANNOTATE -> "✎"
@@ -58,10 +62,13 @@ private val ViewerMenuItem.glyph: String
 private fun ViewerMenuItem.label(): String = stringResource(
     when (this) {
         ViewerMenuItem.LIBRARY -> R.string.library_title
+        ViewerMenuItem.SETLIST -> R.string.menu_setlist
+        ViewerMenuItem.BOOKMARKS -> R.string.menu_bookmarks
         ViewerMenuItem.DISPLAY -> R.string.menu_display
         ViewerMenuItem.LAYOUT -> R.string.menu_layout
         ViewerMenuItem.METRONOME -> R.string.menu_metronome
         ViewerMenuItem.TUNER -> R.string.menu_tuner
+        ViewerMenuItem.PIANO -> R.string.menu_piano
         ViewerMenuItem.PLAYBACK -> R.string.menu_playback
         ViewerMenuItem.LINKS -> R.string.menu_links
         ViewerMenuItem.ANNOTATE -> R.string.menu_annotate

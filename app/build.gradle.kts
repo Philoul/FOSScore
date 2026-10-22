@@ -70,6 +70,7 @@ dependencies {
     implementation(libs.mupdf.fitz)
     implementation(project(":musicxml"))
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)

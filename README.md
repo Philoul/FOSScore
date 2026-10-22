@@ -62,7 +62,7 @@ AGPL. In practice:
 | [MuPDF](https://mupdf.com) 1.28.5 (`com.artifex.mupdf:fitz`) | drawing PDF pages, and MusicXML pages from Verovio's SVG | AGPL-3.0 | <https://github.com/ArtifexSoftware/mupdf> |
 | [Verovio](https://www.verovio.org) 6.3.0 | laying out MusicXML scores | LGPL-3.0-or-later | <https://github.com/rism-digital/verovio>, release `version-6.3.0`, unmodified, downloaded by the build into `musicxml/third_party/` |
 | [Leipzig](https://github.com/rism-digital/leipzig) music font | music symbols drawn by Verovio | SIL Open Font License 1.1 | shipped with Verovio (its `fonts/` folder) |
-| [Bravura](https://github.com/steinbergmedia/bravura) music font (Daniel Spreadbury, Steinberg) | fallback for symbols missing from Leipzig | SIL Open Font License 1.1 | shipped with Verovio |
+| [Bravura](https://github.com/steinbergmedia/bravura) music font (Daniel Spreadbury, Steinberg) | stamps in the annotator (fingering, dynamics, articulations, accidentals), and fallback for symbols missing from Leipzig | SIL Open Font License 1.1 | `app/src/main/assets/fonts/bravura.otf`; Verovio's copy ships with Verovio |
 | [Liberation](https://github.com/liberationfonts/liberation-fonts) text font | text in the layout (titles, lyrics) | SIL Open Font License 1.1 | shipped with Verovio |
 
 Verovio is built as its own shared library (`libverovio.so`), which the JNI bridge

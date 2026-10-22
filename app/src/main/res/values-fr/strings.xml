@@ -60,6 +60,14 @@
     <string name="stamp_natural">Bécarre</string>
     <string name="stamp_double_sharp">Double dièse</string>
     <string name="stamp_double_flat">Double bémol</string>
+    <string name="stamp_ppp">Pianississimo (ppp)</string>
+    <string name="stamp_fff">Fortississimo (fff)</string>
+    <string name="stamp_sfz">Sforzando (sfz)</string>
+    <string name="stamp_trill">Trille</string>
+    <string name="stamp_mordent_up">Mordant supérieur</string>
+    <string name="stamp_mordent_down">Mordant inférieur</string>
+    <string name="stamp_acciaccatura">Acciaccatura</string>
+    <string name="stamp_appoggiatura">Appoggiature</string>
 
     <!-- Commandes de la visionneuse (options d’affichage) -->
     <string name="action_close">Fermer</string>
@@ -76,4 +84,32 @@
     <string name="note_size_label">Taille des notes</string>
     <string name="note_size_smaller">Notes plus petites</string>
     <string name="note_size_larger">Notes plus grandes</string>
+
+    <!-- Menu de la bibliothèque : exporter / importer -->
+    <string name="menu_open">Ouvrir le menu</string>
+    <string name="backup_export">Exporter la bibliothèque</string>
+    <string name="backup_import">Importer un export de la bibliothèque</string>
+    <plurals name="backup_exported">
+        <item quantity="one">Bibliothèque exportée : %1$d partition</item>
+        <item quantity="many">Bibliothèque exportée : %1$d partitions</item>
+        <item quantity="other">Bibliothèque exportée : %1$d partitions</item>
+    </plurals>
+    <string name="backup_failed">L\'opération a échoué. Votre bibliothèque n\'a pas changé.</string>
+    <string name="backup_import_title">Importer cette bibliothèque ?</string>
+    <string name="backup_import_replaces">L\'import remplace toute votre bibliothèque. La bibliothèque actuelle est conservée en sauvegarde sur cet appareil. FOSScore redémarre pour terminer.</string>
+    <string name="backup_import_confirm">Importer et redémarrer</string>
+    <string name="backup_cancel">Annuler</string>
+    <string name="backup_check_format_ok">Export de bibliothèque FOSScore</string>
+    <string name="backup_check_format_error">Ce fichier n\'est pas un export de bibliothèque FOSScore, ou il a été fait par une version plus récente de FOSScore.</string>
+    <string name="backup_check_db_ok">Bibliothèque version %1$d, la même que cette app</string>
+    <string name="backup_check_db_older">Bibliothèque version %1$d, plus ancienne que cette app (%2$d) : elle sera mise à jour après le redémarrage.</string>
+    <string name="backup_check_db_newer">Bibliothèque version %1$d, plus récente que cette app (%2$d) : mettez FOSScore à jour avant de l\'importer.</string>
+    <string name="backup_check_content_ok">Partitions : %1$d · tampons : %2$d · traits d\'encre : %3$d</string>
+    <string name="backup_check_content_error">La base de données de ce fichier est abîmée ou incomplète.</string>
+    <string name="backup_check_age_ok">Exportée le %1$s</string>
+    <string name="backup_check_age_old">Exportée le %1$s : cet export est ancien, les modifications récentes seraient perdues.</string>
+    <string name="backup_check_device_ok">Exportée depuis cet appareil</string>
+    <string name="backup_check_device_other">Exportée depuis un autre appareil (%1$s)</string>
+    <string name="backup_check_files_ok">Tous les PDF sont inclus</string>
+    <string name="backup_check_files_missing">%1$d fichiers PDF manquaient au moment de cet export.</string>
 </resources>

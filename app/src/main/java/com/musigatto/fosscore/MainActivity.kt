@@ -13,10 +13,12 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,14 +37,15 @@ import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.score.SheetFormat
+import com.musigatto.fosscore.ui.library.LibraryMenuDrawer
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
 import com.musigatto.fosscore.ui.viewer.Settings
 import com.musigatto.fosscore.ui.viewer.ThemeMode
-import kotlinx.coroutines.launch
 import java.io.File
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,6 +120,8 @@ private fun FOSScoreNav(
 ) {
     var nav by rememberSaveable(stateSaver = NavSaver) { mutableStateOf(NavState()) }
     var messageRes by remember { mutableStateOf<Int?>(null) }
+    // already formatted texts (counts), from the library export / import
+    var messageText by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -160,20 +165,30 @@ private fun FOSScoreNav(
         // ponytail: the library covers the whole screen. The sliding/tiled sidebar and its animation
         // are their own step — this layering is what they will need.
         if (s.libraryOpen || s.sheet == null) {
-            Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    LibraryScreen(
-                        repository = repository,
-                        onOpen = { nav = nav.copy(sheet = it, libraryOpen = false) },
-                        onEdit = { nav = nav.copy(detail = it) },
-                        onImport = { picker.launch(SheetFormat.PICKER_TYPES) },
-                        onClose = if (s.sheet != null) ({ nav = nav.copy(libraryOpen = false) }) else null
-                    )
-                    messageRes?.let { res ->
-                        val msg = stringResource(res)
-                        LaunchedEffect(msg) {
-                            snackbar.showSnackbar(msg)
-                            messageRes = null
+            val drawerState = rememberDrawerState(DrawerValue.Closed)
+            LibraryMenuDrawer(drawerState, onMessage = { messageText = it }) {
+                Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+                    Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                        LibraryScreen(
+                            repository = repository,
+                            onOpen = { nav = nav.copy(sheet = it, libraryOpen = false) },
+                            onEdit = { nav = nav.copy(detail = it) },
+                            onImport = { picker.launch(SheetFormat.PICKER_TYPES) },
+                            onClose = if (s.sheet != null) ({ nav = nav.copy(libraryOpen = false) }) else null,
+                            onOpenMenu = { scope.launch { drawerState.open() } }
+                        )
+                        messageRes?.let { res ->
+                            val msg = stringResource(res)
+                            LaunchedEffect(msg) {
+                                snackbar.showSnackbar(msg)
+                                messageRes = null
+                            }
+                        }
+                        messageText?.let { msg ->
+                            LaunchedEffect(msg) {
+                                snackbar.showSnackbar(msg)
+                                messageText = null
+                            }
                         }
                     }
                 }

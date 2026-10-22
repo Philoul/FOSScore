@@ -103,7 +103,7 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     private var loadedFor: Any? = null
     private var laidOut: LayoutSpec? = null
     // when notes start in the score shown, and which: the cursor and the page turns
-    private var onsets: List<Onset>? = null
+    private var onsets: Pair<List<Onset>, List<Double>>? = null
     private var onsetsFor: Any? = null
 
     // Set by [openLater].
@@ -226,7 +226,7 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         }
         val tempo = sound.tempo.coerceIn(VerovioOptions.MIN_TEMPO, VerovioOptions.MAX_TEMPO)
         return withContext(Dispatchers.Default) {
-            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes)
+            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes.first, notes.second)
         }
     }
 
@@ -282,7 +282,7 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         } else {
             prepared to false
         }
-        (if (made.second) mei else xml)?.let { runCatching { it.parentFile?.mkdirs(); it.writeText(made.first) } }
+        (if (made.second) mei else xml)?.let { keep(it, made.first.toByteArray()) }
         return made
     }
 
@@ -295,20 +295,32 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
             t.setOptions(VerovioOptions.unpaged(0).toString())
             load(t, synchronized(doc) { doc.prepare() })
             val midi = Base64.decode(t.renderMidi(), Base64.DEFAULT)
-            cache?.let { runCatching { it.parentFile?.mkdirs(); it.writeBytes(midi) } }
+            cache?.let { keep(it, midi) }
             return midi
         } finally {
             t.close()
         }
     }
 
-    // On the engine thread: the onsets of the score shown.
-    private fun onsets(): List<Onset> {
+    // On the engine thread: the onsets and the measures of the score shown.
+    private fun onsets(): Pair<List<Onset>, List<Double>> {
         onsets?.takeIf { onsetsFor == loadedFor }?.let { return it }
         if (laidOut == null) throw MusicXmlException("not laid out")
-        return Playback.onsetsOf(toolkit().renderTimemap()).also {
+        val timemap = toolkit().renderTimemap()
+        return (Playback.onsetsOf(timemap) to Playback.barsOf(timemap)).also {
             onsets = it
             onsetsFor = loadedFor
+        }
+    }
+
+    // kept in the cache, written aside first then renamed: a reader never gets half a file, even
+    // when two engines make the same file (an import being prepared while the score is opened)
+    private fun keep(file: File, bytes: ByteArray) {
+        runCatching {
+            file.parentFile?.mkdirs()
+            val part = File(file.path + ".${Thread.currentThread().id}.part")
+            part.writeBytes(bytes)
+            part.renameTo(file)
         }
     }
 

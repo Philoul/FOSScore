@@ -186,23 +186,44 @@ class MusicXmlPages private constructor(
          */
         suspend fun open(context: Context, file: File): MusicXmlPages {
             val engine = ScoreEngine(context)
-            val dir = File(context.cacheDir, "scores/${file.name}")
-            val summaryFile = File(dir, "summary.$CACHE_VERSION.json")
+            val dir = cacheOf(context, file)
+            val summaryFile = File(dir, SUMMARY)
             val summary = try {
                 val bytes = file.readBytes()
                 summaryFile.takeIf { it.isFile }?.let { ScoreSummary.fromJson(it.readText()) }
                     ?.also { engine.openLater(bytes, dir) }
-                    ?: engine.open(bytes, dir).also { s ->
-                        runCatching {
-                            dir.mkdirs()
-                            summaryFile.writeText(s.toJson())
-                        }
-                    }
+                    ?: engine.open(bytes, dir).also { keepSummary(dir, it) }
             } catch (e: Exception) {
                 engine.close()
                 throw e
             }
             return MusicXmlPages(engine, summary.parts, summary.info, dir)
+        }
+
+        /**
+         * Makes and keeps the summary and the music of the score in [file] (seconds on a slow
+         * tablet), so that its first opening is as quick as the next ones. For a new import.
+         */
+        suspend fun prepare(context: Context, file: File) {
+            val dir = cacheOf(context, file)
+            ScoreEngine(context).use { engine ->
+                keepSummary(dir, engine.open(file.readBytes(), dir))
+                engine.preparePlayback()
+            }
+        }
+
+        private const val SUMMARY = "summary.$CACHE_VERSION.json"
+
+        private fun cacheOf(context: Context, file: File) = File(context.cacheDir, "scores/${file.name}")
+
+        // written aside first, then renamed: an opening never reads half a file
+        private fun keepSummary(dir: File, summary: ScoreSummary) {
+            runCatching {
+                dir.mkdirs()
+                val part = File(dir, "$SUMMARY.part")
+                part.writeText(summary.toJson())
+                part.renameTo(File(dir, SUMMARY))
+            }
         }
     }
 }

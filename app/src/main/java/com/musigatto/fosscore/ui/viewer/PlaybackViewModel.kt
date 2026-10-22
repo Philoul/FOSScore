@@ -43,11 +43,14 @@ private const val SETTLE_MS = 200L
 // playback of a newly laid out score is made ready once its first pages are drawn
 private const val WARM_DELAY_MS = 1000L
 
-// a new tempo or new parts heard take over on a note at least this far ahead, started this much
-// early (a MIDI player takes a moment to sound), the old player being watched at this pace
+// a new tempo or new parts heard take over on a barline at least this far ahead, started this
+// much early (a MIDI player takes a moment to sound), the old player being watched at this pace
+// and then fading out in a few steps
 private const val SWITCH_LEAD_MS = 150L
 private const val START_LATENCY_MS = 40L
 private const val SWITCH_POLL_MS = 5L
+private const val FADE_MS = 40L
+private const val FADE_STEPS = 4
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
@@ -337,9 +340,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     }
 
     // A new tempo or new parts heard need a new MIDI, rewritten in milliseconds. Once the taps
-    // settle, a new player is prepared while the music goes on, then takes over on the next notes:
-    // the note sounding is not played again, and the music goes on at the new tempo from there.
-    // Stopped or paused, the new player simply waits where the old one was.
+    // settle, a new player is prepared while the music goes on, then takes over at the next
+    // barline (the next notes when no barline is left), as a musician would: nothing is played
+    // twice and nothing is cut in the middle of a bar. Stopped or paused, the new player simply
+    // waits where the old one was.
     private fun soundChanged() {
         settling?.cancel()
         if (player == null) return
@@ -355,16 +359,23 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 if (old == null || oldPb == null) return@launch
                 var at = oldPb.quartersAt(old.currentPosition.toLong())
                 if (old.isPlaying) {
-                    // the next onset far enough ahead to seek and start in time
+                    // the next barline far enough ahead to seek and start in time
                     val ahead = oldPb.quartersAt(old.currentPosition.toLong() + SWITCH_LEAD_MS)
-                    oldPb.onsets.getOrNull(oldPb.onsetIndexAt(ahead) + 1)?.let { at = it.quarters }
+                    at = oldPb.bars.firstOrNull { it >= ahead }
+                        ?: oldPb.onsets.getOrNull(oldPb.onsetIndexAt(ahead) + 1)?.quarters
+                        ?: ahead
                     ready.seekTo(pb.msExact(at).toInt())
                     val due = oldPb.msExact(at) - START_LATENCY_MS
                     while (old.isPlaying && old.currentPosition < due) delay(SWITCH_POLL_MS)
                 }
                 if (old.isPlaying) {
                     ready.start()
-                    old.setVolume(0f, 0f)
+                    // the old player fades out in a few steps: cut at once, a held note clicks
+                    for (step in FADE_STEPS - 1 downTo 0) {
+                        val v = step.toFloat() / FADE_STEPS
+                        old.setVolume(v, v)
+                        delay(FADE_MS / FADE_STEPS)
+                    }
                 } else {
                     at = oldPb.quartersAt(old.currentPosition.toLong())
                     ready.seekTo(pb.msExact(at).toInt())

@@ -20,20 +20,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
@@ -90,7 +91,6 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -129,7 +129,6 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import android.graphics.Rect as AndroidRect
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 
 // The render (memory) cap now lives in MuPdfDoc.MAX_RENDER_PIXELS: MuPDF draws at whatever
@@ -838,6 +837,11 @@ fun PdfViewerScreen(
                                 )
                             }
                             val downF = fitPoint(down.position)
+                            // the matte around the page sheet: a touch there is not a place to
+                            // write, so on release the tools stand down instead of stamping or
+                            // drawing at the page edge (see the tap branch below)
+                            val onMatte = downF.x < 0f || downF.x > currentHitFit.width ||
+                                downF.y < 0f || downF.y > currentHitFit.height
                             // anchor base: a single page scales its content (centred in
                             // pageFit.left/top); the reading modes scale the whole viewport (origin 0)
                             val anchorBase = if (currentSpread) Offset.Zero else currentBase
@@ -951,7 +955,23 @@ fun PdfViewerScreen(
                                     // local copy: a delegated var captured by this lambda gets no smart
                                     // cast, so the null check needs a stable local
                                     val rz = resizing
-                                    if (rz != null) {
+                                    // a touch on the matte around the page has nowhere to write: the
+                                    // tool stands down and the selection goes, the same state three
+                                    // taps on the tool pill leave behind. A drag or a pinch there is
+                                    // a pan of the page, not a tap, and leaves the tools alone.
+                                    val matteTap = onMatte && !isTransform &&
+                                        totalPan.getDistance() <= touchSlopPx
+                                    if (matteTap && currentEditing && currentCanEdit) {
+                                        inkPreview = emptyList()
+                                        activeSymbol = null
+                                        drawingTool = false
+                                        eraserTool = false
+                                        openPanel = null
+                                        selectedId = null
+                                        selectedStrokeIds = emptySet()
+                                        dragStamp = null
+                                        dragStrokes = null
+                                    } else if (rz != null) {
                                         resizing = null
                                         val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
                                         val changed = pts != rz.ptsPx
@@ -978,7 +998,7 @@ fun PdfViewerScreen(
                                         // threshold is a screen distance, so it scales with the zoom
                                         val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / scale)
                                         inkPreview = emptyList()
-                                        if (pts.size >= 2 && sheetHash != null && currentPageFit.width > 0f) {
+                                        if (pts.size >= 2 && !onMatte && sheetHash != null && currentPageFit.width > 0f) {
                                             pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                             val s = Stroke(
                                                 sheetHash = sheetHash,
@@ -1089,8 +1109,7 @@ fun PdfViewerScreen(
                                                 selectedStrokeIds = emptySet()
                                                 dragStamp = null
                                                 dragStrokes = null
-                                            }
-                                            if (sym != null && sheetHash != null &&
+                                            } else if (sheetHash != null &&
                                                 (aimed || totalPan.getDistance() <= touchSlopPx)
                                             ) {
                                                 // a drag is a pan and must not drop a stamp; the loupe is

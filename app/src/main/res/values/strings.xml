@@ -28,6 +28,7 @@
     <string name="note_size_label">Note size</string>
     <string name="note_size_smaller">Smaller notes</string>
     <string name="note_size_larger">Larger notes</string>
+    <string name="note_size_range">From %1$d %% to %2$d %%</string>
     <string name="half_page_label">Half-page turn</string>
     <string name="one_page_label">One page</string>
     <string name="two_pages_label">Two pages</string>

@@ -84,6 +84,7 @@
     <string name="note_size_label">Taille des notes</string>
     <string name="note_size_smaller">Notes plus petites</string>
     <string name="note_size_larger">Notes plus grandes</string>
+    <string name="note_size_range">De %1$d %% à %2$d %%</string>
     <string name="menu_label">Menu</string>
     <string name="annotate_done">Terminé</string>
     <string name="menu_setlist">Set list</string>

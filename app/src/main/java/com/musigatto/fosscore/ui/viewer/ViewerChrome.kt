@@ -3,7 +3,10 @@ package com.musigatto.fosscore.ui.viewer
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,33 +19,62 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+// a held − / + waits this long, then repeats at this pace
+private const val REPEAT_DELAY_MS = 400L
+private const val REPEAT_EVERY_MS = 70L
+// a typed number: its prefix or suffix ("♩ =", "%") and up to three digits
+private val NUMBER_FIELD_WIDTH = 112.dp
 
 /**
  * Title bar of the viewer, drawn over the page: the menu button on the left, the score and page in
@@ -287,6 +319,124 @@ internal fun StepperRow(
         TextButton(onClick = onMore, enabled = canMore, modifier = Modifier.semantics { contentDescription = moreLabel }) {
             Text("+", style = MaterialTheme.typography.titleLarge)
         }
+    }
+}
+
+/**
+ * − [value] +, as AndroidAPS's NumberInputRow: the value is typed in place (kept with Done or when
+ * the field loses focus, and brought into [range], shown under the field while typing), and − / +
+ * move it to the next multiple of [step] on each press, at once (not on release), repeating while
+ * held after a short wait.
+ */
+@Composable
+internal fun NumberFieldRow(
+    label: String,
+    value: Int,
+    range: IntRange,
+    step: Int,
+    lessLabel: String,
+    moreLabel: String,
+    rangeText: String,
+    onValue: (Int) -> Unit,
+    prefix: String? = null,
+    suffix: String? = null,
+) {
+    // the held button reads the value it changes, not the one it saw when the press began
+    val current by rememberUpdatedState(value)
+    val focus = LocalFocusManager.current
+    var text by remember { mutableStateOf(TextFieldValue(value.toString())) }
+    var focused by remember { mutableStateOf(false) }
+    val typed = text.text.toIntOrNull()
+    val wrong = typed == null || typed !in range
+    // − / + and other controls change the value from outside the field
+    LaunchedEffect(value) { if (typed != value) text = TextFieldValue(value.toString()) }
+    fun keep() {
+        val kept = (typed ?: current).coerceIn(range)
+        text = TextFieldValue(kept.toString())
+        if (kept != current) onValue(kept)
+    }
+    // the panel may close while the field still has the focus
+    val keepLatest by rememberUpdatedState(::keep)
+    val focusedLatest by rememberUpdatedState(focused)
+    DisposableEffect(Unit) { onDispose { if (focusedLatest) keepLatest() } }
+    fun stepBy(direction: Int) {
+        focus.clearFocus()
+        onValue(stepped(current, step, direction).coerceIn(range))
+    }
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        RepeatButton("−", lessLabel, enabled = value > range.first) { stepBy(-1) }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { new -> text = new.copy(text = new.text.filter(Char::isDigit).take(4)) },
+            prefix = prefix?.let { { Text(it) } },
+            suffix = suffix?.let { { Text(it) } },
+            singleLine = true,
+            isError = wrong,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+            modifier = Modifier
+                .width(NUMBER_FIELD_WIDTH)
+                .onFocusChanged { state ->
+                    // leaving the field keeps what was typed; entering it selects the value, to type over it
+                    if (focused && !state.isFocused) keep()
+                    if (!focused && state.isFocused) text = text.copy(selection = TextRange(0, text.text.length))
+                    focused = state.isFocused
+                },
+        )
+        RepeatButton("+", moreLabel, enabled = value < range.last) { stepBy(1) }
+    }
+    if (focused) {
+        Text(
+            rangeText,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (wrong) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
+/** The next multiple of [step] above [value] (direction 1) or below it (-1): 87 › 90 or 85 by 5. */
+internal fun stepped(value: Int, step: Int, direction: Int): Int =
+    if (direction > 0) Math.floorDiv(value, step) * step + step
+    else Math.floorDiv(value + step - 1, step) * step - step
+
+/** A button that acts on press, then again and again while held. */
+@Composable
+internal fun RepeatButton(text: String, label: String, enabled: Boolean, onStep: () -> Unit) {
+    val step by rememberUpdatedState(onStep)
+    val scope = rememberCoroutineScope()
+    val color = if (enabled) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+                if (enabled) onClick { step(); true }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    awaitFirstDown()
+                    step()
+                    val repeating = scope.launch {
+                        delay(REPEAT_DELAY_MS)
+                        while (true) {
+                            step()
+                            delay(REPEAT_EVERY_MS)
+                        }
+                    }
+                    waitForUpOrCancellation()
+                    repeating.cancel()
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleLarge, color = color)
     }
 }
 

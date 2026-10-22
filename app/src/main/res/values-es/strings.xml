@@ -28,6 +28,7 @@
     <string name="note_size_label">Tamaño de las notas</string>
     <string name="note_size_smaller">Notas más pequeñas</string>
     <string name="note_size_larger">Notas más grandes</string>
+    <string name="note_size_range">De %1$d %% a %2$d %%</string>
     <string name="half_page_label">Pasar media página</string>
     <string name="one_page_label">Una página</string>
     <string name="two_pages_label">Dos páginas</string>

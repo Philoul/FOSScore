@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.update
 // MusicXML note size, in percent of the size chosen for the screen: 10 % steps, half to double
 const val MIN_MUSIC_SIZE = 50
 const val MAX_MUSIC_SIZE = 200
-const val MUSIC_SIZE_STEP = 10
+const val MUSIC_SIZE_STEP = 5
 
 // the musicxml module transposes up to an octave either way
 const val MAX_TRANSPOSE = 12

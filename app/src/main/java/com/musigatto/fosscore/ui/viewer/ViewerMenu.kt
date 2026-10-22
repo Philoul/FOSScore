@@ -187,15 +187,16 @@ fun ScoreLayoutOverlay(
 ) {
     PanelOverlay(stringResource(R.string.menu_layout), onDismiss, modifier) {
         SectionLabel(stringResource(R.string.engraving_section_label))
-        StepperRow(
+        NumberFieldRow(
             label = stringResource(R.string.note_size_label),
-            value = "${layout.musicSize}%",
+            value = layout.musicSize,
+            range = MIN_MUSIC_SIZE..MAX_MUSIC_SIZE,
+            step = MUSIC_SIZE_STEP,
             lessLabel = stringResource(R.string.note_size_smaller),
             moreLabel = stringResource(R.string.note_size_larger),
-            canLess = layout.musicSize > MIN_MUSIC_SIZE,
-            canMore = layout.musicSize < MAX_MUSIC_SIZE,
-            onLess = { onMusicSize(layout.musicSize - MUSIC_SIZE_STEP) },
-            onMore = { onMusicSize(layout.musicSize + MUSIC_SIZE_STEP) },
+            rangeText = stringResource(R.string.note_size_range, MIN_MUSIC_SIZE, MAX_MUSIC_SIZE),
+            onValue = onMusicSize,
+            suffix = "%",
         )
 
         SectionLabel(stringResource(R.string.transposition_section_label))

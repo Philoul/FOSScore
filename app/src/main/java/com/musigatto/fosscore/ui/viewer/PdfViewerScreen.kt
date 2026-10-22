@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -99,7 +100,6 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -129,6 +129,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import android.graphics.Rect as AndroidRect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 
 // The render (memory) cap now lives in MuPdfDoc.MAX_RENDER_PIXELS: MuPDF draws at whatever
@@ -169,6 +170,34 @@ private data class Resizing(
 
 // options panel hanging from the annotation bar (spec §5): tapping the selected tool again opens it
 private enum class ToolPanel { Stamps, Pen, Eraser, Color }
+
+// A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
+// redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
+private class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float)
+
+private fun inkPath(pts: List<Offset>): Path {
+    val path = Path()
+    if (pts.size < 2) return path
+    path.moveTo(pts[0].x, pts[0].y)
+    for (i in 1 until pts.size) path.lineTo(pts[i].x, pts[i].y)
+    return path
+}
+
+private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Float) {
+    if (pts.size < 2) return
+    drawPath(
+        inkPath(pts),
+        color = color,
+        style = DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+}
+
+// ink and stamps default to black (not the theme's bluish primary); with "Neg" they are inverted
+// like the page, or black ink would disappear on the now-black background
+private fun inkTint(color: Int?, invert: Boolean): Color {
+    val c = stampColor(color, Color.Black)
+    return if (invert) c.inverted() else c
+}
 
 // inverts page colors (white bg -> black, ink -> white) for OLED dark mode; applied as a
 // draw-time colorFilter so the render cache is untouched.
@@ -360,6 +389,17 @@ fun PdfViewerScreen(
     // (pendingInk). Drawing, hit-testing and grouping must all see the same set, or a letter
     // written a second ago is not selectable and the word's box comes out short.
     val inkStrokes = (pendingInk + pageStrokes).distinctBy { it.id }
+    // the same ink, ready to draw: decode + Path once per change, not once per frame
+    val inkDraws = remember(inkStrokes, hitFit, invert) {
+        inkStrokes.map { st ->
+            InkDraw(
+                id = st.id,
+                path = inkPath(strokePointsPx(st, hitFit)),
+                color = inkTint(st.color, invert),
+                width = st.width * hitFit.height
+            )
+        }
+    }
     val currentEditing by rememberUpdatedState(editing)
     val currentCanEdit by rememberUpdatedState(canEdit)
     val currentActiveSymbol by rememberUpdatedState(activeSymbol)
@@ -1358,10 +1398,9 @@ fun PdfViewerScreen(
                             // The overlay (ink/stamps/selection) is drawn in fit coordinates and the
                             // zoom is applied inside the drawing with translate+scale: vector, redrawn
                             // every frame, sharp at any zoom.
+                            // scale/offset are read ONLY in draw/measure lambdas below: reading them
+                            // here recomposed the whole screen on every pinch or pan frame.
                             val density = LocalDensity.current
-                            val k = scale
-                            val posX = pageFit.left + offsetX
-                            val posY = pageFit.top + offsetY
                             // clipToBounds: without it the zoomed page (a 3000x3922 box) is drawn
                             // outside the viewport and COVERS the app bars (seen on the test device:
                             // zooming in made the mode bar and the page bar disappear).
@@ -1377,6 +1416,8 @@ fun PdfViewerScreen(
                                     val margin = LOUPE_MARGIN_DP.dp.toPx()
                                     val radius = LOUPE_RADIUS_DP.dp.toPx()
                                     val center = loupeCenter(at, radius, margin, size)
+                                    // the footprint the stamp will take (screen px * zoom)
+                                    val k = scale
                                     clipPath(Path().apply { addOval(Rect(center = center, radius = radius)) }) {
                                         withTransform({
                                             translate(center.x, center.y)
@@ -1384,7 +1425,6 @@ fun PdfViewerScreen(
                                             translate(-at.x, -at.y)
                                         }) {
                                             this@drawWithContent.drawContent()
-                                            // the footprint the stamp will take (screen px * zoom)
                                             drawRect(
                                                 color = Color(0xFF00A0FF),
                                                 topLeft = Offset(at.x - placePx * k / 2f, at.y - placePx * k / 2f),
@@ -1409,92 +1449,77 @@ fun PdfViewerScreen(
                                 }
                                 .then(gestureMod)) {
                                     Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = stringResource(
-                                        R.string.desc_page, currentPage + 1, pageCount
-                                    ),
-                                    contentScale = ContentScale.FillBounds,
-                                    colorFilter = if (invert) INVERT_FILTER else null,
-                                    modifier = Modifier
-                                        // ponytail: a Placeable clamps the reported size to the
-                                        // constraints and centres overflowing content (apparent vs real
-                                        // offset: see PROBE img). We report the parent size (the
-                                        // viewport, bounded by construction: both Box are fillMaxSize)
-                                        // and the real content (fit*k) is placed at (0,0): the corner
-                                        // ends up at posX/posY as the model says, and clipToBounds trims.
-                                        .layout { m, c ->
-                                            val p = m.measure(
-                                                Constraints.fixed(
-                                                    (pageFit.width * k).roundToInt(),
-                                                    (pageFit.height * k).roundToInt()
-                                                )
+                                        bitmap = bmp.asImageBitmap(),
+                                        contentDescription = stringResource(
+                                            R.string.desc_page, currentPage + 1, pageCount
+                                        ),
+                                        contentScale = ContentScale.FillBounds,
+                                        colorFilter = if (invert) INVERT_FILTER else null,
+                                        // The page is laid out at fit size and the zoom goes through
+                                        // graphicsLayer (a DRAW transform): reading scale/offset inside
+                                        // that lambda keeps a pinch from recomposing or re-measuring
+                                        // anything. At rest scale == the render step, so the factor is
+                                        // exactly 1 and the bitmap stays 1:1 (no resampling). POSITION
+                                        // has to be a draw transform, not Modifier.offset (LAYOUT): with
+                                        // offset the page slid out from under the ink and the stamps.
+                                        modifier = Modifier
+                                            .size(
+                                                with(density) { pageFit.width.toDp() },
+                                                with(density) { pageFit.height.toDp() }
                                             )
-                                            layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
-                                        }
-                                        // The POSITION goes through graphicsLayer (a DRAW transform),
-                                        // not Modifier.offset (which goes through LAYOUT). With offset the
-                                        // page landed somewhere other than what the model says: the
-                                        // content slipped out from under the fingers while the ink and
-                                        // the stamps (Canvas + withTransform, a draw transform) stayed
-                                        // where they should and looked like they slid off the music.
-                                        .graphicsLayer {
-                                            translationX = posX
-                                            translationY = posY
-                                        }
-                                )
+                                            .graphicsLayer {
+                                                transformOrigin = TransformOrigin(0f, 0f)
+                                                scaleX = scale
+                                                scaleY = scale
+                                                translationX = pageFit.left + offsetX
+                                                translationY = pageFit.top + offsetY
+                                            }
+                                    )
                                 // the overlay belongs to currentPage: while lastShown is still the
                                 // previous page's paper, its ink would land on the wrong music
                                 if (canEdit && bitmaps[currentPage] != null) {
-                                    // ink/stamps default to black (not the theme's bluish primary). With
-                                    // "Neg" they are inverted like the page: otherwise black ink
-                                    // disappears on the now-black background.
-                                    val themeColor = Color.Black
-                                    fun inkColor(c: Color) = if (invert) c.inverted() else c
+                                    // committed ink: paths already built (inkDraws), so this canvas
+                                    // only re-issues them when something redraws the page
                                     Canvas(modifier = Modifier.fillMaxSize()) {
                                         withTransform({
-                                            translate(posX, posY)
-                                            scale(k, k, pivot = Offset.Zero)
+                                            translate(pageFit.left + offsetX, pageFit.top + offsetY)
+                                            scale(scale, scale, pivot = Offset.Zero)
                                         }) {
-                                            fun drawStrokePath(pts: List<Offset>, color: Color, widthPx: Float) {
-                                                if (pts.size < 2) return
-                                                val path = Path()
-                                                path.moveTo(pts[0].x, pts[0].y)
-                                                for (i in 1 until pts.size) path.lineTo(pts[i].x, pts[i].y)
+                                            for (d in inkDraws) {
+                                                // the ink being moved/stretched is drawn only at its
+                                                // live position (otherwise two copies = a ghost)
+                                                if (dragStrokes?.any { it.id == d.id } == true) continue
                                                 drawPath(
-                                                    path,
-                                                    color = color,
+                                                    d.path,
+                                                    d.color,
                                                     style = DrawStroke(
-                                                        width = max(1f, widthPx),
+                                                        width = max(1f, d.width),
                                                         cap = StrokeCap.Round,
                                                         join = StrokeJoin.Round
                                                     )
                                                 )
                                             }
-                                            // pendingInk goes first: if the flow still brings the older
-                                            // version, the one being written wins
-                                            for ((id, _, _, points, width, color) in inkStrokes) {
-                                                // the ink being moved/stretched is drawn only at its live
-                                                // position (otherwise two copies = a ghost)
-                                                if (dragStrokes?.any { it.id == id } == true) continue
-                                                drawStrokePath(
-                                                    decodePoints(points).map { normalizedToPx(it, hitFit) },
-                                                    inkColor(stampColor(color, themeColor)),
-                                                    width * hitFit.height
-                                                )
-                                            }
-                                            // selected ink being moved/stretched live
+                                        }
+                                    }
+                                    // live ink (the stroke being written, the eraser trail, the word
+                                    // being moved) in its own canvas: a pen point only redraws this one
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        withTransform({
+                                            translate(pageFit.left + offsetX, pageFit.top + offsetY)
+                                            scale(scale, scale, pivot = Offset.Zero)
+                                        }) {
                                             dragStrokes?.forEach { ds ->
-                                                drawStrokePath(
+                                                drawInkPath(
                                                     strokePointsPx(ds, hitFit),
-                                                    inkColor(stampColor(ds.color, themeColor)),
+                                                    inkTint(ds.color, invert),
                                                     ds.width * hitFit.height
                                                 )
                                             }
                                             if (inkPreview.size >= 2) {
-                                                drawStrokePath(
+                                                drawInkPath(
                                                     inkPreview,
                                                     if (eraserTool) Color.Red.copy(alpha = 0.4f)
-                                                    else inkColor(stampColor(activeColor, themeColor)),
+                                                    else inkTint(activeColor, invert),
                                                     if (eraserTool) eraserPx * 2f
                                                     else penWidthPx
                                                 )
@@ -1514,10 +1539,10 @@ fun PdfViewerScreen(
                                                 // required: the default origin is the CENTRE and the
                                                 // scale would apply from there, moving everything
                                                 transformOrigin = TransformOrigin(0f, 0f)
-                                                translationX = posX
-                                                translationY = posY
-                                                scaleX = k
-                                                scaleY = k
+                                                translationX = pageFit.left + offsetX
+                                                translationY = pageFit.top + offsetY
+                                                scaleX = scale
+                                                scaleY = scale
                                                 // no compositingStrategy: that way the scale is a canvas
                                                 // transform and the glyphs are redrawn sharp. With Offscreen
                                                 // it rasterizes to a bitmap and scales that (blurry)
@@ -1533,7 +1558,7 @@ fun PdfViewerScreen(
                                                 // in fit units: the layer applies the scale, not the
                                                 // stamp size (otherwise it is applied twice)
                                                 sizePx = r.width,
-                                                color = inkColor(stampColor(shown.color, themeColor)),
+                                                color = inkTint(shown.color, invert),
                                                 modifier = Modifier
                                                     .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                                                     .requiredSize(
@@ -1552,8 +1577,8 @@ fun PdfViewerScreen(
                                         val frame = Color(0xFF00A0FF)
                                         Canvas(modifier = Modifier.fillMaxSize()) {
                                             withTransform({
-                                                translate(posX, posY)
-                                                scale(k, k, pivot = Offset.Zero)
+                                                translate(pageFit.left + offsetX, pageFit.top + offsetY)
+                                                scale(scale, scale, pivot = Offset.Zero)
                                             }) {
                                                 drawRect(
                                                     color = frame,

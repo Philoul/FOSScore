@@ -111,11 +111,17 @@ class MusicXmlPages private constructor(
     }
 
     companion object {
-        /** Reads the score in [file]. Nothing is laid out yet: call [layout] once the viewport is known. */
+        // bumped when the module makes the music differently, so the old cache is not used
+        private const val MUSIC_VERSION = 1
+
+        /**
+         * Reads the score in [file]. Nothing is laid out yet: call [layout] once the viewport is
+         * known. Its music is kept in the app's cache, made again if the cache is cleared.
+         */
         suspend fun open(context: Context, file: File): MusicXmlPages {
             val engine = ScoreEngine(context)
             val summary = try {
-                engine.open(file.readBytes())
+                engine.open(file.readBytes(), File(context.cacheDir, "music/${file.name}.$MUSIC_VERSION.mid"))
             } catch (e: Exception) {
                 engine.close()
                 throw e

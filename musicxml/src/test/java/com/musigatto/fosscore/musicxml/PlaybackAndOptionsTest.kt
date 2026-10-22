@@ -104,11 +104,21 @@ class PlaybackAndOptionsTest {
     }
 
     @Test
-    fun aFasterTempoBringsTheAudioTimesCloser() {
-        val timemap = """[{"tstamp":0,"qstamp":0,"on":["n1"]},{"tstamp":1000,"qstamp":2,"on":["n2"]}]"""
-        val pb = Playback.from(midi(), timemap, timemap).with(2.0, emptySet())
-        assertEquals(500L, pb.msAt(2.0))
-        assertEquals(2.0, pb.quartersAt(500), 1e-9)
+    fun theTimingComesFromTheMidiAndFollowsItsTempo() {
+        // 240 ticks at 480 per quarter, ♩ = 120: half a quarter, 250 ms; twice as fast, 125 ms
+        val (ms, quarters) = MidiEdit.timing(midi())
+        assertEquals(listOf(0L, 250L), ms.toList())
+        assertEquals(listOf(0.0, 0.5), quarters.toList())
+        val faster = Playback.of(MidiEdit.edit(midi(), 2.0), emptyList())
+        assertEquals(0.5, faster.quartersAt(125), 1e-9)
+    }
+
+    @Test
+    fun aTranspositionMovesTheNotes() {
+        val out = MidiEdit.edit(midi(), 1.0, semitones = 2)
+        assertEquals(62, out[43].toInt())
+        assertEquals(64, out[47].toInt())
+        assertEquals(50, out[out.size - 6].toInt())
     }
 
     @Test

@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +24,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,18 +34,24 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.PageGeometry
@@ -65,6 +72,8 @@ private val BAND_BUTTON = 44.dp
 // a held − / + waits this long, then repeats at this pace
 private const val REPEAT_DELAY_MS = 400L
 private const val REPEAT_EVERY_MS = 70L
+// the typed tempo: "♩ =" and three digits
+private val TEMPO_FIELD_WIDTH = 112.dp
 
 // the cursor: a light band over the notes being played and a dot on each notehead
 private val CURSOR_BAND = Color(0x3300A0FF)
@@ -194,31 +203,67 @@ fun PlaybackOptionsOverlay(
 }
 
 /**
- * − ♩ = N +: one beat per minute on each press, at once (not on release), repeating while held
- * after a short wait. A tap on the value types it in.
+ * − [♩ = N] +: the tempo is typed in place (kept with Done or when the field loses focus, and
+ * brought into the range), and − / + change it by one beat per minute on each press, at once (not
+ * on release), repeating while held after a short wait. As AndroidAPS's NumberInputRow.
  */
 @Composable
 private fun TempoRow(bpm: Int, minBpm: Int, maxBpm: Int, onTempo: (Int) -> Unit) {
     // the held button reads the tempo it changes, not the one it saw when the press began
     val current by rememberUpdatedState(bpm)
-    var typing by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    var text by remember { mutableStateOf(TextFieldValue(bpm.toString())) }
+    var focused by remember { mutableStateOf(false) }
+    val typed = text.text.toIntOrNull()
+    val wrong = typed == null || typed !in minBpm..maxBpm
+    // − / + and "As written" change the tempo from outside the field
+    LaunchedEffect(bpm) { if (typed != bpm) text = TextFieldValue(bpm.toString()) }
+    fun keep() {
+        val value = (typed ?: current).coerceIn(minBpm, maxBpm)
+        text = TextFieldValue(value.toString())
+        if (value != current) onTempo(value)
+    }
+    // the panel may close while the field still has the focus
+    val keepLatest by rememberUpdatedState(::keep)
+    val focusedLatest by rememberUpdatedState(focused)
+    DisposableEffect(Unit) { onDispose { if (focusedLatest) keepLatest() } }
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.tempo_label), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         RepeatButton("−", stringResource(R.string.tempo_slower), enabled = bpm > minBpm) {
+            focus.clearFocus()
             onTempo((current - 1).coerceAtLeast(minBpm))
         }
-        TextButton(onClick = { typing = true }) {
-            Text(stringResource(R.string.tempo_value, bpm), style = MaterialTheme.typography.bodyLarge)
-        }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { new -> text = new.copy(text = new.text.filter(Char::isDigit).take(3)) },
+            prefix = { Text("♩ =") },
+            singleLine = true,
+            isError = wrong,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+            modifier = Modifier
+                .width(TEMPO_FIELD_WIDTH)
+                .onFocusChanged { state ->
+                    // leaving the field keeps what was typed; entering it selects the value, to type over it
+                    if (focused && !state.isFocused) keep()
+                    if (!focused && state.isFocused) text = text.copy(selection = TextRange(0, text.text.length))
+                    focused = state.isFocused
+                },
+        )
         RepeatButton("+", stringResource(R.string.tempo_faster), enabled = bpm < maxBpm) {
+            focus.clearFocus()
             onTempo((current + 1).coerceAtMost(maxBpm))
         }
     }
-    if (typing) {
-        TempoDialog(bpm, minBpm, maxBpm, onDone = { typed ->
-            typing = false
-            if (typed != null) onTempo(typed)
-        })
+    if (focused) {
+        Text(
+            stringResource(R.string.tempo_range, minBpm, maxBpm),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (wrong) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.End,
+        )
     }
 }
 
@@ -257,30 +302,6 @@ private fun RepeatButton(text: String, label: String, enabled: Boolean, onStep: 
     ) {
         Text(text, style = MaterialTheme.typography.titleLarge, color = color)
     }
-}
-
-/** Types the tempo in. Returns null when cancelled; a value out of range is brought into it. */
-@Composable
-private fun TempoDialog(bpm: Int, minBpm: Int, maxBpm: Int, onDone: (Int?) -> Unit) {
-    var text by remember { mutableStateOf(bpm.toString()) }
-    val typed = text.toIntOrNull()
-    fun confirm() = onDone(typed?.coerceIn(minBpm, maxBpm))
-    AlertDialog(
-        onDismissRequest = { onDone(null) },
-        title = { Text(stringResource(R.string.tempo_section_label)) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { new -> text = new.filter(Char::isDigit).take(3) },
-                label = { Text(stringResource(R.string.tempo_range, minBpm, maxBpm)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                keyboardActions = KeyboardActions(onDone = { if (typed != null) confirm() }),
-            )
-        },
-        confirmButton = { TextButton(onClick = { confirm() }, enabled = typed != null) { Text(stringResource(android.R.string.ok)) } },
-        dismissButton = { TextButton(onClick = { onDone(null) }) { Text(stringResource(android.R.string.cancel)) } },
-    )
 }
 
 /**

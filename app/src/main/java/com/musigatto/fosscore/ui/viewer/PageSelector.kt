@@ -20,8 +20,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,16 +70,31 @@ fun PageSelector(
 
     val colors = MaterialTheme.colorScheme
     var widthPx by remember { mutableIntStateOf(0) }
+    var heightPx by remember { mutableIntStateOf(0) }
     var popupWidthPx by remember { mutableIntStateOf(0) }
     var dragPage by remember { mutableStateOf<Int?>(null) }
     val target = dragPage ?: currentPage.coerceIn(0, pageCount - 1)
     val label = stringResource(R.string.desc_page, target + 1, pageCount)
+    // Every dot in one path, rebuilt only when the track or the theme changes: a drawCircle per
+    // page per frame was one Skia call per page of the score on every drag frame.
+    val dotColor = colors.onSurface.copy(alpha = 0.35f)
+    val dotRadiusPx = with(LocalDensity.current) { DOT_RADIUS.toPx() }
+    val dots = remember(pageCount, widthPx, heightPx, dotColor, dotRadiusPx) {
+        val cy = heightPx * 0.78f
+        Path().apply {
+            for (i in 0 until pageCount) {
+                addOval(
+                    Rect(center = Offset(pageMarkX(i, widthPx, pageCount), cy), radius = dotRadiusPx)
+                )
+            }
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(SELECTOR_HEIGHT)
-            .onSizeChanged { widthPx = it.width }
+            .onSizeChanged { widthPx = it.width; heightPx = it.height }
             .semantics { contentDescription = label }
             .pointerInput(pageCount) {
                 detectHorizontalDragGestures(
@@ -94,16 +112,9 @@ fun PageSelector(
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val track = size.width.toInt()
             val cy = size.height * 0.78f
-            for (i in 0 until pageCount) {
-                drawCircle(
-                    color = colors.onSurface.copy(alpha = 0.35f),
-                    radius = DOT_RADIUS.toPx(),
-                    center = Offset(pageMarkX(i, track, pageCount), cy),
-                )
-            }
-            val kx = pageMarkX(target, track, pageCount)
+            drawPath(dots, dotColor)
+            val kx = pageMarkX(target, size.width.toInt(), pageCount)
             drawCircle(colors.surface, KNOB_RADIUS.toPx() + KNOB_RING.toPx(), Offset(kx, cy))
             drawCircle(colors.onSurface, KNOB_RADIUS.toPx(), Offset(kx, cy))
         }

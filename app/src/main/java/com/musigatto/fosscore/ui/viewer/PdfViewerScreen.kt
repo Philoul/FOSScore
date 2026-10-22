@@ -153,6 +153,8 @@ private val SELECTOR_ROOM = 68.dp
 // lose their 10 dp of air on top
 private val PLAYBACK_BAND_ROOM = 44.dp
 private val SELECTOR_AIR = 10.dp
+// how long the sizes of a MusicXML page must stay still before it is laid out
+private const val LAYOUT_SETTLE_MS = 120L
 // The top-left corner where the ☰ button sits when the bars are shown, as wide as the button with
 // its margin: a tap there opens the menu even with the bars hidden. Far from the left third's edge,
 // so page turns keep their zone.
@@ -704,6 +706,10 @@ fun PdfViewerScreen(
     LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
+        // the system bars settle over the first frames, restarting this effect each time: a
+        // layout for sizes about to change took seconds on a slow tablet, and could not be cut
+        // short, so the right one waited behind it
+        delay(LAYOUT_SETTLE_MS)
         val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
         val spec = LayoutSpec(
             width = if (twoUpSlots) usableW / 2 else usableW,

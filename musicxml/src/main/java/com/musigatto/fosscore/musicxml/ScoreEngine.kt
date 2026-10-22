@@ -14,13 +14,61 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** A score could not be read or laid out. [message] includes Verovio's log when it has one. */
 class MusicXmlException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /** What an opened score offers: its parts and the details read from the file. */
-data class ScoreSummary(val parts: List<Part>, val info: ScoreInfo)
+data class ScoreSummary(val parts: List<Part>, val info: ScoreInfo) {
+
+    /** As JSON, to keep with the score: it opens again without waiting for the file to be read. */
+    fun toJson(): String = JSONObject()
+        .put("parts", JSONArray(parts.map {
+            JSONObject().put("id", it.id).put("name", it.name).put("visible", it.visibleInFile)
+                .put("program", it.program ?: JSONObject.NULL).put("drums", it.drums)
+        }))
+        .put("title", info.title ?: JSONObject.NULL)
+        .put("subtitle", info.subtitle ?: JSONObject.NULL)
+        .put("composer", info.composer ?: JSONObject.NULL)
+        .put("lyricist", info.lyricist ?: JSONObject.NULL)
+        .put("arranger", info.arranger ?: JSONObject.NULL)
+        .put("fifths", info.key?.fifths ?: JSONObject.NULL)
+        .put("mode", info.key?.mode ?: JSONObject.NULL)
+        .put("time", info.time ?: JSONObject.NULL)
+        .put("tempo", info.tempo ?: JSONObject.NULL)
+        .put("measures", info.measures)
+        .toString()
+
+    companion object {
+        /** The summary kept by [toJson], or null when it cannot be read. */
+        fun fromJson(json: String): ScoreSummary? = runCatching {
+            val o = JSONObject(json)
+            fun text(name: String): String? = if (o.isNull(name)) null else o.getString(name)
+            val parts = o.getJSONArray("parts").let { a ->
+                List(a.length()) { i ->
+                    val p = a.getJSONObject(i)
+                    Part(
+                        p.getString("id"), p.getString("name"), p.getBoolean("visible"),
+                        if (p.isNull("program")) null else p.getInt("program"), p.getBoolean("drums")
+                    )
+                }
+            }
+            val key = if (o.isNull("fifths")) null else KeySignature(o.getInt("fifths"), text("mode"))
+            val tempo = if (o.isNull("tempo")) null else o.getDouble("tempo")
+            ScoreSummary(
+                parts,
+                ScoreInfo(
+                    text("title"), text("subtitle"), text("composer"), text("lyricist"), text("arranger"),
+                    key, text("time"), tempo, o.getInt("measures")
+                )
+            )
+        }.getOrNull()
+    }
+}
 
 /** One rendered page: the bitmap and where its notes are, for a playback cursor. */
 class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
@@ -29,9 +77,12 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
  * Lays out, draws and plays one MusicXML score.
  *
  * A toolkit is not thread-safe, but Verovio keeps its state per toolkit and per thread: the pages
- * are laid out and drawn by one toolkit on one thread, while a second toolkit on another thread
+ * are laid out and drawn by one toolkit on one thread, while a second thread reads the file and
  * makes the music, once, as soon as the score is open. All functions are safe to call from any
  * coroutine. Call [close] when the score is closed: it frees the native memory.
+ *
+ * Given a cache directory for the score, what is slow to make is kept there (the music, and the
+ * text Verovio lays out for each transposition, parts and lyrics), so the next openings skip it.
  *
  * Pages are drawn by MuPDF. If the app also uses MuPDF from other threads and needs its calls
  * serialized, pass the same lock as [rasterLock].
@@ -49,15 +100,19 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     // Set on the engine thread only.
     private var glyphs: SmuflGlyphs? = null
     private var display: Verovio? = null
-    private var score: MusicXmlScore? = null
     private var loadedFor: Any? = null
     private var laidOut: LayoutSpec? = null
     // when notes start in the score shown, and which: the cursor and the page turns
     private var onsets: List<Onset>? = null
     private var onsetsFor: Any? = null
+
+    // Set by [openLater].
+    @Volatile private var cacheDir: File? = null
+    // the score read from its file, on the sound thread
+    @Volatile private var parsed: Deferred<MusicXmlScore>? = null
     // the MIDI of every part at the written tempo, not transposed: the tempo, the transposition
     // and the parts heard are then rewritten in it (MidiEdit), without Verovio
-    private var music: Deferred<ByteArray>? = null
+    @Volatile private var music: Deferred<ByteArray>? = null
 
     private var resourcePath: String? = null
 
@@ -65,23 +120,40 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     suspend fun version(): String = run { toolkit().version }
 
     /**
-     * Reads plain MusicXML or .mxl. Replaces the score opened before, if any. The music is made
-     * at once on the sound thread, or read from [musicCache] when it was made before (making it
-     * takes seconds on a slow tablet).
+     * Reads plain MusicXML or .mxl and returns what it offers. Replaces the score opened before,
+     * if any. [cacheDir], when given, is this score's own: see the class documentation.
      */
-    suspend fun open(bytes: ByteArray, musicCache: File? = null): ScoreSummary = run {
-        val parsed = try {
-            MusicXmlScore.parse(bytes)
-        } catch (e: Exception) {
-            throw MusicXmlException("not a readable MusicXML file", e)
-        }
-        score = parsed
-        loadedFor = null
-        laidOut = null
-        onsets = null
+    suspend fun open(bytes: ByteArray, cacheDir: File? = null): ScoreSummary {
+        openLater(bytes, cacheDir)
+        val doc = score()
+        return ScoreSummary(doc.parts, doc.info)
+    }
+
+    /**
+     * Like [open], but returns at once, for a score whose [ScoreSummary] was kept: the file is read
+     * on the sound thread while the pages are laid out from the cache. Calls made after this one
+     * see the new score; a file that cannot be read makes them fail.
+     */
+    fun openLater(bytes: ByteArray, cacheDir: File? = null) {
+        parsed?.cancel()
         music?.cancel()
-        music = scope.async(soundDispatcher) { musicOf(parsed, musicCache) }
-        ScoreSummary(parsed.parts, parsed.info)
+        this.cacheDir = cacheDir
+        busy.incrementAndGet()
+        executor.execute {
+            loadedFor = null
+            laidOut = null
+            onsets = null
+            busy.decrementAndGet()
+        }
+        val doc = scope.async(soundDispatcher) {
+            try {
+                MusicXmlScore.parse(bytes)
+            } catch (e: Exception) {
+                throw MusicXmlException("not a readable MusicXML file", e)
+            }
+        }
+        parsed = doc
+        music = scope.async(soundDispatcher) { musicOf(doc.await(), cacheDir?.let { File(it, "music.$CACHE_VERSION.mid") }) }
     }
 
     /**
@@ -94,30 +166,16 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
      * 90 %, or turning the screen and back, put one more measure on a line).
      */
     suspend fun layout(spec: LayoutSpec): Int = run {
-        val doc = score ?: throw MusicXmlException("no score open")
         val t = toolkit()
         val wanted = listOf(spec.semitones, spec.parts, spec.lyrics, spec.hiddenLyrics)
         val options = VerovioOptions.layout(spec)
         if (loadedFor != wanted) {
             loadedFor = null
-            val xml = synchronized(doc) {
-                doc.prepare(ScoreFilter(spec.parts, spec.lyrics, hiddenLyrics = spec.hiddenLyrics))
-            }
-            val above = doc.lyricsAbove(spec.lyrics)
-            val credits = MeiFixes.forScreen(doc.creditSizes)
-            if (MeiFixes.needed(above, credits)) {
-                // Load once only to get the MEI (one endless system is the cheapest layout), fix
-                // what the MusicXML import dropped, then load the MEI for real. The MEI is
-                // already transposed, so it must not be transposed again.
-                t.setOptions(VerovioOptions.unpaged(spec.semitones).toString())
-                load(t, xml)
-                val mei = MeiFixes.apply(t.mei(), above, credits)
-                t.setOptions(options.put("transpose", "").toString())
-                load(t, mei)
-            } else {
-                t.setOptions(options.toString())
-                load(t, xml)
-            }
+            val (text, transposed) = textToLayOut(t, spec)
+            // the MEI is already transposed: it must not be transposed again
+            if (transposed) options.put("transpose", "")
+            t.setOptions(options.toString())
+            load(t, text)
             loadedFor = wanted
         } else if (laidOut != spec) {
             t.setOptions(options.toString())
@@ -151,10 +209,8 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
      */
     suspend fun playback(sound: SoundSpec): Playback {
         val made = music ?: throw MusicXmlException("no score open")
-        val (notes, spec, doc) = run {
-            val spec = laidOut ?: throw MusicXmlException("not laid out")
-            Triple(onsets(), spec, score!!)
-        }
+        val (notes, spec) = run { onsets() to laidOut!! }
+        val doc = score()
         val midi = made.await()
         val heard = (sound.audible ?: spec.parts).ifEmpty { doc.parts.map { it.id }.toSet() }
         // staff n plays on MIDI track n
@@ -194,10 +250,40 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         executor.execute {
             display?.close()
             display = null
-            score = null
         }
         executor.shutdown()
         soundExecutor.shutdown()
+    }
+
+    private suspend fun score(): MusicXmlScore = (parsed ?: throw MusicXmlException("no score open")).await()
+
+    // On the engine thread: what Verovio lays out for [spec], and whether it is already
+    // transposed. Kept in the cache: making it reads the file, prepares the score, and, when the
+    // MEI needs fixing, loads it once more (seconds on a slow tablet).
+    private fun textToLayOut(t: Verovio, spec: LayoutSpec): Pair<String, Boolean> {
+        val name = "layout-${spec.semitones}-${spec.parts.sorted().joinToString(",").hashCode()}-" +
+            "${spec.lyrics}-${spec.hiddenLyrics}.$CACHE_VERSION"
+        val mei = cacheDir?.let { File(it, "$name.mei") }
+        val xml = cacheDir?.let { File(it, "$name.xml") }
+        mei?.takeIf { it.isFile }?.let { file -> runCatching { return file.readText() to true } }
+        xml?.takeIf { it.isFile }?.let { file -> runCatching { return file.readText() to false } }
+        val doc = runBlocking { score() }
+        val prepared = synchronized(doc) {
+            doc.prepare(ScoreFilter(spec.parts, spec.lyrics, hiddenLyrics = spec.hiddenLyrics))
+        }
+        val above = doc.lyricsAbove(spec.lyrics)
+        val credits = MeiFixes.forScreen(doc.creditSizes)
+        val made = if (MeiFixes.needed(above, credits)) {
+            // Load once only to get the MEI (one endless system is the cheapest layout), and fix
+            // what the MusicXML import dropped.
+            t.setOptions(VerovioOptions.unpaged(spec.semitones).toString())
+            load(t, prepared)
+            MeiFixes.apply(t.mei(), above, credits) to true
+        } else {
+            prepared to false
+        }
+        (if (made.second) mei else xml)?.let { runCatching { it.parentFile?.mkdirs(); it.writeText(made.first) } }
+        return made
     }
 
     // On the sound thread: the MIDI of every part at the written tempo, from [cache] when it was
@@ -257,5 +343,8 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     private companion object {
         // how often [preparePlayback] looks whether the pages are drawn
         const val IDLE_POLL_MS = 300L
+
+        // bumped when what is kept in the cache is made differently, so the old files are not used
+        const val CACHE_VERSION = 1
     }
 }

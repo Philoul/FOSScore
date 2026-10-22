@@ -91,6 +91,9 @@ class ScoreEngineTest {
         val playback = engine.playback(SoundSpec())
         assertEquals("MThd", String(playback.midi, 0, 4, Charsets.US_ASCII))
         assertTrue(playback.onsets.isNotEmpty())
+        // the demo has 16 measures, the first starting at the start
+        assertEquals(16, playback.bars.size)
+        assertEquals(0.0, playback.bars.first(), 0.0)
         assertEquals(1, engine.pageOf(playback.onsets.first().notes.first()))
 
         // Hearing both parts while only the voice is shown: the same MIDI, the piano no longer

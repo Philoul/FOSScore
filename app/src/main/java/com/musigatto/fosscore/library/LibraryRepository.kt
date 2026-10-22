@@ -5,12 +5,16 @@ import android.net.Uri
 import android.util.Log
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.MusicXmlScore
+import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.SheetFormat
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 sealed class ImportResult {
@@ -25,6 +29,7 @@ class LibraryRepository(context: Context) {
     private val dao = db.sheetDao()
     private val stampDao = db.stampDao()
     private val strokeDao = db.strokeDao()
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun sheets(): Flow<List<Sheet>> = dao.observeAll()
 
@@ -84,7 +89,12 @@ class LibraryRepository(context: Context) {
                 musicalKey = "",
                 tags = ""
             )
-            ImportResult.Ok(sheet.copy(id = dao.insert(sheet)))
+            val saved = sheet.copy(id = dao.insert(sheet))
+            // the summary and the music of a MusicXML score are made now, in the background: its
+            // first opening is then as quick as the next ones
+            val copy = destination
+            if (format.isMusicXml) background.launch { runCatching { MusicXmlPages.prepare(appContext, copy) } }
+            ImportResult.Ok(saved)
         } catch (e: Exception) {
             Log.e("FOSScore-Library", "importar ${uri.lastPathSegment}: ${e.message}", e)
             ImportResult.Error(R.string.err_import_failed)

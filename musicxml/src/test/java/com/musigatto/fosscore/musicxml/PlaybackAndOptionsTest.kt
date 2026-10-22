@@ -114,6 +114,14 @@ class PlaybackAndOptionsTest {
     }
 
     @Test
+    fun theMeasuresStartWhereTheTimemapSays() {
+        val timemap = """[{"qstamp":0,"tstamp":0,"measureOn":"m1","on":["n1"]},{"qstamp":1,"tstamp":500,"on":["n2"]},""" +
+            """{"qstamp":4,"tstamp":2000,"measureOn":"m2"}]"""
+        assertEquals(listOf(0.0, 4.0), Playback.barsOf(timemap))
+        assertEquals(2, Playback.onsetsOf(timemap).size)
+    }
+
+    @Test
     fun aTranspositionMovesTheNotes() {
         val out = MidiEdit.edit(midi(), 1.0, semitones = 2)
         assertEquals(62, out[43].toInt())

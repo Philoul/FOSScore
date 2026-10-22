@@ -244,16 +244,20 @@ fun PdfViewerScreen(
         onDispose { view.keepScreenOn = false }
     }
 
-    val stampsFlow = remember(sheetHash) {
-        sheetHash?.let { (context.applicationContext as FOSScoreApp).stampRepository.observe(it) }
-            ?: flowOf(emptyList())
+    // one page's rows: the viewer draws one page, and re-reading the whole score on every stroke
+    // made each stroke cost grow with the score
+    val stampsFlow = remember(sheetHash, currentPage) {
+        sheetHash?.let {
+            (context.applicationContext as FOSScoreApp).stampRepository.observe(it, currentPage)
+        } ?: flowOf(emptyList())
     }
     val stamps by stampsFlow.collectAsState(initial = emptyList())
     val stampRepo = (context.applicationContext as FOSScoreApp).stampRepository
 
-    val strokesFlow = remember(sheetHash) {
-        sheetHash?.let { (context.applicationContext as FOSScoreApp).strokeRepository.observe(it) }
-            ?: flowOf(emptyList())
+    val strokesFlow = remember(sheetHash, currentPage) {
+        sheetHash?.let {
+            (context.applicationContext as FOSScoreApp).strokeRepository.observe(it, currentPage)
+        } ?: flowOf(emptyList())
     }
     val strokes by strokesFlow.collectAsState(initial = emptyList())
     val strokeRepo = (context.applicationContext as FOSScoreApp).strokeRepository
@@ -339,12 +343,9 @@ fun PdfViewerScreen(
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
     // the first frame and the overlay does not wait for a draw to land.
     val pageBox = pageSource?.pageSize(currentPage)
-    val pageStamps = if (sheetHash != null) {
-        stamps.filter { it.page == currentPage && it.id !in hiddenStampIds }
-    } else emptyList()
-    val pageStrokes = if (sheetHash != null) {
-        strokes.filter { it.page == currentPage && it.id !in hiddenStrokeIds }
-    } else emptyList()
+    // the DAO already returns only this page's rows; this drops the ones deleted a second ago
+    val pageStamps = remember(stamps, hiddenStampIds) { stamps.filter { it.id !in hiddenStampIds } }
+    val pageStrokes = remember(strokes, hiddenStrokeIds) { strokes.filter { it.id !in hiddenStrokeIds } }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
             viewport.width.toFloat(),
@@ -378,8 +379,6 @@ fun PdfViewerScreen(
 
     val selectedStamp = pageStamps.firstOrNull { it.id == selectedId }
     val selectedStrokes = inkStrokes.filter { it.id in selectedStrokeIds }
-    // the words of the page: a tap selects the group, not the single stroke (InkGeometry.groupInk)
-    val inkGroups = remember(inkStrokes, hitFit) { groupInk(inkStrokes, hitFit) }
 
     // selection box in px: the stamp's or the ink's. While dragging or stretching we use the
     // live position (dragStamp/dragStrokes) so the box follows the object.
@@ -393,7 +392,6 @@ fun PdfViewerScreen(
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
-    val currentInkGroups by rememberUpdatedState(inkGroups)
 
     // while a drag or a stretch is in progress we draw the object at its live position, not the box
     val showSelection = selectionRect != null && editing && canEdit &&
@@ -848,18 +846,19 @@ fun PdfViewerScreen(
                                 }
                                 if (resizing == null) {
                                     val hitS = hitStamp(downF, currentPageStamps, currentHitFit)
-                                    // A tap selects the WORD, not the single stroke (groupInk). If no
-                                    // stroke is hit, the word's box still catches it: the hole of an
-                                    // 'o' and the space between two letters have no ink to aim at.
+                                    // A tap selects the WORD, not the single stroke. The grouping is
+                                    // only needed here, on the tap: doing it on every change made it
+                                    // O(n²) over the page after every stroke.
+                                    val groups = if (hitS != null) {
+                                        emptyList()
+                                    } else groupInk(currentInkStrokes, currentHitFit)
+                                    // If no stroke is hit, the word's box still catches it: the hole
+                                    // of an 'o' and the gap between two letters have no ink to aim at
                                     val group = if (hitS != null) null else {
                                         val st = hitStroke(downF, currentInkStrokes, currentHitFit)
                                         st?.let { hit ->
-                                            currentInkGroups.firstOrNull { g ->
-                                                g.strokes.any { it.id == hit.id }
-                                            }
-                                        } ?: groupAt(
-                                            downF, currentInkGroups, handleRadiusPx(currentHitFit)
-                                        )
+                                            groups.firstOrNull { g -> g.strokes.any { it.id == hit.id } }
+                                        } ?: groupAt(downF, groups, handleRadiusPx(currentHitFit))
                                     }
                                     if (hitS != null) {
                                         movingStamp = hitS

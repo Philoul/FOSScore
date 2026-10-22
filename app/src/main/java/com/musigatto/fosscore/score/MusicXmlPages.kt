@@ -101,6 +101,9 @@ class MusicXmlPages private constructor(
     /** The MIDI and the timing maps for the current layout and [sound]. */
     suspend fun playback(sound: SoundSpec): Playback = engine.playback(sound)
 
+    /** Makes the music ahead of the first ▶ (seconds on a slow tablet), so playing starts at once. */
+    suspend fun preparePlayback() = engine.preparePlayback()
+
     override fun close() {
         bitmaps.clear()
         geometries.clear()

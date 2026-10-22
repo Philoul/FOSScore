@@ -77,10 +77,38 @@ class PlaybackAndOptionsTest {
         assertFalse(o.getBoolean("adjustPageHeight"))
     }
 
+    // a header and three tracks: the tempo (500000 µs per quarter), then a note on each staff,
+    // the second one in running status
+    private fun midi(): ByteArray {
+        fun track(vararg events: Int) = byteArrayOf(0x4D, 0x54, 0x72, 0x6B, 0, 0, 0, events.size.toByte()) +
+            ByteArray(events.size) { events[it].toByte() }
+        val header = byteArrayOf(0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 3, 0x01, 0xE0.toByte())
+        return header +
+            track(0, 0xFF, 0x51, 3, 0x07, 0xA1, 0x20, 0, 0xFF, 0x2F, 0) +
+            track(0, 0x90, 60, 100, 0x81, 0x70, 62, 90, 0, 0xFF, 0x2F, 0) +
+            track(0, 0x91, 48, 80, 0, 0xFF, 0x2F, 0)
+    }
+
     @Test
-    fun tempoFactorIsKeptInARange() {
-        assertEquals(4.0, VerovioOptions.tempo(10.0).getDouble("midiTempoAdjustment"), 0.0)
-        assertEquals(0.75, VerovioOptions.tempo(0.75).getDouble("midiTempoAdjustment"), 0.0)
+    fun theTempoAndThePartsHeardAreRewrittenInTheMidi() {
+        val original = midi()
+        val out = MidiEdit.edit(original, 2.0, setOf(1))
+        assertEquals(original.size, out.size)
+        // 500000 / 2 = 250000 = 0x03D090
+        assertEquals(listOf(0x03, 0xD0, 0x90), (26..28).map { out[it].toInt() and 0xFF })
+        // track 1 muted, in running status too: velocity 0 is a note off
+        assertEquals(0, out[44].toInt())
+        assertEquals(0, out[48].toInt())
+        // track 2 untouched
+        assertEquals(80, out[out.size - 5].toInt())
+    }
+
+    @Test
+    fun aFasterTempoBringsTheAudioTimesCloser() {
+        val timemap = """[{"tstamp":0,"qstamp":0,"on":["n1"]},{"tstamp":1000,"qstamp":2,"on":["n2"]}]"""
+        val pb = Playback.from(midi(), timemap, timemap).with(2.0, emptySet())
+        assertEquals(500L, pb.msAt(2.0))
+        assertEquals(2.0, pb.quartersAt(500), 1e-9)
     }
 
     @Test

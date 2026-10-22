@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.musicxml
 
+import kotlin.math.roundToLong
 import org.json.JSONArray
 
 /** One onset of the score shown: [quarters] from the start, and the ids of the notes that start there. */
@@ -34,6 +35,19 @@ class Playback internal constructor(
             .coerceIn(0, audioMs.size - 1)
         return audioMs[i]
     }
+
+    /**
+     * The same music at [factor] times the tempo it was made at, without the notes of the MIDI
+     * tracks in [silent]: rewritten from the bytes, in milliseconds, while the music plays.
+     */
+    internal fun with(factor: Double, silent: Set<Int>): Playback =
+        if (factor == 1.0 && silent.isEmpty()) this
+        else Playback(
+            MidiEdit.edit(midi, factor, silent),
+            LongArray(audioMs.size) { (audioMs[it] / factor).roundToLong() },
+            audioQuarters,
+            onsets
+        )
 
     /** Index in [onsets] of the last onset at or before [quarters], or -1 before the first. */
     fun onsetIndexAt(quarters: Double): Int {

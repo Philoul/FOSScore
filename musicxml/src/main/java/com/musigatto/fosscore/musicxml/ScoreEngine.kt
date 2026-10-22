@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.util.Base64
 import java.io.File
 import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 
@@ -21,8 +22,9 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
  * Lays out, draws and plays one MusicXML score.
  *
  * Every Verovio call runs on one dedicated thread (a toolkit is not thread-safe); all functions
- * are safe to call from any coroutine. A second toolkit holds the parts heard when they differ
- * from the parts shown. Call [close] when the score is closed: it frees the native memory.
+ * are safe to call from any coroutine. A second toolkit holds a clean copy of the score for the
+ * sound when the score shown cannot play as it is. Call [close] when the score is closed: it
+ * frees the native memory.
  *
  * Pages are drawn by MuPDF. If the app also uses MuPDF from other threads and needs its calls
  * serialized, pass the same lock as [rasterLock].
@@ -41,6 +43,10 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     private var loadedFor: Any? = null
     private var audioLoadedFor: Any? = null
     private var laidOut: LayoutSpec? = null
+    // the music at the written tempo with every part, made once per loaded score: the tempo and
+    // the parts heard are then rewritten in its MIDI (MidiEdit), without Verovio
+    private var base: Playback? = null
+    private var baseFor: Any? = null
 
     /** Verovio's version, for an "about" screen. */
     suspend fun version(): String = run { toolkit().version }
@@ -117,33 +123,32 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     /** The page (1-based) that shows the element [id] (a note id from [Playback.onsets]), or 0. */
     suspend fun pageOf(id: String): Int = run { toolkit().pageWithElement(id) }
 
-    /** MIDI and timing maps for the current layout and [sound]. */
-    suspend fun playback(sound: SoundSpec): Playback = run {
-        val shown = toolkit()
-        val spec = laidOut ?: throw MusicXmlException("not laid out")
-        val tempo = VerovioOptions.tempo(sound.tempo).toString()
-        shown.setOptions(tempo)
-        val displayMap = shown.renderTimemap()
-        val heard = sound.audible ?: spec.parts
-        // voices of lyrics added for the display carry notes too: the sound comes from a clean copy
-        val voicesOfLyrics = spec.lyrics == LyricsPlacement.BOTTOM || spec.hiddenLyrics
-        val separate = heard != spec.parts || sound.programs.isNotEmpty() || voicesOfLyrics
-        val player = if (!separate) shown else {
-            val a = audio ?: Verovio(resources()).also { audio = it }
-            val wanted = Triple(spec.semitones, heard, sound.programs)
-            if (audioLoadedFor != wanted) {
-                audioLoadedFor = null
-                // This copy is never drawn: make its layout as cheap as possible.
-                a.setOptions(VerovioOptions.unpaged(spec.semitones).toString())
-                load(a, score!!.prepare(ScoreFilter(heard, programs = sound.programs)))
-                audioLoadedFor = wanted
+    /**
+     * MIDI and timing maps for the current layout and [sound]. Only the first call after a new
+     * load runs Verovio (seconds on a slow tablet, see [preparePlayback]); then a new tempo or
+     * new parts heard take milliseconds.
+     */
+    suspend fun playback(sound: SoundSpec): Playback {
+        val (music, spec, doc) = run { Triple(basePlayback(sound.programs), laidOut!!, score!!) }
+        val heard = (sound.audible ?: spec.parts).ifEmpty { doc.parts.map { it.id }.toSet() }
+        // staff n plays on MIDI track n
+        val silent = mutableSetOf<Int>()
+        var staff = 0
+        for ((id, staves) in doc.staffCounts) {
+            repeat(staves) {
+                staff++
+                if (id !in heard) silent += staff
             }
-            a.setOptions(tempo)
-            a
         }
-        val audioMap = if (player === shown) displayMap else player.renderTimemap()
-        val midi = Base64.decode(player.renderMidi(), Base64.DEFAULT)
-        Playback.from(midi, displayMap, audioMap)
+        return withContext(Dispatchers.Default) { music.with(sound.tempo.coerceIn(VerovioOptions.MIN_TEMPO, VerovioOptions.MAX_TEMPO), silent) }
+    }
+
+    /**
+     * Makes the music of the current layout ahead of the first ▶, so that playing starts at
+     * once. A failure is left for [playback] to report.
+     */
+    suspend fun preparePlayback() {
+        run { runCatching { basePlayback(emptyMap()) } }
     }
 
     /**
@@ -159,6 +164,36 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
             score = null
         }
         executor.shutdown()
+    }
+
+    // On the engine thread: the music at the written tempo, with every part.
+    private fun basePlayback(programs: Map<String, Int>): Playback {
+        val spec = laidOut ?: throw MusicXmlException("not laid out")
+        val key = loadedFor to programs
+        base?.takeIf { baseFor == key }?.let { return it }
+        val shown = toolkit()
+        val displayMap = shown.renderTimemap()
+        // the score shown plays as it is when it holds every part, no voice of lyrics was added
+        // for the display and the instruments are the file's; otherwise a clean copy plays
+        val clean = spec.parts.isEmpty() && spec.lyrics != LyricsPlacement.BOTTOM && programs.isEmpty()
+        val player = if (clean) shown else {
+            val a = audio ?: Verovio(resources()).also { audio = it }
+            val wanted = spec.semitones to programs
+            if (audioLoadedFor != wanted) {
+                audioLoadedFor = null
+                // This copy is never drawn: make its layout as cheap as possible.
+                a.setOptions(VerovioOptions.unpaged(spec.semitones).toString())
+                load(a, score!!.prepare(ScoreFilter(programs = programs)))
+                audioLoadedFor = wanted
+            }
+            a
+        }
+        val audioMap = if (player === shown) displayMap else player.renderTimemap()
+        val midi = Base64.decode(player.renderMidi(), Base64.DEFAULT)
+        return Playback.from(midi, displayMap, audioMap).also {
+            base = it
+            baseFor = key
+        }
     }
 
     private fun load(t: Verovio, data: String) {

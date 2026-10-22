@@ -38,7 +38,14 @@ const val MAX_TEMPO_FACTOR = 4.0f
 const val DEFAULT_BPM = 120.0
 
 // a held − / + of the tempo repeats; the music takes the new tempo once the taps settle
-private const val SETTLE_MS = 300L
+private const val SETTLE_MS = 200L
+
+// the music of a newly laid out score is made once its first pages are drawn
+private const val WARM_DELAY_MS = 1500L
+
+// a new tempo or new parts heard: the old player fades out while the new one fades in, in steps
+private const val CROSSFADE_MS = 200L
+private const val CROSSFADE_STEPS = 8
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
@@ -137,6 +144,9 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var starting: Job? = null
     private var settling: Job? = null
     private var following: Job? = null
+    private var warming: Job? = null
+    // the player fading out after a change, released once silent
+    private var fading: MediaPlayer? = null
     private var position = 0.0
     // where ▶ starts next, when it is not "the page on screen": after ⏮, or a stop in a loop
     private var resumeAt: Double? = null
@@ -153,6 +163,13 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             stop()
             lastPlayback = null
             resumeAt = null
+            warming?.cancel()
+            warming = pages?.let {
+                viewModelScope.launch {
+                    delay(WARM_DELAY_MS)
+                    it.preparePlayback()
+                }
+            }
         }
         this.pages = pages
         shownParts = shown
@@ -235,6 +252,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         following = null
         player?.release()
         player = null
+        fading?.release()
+        fading = null
         playback = null
         followPaused = false
         _cursor.value = emptyList()
@@ -319,8 +338,9 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         }
     }
 
-    // A new tempo or new parts heard need a new MIDI. Once the taps settle, it is prepared while
-    // the music goes on, then the new player takes over at the same place: no gap in the music.
+    // A new tempo or new parts heard need a new MIDI, rewritten in milliseconds. Once the taps
+    // settle, a new player is prepared while the music goes on, then takes over at the same place
+    // with a short cross-fade: a MIDI player takes a moment to sound, and a hard cut left a gap.
     // Stopped, the next ▶ simply uses the new sound.
     private fun soundChanged() {
         settling?.cancel()
@@ -340,13 +360,18 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 val at = oldPb.quartersAt(old.currentPosition.toLong())
                 next.seekTo(pb.msExact(at).toInt())
                 val playing = old.isPlaying
-                if (playing) next.start()
-                old.release()
                 player = next
                 playback = pb
                 lastPlayback = pb
                 position = at
-                if (playing) follow()
+                if (playing) {
+                    next.setVolume(0f, 0f)
+                    next.start()
+                    follow()
+                    crossFade(old, next)
+                } else {
+                    old.release()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -355,6 +380,26 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             } finally {
                 if (settling === coroutineContext[Job]) settling = null
             }
+        }
+    }
+
+    private suspend fun crossFade(old: MediaPlayer, next: MediaPlayer) {
+        fading?.release()
+        fading = old
+        try {
+            for (step in 1..CROSSFADE_STEPS) {
+                delay(CROSSFADE_MS / CROSSFADE_STEPS)
+                val v = step.toFloat() / CROSSFADE_STEPS
+                next.setVolume(v, v)
+                old.setVolume(1 - v, 1 - v)
+            }
+        } finally {
+            if (fading === old) {
+                old.release()
+                fading = null
+            }
+            // cut short by another change: the player still playing must not stay half silent
+            if (player === next) next.setVolume(1f, 1f)
         }
     }
 

@@ -153,6 +153,10 @@ private val SELECTOR_ROOM = 68.dp
 // lose their 10 dp of air on top
 private val PLAYBACK_BAND_ROOM = 44.dp
 private val SELECTOR_AIR = 10.dp
+// The top-left corner where the ☰ button sits when the bars are shown, as wide as the button with
+// its margin: a tap there opens the menu even with the bars hidden. Far from the left third's edge,
+// so page turns keep their zone.
+private val MENU_CORNER = 112.dp
 
 // Touch noise with still fingers: ±1 px over ~400 px between fingers ≈ 0.25%. A 0.4% dead zone
 // stops the zoom reacting to that noise (without it the content "breathes" and looks shaky).
@@ -1302,9 +1306,13 @@ fun PdfViewerScreen(
                                             if (isSwipe) {
                                                 if (totalPan.x < 0f) currentApplyNext() else currentApplyPrev()
                                             } else {
-                                                // tap zones: left third prev, right third next, center toggles the bars
+                                                // tap zones: the top-left corner opens the menu, left third prev,
+                                                // right third next, center toggles the bars
                                                 val width = viewport.width
+                                                val corner = bars.getLeft(density, LayoutDirection.Ltr) + MENU_CORNER.toPx()
                                                 when {
+                                                    down.position.x < corner && down.position.y < chromeTop ->
+                                                        menu.show(ViewerSurface.MENU)
                                                     width > 0 && down.position.x > width * 2f / 3f -> currentApplyNext()
                                                     width > 0 && down.position.x < width / 3f -> currentApplyPrev()
                                                     else -> navVisible = !navVisible

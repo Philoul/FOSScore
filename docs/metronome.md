@@ -22,10 +22,10 @@ From a comparison of common metronome apps:
    beat is a quarter note, or three ticks per beat in 6/8 where the beat is a dotted quarter.
 8. **Sounds**: classic mechanical click, hi-hat, wood block, digital.
 9. **Count-in** before the piece starts.
-10. **Automatic page turn for PDF scores**: when on, the user gives the number of bars per page, so
-    the metronome knows when to turn.
+10. **Automatic page turn for PDF scores**: when on, the user gives the number of bars of each
+    page (it usually differs from page to page), so the metronome knows when to turn.
 11. **MusicXML**: the metronome follows the score, with its time signature and tempo changes
-    during the piece.
+    during the piece, or not, to practise at a fixed slower speed.
 12. **Optional**: the Italian name of the tempo (Adagio, Andante, Allegro, Presto...).
 
 ## 2. Proposal: what the user sees
@@ -37,16 +37,18 @@ The menu rule of the roadmap stays: a **band** to act while playing, a **panel**
 "Metronome" in the viewer menu shows the band in the bottom bar, where the playback band sits:
 
 ```
- ┌──────────────────────────────────────────────────────────────┐
- │   ▶    ● ○ ○ ○     ♩ = 92  Andante     TAP     ⚙            │
- └──────────────────────────────────────────────────────────────┘
-   start  beats of   tempo (tap: types    tap     metronome
-   pause  the bar    the value)           tempo   settings
+ ┌──────────────────────────────────────────────────────────────────┐
+ │   ▶    ● ○ ○ ○     −  ♩ = 92  +  Andante     TAP     ⚙          │
+ └──────────────────────────────────────────────────────────────────┘
+   start  beats of   tempo − / + (repeat while   tap     metronome
+   pause  the bar    held; tap the value: type)  tempo   settings
 ```
 
 - **Beat dots**: one per beat of the bar, the current one lit, the first one bigger (accent).
   They are the visual metronome inside the band; the page border flash is the visual mode for
   when the band is hidden.
+- **− / +** change the tempo by 1, repeating while held (as in the playback options of #32),
+  while stopped or playing; a tap on the value types it.
 - **TAP** sets the tempo while stopped or playing.
 - With **automatic page turn** on, the band also shows the bar count of the page (`bar 3 / 8`).
 
@@ -71,8 +73,9 @@ the same panel.
  Subdivision        (•) None  ( ) 2  ( ) 3  ( ) 4
  Count-in           (•) None  ( ) 1 bar  ( ) 2 bars
  ─────────────────────────────────────────────────────────
- Turn pages automatically (PDF)                       [ ]
-     Bars per page                         −   8   +
+ Follow the score (MusicXML)                          [✓]
+ Turn pages automatically                             [ ]
+     Bars per page (PDF)                         Set… ›
 ```
 
 - The **Tempo** block (− / +, typed value, slider, TAP, Italian name) is **one shared component**,
@@ -82,6 +85,24 @@ the same panel.
   read from the file, read only, with "changes during the piece" when it does.
 - In compound time (6/8, 9/8, 12/8) the beat is a dotted quarter: the tempo shows ♩. = N, and the
   subdivision is 3 by default.
+
+### 2.4 Bars per page (PDF)
+
+Most PDF scores have a different number of bars on each page (one staff less on the first page
+because of the title, more or fewer instruments...). "Set…" in the panel closes it and shows a
+small band at the bottom, so the page stays visible above it:
+
+```
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ◀  Page 1 / 4  ▶     −  6 bars  +     bars 1–6     Copy to all  ✓ │
+ └──────────────────────────────────────────────────────────────────┘
+```
+
+- **◀ / ▶ change the page shown behind the band too**, so the user checks the number of the last
+  bar of the page against the score (`bars 1–6`, then `bars 7–14` on page 2...).
+- − / + set the bars of this page; **Copy to all** gives every following page the same number, as
+  a starting point to correct page by page.
+- ✓ closes the band. The counts are saved with the score.
 
 ## 3. Proposal: how it works
 
@@ -114,14 +135,20 @@ the same panel.
 - The `musicxml` module gives a **meter map**: for each bar, its start in quarter notes, its time
   signature and the tempo in force (from the `<time>` and tempo marks, the same way it already
   reads the first ones). The metronome walks it, so time signature and tempo changes are followed.
-- The user's tempo stays one factor on the written tempo (as in #32): a score that speeds up
-  still speeds up, at the user's pace.
+- **Follow the score** (on by default): the metronome walks the meter map, so time signature and
+  tempo changes are followed, and it knows the bars of each page, so it can turn the pages as
+  playback does. The user's tempo stays one factor on the written tempo (as in #32): to practise
+  slowly, the user lowers it, and a score that speeds up still speeds up, at the user's pace.
+- **Off**: a plain metronome, at the tempo and time signature set in the panel, to practise one
+  passage at a fixed speed without the changes of the score. No automatic page turn then.
 
-### 3.5 Automatic page turn (PDF)
+### 3.5 Automatic page turn
 
-- One number of bars per page for the score (most scores are regular). When the last bar of a
-  page ends, the page turns; in half-page mode the half turns at half the bars. Repeats are not
-  followed: that waits for "Links and repeats", which will give the real order of the bars.
+- PDF: from the bars of each page (2.4). When the last bar of a page ends, the page turns; in
+  half-page mode the half turns at half the bars of the page. MusicXML: from the layout, when
+  following the score.
+- Repeats are not followed: that waits for "Links and repeats", which will give the real order of
+  the bars.
 
 ### 3.6 Italian names
 
@@ -142,8 +169,8 @@ One fixed table, shown as a hint and never stored:
 
 ### 3.7 What is saved
 
-- **Per score**: tempo, time signature (PDF), subdivision, count-in, automatic page turn and bars
-  per page, the "click" toggle of playback.
+- **Per score**: tempo, time signature (PDF), subdivision, count-in, follow the score (MusicXML),
+  automatic page turn and the bars of each page (PDF), the "click" toggle of playback.
 - **App-wide** (settings screen, roadmap 3.5): mode and sound, used by every score.
 
 ## 4. Suggested pull requests
@@ -157,7 +184,7 @@ Small and independent, in this order:
 3. **Time signature and tempo as score details** (database migration), in the details screen.
 4. **MusicXML**: the meter map in the module, the metronome following it, the click and count-in
    in playback.
-5. **Automatic page turn by bars per page** (PDF).
+5. **Automatic page turn**: the bars-per-page band (PDF), and turning from the layout (MusicXML).
 
 ## 5. Questions for the maintainer
 

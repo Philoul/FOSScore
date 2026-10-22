@@ -74,4 +74,31 @@
     <string name="stamp_natural">Natural</string>
     <string name="stamp_double_sharp">Double sharp</string>
     <string name="stamp_double_flat">Double flat</string>
+
+    <!-- Library menu: export / import -->
+    <string name="menu_open">Open the menu</string>
+    <string name="backup_export">Export the library</string>
+    <string name="backup_import">Import a library export</string>
+    <plurals name="backup_exported">
+        <item quantity="one">Library exported: %1$d sheet</item>
+        <item quantity="other">Library exported: %1$d sheets</item>
+    </plurals>
+    <string name="backup_failed">The operation failed. Your library has not changed.</string>
+    <string name="backup_import_title">Import this library?</string>
+    <string name="backup_import_replaces">Importing replaces your whole library. The current library is kept as a backup on this device. FOSScore restarts to finish.</string>
+    <string name="backup_import_confirm">Import and restart</string>
+    <string name="backup_cancel">Cancel</string>
+    <string name="backup_check_format_ok">FOSScore library export</string>
+    <string name="backup_check_format_error">This file is not a FOSScore library export, or it was made by a newer version of FOSScore.</string>
+    <string name="backup_check_db_ok">Library version %1$d, same as this app</string>
+    <string name="backup_check_db_older">Library version %1$d, older than this app (%2$d): it will be updated after the restart.</string>
+    <string name="backup_check_db_newer">Library version %1$d, newer than this app (%2$d): update FOSScore before importing it.</string>
+    <string name="backup_check_content_ok">Sheets: %1$d · stamps: %2$d · ink strokes: %3$d</string>
+    <string name="backup_check_content_error">The database in this file is damaged or incomplete.</string>
+    <string name="backup_check_age_ok">Exported on %1$s</string>
+    <string name="backup_check_age_old">Exported on %1$s: this export is old, recent changes would be lost.</string>
+    <string name="backup_check_device_ok">Exported from this device</string>
+    <string name="backup_check_device_other">Exported from another device (%1$s)</string>
+    <string name="backup_check_files_ok">All PDF files included</string>
+    <string name="backup_check_files_missing">%1$d PDF files were missing when this export was made.</string>
 </resources>

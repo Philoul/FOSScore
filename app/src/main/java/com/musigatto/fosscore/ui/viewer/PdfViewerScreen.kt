@@ -2079,11 +2079,14 @@ fun PdfViewerScreen(
                             state = playState,
                             loop = loop,
                             bpm = bpmOf(tempoFactor, writtenBpm),
+                            minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
+                            maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
                             onPlayPause = { playbackVm.playPause(notesOnScreen()) },
                             onRestart = playbackVm::restart,
                             onLoop = playbackVm::toggleLoop,
                             onA = playbackVm::tapA,
                             onB = playbackVm::tapB,
+                            onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
                             onOptions = { menu.show(ViewerSurface.PLAYBACK) },
                         )
                         if (playbackFailed) {

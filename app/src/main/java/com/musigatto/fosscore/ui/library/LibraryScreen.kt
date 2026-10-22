@@ -2,6 +2,7 @@ package com.musigatto.fosscore.ui.library
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -38,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
+import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.launch
 
 /**
@@ -163,7 +166,11 @@ fun LibraryScreen(
                             Spacer(Modifier.width(8.dp))
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(sheet.title, style = MaterialTheme.typography.titleMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(sheet.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
+                                Spacer(Modifier.width(8.dp))
+                                FormatBadge(formatLabel(sheet.path))
+                            }
                             if (sheet.composer.isNotBlank()) {
                                 Text(sheet.composer, style = MaterialTheme.typography.bodyMedium)
                             }
@@ -202,4 +209,22 @@ fun LibraryScreen(
             }
         )
     }
+}
+
+/**
+ * The kind of score, as the copy the importer keeps says ("PDF", "MusicXML"). Later the same
+ * place can show an attached MIDI or audio file, or the tags.
+ */
+internal fun formatLabel(path: String): String = if (SheetFormat.of(path).isMusicXml) "MusicXML" else "PDF"
+
+@Composable
+private fun FormatBadge(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+    )
 }

@@ -2,9 +2,11 @@ package com.musigatto.fosscore.musicxml
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Process
 import android.util.Base64
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -87,15 +89,22 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
  * Pages are drawn by MuPDF. If the app also uses MuPDF from other threads and needs its calls
  * serialized, pass the same lock as [rasterLock].
  */
-class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoCloseable {
-    private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "fosscore-verovio") }
+class ScoreEngine(
+    context: Context,
+    private val rasterLock: Any = Any(),
+    /** Work done ahead: its threads give way to everything else (the screen, the music). */
+    background: Boolean = false,
+) : AutoCloseable {
+    private val executor = Executors.newSingleThreadExecutor(threads("fosscore-verovio", background))
     private val dispatcher = executor.asCoroutineDispatcher()
-    private val soundExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "fosscore-verovio-sound") }
+    private val soundExecutor = Executors.newSingleThreadExecutor(threads("fosscore-verovio-sound", background))
     private val soundDispatcher = soundExecutor.asCoroutineDispatcher()
     private val scope = CoroutineScope(SupervisorJob())
     private val appContext = context.applicationContext
     // calls queued or running on the engine thread: the cursor's onsets wait until it is free
     private val busy = AtomicInteger()
+    // a page was drawn since the score was opened: the music, made meanwhile, may start
+    @Volatile private var drawn = false
 
     // Set on the engine thread only.
     private var glyphs: SmuflGlyphs? = null
@@ -123,8 +132,8 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
      * Reads plain MusicXML or .mxl and returns what it offers. Replaces the score opened before,
      * if any. [cacheDir], when given, is this score's own: see the class documentation.
      */
-    suspend fun open(bytes: ByteArray, cacheDir: File? = null): ScoreSummary {
-        openLater(bytes, cacheDir)
+    suspend fun open(bytes: ByteArray, cacheDir: File? = null, soundFirst: Boolean = false): ScoreSummary {
+        openLater(bytes, cacheDir, soundFirst)
         val doc = score()
         return ScoreSummary(doc.parts, doc.info)
     }
@@ -133,11 +142,15 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
      * Like [open], but returns at once, for a score whose [ScoreSummary] was kept: the file is read
      * on the sound thread while the pages are laid out from the cache. Calls made after this one
      * see the new score; a file that cannot be read makes them fail.
+     *
+     * Making the music takes both cores of a slow tablet for seconds: unless [soundFirst], it
+     * waits until the first page is drawn.
      */
-    fun openLater(bytes: ByteArray, cacheDir: File? = null) {
+    fun openLater(bytes: ByteArray, cacheDir: File? = null, soundFirst: Boolean = false) {
         parsed?.cancel()
         music?.cancel()
         this.cacheDir = cacheDir
+        drawn = soundFirst
         busy.incrementAndGet()
         executor.execute {
             loadedFor = null
@@ -153,7 +166,17 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
             }
         }
         parsed = doc
-        music = scope.async(soundDispatcher) { musicOf(doc.await(), cacheDir?.let { File(it, "music.$CACHE_VERSION.mid") }) }
+        music = scope.async(soundDispatcher) {
+            val cache = cacheDir?.let { File(it, "music.$CACHE_VERSION.mid") }
+            if (cache?.isFile != true) {
+                var waited = 0L
+                while ((!drawn || busy.get() > 0) && waited < MAX_SOUND_WAIT_MS) {
+                    delay(IDLE_POLL_MS)
+                    waited += IDLE_POLL_MS
+                }
+            }
+            musicOf(doc.await(), cache)
+        }
     }
 
     /**
@@ -185,6 +208,17 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         t.pageCount
     }
 
+    /**
+     * Makes and keeps in the cache what Verovio lays out for this transposition, these [parts]
+     * and lyrics, without laying it out: the first opening then skips it. Needs a cache directory.
+     */
+    suspend fun prepareLayout(semitones: Int, parts: Set<String>, lyrics: LyricsPlacement, hiddenLyrics: Boolean) = run {
+        val spec = LayoutSpec(1, 1, semitones = semitones, parts = parts, lyrics = lyrics, hiddenLyrics = hiddenLyrics)
+        textToLayOut(toolkit(), spec)
+        // the toolkit may hold another score now
+        loadedFor = null
+    }
+
     /** Page [page] (1-based) of the current layout as Verovio's SVG, unchanged. */
     suspend fun pageSvg(page: Int): String = run { svgOf(page) }
 
@@ -196,6 +230,7 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         val svg = svgOf(page)
         val ready = glyphs().inline(SvgForMuPdf.fix(svg))
         val bitmap = synchronized(rasterLock) { SvgRasterizer.render(ready, maxWidth, maxHeight) }
+        drawn = true
         RenderedPage(bitmap, PageGeometry.parse(svg))
     }
 
@@ -353,8 +388,18 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     }
 
     private companion object {
+        fun threads(name: String, background: Boolean) = ThreadFactory { r ->
+            Thread({
+                if (background) Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+                r.run()
+            }, name)
+        }
+
         // how often [preparePlayback] looks whether the pages are drawn
         const val IDLE_POLL_MS = 300L
+
+        // the music waits for the first page no longer than this
+        const val MAX_SOUND_WAIT_MS = 15_000L
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
         const val CACHE_VERSION = 1

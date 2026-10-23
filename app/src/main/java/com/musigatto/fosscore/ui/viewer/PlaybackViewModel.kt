@@ -12,6 +12,7 @@ import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.musicxml.SoundSpec
 import com.musigatto.fosscore.score.MusicXmlPages
+import com.musigatto.fosscore.score.ScorePrecompute
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
@@ -261,7 +262,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         _state.value = PlayState.STOPPED
     }
 
-    override fun onCleared() = stop()
+    init {
+        // working ahead could be heard as hiccups in the music
+        viewModelScope.launch { _state.collect { ScorePrecompute.playing = it == PlayState.PLAYING } }
+    }
+
+    override fun onCleared() {
+        stop()
+        ScorePrecompute.playing = false
+    }
 
     private fun pause() {
         player?.pause()

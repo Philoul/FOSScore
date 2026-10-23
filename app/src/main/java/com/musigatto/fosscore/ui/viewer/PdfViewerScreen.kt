@@ -115,6 +115,8 @@ import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.score.MusicXmlPages
+import com.musigatto.fosscore.score.MusicXmlScreen
+import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.score.PageSource
 import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.CancellationException
@@ -677,6 +679,7 @@ fun PdfViewerScreen(
             if (pageCount > 0) currentPage = currentPage.coerceIn(0, pageCount - 1)
             if (doc is MusicXmlPages) menu.onScoreRead(doc.parts)
             pageSource = doc
+            ScorePrecompute.opened(context, pdfUri.toString())
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
@@ -711,20 +714,19 @@ fun PdfViewerScreen(
         // short, so the right one waited behind it
         delay(LAYOUT_SETTLE_MS)
         val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
-        val spec = LayoutSpec(
-            width = if (twoUpSlots) usableW / 2 else usableW,
-            height = viewport.height,
-            // the music size follows the whole screen, so two-up does not shrink the notes
-            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * scoreLayout.musicSize / 100)
-                .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
+        val screen = MusicXmlScreen(
+            viewportWidth = viewport.width,
+            viewportHeight = viewport.height,
+            pageWidth = if (twoUpSlots) usableW / 2 else usableW,
+            baseScale = LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi),
             // a very short window keeps at least half its height for the music
             marginTop = chromeTop.coerceAtMost(viewport.height / 4),
             marginBottom = chromeBottom.coerceAtMost(viewport.height / 4),
-            semitones = scoreLayout.semitones,
-            parts = scoreLayout.layoutParts(parts),
-            lyrics = scoreLayout.lyrics,
-            hiddenLyrics = scoreLayout.keepHiddenLyrics,
+            twoUp = twoUpSlots,
         )
+        val spec = screen.spec(scoreLayout, parts)
+        // the other scores get laid out and drawn ahead for this screen too
+        withContext(Dispatchers.IO) { MusicXmlPages.rememberScreen(context, screen) }
         val before = pageCount
         try {
             val changed = rendererLock.withLock {

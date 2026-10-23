@@ -1,5 +1,7 @@
 package com.musigatto.fosscore.ui.viewer
 
+import kotlin.math.abs
+
 data class PageFlow(
     val page: Int,
     val halfTurned: Boolean,
@@ -32,6 +34,79 @@ data class PageFlow(
         if (!canPrev) return this
         return if (showHalf && halfTurned) copy(halfTurned = false)
         else copy(page = (page - step).coerceAtLeast(0))
+    }
+
+    /**
+     * Where the music played takes the reader: it is on page [target], already on screen when
+     * [onScreen]. The reader looks a few bars ahead (the bars to turn ahead, 0 to 2): the music
+     * there is on page [ahead], in its lower part (the part a turned half page does not show) when
+     * [aheadInLowerPart]. Nothing ever goes back and forth.
+     *
+     * Half page: when the music ahead gets to the next page, its top shows above the end of this
+     * one; when the music is on the next page and the music ahead gets to its lower part, the
+     * whole next page shows. The music played always stays on screen.
+     *
+     * Whole pages: the page turns when the music ahead is on the next one, and stays turned while
+     * the music ends the page before.
+     */
+    fun follow(target: Int, aheadInLowerPart: Boolean, onScreen: Boolean, ahead: Int = target): PageFlow = when {
+        showHalf -> when {
+            !halfTurned && ahead > page && target in page..page + 1 && page + 1 < pageCount -> copy(halfTurned = true)
+            halfTurned && target == page + 1 && (ahead > page + 1 || aheadInLowerPart) -> copy(page = target, halfTurned = false)
+            // turned, the music at the end of this page or at the top of the next: both on screen
+            halfTurned && target in page..page + 1 -> this
+            onScreen -> this
+            else -> copy(page = target, halfTurned = false)
+        }
+        // the page shown is the one ahead, the music ends the page before
+        ahead in page until page + step && target in page - step until page -> this
+        onScreen && ahead < page + step -> this
+        onScreen -> copy(page = ahead.coerceAtMost(pageCount - 1))
+        else -> copy(page = target, halfTurned = false)
+    }
+}
+
+/** A band of a page, from [start] to [end], as fractions of the page height. */
+data class Band(val start: Float, val end: Float)
+
+/**
+ * Where a turned half page cuts, as fractions of the page height: this page shows below [lower],
+ * the next one above [upper], blank paper between them.
+ */
+data class HalfSplit(val lower: Float = 0.5f, val upper: Float = lower) {
+    companion object {
+        /**
+         * The cut goes through blank bands of the pages, the space between two systems, so no
+         * system is cut in two: on this page the band nearest the middle, on the next one the band
+         * that shows the most of it above that. [bands] and [nextBands] are the blank bands of
+         * this page and the next (the top margin left out). A page with none cuts at its middle.
+         */
+        fun of(bands: List<Band>, nextBands: List<Band>): HalfSplit {
+            val here = bands.filter { it.end >= 0.25f && it.start <= 0.75f }
+                .minByOrNull { abs((it.start + it.end) / 2 - 0.5f) } ?: return HalfSplit()
+            val upper = nextBands.filter { it.start <= here.end }.maxOfOrNull { minOf(it.end, here.end) }
+                ?: return ((here.start + here.end) / 2).let { HalfSplit(it, it) }
+            return HalfSplit(maxOf(here.start, upper), upper)
+        }
+
+        /**
+         * The blank bands of a page whose rows are [blank] or not, at least [minRows] high, from
+         * the top; the top margin is left out: the next page shows nothing above it.
+         */
+        fun bandsOf(blank: BooleanArray, minRows: Int): List<Band> {
+            val h = blank.size.toFloat()
+            val out = mutableListOf<Band>()
+            var from = -1
+            for (y in 0..blank.size) {
+                val isBlank = y < blank.size && blank[y]
+                if (isBlank && from < 0) from = y
+                if (!isBlank && from >= 0) {
+                    if (from > 0 && y - from >= minRows) out += Band(from / h, y / h)
+                    from = -1
+                }
+            }
+            return out
+        }
     }
 }
 

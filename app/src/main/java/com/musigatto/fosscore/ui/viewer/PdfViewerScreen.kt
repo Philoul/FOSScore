@@ -644,8 +644,13 @@ fun PdfViewerScreen(
     val keyFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyFocus.requestFocus() }
 
+    // the page reached and when, on every turn and when the score closes: back to it if the
+    // score opens again a short while later (Settings.lastPage)
     LaunchedEffect(currentPage) {
         Settings.setLastPage(context, pdfUri.toString(), currentPage)
+    }
+    DisposableEffect(pdfUri) {
+        onDispose { Settings.setLastPage(context, pdfUri.toString(), currentPage) }
     }
 
     // the DB no longer has what we hid: clear the optimistic delete (and the drag preview)

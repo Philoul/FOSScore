@@ -50,7 +50,7 @@ Status: **Today** = exists for PDF · **Spike** = tried in the MusicXML prototyp
 |---|---|---|---|---|
 | Page turning by tap zones, swipe, keyboard, pedal | Yes | Same | Today (PDF) · Done on a branch (MusicXML) | Shared code. The key mapping should become a setting (see 3.5). |
 | Centre tap shows / hides the menus | Yes | Same | Today (PDF) | Must stay free of other meaning in both formats. |
-| Page shown when a score opens | Last page remembered | Same | Today (PDF) · To rework | Useful when the score is reopened right away, but a score worked on days ago opens at its last page instead of the start. Proposed simple rule, no new option: back to the last page only if the score was closed a short while ago (for example less than 30 minutes), otherwise the first page. |
+| Page shown when a score opens | Last page remembered | Same | Today (PDF) · To rework | Useful when the score is reopened right away, but a score worked on days ago opens at its last page instead of the start. Proposed simple rule, no new option: back to the last page only if the score was closed a short while ago (for example less than 30 minutes), otherwise the first page. The last page is not a score detail: it stays a short-lived value in the preferences, not in the database (3.8). |
 | One page / two pages (landscape) / half-page turn (portrait) | Yes | Same | Today (PDF) · Done on a branch (MusicXML, plain half cut) | MusicXML: two-up lays out pages for half the screen width. **Half-page turn must behave exactly as for PDF** (same `PageFlow`, same steps, same keys and pedal): it is the only mode where the part being played and the part coming next are both visible at all times, so musicians rely on it. Keep its asymmetry: *next* goes half by half, *previous* goes back to the whole previous page in one step (the user prefers it). MusicXML limit: a page must hold at least 2 systems (lines) for a half to make sense, so the music size has to leave room for 2 systems per page in this mode. Improvement over PDF: cut the page at a system boundary (system positions come from `PageGeometry`) so no system is split between the two halves. |
 | Zoom | Bitmap zoom | **Music size** (re-layout, the music reflows) + the same bitmap zoom | Done on a branch ("Note size" in the display options, saved per score) | In the display menu next to the modes. MusicXML zoom is a setting saved per configuration. |
 | Rotation | Same page, new fit | Re-layout for the new shape | Today (PDF) · Spike | |
@@ -189,6 +189,43 @@ playback band are done in PR #32:
   never a row of chips, which overflows on a phone. Pedals are keyboards: page-turn keys are chosen
   as **pairs** (Down/Up, Right/Left, Page Down/Page Up, Space/Enter, mouse left/right click) plus
   "detect".
+
+### 3.8 Database update (one Room migration)
+
+The database (version 4) holds `sheets`, `stamps` and `strokes`; the details are free text
+(composer, genre, key, tags) and the per-score settings live in `SharedPreferences`, keyed by
+the file's uri, so they are lost when the file moves and are not in the library backup. What the
+features above need, gathered for **one** migration (4 → 5) with migration tests, as in #28.
+Nothing here is decided: to discuss with musigatto before any code.
+
+| Need | Proposal | Filled from |
+|---|---|---|
+| Key | `keyFifths` (-7..+7, negative = flats) and `keyMode` (major / minor) instead of free text | MusicXML; a MIDI key event; the old text when it can be read |
+| Tempo | `tempoBpm` (and the beat unit) | MusicXML; an attached MIDI |
+| Time signature, duration | `timeSignature`, `durationS` | MusicXML; an attached MIDI or audio |
+| Recently opened first | `openedAt`, `openCount`, plus `addedAt` | The viewer; replaces `Settings.openedAt` |
+| Format | `format` (PDF / MusicXML) instead of the file extension | Import |
+| People | `people(id, name, sortName)` and `sheet_people(sheetId, personId, role)`: composer, lyricist, arranger, performer, several per score | The `composer` text, split |
+| Tags | `tags(id, name, color)` and `sheet_tags(sheetId, tagId)`, a new tag created from the picker; the genre may become a tag | The `tags` text, split on `,` and `;` |
+| Attached files | `attachments(id, sheetId, kind, path, hash, name, offsetMs)` for audio, MIDI and others; their tempo and key fill the details | Import of the file |
+| Metronome | Per score: on / off, beats, count-in, **bars on each PDF page** (see `metronome.md`) | The user; the timemap for MusicXML |
+| Playback | Per score: tempo, transposition, parts heard, **instrument of each part** (keyed by the MusicXML part id) | The user |
+| MusicXML display | `sheet_layouts(sheetId, orientation, ...)`: zoom, two-up, lyrics placement, **one row per orientation** | Replaces `savedScoreLayout` |
+| PDF pages | `page_map(sheetId, position, sourceSheetId, sourcePage, rotation)`: move, copy, hide pages without changing the PDF; stamps and strokes keep pointing to the source page | The user |
+| Setlists | `setlists(id, name, date, notes)` and `setlist_items(setlistId, sheetId, position, note)`; a score may come twice | The user |
+| Bookmarks and links | `bookmarks(id, sheetId, page, y, label, color)` and `links(id, sheetId, fromPage, fromX, fromY, toPage, toY)` for jumps such as D.S. | The user |
+| Annotation layers | `layers(id, sheetId, name, visible)` and a `layerId` in stamps and strokes; typed text (#35) | The user |
+| Practice log | `practice_sessions(sheetId, start, durationS, tempo, loop)` for the "Practice" menu | The viewer |
+
+Also to decide in the same migration: annotations follow the sheet's `hash` while the settings
+follow its uri; one key for both (the sheet id, or the hash) avoids losing one or the other.
+
+Not in the database:
+- **The last page**: a short-lived value in the preferences. A score reopened a short while
+  after it was closed comes back to that page, otherwise it opens at page 1 (3.1).
+- **App-wide settings** stay in the preferences, but the **library backup** gets a
+  `settings.json` next to the database and the score files, so that a restored library comes
+  back with its settings. The backup format number goes up with the migration.
 
 ## 4. What the user interface and code must allow for now
 

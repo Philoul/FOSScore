@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -99,7 +100,6 @@ fun ViewerTitleBar(
                     val optionsLabel = stringResource(R.string.display_options_title)
                     IconButton(
                         onClick = onShowOptions,
-                        enabled = !editing,
                         // the accent goes in the component's slot, not on the Text: otherwise the disabled
                         // state (annotating) loses M3's greyed-out color
                         colors = IconButtonDefaults.iconButtonColors(
@@ -160,6 +160,8 @@ fun ViewerTitleBar(
  */
 @Composable
 fun DisplayOptionsOverlay(
+    /** While annotating, the page modes are frozen: they turn canEdit off and leave the pen inert. */
+    pageModes: Boolean,
     halfEnabled: Boolean,
     onSetHalf: (Boolean) -> Unit,
     twoUp: Boolean,
@@ -202,22 +204,37 @@ fun DisplayOptionsOverlay(
                 // half wins over two-up (PageFlow.showTwoUp requires !halfEnabled)
                 val twoUpChecked = twoUpVisible && twoUp && !halfEnabled
                 SectionLabel(stringResource(R.string.page_section_label))
-                OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton) {
+                OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton, enabled = pageModes) {
                     onSetHalf(true)
                 }
-                OptionRow(stringResource(R.string.one_page_label), !halfEnabled && !twoUpChecked, Role.RadioButton) {
+                OptionRow(
+                    stringResource(R.string.one_page_label),
+                    !halfEnabled && !twoUpChecked,
+                    Role.RadioButton,
+                    enabled = pageModes,
+                ) {
                     onSetHalf(false)
                     onSetTwoUp(false)
                 }
                 if (twoUpVisible) {
-                    OptionRow(stringResource(R.string.two_pages_label), twoUpChecked, Role.RadioButton) {
+                    OptionRow(
+                        stringResource(R.string.two_pages_label),
+                        twoUpChecked,
+                        Role.RadioButton,
+                        enabled = pageModes,
+                    ) {
                         onSetHalf(false)
                         onSetTwoUp(true)
                     }
                 }
                 SectionLabel(stringResource(R.string.screen_section_label))
-                OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onToggleInvert)
-                OptionRow(stringResource(R.string.keep_screen_on_label), keepScreenOn, Role.Checkbox, onToggleKeepScreenOn)
+                OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onClick = onToggleInvert)
+                OptionRow(
+                    stringResource(R.string.keep_screen_on_label),
+                    keepScreenOn,
+                    Role.Checkbox,
+                    onClick = onToggleKeepScreenOn,
+                )
                 ValueRow(stringResource(R.string.theme_row_label), themeLabel, onToggleTheme)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyLarge)
@@ -253,11 +270,19 @@ private fun SectionLabel(text: String) {
  * (and may wrap) — the row never changes width under the finger.
  */
 @Composable
-private fun OptionRow(label: String, checked: Boolean, role: Role, onClick: () -> Unit) {
+private fun OptionRow(
+    label: String,
+    checked: Boolean,
+    role: Role,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = checked, role = role, onClick = onClick),
+            // greyed out, not just unresponsive: the control says why it does nothing
+            .alpha(if (enabled) 1f else 0.38f)
+            .selectable(selected = checked, enabled = enabled, role = role, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (role == Role.RadioButton) RadioButton(selected = checked, onClick = null)
@@ -389,16 +414,17 @@ fun ToolSizePanel(
 
 /**
  * Colour selector in its own panel (spec §5): the tint for ink and stamps, and for the selected
- * stamp. Transparent = the theme colour.
+ * stamp. The null entry is the default colour: shown as the ink it really draws, black (white in
+ * negative mode).
  */
 @Composable
-fun ColorPanel(active: Int?, onPick: (Int?) -> Unit) {
+fun ColorPanel(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
     ToolBlock {
         (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(4).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { argb ->
                     ColorSwatchButton(
-                        color = if (argb == null) Color.Transparent else Color(argb),
+                        color = if (argb == null) inkTint(null, invert) else Color(argb),
                         selected = active == argb,
                         onClick = { onPick(argb) }
                     )

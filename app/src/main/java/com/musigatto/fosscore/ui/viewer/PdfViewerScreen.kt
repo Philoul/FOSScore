@@ -193,7 +193,7 @@ private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Floa
 
 // ink and stamps default to black (not the theme's bluish primary); with "Neg" they are inverted
 // like the page, or black ink would disappear on the now-black background
-private fun inkTint(color: Int?, invert: Boolean): Color {
+internal fun inkTint(color: Int?, invert: Boolean): Color {
     val c = stampColor(color, Color.Black)
     return if (invert) c.inverted() else c
 }
@@ -479,9 +479,14 @@ fun PdfViewerScreen(
     // (Samsung S6 Lite reports hover for its pen). It only acts when coming from reading mode: once
     // you are annotating it must not fight the tool you picked (eraser, stamps...).
     var stylusNear by remember { mutableStateOf(false) }
+    // Only the first approach arms the pen: after leaving edit mode, hovering again must not drag
+    // the tools back over a page the user meant to read (or tap the chrome on).
+    // ponytail: one auto-arm per visit to the score; the pill still enters edit mode by hand.
+    var hoverArmed by remember { mutableStateOf(false) }
     LaunchedEffect(stylusNear) {
-        if (!stylusNear || editing) return@LaunchedEffect
+        if (!stylusNear || editing || hoverArmed) return@LaunchedEffect
         if (!canEdit) return@LaunchedEffect
+        hoverArmed = true
         toggleEditing()
         drawingTool = true
         activeSymbol = null
@@ -834,6 +839,15 @@ fun PdfViewerScreen(
                                 return Offset(
                                     (p.x - b.x - offsetX) / scale,
                                     (p.y - b.y - offsetY) / scale
+                                )
+                            }
+                            // the page is the canvas: a stroke that runs onto the matte stops at the
+                            // edge instead of being stored (and drawn) outside the sheet
+                            fun pagePoint(p: Offset): Offset {
+                                val f = fitPoint(p)
+                                return Offset(
+                                    f.x.coerceIn(0f, currentHitFit.width),
+                                    f.y.coerceIn(0f, currentHitFit.height)
                                 )
                             }
                             val downF = fitPoint(down.position)
@@ -1246,12 +1260,11 @@ fun PdfViewerScreen(
                                     } else {
                                         val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                         val last = inkPts.last()
+                                        val p = pagePoint(tracking.position)
                                         // points captured in fit coordinates: the screen threshold scales
                                         // with the zoom
-                                        if ((fitPoint(tracking.position) - last).getDistance() >=
-                                            MIN_SAMPLE_DIST_PX / scale
-                                        ) {
-                                            inkPts.add(fitPoint(tracking.position))
+                                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / scale) {
+                                            inkPts.add(p)
                                             inkPreview = inkPts.toList()
                                         }
                                         prevCentroid = tracking.position
@@ -1268,10 +1281,9 @@ fun PdfViewerScreen(
                                     } else {
                                         val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                         val last = eraserPath.last()
-                                        if ((fitPoint(tracking.position) - last).getDistance() >=
-                                            MIN_SAMPLE_DIST_PX / scale
-                                        ) {
-                                            eraserPath.add(fitPoint(tracking.position))
+                                        val p = pagePoint(tracking.position)
+                                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / scale) {
+                                            eraserPath.add(p)
                                             inkPreview = eraserPath.toList()
                                             // stamps are only removed on release, like strokes: the
                                             // trail may graze one on the way to another
@@ -1654,7 +1666,8 @@ fun PdfViewerScreen(
                 editing = editing,
                 onOpenLibrary = onOpenLibrary,
                 onToggleEdit = { toggleEditing() },
-                onShowOptions = { if (!editing) optionsOpen = true },
+                // also while annotating: the screen options (theme, negative, dim) are not tools
+                onShowOptions = { optionsOpen = true },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     // edge-to-edge: the pills were slipping under the status bar, and in landscape
@@ -1764,7 +1777,8 @@ fun PdfViewerScreen(
                         // the tint for ink and stamps, in its own little panel (it used to be a whole
                         // row of swatches eating the width of the bar)
                         ColorSwatchButton(
-                            color = activeColor?.let { Color(it) } ?: Color.Transparent,
+                            // null is the default colour: draw the ink it really gives
+                            color = inkTint(activeColor, invert),
                             selected = openPanel == ToolPanel.Color,
                             onClick = {
                                 openPanel = if (openPanel == ToolPanel.Color) null else ToolPanel.Color
@@ -1873,6 +1887,7 @@ fun PdfViewerScreen(
 
                             ToolPanel.Color -> ColorPanel(
                                 active = activeColor,
+                                invert = invert,
                                 onPick = { argb ->
                                     activeColor = argb
                                     // the tint also recolours the selected stamp: forScore's
@@ -1913,6 +1928,7 @@ fun PdfViewerScreen(
 
         if (optionsOpen) {
             DisplayOptionsOverlay(
+                pageModes = !editing,
                 halfEnabled = halfEnabled,
                 onSetHalf = {
                     halfEnabled = it

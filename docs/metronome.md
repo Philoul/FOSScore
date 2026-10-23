@@ -1,7 +1,8 @@
 # Metronome: requirements and implementation proposal
 
-Status: proposal (2026-10-22), to discuss with the maintainer before any code. It details the
-"Metronome" line of the roadmap (`feature-roadmap.md`, 3.2 and 3.7).
+Status: proposal (2026-10-22), to discuss with the maintainer. It details the "Metronome" line of
+the roadmap (`feature-roadmap.md`, 3.2 and 3.7). A first version is built on the branch
+`feature/metronome` (2026-10-24), see section 6.
 
 ## 1. Requirements
 
@@ -27,6 +28,9 @@ From a comparison of common metronome apps:
 11. **MusicXML**: the metronome follows the score, with its time signature and tempo changes
     during the piece, or not, to practise at a fixed slower speed.
 12. **Optional**: the Italian name of the tempo (Adagio, Andante, Allegro, Presto...).
+13. **Turn ahead**: an option to turn the page 1 or 2 bars before the music gets there, with the
+    metronome and with playback. A musician always reads a little ahead; in half page, in portrait
+    above all, the next part of the score is then on screen, drawn, before it is played.
 
 ## 2. Proposal: what the user sees
 
@@ -149,6 +153,10 @@ small band at the bottom, so the page stays visible above it:
   following the score.
 - Repeats are not followed: that waits for "Links and repeats", which will give the real order of
   the bars.
+- **Turn ahead** (0, 1 or 2 bars, the same for every score, for the metronome and for playback):
+  on whole pages, the page turns as soon as the bar looked at is on the next page; in half page,
+  the upper half shows the next page as soon as the bar looked at is in the lower half, but the
+  whole next page waits for the music itself, since the end of the page is still being played.
 
 ### 3.6 Italian names
 
@@ -191,3 +199,29 @@ Small and independent, in this order:
 - Cut time (¢ = 2/2) next to C?
 - The page border flash: one colour for the accent and another for the other beats?
 - Should the count-in also be visual (a big 1-2-3-4 over the page)?
+
+## 6. First version (branch `feature/metronome`)
+
+Built on the MusicXML speed branch (#36) and the half-page fix, tried on the Galaxy Tab 3.
+
+Done:
+- Engine on the audio clock (`MetronomeEngine`, `ClickSchedule`), sounds made in code (`Clicks`),
+  tap tempo, Italian names, compound time counted in dotted quarters, count-in, subdivisions,
+  accent, sound / flash / both, volume.
+- Menu › Metronome opens the settings (as Playback does) and shows the band in place of the
+  playback band, with the bar heard counted from the start of the piece. The tempo block (name,
+  typed value, slider, TAP, as written) is shared with the playback settings; flash / sound and
+  the sound are drop-down menus. All three languages.
+- The bars of each page (PDF) are counted in the settings, page by page, the page behind changing
+  with ◀ ▶.
+- Page turns from the bars of each page (PDF) and from the score's own bars (MusicXML), forward
+  only, in single page, two-up and half page; turn ahead 0 (default) to 2 bars, for playback too,
+  also in the playback settings.
+- A MusicXML score has one tempo: the metronome's is the one of playback; its time signature is
+  the first one of the file.
+
+Not yet:
+- The click inside playback (a percussion track added to the MIDI) and the count-in before
+  playback.
+- Time signature and tempo changes during a MusicXML piece (the meter map).
+- Time signature and tempo as score details in the database (issue #40).

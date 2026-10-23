@@ -8,6 +8,7 @@ import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -92,13 +93,14 @@ class ScoreEngineTest {
         assertTrue(playback.onsets.isNotEmpty())
         assertEquals(1, engine.pageOf(playback.onsets.first().notes.first()))
 
-        // Hearing both parts while only the voice is shown: a second toolkit, same score positions.
+        // Hearing both parts while only the voice is shown: the same MIDI, the piano no longer
+        // muted, and the same score positions.
         val both = engine.playback(SoundSpec(audible = setOf("P1", "P2"), tempo = 0.5))
         assertEquals(playback.onsets.size, both.onsets.size)
-        assertTrue(both.midi.size > playback.midi.size)
-        // Half tempo: the last onset comes later in the audio.
-        val last = playback.onsets.last().quarters
-        assertTrue(both.msAt(last) > playback.msAt(last))
+        assertEquals(playback.midi.size, both.midi.size)
+        assertFalse(playback.midi.contentEquals(both.midi))
+        // Half tempo: after the same time, the music is half as far.
+        assertEquals(playback.quartersAt(2000) / 2, both.quartersAt(2000), 0.01)
     }
 
     @Test

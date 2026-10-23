@@ -5,7 +5,15 @@ import android.graphics.Bitmap
 import android.util.Base64
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** A score could not be read or laid out. [message] includes Verovio's log when it has one. */
@@ -20,9 +28,10 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
 /**
  * Lays out, draws and plays one MusicXML score.
  *
- * Every Verovio call runs on one dedicated thread (a toolkit is not thread-safe); all functions
- * are safe to call from any coroutine. A second toolkit holds the parts heard when they differ
- * from the parts shown. Call [close] when the score is closed: it frees the native memory.
+ * A toolkit is not thread-safe, but Verovio keeps its state per toolkit and per thread: the pages
+ * are laid out and drawn by one toolkit on one thread, while a second toolkit on another thread
+ * makes the music, once, as soon as the score is open. All functions are safe to call from any
+ * coroutine. Call [close] when the score is closed: it frees the native memory.
  *
  * Pages are drawn by MuPDF. If the app also uses MuPDF from other threads and needs its calls
  * serialized, pass the same lock as [rasterLock].
@@ -30,23 +39,37 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
 class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoCloseable {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "fosscore-verovio") }
     private val dispatcher = executor.asCoroutineDispatcher()
+    private val soundExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "fosscore-verovio-sound") }
+    private val soundDispatcher = soundExecutor.asCoroutineDispatcher()
+    private val scope = CoroutineScope(SupervisorJob())
     private val appContext = context.applicationContext
+    // calls queued or running on the engine thread: the cursor's onsets wait until it is free
+    private val busy = AtomicInteger()
 
     // Set on the engine thread only.
-    private var resourcePath: String? = null
     private var glyphs: SmuflGlyphs? = null
     private var display: Verovio? = null
-    private var audio: Verovio? = null
     private var score: MusicXmlScore? = null
     private var loadedFor: Any? = null
-    private var audioLoadedFor: Any? = null
     private var laidOut: LayoutSpec? = null
+    // when notes start in the score shown, and which: the cursor and the page turns
+    private var onsets: List<Onset>? = null
+    private var onsetsFor: Any? = null
+    // the MIDI of every part at the written tempo, not transposed: the tempo, the transposition
+    // and the parts heard are then rewritten in it (MidiEdit), without Verovio
+    private var music: Deferred<ByteArray>? = null
+
+    private var resourcePath: String? = null
 
     /** Verovio's version, for an "about" screen. */
     suspend fun version(): String = run { toolkit().version }
 
-    /** Reads plain MusicXML or .mxl. Replaces the score opened before, if any. */
-    suspend fun open(bytes: ByteArray): ScoreSummary = run {
+    /**
+     * Reads plain MusicXML or .mxl. Replaces the score opened before, if any. The music is made
+     * at once on the sound thread, or read from [musicCache] when it was made before (making it
+     * takes seconds on a slow tablet).
+     */
+    suspend fun open(bytes: ByteArray, musicCache: File? = null): ScoreSummary = run {
         val parsed = try {
             MusicXmlScore.parse(bytes)
         } catch (e: Exception) {
@@ -54,8 +77,10 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         }
         score = parsed
         loadedFor = null
-        audioLoadedFor = null
         laidOut = null
+        onsets = null
+        music?.cancel()
+        music = scope.async(soundDispatcher) { musicOf(parsed, musicCache) }
         ScoreSummary(parsed.parts, parsed.info)
     }
 
@@ -75,7 +100,9 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         val options = VerovioOptions.layout(spec)
         if (loadedFor != wanted) {
             loadedFor = null
-            val xml = doc.prepare(ScoreFilter(spec.parts, spec.lyrics, hiddenLyrics = spec.hiddenLyrics))
+            val xml = synchronized(doc) {
+                doc.prepare(ScoreFilter(spec.parts, spec.lyrics, hiddenLyrics = spec.hiddenLyrics))
+            }
             val above = doc.lyricsAbove(spec.lyrics)
             val credits = MeiFixes.forScreen(doc.creditSizes)
             if (MeiFixes.needed(above, credits)) {
@@ -117,48 +144,86 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
     /** The page (1-based) that shows the element [id] (a note id from [Playback.onsets]), or 0. */
     suspend fun pageOf(id: String): Int = run { toolkit().pageWithElement(id) }
 
-    /** MIDI and timing maps for the current layout and [sound]. */
-    suspend fun playback(sound: SoundSpec): Playback = run {
-        val shown = toolkit()
-        val spec = laidOut ?: throw MusicXmlException("not laid out")
-        val tempo = VerovioOptions.tempo(sound.tempo).toString()
-        shown.setOptions(tempo)
-        val displayMap = shown.renderTimemap()
-        val heard = sound.audible ?: spec.parts
-        // voices of lyrics added for the display carry notes too: the sound comes from a clean copy
-        val voicesOfLyrics = spec.lyrics == LyricsPlacement.BOTTOM || spec.hiddenLyrics
-        val separate = heard != spec.parts || sound.programs.isNotEmpty() || voicesOfLyrics
-        val player = if (!separate) shown else {
-            val a = audio ?: Verovio(resources()).also { audio = it }
-            val wanted = Triple(spec.semitones, heard, sound.programs)
-            if (audioLoadedFor != wanted) {
-                audioLoadedFor = null
-                // This copy is never drawn: make its layout as cheap as possible.
-                a.setOptions(VerovioOptions.unpaged(spec.semitones).toString())
-                load(a, score!!.prepare(ScoreFilter(heard, programs = sound.programs)))
-                audioLoadedFor = wanted
-            }
-            a.setOptions(tempo)
-            a
+    /**
+     * MIDI and timing maps for the current layout and [sound]. Once the music is made (see
+     * [open]) and the onsets known (see [preparePlayback]), a new tempo or new parts heard take
+     * milliseconds.
+     */
+    suspend fun playback(sound: SoundSpec): Playback {
+        val made = music ?: throw MusicXmlException("no score open")
+        val (notes, spec, doc) = run {
+            val spec = laidOut ?: throw MusicXmlException("not laid out")
+            Triple(onsets(), spec, score!!)
         }
-        val audioMap = if (player === shown) displayMap else player.renderTimemap()
-        val midi = Base64.decode(player.renderMidi(), Base64.DEFAULT)
-        Playback.from(midi, displayMap, audioMap)
+        val midi = made.await()
+        val heard = (sound.audible ?: spec.parts).ifEmpty { doc.parts.map { it.id }.toSet() }
+        // staff n plays on MIDI track n
+        val silent = mutableSetOf<Int>()
+        val programs = mutableMapOf<Int, Int>()
+        var staff = 0
+        for ((id, staves) in doc.staffCounts) {
+            repeat(staves) {
+                staff++
+                if (id !in heard) silent += staff
+                sound.programs[id]?.let { programs[staff] = it }
+            }
+        }
+        val tempo = sound.tempo.coerceIn(VerovioOptions.MIN_TEMPO, VerovioOptions.MAX_TEMPO)
+        return withContext(Dispatchers.Default) {
+            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes)
+        }
     }
 
     /**
-     * Frees the toolkits and stops the engine thread. Pending calls finish first; calls made
+     * Gets playback ready ahead of the first ▶: waits for the music, then finds the onsets of the
+     * score shown once the pages are drawn (they take the engine thread for a second or so on a
+     * slow tablet). A failure is left for [playback] to report.
+     */
+    suspend fun preparePlayback() {
+        runCatching { music?.await() }
+        while (busy.get() > 0) delay(IDLE_POLL_MS)
+        run { runCatching { onsets() } }
+    }
+
+    /**
+     * Frees the toolkits and stops the engine threads. Pending calls finish first; calls made
      * after this one fail.
      */
     override fun close() {
+        scope.cancel()
         executor.execute {
             display?.close()
-            audio?.close()
             display = null
-            audio = null
             score = null
         }
         executor.shutdown()
+        soundExecutor.shutdown()
+    }
+
+    // On the sound thread: the MIDI of every part at the written tempo, from [cache] when it was
+    // made before, otherwise from a clean copy of the score, laid out as cheaply as possible.
+    private fun musicOf(doc: MusicXmlScore, cache: File?): ByteArray {
+        cache?.takeIf { it.isFile }?.let { file -> runCatching { return file.readBytes() } }
+        val t = Verovio(resources())
+        try {
+            t.setOptions(VerovioOptions.unpaged(0).toString())
+            load(t, synchronized(doc) { doc.prepare() })
+            val midi = Base64.decode(t.renderMidi(), Base64.DEFAULT)
+            cache?.let { runCatching { it.parentFile?.mkdirs(); it.writeBytes(midi) } }
+            return midi
+        } finally {
+            t.close()
+        }
+    }
+
+    // On the engine thread: the onsets of the score shown.
+    private fun onsets(): List<Onset> {
+        onsets?.takeIf { onsetsFor == loadedFor }?.let { return it }
+        if (laidOut == null) throw MusicXmlException("not laid out")
+        return Playback.onsetsOf(toolkit().renderTimemap()).also {
+            onsets = it
+            onsetsFor = loadedFor
+        }
     }
 
     private fun load(t: Verovio, data: String) {
@@ -172,11 +237,25 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         return t.renderSvg(page)
     }
 
+    // both threads need it
+    @Synchronized
     private fun resources(): String = resourcePath ?: Verovio.prepareResources(appContext).also { resourcePath = it }
 
     private fun glyphs(): SmuflGlyphs = glyphs ?: SmuflGlyphs(File(resources())).also { glyphs = it }
 
     private fun toolkit(): Verovio = display ?: Verovio(resources()).also { display = it }
 
-    private suspend fun <T> run(block: () -> T): T = withContext(dispatcher) { block() }
+    private suspend fun <T> run(block: () -> T): T {
+        busy.incrementAndGet()
+        try {
+            return withContext(dispatcher) { block() }
+        } finally {
+            busy.decrementAndGet()
+        }
+    }
+
+    private companion object {
+        // how often [preparePlayback] looks whether the pages are drawn
+        const val IDLE_POLL_MS = 300L
+    }
 }

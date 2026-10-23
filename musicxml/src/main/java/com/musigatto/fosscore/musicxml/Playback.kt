@@ -61,18 +61,29 @@ class Playback internal constructor(
          * cursor) and [audioTimemap] for the parts heard (the same text when they are the same).
          */
         fun from(midi: ByteArray, displayTimemap: String, audioTimemap: String): Playback {
-            val display = JSONArray(displayTimemap)
+            val audio = JSONArray(audioTimemap)
+            val ms = LongArray(audio.length()) { audio.getJSONObject(it).getDouble("tstamp").toLong() }
+            val quarters = DoubleArray(audio.length()) { audio.getJSONObject(it).getDouble("qstamp") }
+            return Playback(midi, ms, quarters, onsetsOf(displayTimemap))
+        }
+
+        /** The playback of [midi], timed by its own tempos, with the [onsets] of the score shown. */
+        fun of(midi: ByteArray, onsets: List<Onset>): Playback {
+            val (ms, quarters) = MidiEdit.timing(midi)
+            return Playback(midi, ms, quarters, onsets)
+        }
+
+        /** The onsets of a Verovio timemap: when notes start, and which. */
+        fun onsetsOf(timemap: String): List<Onset> {
+            val entries = JSONArray(timemap)
             val onsets = mutableListOf<Onset>()
-            for (i in 0 until display.length()) {
-                val entry = display.getJSONObject(i)
+            for (i in 0 until entries.length()) {
+                val entry = entries.getJSONObject(i)
                 val on = entry.optJSONArray("on") ?: continue
                 if (on.length() == 0) continue
                 onsets += Onset(entry.getDouble("qstamp"), List(on.length()) { on.getString(it) })
             }
-            val audio = if (audioTimemap === displayTimemap) display else JSONArray(audioTimemap)
-            val ms = LongArray(audio.length()) { audio.getJSONObject(it).getDouble("tstamp").toLong() }
-            val quarters = DoubleArray(audio.length()) { audio.getJSONObject(it).getDouble("qstamp") }
-            return Playback(midi, ms, quarters, onsets)
+            return onsets
         }
     }
 }

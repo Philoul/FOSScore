@@ -106,11 +106,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.musicxml.LayoutSpec
+import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.PageSource
@@ -147,6 +149,14 @@ private const val LOG_TAG = "FOSScore-PDF"
 // track with 10 dp above and below). Keep in step with ViewerTitleBar and PageSelector.
 private val TITLE_BAR_ROOM = 64.dp
 private val SELECTOR_ROOM = 68.dp
+// and, for MusicXML, the playback band (44 dp buttons) right above the page dots, which then
+// lose their 10 dp of air on top
+private val PLAYBACK_BAND_ROOM = 44.dp
+private val SELECTOR_AIR = 10.dp
+// The top-left corner where the ☰ button sits when the bars are shown, as wide as the button with
+// its margin: a tap there opens the menu even with the bars hidden. Far from the left third's edge,
+// so page turns keep their zone.
+private val MENU_CORNER = 112.dp
 
 // Touch noise with still fingers: ±1 px over ~400 px between fingers ≈ 0.25%. A 0.4% dead zone
 // stops the zoom reacting to that noise (without it the content "breathes" and looks shaky).
@@ -242,12 +252,32 @@ fun PdfViewerScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    // the menu, its panels and the score's layout settings: one ViewModel per score
+    val menu: ViewerMenuViewModel = viewModel(
+        key = "viewer-menu:$pdfUri",
+        factory = ViewerMenuViewModel.factory(context, pdfUri.toString()),
+    )
+    val surface by menu.surface.collectAsState()
+    val scoreLayout by menu.layout.collectAsState()
+    val parts by menu.parts.collectAsState()
+
+    // MusicXML playback: the MIDI player, the cursor and the A–B loop (PlaybackViewModel)
+    val playbackVm: PlaybackViewModel = viewModel(
+        key = "playback:$pdfUri",
+        factory = PlaybackViewModel.factory(context, pdfUri.toString()),
+    )
+    val playState by playbackVm.state.collectAsState()
+    val loop by playbackVm.loop.collectAsState()
+    val cursorNotes by playbackVm.cursor.collectAsState()
+    val tempoFactor by playbackVm.tempo.collectAsState()
+    val heardPicked by playbackVm.heard.collectAsState()
+    val playbackFailed by playbackVm.failed.collectAsState()
+
     var pageSource by remember { mutableStateOf<PageSource?>(null) }
     // a MusicXML score has no pages of its own: they are laid out for this screen (MusicXmlPages)
     val format = remember(pdfUri) { SheetFormat.of(pdfUri.path.orEmpty()) }
     // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
     var layoutVersion by remember { mutableIntStateOf(0) }
-    var musicSize by remember(pdfUri) { mutableIntStateOf(Settings.musicSize(context, pdfUri.toString())) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
@@ -257,7 +287,6 @@ fun PdfViewerScreen(
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     // the chrome starts hidden: the app is the page (spec §0)
     var navVisible by rememberSaveable { mutableStateOf(false) }
-    var optionsOpen by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<Int?>(null) }
     // double tap: fit <-> zoom. We keep the time and the point of the previous tap.
     var lastTapMs by remember { mutableLongStateOf(0L) }
@@ -285,8 +314,9 @@ fun PdfViewerScreen(
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
     val view = LocalView.current
-    DisposableEffect(view, keepScreenOn) {
-        view.keepScreenOn = keepScreenOn
+    DisposableEffect(view, keepScreenOn, playState) {
+        // and always while the music plays (roadmap 4.7): nobody touches the screen then
+        view.keepScreenOn = keepScreenOn || playState == PlayState.PLAYING
         onDispose { view.keepScreenOn = false }
     }
 
@@ -467,12 +497,13 @@ fun PdfViewerScreen(
         redoStack = emptyList()
     }
 
-    // what the ✎ pill does. Leaving edit mode must not leave anything armed or selected behind.
+    // what Annotate (menu) and Done (pill) do. Leaving edit mode must not leave anything armed or
+    // selected behind.
     fun toggleEditing() {
-        // the old "Editar" button carried `enabled = canEdit`; a pill entry has no enabled state, so
-        // the gate lives here instead — which also covers the entry paths that are coming (Apple
-        // Pencil, long press). In two-up or a turned half page there is nothing to annotate.
-        if (!editing && !canEdit) return
+        // the gate lives here, so it also covers the entry paths that are coming (Apple Pencil, long
+        // press). Two-up or a turned half page is no reason to refuse: annotating goes back to one
+        // page, below.
+        if (!editing && (sheetHash == null || format.isMusicXml)) return
         editing = !editing
         if (editing) {
             twoUp = false
@@ -526,11 +557,13 @@ fun PdfViewerScreen(
     }
 
     val applyNext: () -> Unit = {
+        playbackVm.pageTurnedByHand()
         val f = branch.next()
         currentPage = f.page
         halfTurned = f.halfTurned
     }
     val applyPrev: () -> Unit = {
+        playbackVm.pageTurnedByHand()
         val f = branch.prev()
         currentPage = f.page
         halfTurned = f.halfTurned
@@ -640,6 +673,7 @@ fun PdfViewerScreen(
             }
             pageCount = doc.pageCount
             if (pageCount > 0) currentPage = currentPage.coerceIn(0, pageCount - 1)
+            if (doc is MusicXmlPages) menu.onScoreRead(doc.parts)
             pageSource = doc
         } catch (e: CancellationException) {
             throw e
@@ -665,8 +699,9 @@ fun PdfViewerScreen(
     val bars = WindowInsets.safeDrawing
     val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
     val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
-    val chromeBottom = bars.getBottom(density) + with(density) { SELECTOR_ROOM.roundToPx() }
-    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize, barsX, chromeTop, chromeBottom) {
+    val chromeBottom = bars.getBottom(density) +
+        with(density) { (SELECTOR_ROOM - SELECTOR_AIR + PLAYBACK_BAND_ROOM).roundToPx() }
+    LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
         val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
@@ -674,11 +709,15 @@ fun PdfViewerScreen(
             width = if (twoUpSlots) usableW / 2 else usableW,
             height = viewport.height,
             // the music size follows the whole screen, so two-up does not shrink the notes
-            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * musicSize / 100)
+            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * scoreLayout.musicSize / 100)
                 .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
             // a very short window keeps at least half its height for the music
             marginTop = chromeTop.coerceAtMost(viewport.height / 4),
             marginBottom = chromeBottom.coerceAtMost(viewport.height / 4),
+            semitones = scoreLayout.semitones,
+            parts = scoreLayout.layoutParts(parts),
+            lyrics = scoreLayout.lyrics,
+            hiddenLyrics = scoreLayout.keepHiddenLyrics,
         )
         val before = pageCount
         try {
@@ -702,6 +741,67 @@ fun PdfViewerScreen(
         pageCount = after
         bitmaps.clear()
         layoutVersion++
+    }
+
+    // Playback plays what is loaded: a new transposition, new parts or new lyrics reload the score
+    // with new note ids, and stop the music. A new size or a turned screen keeps it playing.
+    val shownIds = scoreLayout.partsShown(parts)
+    LaunchedEffect(pageSource, scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics) {
+        playbackVm.attach(
+            pageSource as? MusicXmlPages,
+            shownIds,
+            listOf(scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics),
+        )
+    }
+
+    // The notes on screen, for ▶ (it starts where the eyes are) and for the follow below. A turned
+    // half page shows the top half of the next page over the bottom half of this one.
+    fun notesOnScreen(notes: Collection<String>? = null): Set<String> {
+        val pages = pageSource as? MusicXmlPages ?: return emptySet()
+        fun onPage(index: Int, keep: (PageGeometry, String) -> Boolean = { _, _ -> true }): List<String> {
+            val geo = pages.geometry(index) ?: return emptyList()
+            return (notes ?: geo.noteIds).filter { it in geo.noteIds && keep(geo, it) }
+        }
+        val pageHeight = pageBox?.let { b -> { geo: PageGeometry -> geo.width * b.height / b.width } }
+        fun upper(geo: PageGeometry, id: String) =
+            pageHeight == null || (geo.head(id)?.y ?: 0f) < pageHeight(geo) / 2
+        return when {
+            branch.showTwoUp -> onPage(currentPage) + onPage(currentPage + 1)
+            branch.showHalf && halfTurned ->
+                onPage(currentPage + 1) { g, id -> upper(g, id) } + onPage(currentPage) { g, id -> !upper(g, id) }
+            else -> onPage(currentPage)
+        }.toSet()
+    }
+
+    val toFirstPage by playbackVm.toFirstPage.collectAsState()
+    LaunchedEffect(toFirstPage) {
+        if (toFirstPage == 0) return@LaunchedEffect
+        currentPage = 0
+        halfTurned = false
+    }
+
+    // Follow the music: when the notes being played leave the screen, turn to their page. A page
+    // turned by hand during playback lets the reader look ahead: the follow waits until the music
+    // is on screen again (as in the MusicXML prototype).
+    LaunchedEffect(cursorNotes) {
+        val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
+        if (cursorNotes.isEmpty()) return@LaunchedEffect
+        if (notesOnScreen(cursorNotes).isNotEmpty()) {
+            playbackVm.musicOnScreen()
+            return@LaunchedEffect
+        }
+        if (playbackVm.followPaused) return@LaunchedEffect
+        val target = pages.pageOf(cursorNotes.first())
+        if (target < 0) return@LaunchedEffect
+        when {
+            // half page: the top of the next page shows first, under the end of this one
+            branch.showHalf && !halfTurned && target == currentPage + 1 -> halfTurned = true
+            branch.showTwoUp && target == currentPage + 1 -> Unit
+            else -> {
+                currentPage = target
+                halfTurned = false
+            }
+        }
     }
 
     // zoom back to zero when the page or the reading mode changes (the draw step too: otherwise
@@ -1206,9 +1306,13 @@ fun PdfViewerScreen(
                                             if (isSwipe) {
                                                 if (totalPan.x < 0f) currentApplyNext() else currentApplyPrev()
                                             } else {
-                                                // tap zones: left third prev, right third next, center toggles the bars
+                                                // tap zones: the top-left corner opens the menu, left third prev,
+                                                // right third next, center toggles the bars
                                                 val width = viewport.width
+                                                val corner = bars.getLeft(density, LayoutDirection.Ltr) + MENU_CORNER.toPx()
                                                 when {
+                                                    down.position.x < corner && down.position.y < chromeTop ->
+                                                        menu.show(ViewerSurface.MENU)
                                                     width > 0 && down.position.x > width * 2f / 3f -> currentApplyNext()
                                                     width > 0 && down.position.x < width / 3f -> currentApplyPrev()
                                                     else -> navVisible = !navVisible
@@ -1422,23 +1526,21 @@ fun PdfViewerScreen(
                 when {
                     branch.showTwoUp -> {
                         Row(modifier = spreadMod.then(gestureMod)) {
-                            bitmaps[currentPage]?.let { bmp ->
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    colorFilter = if (invert) INVERT_FILTER else null,
-                                    modifier = Modifier.weight(1f).fillMaxHeight()
-                                )
-                            }
-                            bitmaps[currentPage + 1]?.let { bmp ->
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    colorFilter = if (invert) INVERT_FILTER else null,
-                                    modifier = Modifier.weight(1f).fillMaxHeight()
-                                )
+                            for (index in listOf(currentPage, currentPage + 1)) {
+                                val bmp = bitmaps[index] ?: continue
+                                Box(Modifier.weight(1f).fillMaxHeight()) {
+                                    Image(
+                                        bitmap = bmp.asImageBitmap(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Fit,
+                                        colorFilter = if (invert) INVERT_FILTER else null,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    val geo = (pageSource as? MusicXmlPages)?.geometry(index)
+                                    if (geo != null && cursorNotes.isNotEmpty()) {
+                                        FitPlaybackCursor(geo, cursorNotes, bmp.width, bmp.height, Modifier.fillMaxSize())
+                                    }
+                                }
                             }
                         }
                     }
@@ -1557,6 +1659,16 @@ fun PdfViewerScreen(
                                                 translationY = pageFit.top + offsetY
                                             }
                                     )
+                                // the playback cursor, at the page's place and zoom
+                                val cursorGeo = (pageSource as? MusicXmlPages)?.geometry(currentPage)
+                                if (cursorGeo != null && cursorNotes.isNotEmpty() && bitmaps[currentPage] != null) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        drawPlaybackCursor(
+                                            cursorGeo, cursorNotes, pageFit.left + offsetX, pageFit.top + offsetY,
+                                            pageFit.width * scale
+                                        )
+                                    }
+                                }
                                 // the overlay belongs to currentPage: while lastShown is still the
                                 // previous page's paper, its ink would land on the wrong music
                                 if (canEdit && bitmaps[currentPage] != null) {
@@ -1715,9 +1827,8 @@ fun PdfViewerScreen(
                 composer = composer,
                 pageLabel = pageLabel,
                 editing = editing,
-                onOpenLibrary = onOpenLibrary,
-                onToggleEdit = { toggleEditing() },
-                onShowOptions = { if (!editing) optionsOpen = true },
+                onOpenMenu = { menu.show(ViewerSurface.MENU) },
+                onStopEditing = { toggleEditing() },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     // edge-to-edge: the pills were slipping under the status bar, and in landscape
@@ -1962,20 +2073,68 @@ fun PdfViewerScreen(
                         // edge-to-edge: the knob was sitting in the navigation gesture area
                         .navigationBarsPadding()
                 ) {
+                    if (format.isMusicXml) {
+                        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+                        PlaybackBand(
+                            state = playState,
+                            loop = loop,
+                            bpm = bpmOf(tempoFactor, writtenBpm),
+                            onPlayPause = { playbackVm.playPause(notesOnScreen()) },
+                            onRestart = playbackVm::restart,
+                            onLoop = playbackVm::toggleLoop,
+                            onA = playbackVm::tapA,
+                            onB = playbackVm::tapB,
+                            onOptions = { menu.show(ViewerSurface.PLAYBACK) },
+                        )
+                        if (playbackFailed) {
+                            Text(
+                                stringResource(R.string.playback_failed),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            )
+                        }
+                    }
                     PageSelector(
                         pageCount = pageCount,
                         currentPage = currentPage,
-                        onJump = { currentPage = it },
+                        onJump = {
+                            playbackVm.pageTurnedByHand()
+                            currentPage = it
+                        },
                         // air under the knob: flush with the edge it sat inside the system
                         // navigation gesture area and was hard to grab
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(
+                            start = 24.dp,
+                            end = 24.dp,
+                            top = if (format.isMusicXml) 0.dp else 10.dp,
+                            bottom = 10.dp,
+                        ),
                     )
                 }
             }
         }
 
-        if (optionsOpen) {
-            DisplayOptionsOverlay(
+        // the menu and its panels, over everything: one at a time (ViewerMenuViewModel)
+        when (surface) {
+            ViewerSurface.NONE -> Unit
+            ViewerSurface.MENU -> ViewerMenuPanel(
+                isMusicXml = format.isMusicXml,
+                onSelect = { item ->
+                    menu.dismiss()
+                    when (item) {
+                        ViewerMenuItem.LIBRARY -> onOpenLibrary()
+                        ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
+                        ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
+                        ViewerMenuItem.PLAYBACK -> menu.show(ViewerSurface.PLAYBACK)
+                        ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
+                        // greyed out in the menu: never chosen
+                        else -> Unit
+                    }
+                },
+                onDismiss = menu::dismiss,
+            )
+            ViewerSurface.DISPLAY -> DisplayOptionsOverlay(
                 halfEnabled = halfEnabled,
                 onSetHalf = {
                     halfEnabled = it
@@ -1999,12 +2158,31 @@ fun PdfViewerScreen(
                 dimPct = dimPct,
                 onDimChange = { dimPct = it },
                 onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
-                onDismiss = { optionsOpen = false },
-                musicSize = if (format.isMusicXml) musicSize else null,
-                onMusicSizeChange = {
-                    musicSize = it.coerceIn(MIN_MUSIC_SIZE, MAX_MUSIC_SIZE)
-                    Settings.setMusicSize(context, pdfUri.toString(), musicSize)
-                },
+                onDismiss = menu::dismiss,
+            )
+            ViewerSurface.PLAYBACK -> {
+                val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+                PlaybackOptionsOverlay(
+                    bpm = bpmOf(tempoFactor, writtenBpm),
+                    writtenBpm = bpmOf(1f, writtenBpm),
+                    minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
+                    maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
+                    onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
+                    parts = parts,
+                    heard = heardParts(heardPicked, shownIds, parts),
+                    onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },
+                    onDismiss = menu::dismiss,
+                )
+            }
+            ViewerSurface.LAYOUT -> ScoreLayoutOverlay(
+                layout = scoreLayout,
+                parts = parts,
+                onMusicSize = menu::setMusicSize,
+                onTranspose = menu::transpose,
+                onLyrics = menu::setLyrics,
+                onKeepHiddenLyrics = menu::setKeepHiddenLyrics,
+                onPartShown = menu::setPartShown,
+                onDismiss = menu::dismiss,
             )
         }
     }

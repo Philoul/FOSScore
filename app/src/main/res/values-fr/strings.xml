@@ -30,6 +30,7 @@
     <string name="desc_page">Page %1$d sur %2$d</string>
     <string name="err_open_file">Le fichier n’a pas pu être ouvert</string>
     <string name="err_file_unreadable">Le fichier n’a pas pu être lu</string>
+    <string name="err_not_a_score">Ce fichier n’est ni un PDF ni une partition MusicXML</string>
     <string name="err_import_failed">Échec de l’importation</string>
     <string name="err_invalid_pdf">PDF invalide ou corrompu</string>
     <string name="err_render_page">La page n’a pas pu être affichée</string>
@@ -79,6 +80,10 @@
     <string name="desc_page_range">Pages %1$d-%2$d sur %3$d</string>
     <string name="display_options_title">Options d’affichage</string>
     <string name="keep_screen_on_label">Garder l’écran allumé</string>
+    <string name="engraving_section_label">Gravure</string>
+    <string name="note_size_label">Taille des notes</string>
+    <string name="note_size_smaller">Notes plus petites</string>
+    <string name="note_size_larger">Notes plus grandes</string>
 
     <!-- Menu de la bibliothèque : exporter / importer -->
     <string name="menu_open">Ouvrir le menu</string>

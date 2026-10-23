@@ -64,7 +64,9 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
      *
      * Transposition, parts and lyrics are applied while loading: changing them reloads the score
      * (about a second on a large score on a slow tablet). Changing only the viewport or the scale
-     * keeps the measure widths Verovio cached and only breaks lines and pages again.
+     * lays the loaded score out again, measuring the measures anew: widths kept from another
+     * layout break the lines differently from a score opened at this size (going 90 % → 80 % →
+     * 90 %, or turning the screen and back, put one more measure on a line).
      */
     suspend fun layout(spec: LayoutSpec): Int = run {
         val doc = score ?: throw MusicXmlException("no score open")
@@ -92,7 +94,7 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
             loadedFor = wanted
         } else if (laidOut != spec) {
             t.setOptions(options.toString())
-            t.redoLayout("""{"resetCache": false}""")
+            t.redoLayout("""{"resetCache": true}""")
         }
         laidOut = spec
         t.pageCount

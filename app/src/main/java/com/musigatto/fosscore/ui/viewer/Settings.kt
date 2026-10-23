@@ -33,6 +33,7 @@ object Settings {
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
     private const val KEY_LAST_PAGE = "last_page_"
     private const val KEY_STAMP_PX = "stamp_px"
+    private const val KEY_MUSIC_SIZE = "music_size_"
 
     fun themeMode(context: Context): ThemeMode =
         ThemeMode.entries[context.prefs().getInt(KEY_THEME, ThemeMode.SYSTEM.ordinal)]
@@ -74,6 +75,14 @@ object Settings {
 
     fun setStampPx(context: Context, px: Float) {
         context.prefs().edit { putFloat(KEY_STAMP_PX, px.coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) }
+    }
+
+    /** MusicXML note size, in percent of the size chosen for the screen (100). Per score. */
+    fun musicSize(context: Context, uri: String): Int =
+        context.prefs().getInt(KEY_MUSIC_SIZE + uri, 100)
+
+    fun setMusicSize(context: Context, uri: String, percent: Int) {
+        context.prefs().edit { putInt(KEY_MUSIC_SIZE + uri, percent) }
     }
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)

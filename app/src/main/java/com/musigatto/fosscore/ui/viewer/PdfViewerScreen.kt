@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
@@ -102,14 +103,18 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.pdf.MuPdfDoc
+import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.PageSource
+import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -122,6 +127,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.max
@@ -135,6 +141,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 // The render (memory) cap now lives in MuPdfDoc.MAX_RENDER_PIXELS: MuPDF draws at whatever
 // resolution we ask for, so zoom looks sharp instead of slightly soft.
 private const val LOG_TAG = "FOSScore-PDF"
+
+// Room the reading chrome takes over a MusicXML page, below the status bar and above the
+// navigation bar: the title bar (8 dp of air, a 48 dp pill, 8 dp) and the page selector (48 dp
+// track with 10 dp above and below). Keep in step with ViewerTitleBar and PageSelector.
+private val TITLE_BAR_ROOM = 64.dp
+private val SELECTOR_ROOM = 68.dp
 
 // Touch noise with still fingers: ±1 px over ~400 px between fingers ≈ 0.25%. A 0.4% dead zone
 // stops the zoom reacting to that noise (without it the content "breathes" and looks shaky).
@@ -231,6 +243,11 @@ fun PdfViewerScreen(
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     var pageSource by remember { mutableStateOf<PageSource?>(null) }
+    // a MusicXML score has no pages of its own: they are laid out for this screen (MusicXmlPages)
+    val format = remember(pdfUri) { SheetFormat.of(pdfUri.path.orEmpty()) }
+    // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
+    var layoutVersion by remember { mutableIntStateOf(0) }
+    var musicSize by remember(pdfUri) { mutableIntStateOf(Settings.musicSize(context, pdfUri.toString())) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
@@ -366,7 +383,10 @@ fun PdfViewerScreen(
         }
     }
 
-    val canEdit = sheetHash != null && !branch.showTwoUp && !(branch.showHalf && halfTurned)
+    // ponytail: no annotations on MusicXML yet. They are stored per page, and a MusicXML page
+    // changes with the screen and the music size; they need to be tied to measures first.
+    val canEdit = sheetHash != null && !format.isMusicXml && !branch.showTwoUp &&
+        !(branch.showHalf && halfTurned)
 
     // marks and stamps of the current page, shared between the overlay and the gestures.
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
@@ -610,7 +630,10 @@ fun PdfViewerScreen(
             // NonCancellable: if the user leaves while we are opening, the document is created
             // anyway, and we close it below. Cancelling here would leave the native doc hanging
             // (and its memory too).
-            val doc = withContext(NonCancellable + Dispatchers.IO) { MuPdfDoc.open(context, pdfUri) }
+            val doc: PageSource = withContext(NonCancellable + Dispatchers.IO) {
+                if (format.isMusicXml) MusicXmlPages.open(context, File(pdfUri.path.orEmpty()))
+                else MuPdfDoc.open(context, pdfUri)
+            }
             if (!isActive) {
                 withContext(NonCancellable + Dispatchers.IO) { doc.close() }
                 return@LaunchedEffect
@@ -625,8 +648,60 @@ fun PdfViewerScreen(
             error = R.string.err_open_file
         } catch (e: Exception) {
             Log.e(LOG_TAG, "no se pudo abrir: ${e::class.simpleName}: ${e.message}", e)
-            error = R.string.err_invalid_pdf
+            error = if (format.isMusicXml) R.string.err_open_file else R.string.err_invalid_pdf
         }
+    }
+
+    // MusicXML: break the music into pages of this screen's size, and again when the screen turns
+    // or two-up starts (two pages of half the width). The reading position is kept as a fraction
+    // of the score: the page breaks move, not the music.
+    val densityDpi = configuration.densityDpi
+    val twoUpSlots = isLandscape && twoUp && !halfEnabled
+    // A MusicXML page fills the viewport, while the system bars, and the title bar and page
+    // selector when the centre tap shows them, are drawn over it (a PDF has a paper margin there).
+    // The music keeps their room free: the side bars on both sides, the top and bottom chrome as
+    // page margins. Fixed, so showing the bars never lays the music out again.
+    val density = LocalDensity.current
+    val bars = WindowInsets.safeDrawing
+    val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
+    val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
+    val chromeBottom = bars.getBottom(density) + with(density) { SELECTOR_ROOM.roundToPx() }
+    LaunchedEffect(pageSource, viewport, twoUpSlots, musicSize, barsX, chromeTop, chromeBottom) {
+        val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
+        if (viewport == IntSize.Zero) return@LaunchedEffect
+        val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
+        val spec = LayoutSpec(
+            width = if (twoUpSlots) usableW / 2 else usableW,
+            height = viewport.height,
+            // the music size follows the whole screen, so two-up does not shrink the notes
+            scale = (LayoutSpec.defaultScale(viewport.width, viewport.height, densityDpi) * musicSize / 100)
+                .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
+            // a very short window keeps at least half its height for the music
+            marginTop = chromeTop.coerceAtMost(viewport.height / 4),
+            marginBottom = chromeBottom.coerceAtMost(viewport.height / 4),
+        )
+        val before = pageCount
+        try {
+            val changed = rendererLock.withLock {
+                withContext(Dispatchers.Default) { pages.layout(spec) }
+            }
+            if (!changed) return@LaunchedEffect
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "MusicXML layout failed: ${e::class.simpleName}: ${e.message}", e)
+            error = R.string.err_open_file
+            return@LaunchedEffect
+        }
+        val after = pages.pageCount
+        if (after > 0) {
+            currentPage = (if (before > 0) currentPage * after / before else currentPage)
+                .coerceIn(0, after - 1)
+        }
+        halfTurned = false
+        pageCount = after
+        bitmaps.clear()
+        layoutVersion++
     }
 
     // zoom back to zero when the page or the reading mode changes (the draw step too: otherwise
@@ -661,8 +736,11 @@ fun PdfViewerScreen(
     // viewport matters: on the first frame it is still IntSize.Zero, and with no size there is no draw
     LaunchedEffect(
         pageSource, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
+        layoutVersion,
     ) {
         val r = pageSource ?: return@LaunchedEffect
+        // a MusicXML score has no pages until it is laid out (the effect above)
+        if (r is MusicXmlPages && r.pageCount == 0) return@LaunchedEffect
         val gen = ++renderGeneration
         val needed = when {
             branch.showTwoUp -> listOf(currentPage, currentPage + 1).filter { it < pageCount }
@@ -709,8 +787,10 @@ fun PdfViewerScreen(
                 // we do not pile up bitmaps of pages that are no longer on screen (16 MB each when sharp)
                 bitmaps.keys.filterNot { it in needed }.forEach { bitmaps.remove(it) }
                 // no bitmap for this page means nothing to show: say so instead of leaving the
-                // spinner turning forever (it happened with a blank page)
-                if (bitmaps[currentPage] == null) {
+                // spinner turning forever (it happened with a blank page). Only for a render made
+                // for this page: a MusicXML score laid out again (two pages -> one) changes the
+                // page numbers while an older render finishes, and the newer one is on its way.
+                if (currentPage in needed && bitmaps[currentPage] == null) {
                     Log.e(LOG_TAG, "la página $currentPage no se pudo renderizar")
                     error = R.string.err_render_page
                 }
@@ -727,7 +807,9 @@ fun PdfViewerScreen(
     // ahead of time makes the turn a cache hit in MuPdfDoc (same page, same width key).
     // Only at 1x: a turn resets the zoom, so a draw at a zoomed slot would never be reused.
     // The delay gives a quick turn the lock: turning before it fires cancels this effect.
-    LaunchedEffect(pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf) {
+    LaunchedEffect(
+        pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf, layoutVersion,
+    ) {
         val r = pageSource ?: return@LaunchedEffect
         if (branch.showTwoUp || (branch.showHalf && halfTurned)) return@LaunchedEffect
         if (renderScale != 1f || viewport == IntSize.Zero) return@LaunchedEffect
@@ -1918,6 +2000,11 @@ fun PdfViewerScreen(
                 onDimChange = { dimPct = it },
                 onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
                 onDismiss = { optionsOpen = false },
+                musicSize = if (format.isMusicXml) musicSize else null,
+                onMusicSizeChange = {
+                    musicSize = it.coerceIn(MIN_MUSIC_SIZE, MAX_MUSIC_SIZE)
+                    Settings.setMusicSize(context, pdfUri.toString(), musicSize)
+                },
             )
         }
     }

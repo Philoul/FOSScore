@@ -177,6 +177,9 @@ fun DisplayOptionsOverlay(
     onDimChangeFinished: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    /** MusicXML note size in percent, or null for a PDF (its notes are printed, the row is not drawn). */
+    musicSize: Int? = null,
+    onMusicSizeChange: (Int) -> Unit = {},
 ) {
     BackHandler(onBack = onDismiss)
     Box(
@@ -232,6 +235,19 @@ fun DisplayOptionsOverlay(
                     )
                     Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyLarge)
                 }
+                if (musicSize != null) {
+                    SectionLabel(stringResource(R.string.engraving_section_label))
+                    StepperRow(
+                        label = stringResource(R.string.note_size_label),
+                        value = "$musicSize%",
+                        lessLabel = stringResource(R.string.note_size_smaller),
+                        moreLabel = stringResource(R.string.note_size_larger),
+                        canLess = musicSize > MIN_MUSIC_SIZE,
+                        canMore = musicSize < MAX_MUSIC_SIZE,
+                        onLess = { onMusicSizeChange(musicSize - MUSIC_SIZE_STEP) },
+                        onMore = { onMusicSizeChange(musicSize + MUSIC_SIZE_STEP) },
+                    )
+                }
             }
         }
     }
@@ -264,6 +280,35 @@ private fun OptionRow(label: String, checked: Boolean, role: Role, onClick: () -
         else Checkbox(checked = checked, onCheckedChange = null)
         Spacer(Modifier.width(4.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+// MusicXML note size, in percent of the size chosen for the screen: 10 % steps, half to double
+const val MIN_MUSIC_SIZE = 50
+const val MAX_MUSIC_SIZE = 200
+const val MUSIC_SIZE_STEP = 10
+
+/** − value + on the right of the label; each tap is one step, so the value never jumps under the finger. */
+@Composable
+private fun StepperRow(
+    label: String,
+    value: String,
+    lessLabel: String,
+    moreLabel: String,
+    canLess: Boolean,
+    canMore: Boolean,
+    onLess: () -> Unit,
+    onMore: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        TextButton(onClick = onLess, enabled = canLess, modifier = Modifier.semantics { contentDescription = lessLabel }) {
+            Text("−", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+        TextButton(onClick = onMore, enabled = canMore, modifier = Modifier.semantics { contentDescription = moreLabel }) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
+        }
     }
 }
 

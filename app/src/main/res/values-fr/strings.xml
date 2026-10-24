@@ -164,4 +164,35 @@
     <string name="backup_check_device_other">Exportée depuis un autre appareil (%1$s)</string>
     <string name="backup_check_files_ok">Tous les PDF sont inclus</string>
     <string name="backup_check_files_missing">%1$d fichiers PDF manquaient au moment de cet export.</string>
+    <!-- metronome -->
+    <string name="metronome_start">Lancer le métronome</string>
+    <string name="metronome_stop">Arrêter le métronome</string>
+    <string name="metronome_tap">TAP</string>
+    <string name="metronome_settings">Réglages du métronome</string>
+    <string name="metronome_close">Fermer le métronome</string>
+    <string name="metronome_time_signature">Mesure</string>
+    <string name="metronome_meter_from_score">%1$s (partition)</string>
+    <string name="metronome_fewer">Moins</string>
+    <string name="metronome_more">Plus</string>
+    <string name="metronome_mode_sound">Clics</string>
+    <string name="metronome_mode_visual">Clignotement du bord de la page</string>
+    <string name="metronome_mode_both">Clics et clignotement</string>
+    <string name="metronome_sound_click">Clic</string>
+    <string name="metronome_sound_hihat">Charleston</string>
+    <string name="metronome_sound_woodblock">Wood-block</string>
+    <string name="metronome_sound_digital">Numérique</string>
+    <string name="metronome_accent">Accent sur le 1</string>
+    <string name="metronome_subdivision">Clics/temps</string>
+    <string name="metronome_count_in">Mesures de décompte</string>
+    <string name="metronome_page_turns">Tourne des pages</string>
+    <string name="metronome_auto_turn">Tourner les pages</string>
+    <string name="turn_ahead">Avance</string>
+    <string name="metronome_page_of">P. %1$d/%2$d</string>
+    <string name="metronome_bars_range">mesures %1$d–%2$d</string>
+    <string name="metronome_copy_bars">Même nombre pour les pages suivantes</string>
+    <string name="metronome_mode_label">Signalés par</string>
+    <string name="metronome_bar">Mesure %1$d</string>
+    <string name="tempo_as_written_short">Comme écrit</string>
+    <string name="metronome_previous_page">Page précédente</string>
+    <string name="metronome_next_page">Page suivante</string>
 </resources>

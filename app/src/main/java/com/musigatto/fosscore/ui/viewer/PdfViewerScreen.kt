@@ -43,7 +43,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -111,8 +113,14 @@ import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.metronome.BarPages
+import com.musigatto.fosscore.metronome.MAX_BPM
+import com.musigatto.fosscore.metronome.MIN_BPM
+import com.musigatto.fosscore.metronome.Meter
+import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
+import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
@@ -277,6 +285,21 @@ fun PdfViewerScreen(
     val tempoFactor by playbackVm.tempo.collectAsState()
     val heardPicked by playbackVm.heard.collectAsState()
     val playbackFailed by playbackVm.failed.collectAsState()
+    val aheadNotes by playbackVm.ahead.collectAsState()
+
+    // the metronome: its band, its clicks and the page turns it drives (MetronomeViewModel)
+    val metronomeVm: MetronomeViewModel = viewModel(
+        key = "metronome:$pdfUri",
+        factory = MetronomeViewModel.factory(context, pdfUri.toString()),
+    )
+    val metronome by metronomeVm.settings.collectAsState()
+    val metronomeOn by metronomeVm.running.collectAsState()
+    val metronomeShown by metronomeVm.shown.collectAsState()
+    val metronomeTick by metronomeVm.tick.collectAsState()
+    val meterFromScore by metronomeVm.meterFromScore.collectAsState()
+    // a MusicXML score's bars and notes, for the page turns of the metronome
+    var metronomeMusic by remember { mutableStateOf<Playback?>(null) }
+    SideEffect { playbackVm.turnAhead = metronome.turnAhead }
 
     var pageSource by remember { mutableStateOf<PageSource?>(null) }
     // a MusicXML score has no pages of its own: they are laid out for this screen (MusicXmlPages)
@@ -347,6 +370,8 @@ fun PdfViewerScreen(
     // block because the bar is removed while the loupe is up (and the height must survive that).
     var titleBarHeight by remember { mutableIntStateOf(0) }
     var annBarPx by remember { mutableIntStateOf(0) }
+    // the height of the bottom chrome (a band, the page dots), kept while it is hidden
+    var bottomChromePx by remember { mutableIntStateOf(0) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var activeSymbol by rememberSaveable { mutableStateOf<StampSymbol?>(null) }
     var lastSymbol by rememberSaveable { mutableStateOf(StampSymbol.FLAT) }  // glyph on the tool
@@ -804,27 +829,83 @@ fun PdfViewerScreen(
         halfTurned = false
     }
 
-    // Follow the music: the pages turn as PageFlow.follow says (in half page, the top of the next
-    // page when the music gets to it, the whole page when the music gets to its lower part). A
-    // page turned by hand during playback lets the reader look ahead: the follow waits until the
-    // music is on screen again (as in the MusicXML prototype).
-    LaunchedEffect(cursorNotes) {
-        val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
-        if (cursorNotes.isEmpty()) return@LaunchedEffect
-        val onScreen = notesOnScreen(cursorNotes).isNotEmpty()
-        if (onScreen) playbackVm.musicOnScreen()
-        if (playbackVm.followPaused) return@LaunchedEffect
-        val target = pages.pageOf(cursorNotes.first())
-        if (target < 0) return@LaunchedEffect
+    // Follow the music of a MusicXML score: [notes] are heard, [ahead] are where the reader looks
+    // (the bars to turn ahead). The pages turn as PageFlow.follow says. A page turned by hand
+    // during playback lets the reader look ahead: the follow waits until the music is on screen
+    // again (as in the MusicXML prototype).
+    suspend fun followMusic(notes: List<String>, ahead: List<String>, byHand: Boolean = true) {
+        val pages = pageSource as? MusicXmlPages ?: return
+        if (notes.isEmpty()) return
+        val onScreen = notesOnScreen(notes).isNotEmpty()
+        if (byHand && onScreen) playbackVm.musicOnScreen()
+        if (byHand && playbackVm.followPaused) return
+        val target = pages.pageOf(notes.first())
+        if (target < 0) return
+        val looked = ahead.ifEmpty { notes }
+        val aheadPage = pages.pageOf(looked.first()).takeIf { it >= 0 } ?: target
         // below the top of the next page that a turned half page shows
         val upper = halfSplit().upper
-        val inLowerPart = pages.geometry(target)?.let { geo ->
-            val heads = cursorNotes.filter { geo.head(it) != null }
+        val aheadInLowerPart = pages.geometry(aheadPage)?.let { geo ->
+            val heads = looked.filter { geo.head(it) != null }
             heads.isNotEmpty() && heads.none { above(geo, it, upper) }
         } ?: false
-        val f = branch.follow(target, inLowerPart, onScreen)
+        val f = branch.follow(target, aheadInLowerPart, onScreen, aheadPage)
         currentPage = f.page
         halfTurned = f.halfTurned
+    }
+
+    LaunchedEffect(cursorNotes) { followMusic(cursorNotes, aheadNotes) }
+
+    // a MusicXML score: the metronome keeps the tempo of playback and the score's time signature
+    val scoreInfo = (pageSource as? MusicXmlPages)?.info
+    LaunchedEffect(tempoFactor, scoreInfo) {
+        if (scoreInfo != null) metronomeVm.followScore(bpmOf(tempoFactor, scoreInfo.tempo ?: DEFAULT_BPM), Meter.parse(scoreInfo.time))
+    }
+
+    // ▶ / ⏸ of the metronome: it counts the bars from the page on screen, the music stops
+    fun startStopMetronome() {
+        if (metronomeOn) {
+            metronomeVm.stop()
+            return
+        }
+        playbackVm.stop()
+        if (format.isMusicXml) {
+            editScope.launch {
+                val music = playbackVm.music()
+                metronomeMusic = music
+                val onScreen = notesOnScreen()
+                val from = music?.onsets?.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters ?: 0.0
+                metronomeVm.start(music?.barAt(from) ?: 0)
+            }
+        } else {
+            metronomeVm.start(BarPages(metronome.barCounts, pageCount).startBar(currentPage, branch.showHalf && halfTurned))
+        }
+    }
+
+    // The pages turn with the metronome: a MusicXML score knows its bars, a PDF score has the
+    // bars of each page counted by the user (BarPages). Only forward: a page turned back by hand
+    // stays until the metronome gets past it.
+    LaunchedEffect(metronomeTick) {
+        val bar = metronomeVm.barHeard(metronomeTick) ?: return@LaunchedEffect
+        if (!metronome.autoTurn) return@LaunchedEffect
+        val ahead = bar + metronome.turnAhead
+        if (format.isMusicXml) {
+            val music = metronomeMusic ?: return@LaunchedEffect
+            val notes = music.notesOfBar(bar) ?: return@LaunchedEffect
+            followMusic(notes, music.notesOfBar(ahead) ?: notes, byHand = false)
+            return@LaunchedEffect
+        }
+        val pages = BarPages(metronome.barCounts, pageCount)
+        if (!pages.known) return@LaunchedEffect
+        val target = pages.pageOf(bar)
+        val aheadPage = pages.pageOf(ahead)
+        val spread = branch.showTwoUp || (branch.showHalf && halfTurned)
+        val onScreen = target == currentPage || (spread && target == currentPage + 1)
+        val f = branch.follow(target, pages.inLowerHalf(ahead), onScreen, aheadPage)
+        if (f.page > currentPage || (f.page == currentPage && f.halfTurned && !halfTurned)) {
+            currentPage = f.page
+            halfTurned = f.halfTurned
+        }
     }
 
     // zoom back to zero when the page or the reading mode changes (the draw step too: otherwise
@@ -972,6 +1053,12 @@ fun PdfViewerScreen(
     val chromeInset = with(LocalDensity.current) {
         (if (editing && canEdit) titleBarHeight + annBarPx else 0).toDp()
     }
+    // With the metronome band, the bars stay on screen: a PDF page fits between the bar at the top
+    // and the bottom chrome, which hid its first and last staves. (A MusicXML page is laid out
+    // with that room already.)
+    val bandShown = metronomeShown && !format.isMusicXml && !editing
+    val bandInset = with(LocalDensity.current) { (if (bandShown) bottomChromePx else 0).toDp() }
+    val bandTopInset = with(LocalDensity.current) { (if (bandShown) chromeTop else 0).toDp() }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
     LaunchedEffect(viewport) { clampOffsets() }
@@ -999,7 +1086,7 @@ fun PdfViewerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = chromeInset)
+                .padding(top = chromeInset + bandTopInset, bottom = bandInset)
                 .onSizeChanged { viewport = it }
         ) {
             if (error != null) {
@@ -1856,6 +1943,9 @@ fun PdfViewerScreen(
             )
         }
 
+        // the visual metronome: the border of the page flashes on the beats
+        if (metronomeOn && metronome.mode != MetronomeMode.SOUND) BeatFlash(metronomeTick)
+
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).
         if ((navVisible || editing) && loupeAt == null) {
@@ -2109,11 +2199,39 @@ fun PdfViewerScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .onSizeChanged { bottomChromePx = it.height }
                         .background(surface)
                         // edge-to-edge: the knob was sitting in the navigation gesture area
                         .navigationBarsPadding()
                 ) {
-                    if (format.isMusicXml) {
+                    if (metronomeShown) {
+                        // the bar heard, counted from the start of the piece as the score numbers
+                        // its bars; a PDF score knows them once the bars of its pages are counted
+                        val barText = metronomeVm.barHeard(metronomeTick)
+                            ?.takeIf { format.isMusicXml || BarPages(metronome.barCounts, pageCount).known }
+                            ?.let { stringResource(R.string.metronome_bar, it + 1) }
+                        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+                        MetronomeBand(
+                            running = metronomeOn,
+                            tick = metronomeTick,
+                            settings = metronome,
+                            barText = barText,
+                            onStartStop = ::startStopMetronome,
+                            // a MusicXML score has one tempo, the one of playback
+                            onBpm = { bpm ->
+                                if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm)) else metronomeVm.setBpm(bpm)
+                            },
+                            onTap = {
+                                metronomeVm.tap()?.let { bpm ->
+                                    if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
+                                }
+                            },
+                            onSettings = { menu.show(ViewerSurface.METRONOME) },
+                            onClose = { metronomeVm.show(false) },
+                            // a MusicXML score: the same button switches back to the playback band
+                            onPlayback = if (format.isMusicXml) ({ metronomeVm.show(false) }) else null,
+                        )
+                    } else if (format.isMusicXml) {
                         val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
                         PlaybackBand(
                             state = playState,
@@ -2121,13 +2239,20 @@ fun PdfViewerScreen(
                             bpm = bpmOf(tempoFactor, writtenBpm),
                             minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
                             maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
-                            onPlayPause = { playbackVm.playPause(notesOnScreen()) },
+                            onPlayPause = {
+                                metronomeVm.stop()
+                                playbackVm.playPause(notesOnScreen())
+                            },
                             onRestart = playbackVm::restart,
                             onLoop = playbackVm::toggleLoop,
                             onA = playbackVm::tapA,
                             onB = playbackVm::tapB,
                             onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
                             onOptions = { menu.show(ViewerSurface.PLAYBACK) },
+                            onMetronome = {
+                                playbackVm.stop()
+                                metronomeVm.show(true)
+                            },
                         )
                         if (playbackFailed) {
                             Text(
@@ -2150,7 +2275,8 @@ fun PdfViewerScreen(
                         modifier = Modifier.padding(
                             start = 24.dp,
                             end = 24.dp,
-                            top = if (format.isMusicXml) 0.dp else 10.dp,
+                            // under a band, the dots need no air above them
+                            top = if (format.isMusicXml || metronomeShown) 0.dp else 10.dp,
                             bottom = 10.dp,
                         ),
                     )
@@ -2158,7 +2284,10 @@ fun PdfViewerScreen(
             }
         }
 
-        // the menu and its panels, over everything: one at a time (ViewerMenuViewModel)
+        // the menu and its panels, over everything: one at a time (ViewerMenuViewModel), the panels
+        // under the bar at the top while it shows
+        val panelTop = with(density) { if (navVisible) (bars.getTop(density) + TITLE_BAR_ROOM.roundToPx()).toDp() else 0.dp }
+        CompositionLocalProvider(LocalPanelTop provides panelTop) {
         when (surface) {
             ViewerSurface.NONE -> Unit
             ViewerSurface.MENU -> ViewerMenuPanel(
@@ -2169,7 +2298,17 @@ fun PdfViewerScreen(
                         ViewerMenuItem.LIBRARY -> onOpenLibrary()
                         ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
                         ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
-                        ViewerMenuItem.PLAYBACK -> menu.show(ViewerSurface.PLAYBACK)
+                        ViewerMenuItem.PLAYBACK -> {
+                            metronomeVm.show(false)
+                            menu.show(ViewerSurface.PLAYBACK)
+                        }
+                        // its settings, as for playback; its band takes the place of the playback band
+                        ViewerMenuItem.METRONOME -> {
+                            playbackVm.stop()
+                            metronomeVm.show(true)
+                            navVisible = true
+                            menu.show(ViewerSurface.METRONOME)
+                        }
                         ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
                         // greyed out in the menu: never chosen
                         else -> Unit
@@ -2177,6 +2316,44 @@ fun PdfViewerScreen(
                 },
                 onDismiss = menu::dismiss,
             )
+            ViewerSurface.METRONOME -> {
+                // a MusicXML score has one tempo, the one of playback, and a tempo as written
+                val written = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+                val pages = BarPages(metronome.barCounts, pageCount)
+                MetronomeOverlay(
+                    settings = metronome,
+                    bpmRange = if (format.isMusicXml) bpmOf(MIN_TEMPO_FACTOR, written)..bpmOf(MAX_TEMPO_FACTOR, written) else MIN_BPM..MAX_BPM,
+                    writtenBpm = if (format.isMusicXml) bpmOf(1f, written) else null,
+                    wide = isLandscape,
+                    meterFromScore = meterFromScore,
+                    pageBars = if (format.isMusicXml || pageCount == 0) null else PageBars(
+                        page = currentPage,
+                        pageCount = pageCount,
+                        bars = pages.barsOf(currentPage).takeIf { it > 0 } ?: metronome.meter.beats.coerceAtLeast(4),
+                        firstBar = pages.firstBar(currentPage),
+                    ),
+                    onBpm = { bpm ->
+                        if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, written)) else metronomeVm.setBpm(bpm)
+                    },
+                    onMeter = metronomeVm::setMeter,
+                    onMode = metronomeVm::setMode,
+                    onSound = metronomeVm::setSound,
+                    onVolume = metronomeVm::setVolume,
+                    onAccent = metronomeVm::setAccent,
+                    onSubdivision = metronomeVm::setSubdivision,
+                    onCountIn = metronomeVm::setCountIn,
+                    onAutoTurn = metronomeVm::setAutoTurn,
+                    onTurnAhead = metronomeVm::setTurnAhead,
+                    // the page behind changes too, to check the number of its last bar
+                    onBarsPage = {
+                        currentPage = it.coerceIn(0, pageCount - 1)
+                        halfTurned = false
+                    },
+                    onBars = { metronomeVm.setBars(currentPage, it) },
+                    onCopyBars = { metronomeVm.copyBarsToFollowing(currentPage) },
+                    onDismiss = menu::dismiss,
+                )
+            }
             ViewerSurface.DISPLAY -> DisplayOptionsOverlay(
                 halfEnabled = halfEnabled,
                 onSetHalf = {
@@ -2211,6 +2388,8 @@ fun PdfViewerScreen(
                     minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
                     maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
                     onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
+                    turnAhead = metronome.turnAhead,
+                    onTurnAhead = metronomeVm::setTurnAhead,
                     parts = parts,
                     heard = heardParts(heardPicked, shownIds, parts),
                     onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },
@@ -2227,6 +2406,7 @@ fun PdfViewerScreen(
                 onPartShown = menu::setPartShown,
                 onDismiss = menu::dismiss,
             )
+        }
         }
     }
 }

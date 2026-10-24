@@ -110,10 +110,10 @@ class ViewerMenuViewModelTest {
             menuItemState(it, isMusicXml = true) == MenuItemState.READY
         }
         assertEquals(
-            listOf(ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK),
+            listOf(ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT, ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK),
             ready,
         )
-        assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false))
+        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false))
         assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.TUNER, isMusicXml = true))
         assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.SETLIST, isMusicXml = false))
     }

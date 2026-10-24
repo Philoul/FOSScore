@@ -2,8 +2,9 @@ package com.musigatto.fosscore.ui.viewer
 
 import android.graphics.Bitmap
 
-// a blank band is at least this part of the page high: the space between the lines of a staff is not one
-private const val MIN_BAND = 0.015f
+// a blank band is at least this part of the page high: the space between the lines of a staff
+// (crossed by the barlines) is not one; lyrics under a system can leave little more than this
+private const val MIN_BAND = 0.01f
 // a pixel this light is paper
 private const val PAPER = 0xE0
 

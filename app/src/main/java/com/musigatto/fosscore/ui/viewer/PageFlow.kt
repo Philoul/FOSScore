@@ -14,7 +14,8 @@ data class PageFlow(
     val showHalf get() = halfEnabled && !showTwoUp
     val step get() = if (showTwoUp) 2 else 1
 
-    val canPrev get() = page > 0
+    // a turned half page of the first page goes back to the whole first page
+    val canPrev get() = page > 0 || (showHalf && halfTurned)
     val canNext get() = when {
         showHalf -> if (!halfTurned) page + 1 < pageCount else page < pageCount - 1
         else -> page < pageCount - 1

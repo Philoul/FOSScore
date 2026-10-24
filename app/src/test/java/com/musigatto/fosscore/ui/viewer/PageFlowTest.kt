@@ -32,6 +32,14 @@ class PageFlowTest {
     }
 
     @Test
+    fun halfPage_backFromTheFirstTurn() {
+        val turned = half(0).next()
+        assertTrue(turned.canPrev)
+        assertEquals(half(0), turned.prev())                        // B-A back to A-A
+        assertFalse(half(0).canPrev)
+    }
+
+    @Test
     fun halfPage_follow_turnsTheTopThenTheBottom() {
         var f = half(0)
         // the music and the music ahead on page 1: nothing turns, even in the lower half

@@ -95,8 +95,14 @@ class PageFlowTest {
         assertEquals(HalfSplit(0.52f, 0.52f), HalfSplit.of(here, listOf(Band(0.24f, 0.28f), Band(0.5f, 0.55f))))
         // its bands are higher: blank paper between the two parts
         assertEquals(HalfSplit(0.46f, 0.42f), HalfSplit.of(here, listOf(Band(0.2f, 0.24f), Band(0.38f, 0.42f))))
-        // its first system reaches below this page's band: cut in the middle of the band
-        assertEquals(HalfSplit(0.49f, 0.49f), HalfSplit.of(here, listOf(Band(0.6f, 0.65f))))
+        // its first system reaches below this page's middle: this page keeps only its last system
+        assertEquals(HalfSplit(0.72f, 0.65f), HalfSplit.of(here, listOf(Band(0.6f, 0.65f))))
+        // three systems above four: two systems of the next page show, above the last of this one
+        val three = listOf(Band(0.415f, 0.44f), Band(0.641f, 0.665f), Band(0.867f, 0.903f))
+        val four = listOf(Band(0.244f, 0.267f), Band(0.47f, 0.489f), Band(0.695f, 0.718f), Band(0.92f, 0.947f))
+        assertEquals(HalfSplit(0.641f, 0.489f), HalfSplit.of(three, four))
+        // no band of this page low enough in its upper three quarters: cut at its middle band
+        assertEquals(HalfSplit(0.46f, 0.42f), HalfSplit.of(listOf(Band(0.46f, 0.52f)), listOf(Band(0.38f, 0.42f), Band(0.53f, 0.56f))))
     }
 
     @Test

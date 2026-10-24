@@ -77,13 +77,24 @@ data class HalfSplit(val lower: Float = 0.5f, val upper: Float = lower) {
     companion object {
         /**
          * The cut goes through blank bands of the pages, the space between two systems, so no
-         * system is cut in two: on this page the band nearest the middle, on the next one the band
-         * that shows the most of it above that. [bands] and [nextBands] are the blank bands of
-         * this page and the next (the top margin left out). A page with none cuts at its middle.
+         * system is cut in two. The top half of the next page shows: down to its band nearest the
+         * middle, above the highest band of this page low enough for it, as long as this page
+         * keeps at least its last quarter. Otherwise (no such band) this page cuts at its band
+         * nearest the middle, and the next one shows the most it can above that. [bands] and
+         * [nextBands] are the blank bands of this page and the next (the top margin left out). A
+         * page with none cuts at its middle.
          */
         fun of(bands: List<Band>, nextBands: List<Band>): HalfSplit {
-            val here = bands.filter { it.end >= 0.25f && it.start <= 0.75f }
-                .minByOrNull { abs((it.start + it.end) / 2 - 0.5f) } ?: return HalfSplit()
+            val middle = { b: Band -> abs((b.start + b.end) / 2 - 0.5f) }
+            val inMiddle = { b: Band -> b.end >= 0.25f && b.start <= 0.75f }
+            // pages of different systems: a page of three systems above a page of four
+            nextBands.filter(inMiddle).minByOrNull(middle)?.let { next ->
+                bands.firstOrNull { it.end >= next.start && it.start <= 0.75f }?.let { here ->
+                    val upper = minOf(next.end, here.end)
+                    return HalfSplit(maxOf(here.start, upper), upper)
+                }
+            }
+            val here = bands.filter(inMiddle).minByOrNull(middle) ?: return HalfSplit()
             val upper = nextBands.filter { it.start <= here.end }.maxOfOrNull { minOf(it.end, here.end) }
                 ?: return ((here.start + here.end) / 2).let { HalfSplit(it, it) }
             return HalfSplit(maxOf(here.start, upper), upper)

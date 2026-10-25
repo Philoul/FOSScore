@@ -100,6 +100,7 @@
     <string name="chrome_menu">Menu ☰ et titre</string>
     <string name="chrome_icons_popup">Icônes, panneau sous l’icône</string>
     <string name="chrome_icons_tab">Icônes, panneau en onglet</string>
+    <string name="chrome_all_icons">Toutes les icônes (aperçu)</string>
     <string name="engraving_section_label">Gravure</string>
     <string name="note_size_label">Taille des notes</string>
     <string name="note_size_smaller">Notes plus petites</string>

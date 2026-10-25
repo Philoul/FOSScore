@@ -183,6 +183,8 @@ fun DisplayOptionsOverlay(
     /** The look of the top bar, while the variants are tried (ChromeStyle). */
     chromeStyle: ChromeStyle,
     onChromeStyle: (ChromeStyle) -> Unit,
+    allIcons: Boolean,
+    onToggleAllIcons: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -230,6 +232,9 @@ fun DisplayOptionsOverlay(
         }
         OptionRow(stringResource(R.string.chrome_icons_tab), chromeStyle == ChromeStyle.ICONS_TAB, Role.RadioButton) {
             onChromeStyle(ChromeStyle.ICONS_TAB)
+        }
+        if (chromeStyle != ChromeStyle.MENU) {
+            OptionRow(stringResource(R.string.chrome_all_icons), allIcons, Role.Checkbox, onClick = onToggleAllIcons)
         }
     }
 }

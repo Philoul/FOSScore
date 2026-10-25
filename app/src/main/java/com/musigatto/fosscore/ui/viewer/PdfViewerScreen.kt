@@ -349,6 +349,7 @@ fun PdfViewerScreen(
     var keepScreenOn by remember { mutableStateOf(Settings.keepScreenOn(context)) }
     // the look of the top bar while its variants are tried, and where the last panel opened from
     var chromeStyle by remember { mutableStateOf(Settings.chromeStyle(context)) }
+    var allIcons by remember { mutableStateOf(Settings.allIcons(context)) }
     var panelX by remember { mutableStateOf(0.dp) }
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
@@ -2094,6 +2095,7 @@ fun PdfViewerScreen(
                     editing = editing,
                     open = open,
                     tab = chromeStyle == ChromeStyle.ICONS_TAB,
+                    allIcons = allIcons,
                     onSelect = { item, x ->
                         panelX = x
                         menu.dismiss()
@@ -2507,6 +2509,11 @@ fun PdfViewerScreen(
                 onChromeStyle = {
                     chromeStyle = it
                     Settings.setChromeStyle(context, it)
+                },
+                allIcons = allIcons,
+                onToggleAllIcons = {
+                    allIcons = !allIcons
+                    Settings.setAllIcons(context, allIcons)
                 },
                 onDismiss = menu::dismiss,
             )

@@ -2,12 +2,15 @@ package com.musigatto.fosscore.ui.viewer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
@@ -58,6 +61,9 @@ private val BAR_ITEMS = listOf(
 )
 
 private val BAR_BUTTON = 44.dp
+// the smallest an icon button gets when every entry has to fit in the bar
+private val BAR_BUTTON_MIN = 32.dp
+private val GROUP_GAP = 4.dp
 
 /**
  * The top of the viewer as a row of icons, no text: the entries of the menu that work for this
@@ -65,6 +71,10 @@ private val BAR_BUTTON = 44.dp
  * toggle on the right. [open] is the entry whose panel shows (its icon is lit); [onSelect] gets
  * the middle of the icon tapped, where its panel hangs. With [tab] and a panel open, the bar's
  * lower corners square off so the panel reads as its continuation.
+ *
+ * With [allIcons] (a preview of the finished app), every entry of the menu has its icon, greyed
+ * out while it is not built, a small gap between the groups; the buttons shrink to fit the width,
+ * and the title and ⋯ leave the room to them.
  */
 @Composable
 fun ViewerIconBar(
@@ -74,12 +84,16 @@ fun ViewerIconBar(
     editing: Boolean,
     open: ViewerMenuItem?,
     tab: Boolean,
+    allIcons: Boolean,
     onSelect: (ViewerMenuItem, Dp) -> Unit,
     onMore: (Dp) -> Unit,
     onToggleEditing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val joined = tab && open != null
+    // the edit toggle stands for the Annotate entry
+    val items = if (allIcons) ViewerMenuItem.entries.filter { it != ViewerMenuItem.ANNOTATE }
+    else BAR_ITEMS.filter { menuItemState(it, isMusicXml) == MenuItemState.READY }
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -88,58 +102,73 @@ fun ViewerIconBar(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = if (joined) 0.dp else 4.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .height(48.dp + if (joined) 8.dp else 0.dp)
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BAR_ITEMS.filter { menuItemState(it, isMusicXml) == MenuItemState.READY }.forEach { item ->
-                BarIcon(item.icon, item.label(), lit = item == open) { x -> onSelect(item, x) }
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+        BoxWithConstraints(Modifier.padding(horizontal = 6.dp)) {
+            val groups = items.map { it.group }.distinct().size
+            val button = if (!allIcons) BAR_BUTTON
+            else ((maxWidth - GROUP_GAP * (groups - 1)) / (items.size + 1)).coerceIn(BAR_BUTTON_MIN, BAR_BUTTON)
+            Row(
+                modifier = Modifier.height(48.dp + if (joined) 8.dp else 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
-                if (pageLabel.isNotEmpty()) {
-                    Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                items.forEachIndexed { i, item ->
+                    if (allIcons && i > 0 && item.group != items[i - 1].group) Spacer(Modifier.width(GROUP_GAP))
+                    val ready = menuItemState(item, isMusicXml) == MenuItemState.READY
+                    BarIcon(item.icon, item.label(), lit = item == open, size = button, enabled = ready) { x -> onSelect(item, x) }
                 }
+                if (allIcons) {
+                    Spacer(Modifier.weight(1f))
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+                        if (pageLabel.isNotEmpty()) {
+                            Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
+                }
+                BarIcon(
+                    if (editing) LINE_DONE else LINE_EDIT,
+                    stringResource(if (editing) R.string.annotate_done else R.string.action_edit),
+                    lit = editing,
+                    size = button,
+                ) { onToggleEditing() }
             }
-            BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, onClick = onMore)
-            BarIcon(
-                if (editing) LINE_DONE else LINE_EDIT,
-                stringResource(if (editing) R.string.annotate_done else R.string.action_edit),
-                lit = editing,
-            ) { onToggleEditing() }
         }
     }
 }
 
-// one icon of the bar; [lit] while its panel shows. Reports the middle of the icon, in dp from the
-// left of the screen, with the tap.
+// one icon of the bar, [size] wide; [lit] while its panel shows, greyed out unless [enabled].
+// Reports the middle of the icon, in dp from the left of the screen, with the tap.
 @Composable
-private fun BarIcon(icon: String, label: String, lit: Boolean, onClick: (Dp) -> Unit) {
+private fun BarIcon(icon: String, label: String, lit: Boolean, size: Dp, enabled: Boolean = true, onClick: (Dp) -> Unit) {
     val density = LocalDensity.current
     var middle by remember { mutableStateOf(0.dp) }
-    val tint = if (lit) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+    val tint = when {
+        lit -> MaterialTheme.colorScheme.onPrimaryContainer
+        enabled -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
     IconButton(
         onClick = { onClick(middle) },
+        enabled = enabled,
         modifier = Modifier
-            .size(BAR_BUTTON)
+            .size(size)
             .onGloballyPositioned { middle = with(density) { it.boundsInRoot().center.x.toDp() } }
             .semantics { contentDescription = label },
     ) {
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(size - 4.dp)
                 .clip(CircleShape)
                 .background(if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
-            CompositionLocalProvider(LocalContentColor provides tint) { LineIcon(icon, size = 28.dp) }
+            CompositionLocalProvider(LocalContentColor provides tint) { LineIcon(icon, size = minOf(28.dp, size - 10.dp)) }
         }
     }
 }

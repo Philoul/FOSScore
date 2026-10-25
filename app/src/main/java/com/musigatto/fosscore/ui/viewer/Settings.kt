@@ -83,6 +83,7 @@ object Settings {
     private const val KEY_TWO_UP = "two_up"
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
     private const val KEY_CHROME_STYLE = "chrome_style"
+    private const val KEY_ALL_ICONS = "all_icons"
     private const val KEY_LAST_PAGE = "last_page_"
     private const val KEY_OPENED_AT = "opened_at_"
     private const val KEY_LAST_PAGE_AT = "last_page_at_"
@@ -167,6 +168,13 @@ object Settings {
 
     fun setChromeStyle(context: Context, value: ChromeStyle) {
         context.prefs().edit { putString(KEY_CHROME_STYLE, value.name) }
+    }
+
+    // the icon bar with an icon for every entry of the menu, a preview of the finished app
+    fun allIcons(context: Context): Boolean = context.prefs().getBoolean(KEY_ALL_ICONS, false)
+
+    fun setAllIcons(context: Context, value: Boolean) {
+        context.prefs().edit { putBoolean(KEY_ALL_ICONS, value) }
     }
 
     /** When the score at [uri] was opened last (ms since 1970), 0 if never. */

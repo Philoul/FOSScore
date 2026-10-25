@@ -62,6 +62,7 @@
     <string name="chrome_menu">Menu ☰ and title</string>
     <string name="chrome_icons_popup">Icons, panel under the icon</string>
     <string name="chrome_icons_tab">Icons, panel as a tab</string>
+    <string name="chrome_all_icons">Every icon (preview)</string>
     <string name="err_open_file">Could not open the file</string>
     <string name="err_file_unreadable">The file could not be read</string>
     <string name="err_not_a_score">This file is neither a PDF nor a MusicXML score</string>

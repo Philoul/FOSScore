@@ -63,6 +63,7 @@
     <string name="chrome_menu">Menú ☰ y título</string>
     <string name="chrome_icons_popup">Iconos, panel bajo el icono</string>
     <string name="chrome_icons_tab">Iconos, panel como pestaña</string>
+    <string name="chrome_all_icons">Todos los iconos (vista previa)</string>
     <string name="err_open_file">No se pudo abrir el archivo</string>
     <string name="err_file_unreadable">No se pudo leer el archivo</string>
     <string name="err_not_a_score">Este archivo no es ni un PDF ni una partitura MusicXML</string>

@@ -39,6 +39,8 @@ internal const val LINE_MENU = "M4,7h16M4,12h16M4,17h16"
 internal const val LINE_CLOSE = "M6,6L18,18M18,6L6,18"
 internal const val LINE_EDIT = "M4,20l1,-4.5L15.5,5a2.1,2.1 0 0,1 3,3L8.5,18.5zM13.5,7l3,3"
 internal const val LINE_DONE = "M5,12.5l4.5,4.5L19,7.5"
+// the full menu, behind the icon bar
+internal val LINE_MORE = circle(5f, 12f, 1f) + circle(12f, 12f, 1f) + circle(19f, 12f, 1f)
 
 // the viewer menu, one per entry
 // a score on top of another, a note on it

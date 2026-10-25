@@ -55,6 +55,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -179,6 +180,9 @@ fun DisplayOptionsOverlay(
     dimPct: Float,
     onDimChange: (Float) -> Unit,
     onDimChangeFinished: () -> Unit,
+    /** The look of the top bar, while the variants are tried (ChromeStyle). */
+    chromeStyle: ChromeStyle,
+    onChromeStyle: (ChromeStyle) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -217,6 +221,16 @@ fun DisplayOptionsOverlay(
             )
             Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyLarge)
         }
+        SectionLabel(stringResource(R.string.chrome_section_label))
+        OptionRow(stringResource(R.string.chrome_menu), chromeStyle == ChromeStyle.MENU, Role.RadioButton) {
+            onChromeStyle(ChromeStyle.MENU)
+        }
+        OptionRow(stringResource(R.string.chrome_icons_popup), chromeStyle == ChromeStyle.ICONS_POPUP, Role.RadioButton) {
+            onChromeStyle(ChromeStyle.ICONS_POPUP)
+        }
+        OptionRow(stringResource(R.string.chrome_icons_tab), chromeStyle == ChromeStyle.ICONS_TAB, Role.RadioButton) {
+            onChromeStyle(ChromeStyle.ICONS_TAB)
+        }
     }
 }
 
@@ -243,21 +257,27 @@ internal fun PanelOverlay(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
+    val anchor = LocalPanelAnchor.current
+    val top = LocalPanelTop.current
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Black.copy(alpha = if (anchor.style == ChromeStyle.ICONS_TAB) 0.2f else 0.4f))
             .pointerInput(Unit) { detectTapGestures { onDismiss() } },
-        contentAlignment = alignment,
+        contentAlignment = if (anchor.style == ChromeStyle.MENU) alignment else Alignment.TopStart,
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = if (anchor.style == ChromeStyle.ICONS_TAB) RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+            else RoundedCornerShape(16.dp),
+            shadowElevation = if (anchor.style == ChromeStyle.MENU) 0.dp else 6.dp,
             // swallow taps on the panel: without this they reach the scrim behind and dismiss
-            modifier = Modifier
-                .padding(top = LocalPanelTop.current)
-                .widthIn(max = maxWidth)
-                .padding(16.dp)
-                .pointerInput(Unit) { detectTapGestures { } },
+            modifier = when (anchor.style) {
+                ChromeStyle.MENU -> Modifier.padding(top = top).widthIn(max = maxWidth).padding(16.dp)
+                // a card under the icon that opened it, kept on screen
+                ChromeStyle.ICONS_POPUP -> Modifier.padding(top = top + 4.dp).underIcon(anchor.x, maxWidth)
+                // the bar's continuation, as wide as it
+                ChromeStyle.ICONS_TAB -> Modifier.padding(top = top).padding(horizontal = 12.dp).fillMaxWidth()
+            }.pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(
                 modifier = Modifier
@@ -276,6 +296,15 @@ internal fun PanelOverlay(
             }
         }
     }
+}
+
+// a panel as wide as it needs (at most [maxWidth]), centred under [x] but kept 8 dp inside the screen
+private fun Modifier.underIcon(x: Dp, maxWidth: Dp) = layout { measurable, constraints ->
+    val margin = 8.dp.roundToPx()
+    val width = minOf(maxWidth.roundToPx(), constraints.maxWidth - 2 * margin)
+    val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = width))
+    val left = (x.roundToPx() - placeable.width / 2).coerceIn(margin, constraints.maxWidth - margin - placeable.width)
+    layout(constraints.maxWidth, placeable.height) { placeable.place(left, 0) }
 }
 
 /** Group header of the checklist. */

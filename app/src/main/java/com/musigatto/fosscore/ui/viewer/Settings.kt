@@ -82,6 +82,7 @@ object Settings {
     private const val KEY_HALF_PAGE = "half_page_"
     private const val KEY_TWO_UP = "two_up"
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+    private const val KEY_CHROME_STYLE = "chrome_style"
     private const val KEY_LAST_PAGE = "last_page_"
     private const val KEY_OPENED_AT = "opened_at_"
     private const val KEY_LAST_PAGE_AT = "last_page_at_"
@@ -156,6 +157,16 @@ object Settings {
 
     fun setKeepScreenOn(context: Context, value: Boolean) {
         context.prefs().edit { putBoolean(KEY_KEEP_SCREEN_ON, value) }
+    }
+
+    // the look of the viewer's top bar, while the variants are tried; the icon bar by default
+    fun chromeStyle(context: Context): ChromeStyle =
+        context.prefs().getString(KEY_CHROME_STYLE, null)
+            ?.let { name -> ChromeStyle.entries.firstOrNull { it.name == name } }
+            ?: ChromeStyle.ICONS_POPUP
+
+    fun setChromeStyle(context: Context, value: ChromeStyle) {
+        context.prefs().edit { putString(KEY_CHROME_STYLE, value.name) }
     }
 
     /** When the score at [uri] was opened last (ms since 1970), 0 if never. */

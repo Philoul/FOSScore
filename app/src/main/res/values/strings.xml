@@ -58,6 +58,10 @@
     <string name="desc_page_range">Pages %1$d-%2$d of %3$d</string>
     <string name="display_options_title">Display Options</string>
     <string name="keep_screen_on_label">Keep screen on</string>
+    <string name="chrome_section_label">Top bar (trial)</string>
+    <string name="chrome_menu">Menu ☰ and title</string>
+    <string name="chrome_icons_popup">Icons, panel under the icon</string>
+    <string name="chrome_icons_tab">Icons, panel as a tab</string>
     <string name="err_open_file">Could not open the file</string>
     <string name="err_file_unreadable">The file could not be read</string>
     <string name="err_not_a_score">This file is neither a PDF nor a MusicXML score</string>

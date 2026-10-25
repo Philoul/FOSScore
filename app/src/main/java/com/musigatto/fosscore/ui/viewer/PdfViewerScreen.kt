@@ -347,6 +347,9 @@ fun PdfViewerScreen(
     var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
     var invert by remember { mutableStateOf(Settings.invert(context)) }
     var keepScreenOn by remember { mutableStateOf(Settings.keepScreenOn(context)) }
+    // the look of the top bar while its variants are tried, and where the last panel opened from
+    var chromeStyle by remember { mutableStateOf(Settings.chromeStyle(context)) }
+    var panelX by remember { mutableStateOf(0.dp) }
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
     val view = LocalView.current
@@ -563,6 +566,29 @@ fun PdfViewerScreen(
             inkPreview = emptyList()
             hiddenStampIds = emptySet()
             hiddenStrokeIds = emptySet()
+        }
+    }
+
+    // what an entry of the menu (or its icon in the icon bar) opens
+    fun openMenuItem(item: ViewerMenuItem) {
+        when (item) {
+            ViewerMenuItem.LIBRARY -> onOpenLibrary()
+            ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
+            ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
+            ViewerMenuItem.PLAYBACK -> {
+                metronomeVm.show(false)
+                menu.show(ViewerSurface.PLAYBACK)
+            }
+            // its settings, as for playback; its band takes the place of the playback band
+            ViewerMenuItem.METRONOME -> {
+                playbackVm.stop()
+                metronomeVm.show(true)
+                navVisible = true
+                menu.show(ViewerSurface.METRONOME)
+            }
+            ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
+            // greyed out in the menu: never chosen
+            else -> Unit
         }
     }
 
@@ -2026,28 +2052,61 @@ fun PdfViewerScreen(
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).
         if ((navVisible || editing) && loupeAt == null) {
+            // the panel open, read before `surface` names the colour below
+            val panel = surface
             val surface = MaterialTheme.colorScheme.surface
 
+            val titleBarModifier = Modifier
+                .align(Alignment.TopCenter)
+                // edge-to-edge: the pills were slipping under the status bar, and in landscape
+                // under the side navigation bar. The measured height includes these insets, so
+                // the annotation bar below still lands right.
+                .onSizeChanged { titleBarHeight = it.height }
+                .windowInsetsPadding(
+                    WindowInsets.systemBars.only(
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    )
+                )
             // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
-            ViewerTitleBar(
-                title = title,
-                composer = composer,
-                pageLabel = pageLabel,
-                editing = editing,
-                onOpenMenu = { menu.show(ViewerSurface.MENU) },
-                onToggleEditing = { toggleEditing() },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    // edge-to-edge: the pills were slipping under the status bar, and in landscape
-                    // under the side navigation bar. The measured height includes these insets, so
-                    // the annotation bar below still lands right.
-                    .onSizeChanged { titleBarHeight = it.height }
-                    .windowInsetsPadding(
-                        WindowInsets.systemBars.only(
-                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                        )
-                    ),
-            )
+            if (chromeStyle == ChromeStyle.MENU) {
+                ViewerTitleBar(
+                    title = title,
+                    composer = composer,
+                    pageLabel = pageLabel,
+                    editing = editing,
+                    onOpenMenu = { menu.show(ViewerSurface.MENU) },
+                    onToggleEditing = { toggleEditing() },
+                    modifier = titleBarModifier,
+                )
+            } else {
+                // the entry whose panel shows: its icon is lit, and a second tap closes it
+                val open = when (panel) {
+                    ViewerSurface.DISPLAY -> ViewerMenuItem.DISPLAY
+                    ViewerSurface.LAYOUT -> ViewerMenuItem.LAYOUT
+                    ViewerSurface.PLAYBACK -> ViewerMenuItem.PLAYBACK
+                    ViewerSurface.METRONOME -> ViewerMenuItem.METRONOME
+                    else -> null
+                }
+                ViewerIconBar(
+                    title = title,
+                    pageLabel = pageLabel,
+                    isMusicXml = format.isMusicXml,
+                    editing = editing,
+                    open = open,
+                    tab = chromeStyle == ChromeStyle.ICONS_TAB,
+                    onSelect = { item, x ->
+                        panelX = x
+                        menu.dismiss()
+                        if (item != open) openMenuItem(item)
+                    },
+                    onMore = { x ->
+                        panelX = x
+                        menu.show(ViewerSurface.MENU)
+                    },
+                    onToggleEditing = { toggleEditing() },
+                    modifier = titleBarModifier,
+                )
+            }
 
             // The annotation bar hangs from the measured title bar. forScore *replaces* the title
             // bar with it (spec §5) and that needs its row 1 (✕ / ✓ / ‹ ›), which is not built:
@@ -2366,32 +2425,14 @@ fun PdfViewerScreen(
         // the menu and its panels, over everything: one at a time (ViewerMenuViewModel), the panels
         // under the bar at the top while it shows
         val panelTop = with(density) { if (navVisible) (bars.getTop(density) + TITLE_BAR_ROOM.roundToPx()).toDp() else 0.dp }
-        CompositionLocalProvider(LocalPanelTop provides panelTop) {
+        CompositionLocalProvider(LocalPanelTop provides panelTop, LocalPanelAnchor provides PanelAnchor(chromeStyle, panelX)) {
         when (surface) {
             ViewerSurface.NONE -> Unit
             ViewerSurface.MENU -> ViewerMenuPanel(
                 isMusicXml = format.isMusicXml,
                 onSelect = { item ->
                     menu.dismiss()
-                    when (item) {
-                        ViewerMenuItem.LIBRARY -> onOpenLibrary()
-                        ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
-                        ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
-                        ViewerMenuItem.PLAYBACK -> {
-                            metronomeVm.show(false)
-                            menu.show(ViewerSurface.PLAYBACK)
-                        }
-                        // its settings, as for playback; its band takes the place of the playback band
-                        ViewerMenuItem.METRONOME -> {
-                            playbackVm.stop()
-                            metronomeVm.show(true)
-                            navVisible = true
-                            menu.show(ViewerSurface.METRONOME)
-                        }
-                        ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
-                        // greyed out in the menu: never chosen
-                        else -> Unit
-                    }
+                    openMenuItem(item)
                 },
                 onDismiss = menu::dismiss,
             )
@@ -2462,6 +2503,11 @@ fun PdfViewerScreen(
                 dimPct = dimPct,
                 onDimChange = { dimPct = it },
                 onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
+                chromeStyle = chromeStyle,
+                onChromeStyle = {
+                    chromeStyle = it
+                    Settings.setChromeStyle(context, it)
+                },
                 onDismiss = menu::dismiss,
             )
             ViewerSurface.PLAYBACK -> {

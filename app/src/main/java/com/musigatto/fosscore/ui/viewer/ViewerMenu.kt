@@ -155,8 +155,8 @@ private fun MenuRow(icon: String, label: String, hint: String?, enabled: Boolean
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val iconColor = if (enabled) MaterialTheme.colorScheme.primary else content
-        Box(Modifier.width(36.dp)) {
-            CompositionLocalProvider(LocalContentColor provides iconColor) { LineIcon(icon) }
+        Box(Modifier.width(44.dp)) {
+            CompositionLocalProvider(LocalContentColor provides iconColor) { LineIcon(icon, size = 28.dp) }
         }
         Column {
             Text(label, style = MaterialTheme.typography.bodyLarge, color = content)

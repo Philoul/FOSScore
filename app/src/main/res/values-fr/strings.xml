@@ -96,6 +96,10 @@
     <string name="desc_page_range">Pages %1$d-%2$d sur %3$d</string>
     <string name="display_options_title">Options d’affichage</string>
     <string name="keep_screen_on_label">Garder l’écran allumé</string>
+    <string name="chrome_section_label">Barre du haut (essai)</string>
+    <string name="chrome_menu">Menu ☰ et titre</string>
+    <string name="chrome_icons_popup">Icônes, panneau sous l’icône</string>
+    <string name="chrome_icons_tab">Icônes, panneau en onglet</string>
     <string name="engraving_section_label">Gravure</string>
     <string name="note_size_label">Taille des notes</string>
     <string name="note_size_smaller">Notes plus petites</string>

@@ -259,9 +259,13 @@ internal fun PanelOverlay(
     BackHandler(onBack = onDismiss)
     val anchor = LocalPanelAnchor.current
     val top = LocalPanelTop.current
+    // with the icon bar, the scrim starts under it: the bar stays lit and one tap goes from a panel
+    // to the next
+    val icons = anchor.style != ChromeStyle.MENU
     Box(
         modifier = modifier
             .fillMaxSize()
+            .padding(top = if (icons) top else 0.dp)
             .background(Color.Black.copy(alpha = if (anchor.style == ChromeStyle.ICONS_TAB) 0.2f else 0.4f))
             .pointerInput(Unit) { detectTapGestures { onDismiss() } },
         contentAlignment = if (anchor.style == ChromeStyle.MENU) alignment else Alignment.TopStart,
@@ -274,9 +278,9 @@ internal fun PanelOverlay(
             modifier = when (anchor.style) {
                 ChromeStyle.MENU -> Modifier.padding(top = top).widthIn(max = maxWidth).padding(16.dp)
                 // a card under the icon that opened it, kept on screen
-                ChromeStyle.ICONS_POPUP -> Modifier.padding(top = top + 4.dp).underIcon(anchor.x, maxWidth)
+                ChromeStyle.ICONS_POPUP -> Modifier.padding(top = 4.dp).underIcon(anchor.x, maxWidth)
                 // the bar's continuation, as wide as it
-                ChromeStyle.ICONS_TAB -> Modifier.padding(top = top).padding(horizontal = 12.dp).fillMaxWidth()
+                ChromeStyle.ICONS_TAB -> Modifier.padding(horizontal = 12.dp).fillMaxWidth()
             }.pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(

@@ -40,6 +40,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.ui.viewer.LINE_MENU
+import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
+import com.musigatto.fosscore.ui.viewer.LineIcon
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.score.SheetFormat
@@ -90,7 +93,7 @@ fun LibraryScreen(
                     TextButton(
                         onClick = { selected = emptyList() },
                         modifier = Modifier.semantics { contentDescription = cancelLabel }
-                    ) { Text("✕", style = MaterialTheme.typography.headlineSmall) }
+                    ) { LineIcon(LINE_CLOSE, size = 26.dp) }
                     Text(
                         pluralStringResource(R.plurals.library_selected, chosen.size, chosen.size),
                         style = MaterialTheme.typography.headlineSmall
@@ -112,7 +115,7 @@ fun LibraryScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val menuDescription = stringResource(R.string.menu_open)
                     TextButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = menuDescription }) {
-                        Text("☰", style = MaterialTheme.typography.headlineSmall)
+                        LineIcon(LINE_MENU, size = 26.dp)
                     }
                     Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
                 }
@@ -122,7 +125,7 @@ fun LibraryScreen(
                         TextButton(
                             onClick = close,
                             modifier = Modifier.semantics { contentDescription = closeLabel }
-                        ) { Text("✕") }
+                        ) { LineIcon(LINE_CLOSE) }
                         Spacer(Modifier.width(8.dp))
                     }
                     Button(onClick = onImport) { Text(stringResource(R.string.action_import)) }

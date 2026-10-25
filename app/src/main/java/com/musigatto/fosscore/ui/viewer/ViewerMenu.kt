@@ -37,31 +37,28 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.LyricsPlacement
 import com.musigatto.fosscore.musicxml.Part
 
-// a glyph, not an icon font: the rest of the viewer chrome does the same (♪, ⊞, ✎), and these
-// all exist in the fonts of Android 6; none for the metronome, drawn as on its band button
-private val ViewerMenuItem.glyph: String?
+// the app's line icons (LineIcons.kt), the same on every device
+internal val ViewerMenuItem.icon: String
     get() = when (this) {
-        ViewerMenuItem.LIBRARY -> "♪"
-        ViewerMenuItem.SETLIST -> "≡"
-        ViewerMenuItem.BOOKMARKS -> "⚑"
-        ViewerMenuItem.DISPLAY -> "⊞"
-        ViewerMenuItem.LAYOUT -> "♫"
-        ViewerMenuItem.METRONOME -> null
-        // a tuning fork
-        ViewerMenuItem.TUNER -> "Ψ"
-        // keys
-        ViewerMenuItem.PIANO -> "▥"
-        ViewerMenuItem.PLAYBACK -> "▶"
-        ViewerMenuItem.LINKS -> "↪"
-        ViewerMenuItem.ANNOTATE -> "✎"
-        ViewerMenuItem.PAGES -> "▤"
-        ViewerMenuItem.EXPORT -> "↓"
-        ViewerMenuItem.SHARE -> "↗"
-        ViewerMenuItem.SETTINGS -> "⚙"
+        ViewerMenuItem.LIBRARY -> LINE_LIBRARY
+        ViewerMenuItem.SETLIST -> LINE_SETLIST
+        ViewerMenuItem.BOOKMARKS -> LINE_BOOKMARK
+        ViewerMenuItem.DISPLAY -> LINE_DISPLAY
+        ViewerMenuItem.LAYOUT -> LINE_LAYOUT
+        ViewerMenuItem.METRONOME -> LINE_METRONOME
+        ViewerMenuItem.TUNER -> LINE_TUNER
+        ViewerMenuItem.PIANO -> LINE_PIANO
+        ViewerMenuItem.PLAYBACK -> LINE_PLAY
+        ViewerMenuItem.LINKS -> LINE_LINKS
+        ViewerMenuItem.ANNOTATE -> LINE_EDIT
+        ViewerMenuItem.PAGES -> LINE_PAGES
+        ViewerMenuItem.EXPORT -> LINE_EXPORT
+        ViewerMenuItem.SHARE -> LINE_SHARE
+        ViewerMenuItem.SETTINGS -> LINE_SETTINGS
     }
 
 @Composable
-private fun ViewerMenuItem.label(): String = stringResource(
+internal fun ViewerMenuItem.label(): String = stringResource(
     when (this) {
         ViewerMenuItem.LIBRARY -> R.string.library_title
         ViewerMenuItem.SETLIST -> R.string.menu_setlist
@@ -133,7 +130,7 @@ fun ViewerMenuPanel(
                         group = item.group
                     }
                     val state = menuItemState(item, isMusicXml)
-                    MenuRow(item.glyph, item.label(), state.hint(), state == MenuItemState.READY) {
+                    MenuRow(item.icon, item.label(), state.hint(), state == MenuItemState.READY) {
                         onSelect(item)
                     }
                 }
@@ -143,11 +140,10 @@ fun ViewerMenuPanel(
 }
 
 /**
- * Glyph (or, without one, the metronome icon), name, and under the name why the entry is greyed
- * out. 48 dp high at least: a touch target.
+ * Icon, name, and under the name why the entry is greyed out. 48 dp high at least: a touch target.
  */
 @Composable
-private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
+private fun MenuRow(icon: String, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
     val content = if (enabled) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Row(
@@ -158,18 +154,9 @@ private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boole
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val glyphColor = if (enabled) MaterialTheme.colorScheme.primary else content
-        if (glyph != null) {
-            Text(
-                glyph,
-                style = MaterialTheme.typography.titleMedium,
-                color = glyphColor,
-                modifier = Modifier.width(32.dp),
-            )
-        } else {
-            Box(Modifier.width(32.dp)) {
-                CompositionLocalProvider(LocalContentColor provides glyphColor) { ToolIcon(ICON_METRONOME) }
-            }
+        val iconColor = if (enabled) MaterialTheme.colorScheme.primary else content
+        Box(Modifier.width(36.dp)) {
+            CompositionLocalProvider(LocalContentColor provides iconColor) { LineIcon(icon) }
         }
         Column {
             Text(label, style = MaterialTheme.typography.bodyLarge, color = content)

@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -37,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -110,7 +112,7 @@ fun ViewerTitleBar(
         ) {
             // one entry for everything else (library, display, layout, annotate...): ViewerMenuPanel
             Pill {
-                PillEntry("☰", stringResource(R.string.menu_label), compact = compact, onClick = onOpenMenu)
+                PillEntry(LINE_MENU, stringResource(R.string.menu_label), compact = compact, onClick = onOpenMenu)
             }
             Spacer(Modifier.width(8.dp))
             // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
@@ -143,7 +145,7 @@ fun ViewerTitleBar(
                 else MaterialTheme.colorScheme.surface,
             ) {
                 PillEntry(
-                    if (editing) "✓" else "✎",
+                    if (editing) LINE_DONE else LINE_EDIT,
                     stringResource(if (editing) R.string.annotate_done else R.string.action_edit),
                     compact = compact,
                     selected = editing,
@@ -267,7 +269,7 @@ internal fun PanelOverlay(
                     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     val closeLabel = stringResource(R.string.action_close)
                     TextButton(onClick = onDismiss, modifier = Modifier.semantics { contentDescription = closeLabel }) {
-                        Text("✕", style = MaterialTheme.typography.titleMedium)
+                        LineIcon(LINE_CLOSE)
                     }
                 }
                 content()
@@ -492,9 +494,9 @@ private fun Pill(
 }
 
 /**
- * Glyph + label entry. The glyph takes the accent, the label the plain content color, so the pill
- * reads as a Material component instead of a gray slab; [selected] switches both to the accent
- * container's content color. The label is what a screen reader announces.
+ * Icon + label entry. The icon (a LineIcons path) takes the accent, the label the plain content
+ * color, so the pill reads as a Material component instead of a gray slab; [selected] switches both
+ * to the accent container's content color. The label is what a screen reader announces.
  */
 @Composable
 private fun PillEntry(
@@ -514,7 +516,7 @@ private fun PillEntry(
         // without its label the glyph has no name of its own: keep the label spoken
         modifier = if (compact) Modifier.semantics { contentDescription = label } else Modifier,
     ) {
-        Text(icon, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = glyphColor)
+        CompositionLocalProvider(LocalContentColor provides glyphColor) { LineIcon(icon, size = 20.dp) }
         if (!compact) {
             Spacer(Modifier.width(6.dp))
             Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = labelColor)

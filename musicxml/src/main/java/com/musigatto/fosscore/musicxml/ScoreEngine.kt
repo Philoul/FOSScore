@@ -240,11 +240,11 @@ class ScoreEngine(
     /**
      * MIDI and timing maps for the current layout and [sound]. Once the music is made (see
      * [open]) and the onsets known (see [preparePlayback]), a new tempo or new parts heard take
-     * milliseconds.
+     * milliseconds. Null when no score is open or laid out.
      */
-    suspend fun playback(sound: SoundSpec): Playback {
-        val made = music ?: throw MusicXmlException("no score open")
-        val (notes, spec) = run { onsets() to laidOut!! }
+    suspend fun playback(sound: SoundSpec): Playback? {
+        val made = music ?: return null
+        val (notes, spec) = run { laidOut?.let { onsets() to it } } ?: return null
         val doc = score()
         val midi = made.await()
         val heard = (sound.audible ?: spec.parts).ifEmpty { doc.parts.map { it.id }.toSet() }

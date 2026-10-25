@@ -318,7 +318,11 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         _failed.value = false
         starting = viewModelScope.launch {
             try {
-                val pb = pages.playback(sound())
+                val pb = pages.playback(sound()) ?: run {
+                    stop()
+                    _failed.value = true
+                    return@launch
+                }
                 val loop = _loop.value
                 val from = resumeAt
                     ?: loop.a?.takeIf { loop.on }
@@ -362,7 +366,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             val pages = pages ?: return@launch
             var next: MediaPlayer? = null
             try {
-                val pb = pages.playback(sound())
+                // without a layout the old player keeps playing
+                val pb = pages.playback(sound()) ?: return@launch
                 val ready = preparePlayer(pb).also { next = it }
                 val old = player
                 val oldPb = playback

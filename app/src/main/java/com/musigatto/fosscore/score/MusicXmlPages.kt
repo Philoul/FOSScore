@@ -166,8 +166,8 @@ class MusicXmlPages private constructor(
     /** Page (0-based) of the note [id] in the current layout, or -1. */
     suspend fun pageOf(id: String): Int = engine.pageOf(id) - 1
 
-    /** The MIDI and the timing maps for the current layout and [sound]. */
-    suspend fun playback(sound: SoundSpec): Playback = engine.playback(sound)
+    /** The MIDI and the timing maps for the current layout and [sound], null without a layout. */
+    suspend fun playback(sound: SoundSpec): Playback? = engine.playback(sound)
 
     /** Makes the music ahead of the first ▶ (seconds on a slow tablet), so playing starts at once. */
     suspend fun preparePlayback() = engine.preparePlayback()

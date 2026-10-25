@@ -30,14 +30,13 @@ internal object MeiFixes {
      * the first page header sized to `creditSizes[n]` percent.
      */
     fun apply(mei: String, lyricsAbove: Boolean, creditSizes: List<Int?>): String {
-        var out = if (lyricsAbove) mei.replace(UNPLACED_VERSE, "<verse place=\"above\"") else mei
+        val out = if (lyricsAbove) mei.replace(UNPLACED_VERSE, "<verse place=\"above\"") else mei
         val head = PG_HEAD.find(out) ?: return out
         var index = 0
         val sized = REND.replace(head.groupValues[1]) { m ->
             val size = creditSizes.getOrNull(index++)
             if (size == null) m.value else "${m.value} fontsize=\"$size%\""
         }
-        out = out.replaceRange(head.groups[1]!!.range, sized)
-        return out
+        return head.groups[1]?.let { out.replaceRange(it.range, sized) } ?: out
     }
 }

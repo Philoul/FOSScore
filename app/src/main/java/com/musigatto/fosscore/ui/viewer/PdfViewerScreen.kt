@@ -477,12 +477,10 @@ fun PdfViewerScreen(
 
     // selection box in px: the stamp's or the ink's. While dragging or stretching we use the
     // live position (dragStamp/dragStrokes) so the box follows the object.
-    val selectionRect: RectPx? = when {
-        dragStamp != null -> stampRect(dragStamp!!, hitFit)
-        dragStrokes != null -> inkBounds(dragStrokes!!, hitFit)
-        selectedStamp != null -> stampRect(selectedStamp, hitFit)
-        else -> inkBounds(selectedStrokes, hitFit)
-    }
+    val selectionRect: RectPx? = dragStamp?.let { stampRect(it, hitFit) }
+        ?: dragStrokes?.let { inkBounds(it, hitFit) }
+        ?: selectedStamp?.let { stampRect(it, hitFit) }
+        ?: inkBounds(selectedStrokes, hitFit)
     val currentSelectionRect by rememberUpdatedState(selectionRect)
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
@@ -896,7 +894,7 @@ fun PdfViewerScreen(
                     // the real page size may not be loaded yet (pages past the ones loaded up
                     // front): it is resolved inside the lock with loadSize (a cheap read of the
                     // page dictionary), the same path the draw takes for its fit
-                    val slot = if (isSpread) spreadSlot!! else {
+                    val slot = spreadSlot ?: run {
                         val box = r.ensurePageSize(currentPage)
                         if (box == null || box.height <= 0f) return@withContext emptyMap()
                         val fit = fitRect(vpW, vpH, box.width / box.height)
@@ -1399,12 +1397,11 @@ fun PdfViewerScreen(
                                     }
                                 }
 
-                                if (resizing != null) {
+                                resizing?.let { rz ->
                                     // stretching the selected word by a handle: one pointer, scaling
                                     // around the box center. the factor is worked out from the
                                     // starting position, never accumulated
                                     val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                                    val rz = resizing!!
                                     val f = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
                                     scaleF = f
                                     dragStrokes = rz.strokes.mapIndexed { i, st ->

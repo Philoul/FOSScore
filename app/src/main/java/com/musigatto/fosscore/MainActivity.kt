@@ -1,5 +1,6 @@
 package com.musigatto.fosscore
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -42,13 +43,23 @@ import com.musigatto.fosscore.ui.library.LibraryMenuDrawer
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
+import com.musigatto.fosscore.ui.viewer.AppLanguage
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
 import com.musigatto.fosscore.ui.viewer.Settings
 import com.musigatto.fosscore.ui.viewer.ThemeMode
 import java.io.File
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // The app language is chosen in the app, so resources are resolved against it; the default
+    // locale follows too, for dates and numbers. Picking another one recreates the activity.
+    override fun attachBaseContext(newBase: Context) {
+        val language = Settings.language(newBase)
+        Locale.setDefault(language.tag?.let(Locale::forLanguageTag) ?: AppLanguage.deviceLocale())
+        super.attachBaseContext(language.wrap(newBase))
+    }
+
     // the scores are laid out ahead only while the user leaves the tablet alone
     override fun onUserInteraction() {
         super.onUserInteraction()

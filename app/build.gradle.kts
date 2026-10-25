@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.musigatto.fosscore"
     // The same NDK as the musicxml module: packaging strips the native libraries with it. Without
-    // it they ship with their debug symbols (Verovio alone grows from about 10 MB to 100 MB per ABI).
+    // it, they ship with their debug symbols (Verovio alone grows from about 10 MB to 100 MB per ABI).
     ndkVersion = "27.2.12479018"
     compileSdk {
         version = release(36) {
@@ -36,6 +36,14 @@ android {
         // translated yet shows in English, a key left in a translation is never shown. Reported,
         // but not blocking the build.
         warning += setOf("MissingTranslation", "ExtraTranslation")
+    }
+
+    // The language is chosen inside the app: a bundle that splits by language would not install
+    // the strings of the chosen one (French on a Spanish tablet, for instance).
+    bundle {
+        language {
+            enableSplit = false
+        }
     }
 
     compileOptions {

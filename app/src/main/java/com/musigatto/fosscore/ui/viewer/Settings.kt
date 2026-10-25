@@ -1,10 +1,14 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.R
 import androidx.core.content.edit
+import java.util.Locale
 
 enum class ThemeMode {
     SYSTEM, LIGHT, DARK;
@@ -25,8 +29,48 @@ enum class ThemeMode {
     }
 }
 
+/**
+ * The language of the UI. [SYSTEM] follows the device, which is what a fresh installation does. The
+ * names of the languages are their autonyms, so they read the same whatever the UI language is.
+ */
+enum class AppLanguage(val tag: String?) {
+    SYSTEM(null),
+    ENGLISH("en"),
+    SPANISH("es"),
+    FRENCH("fr");
+
+    /** The name to list; empty for [SYSTEM], whose name is translated. */
+    val displayName: String
+        get() = when (this) {
+            SYSTEM -> ""
+            ENGLISH -> "English"
+            SPANISH -> "Español"
+            FRENCH -> "Français"
+        }
+
+    /** [base] with this language, for `attachBaseContext`; [SYSTEM] hands it back untouched. */
+    fun wrap(base: Context): Context {
+        val code = tag ?: return base
+        val configuration = Configuration(base.resources.configuration)
+        configuration.setLocale(Locale.forLanguageTag(code))
+        return base.createConfigurationContext(configuration)
+    }
+
+    companion object {
+        fun of(tag: String?): AppLanguage = entries.firstOrNull { it.tag == tag } ?: SYSTEM
+
+        /** The device language, read from the system so our own override is not picked up. */
+        fun deviceLocale(): Locale {
+            val configuration = Resources.getSystem().configuration
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) configuration.locales[0]
+            else @Suppress("DEPRECATION") configuration.locale
+        }
+    }
+}
+
 object Settings {
     private const val PREFS = "fosscore_settings"
+    private const val KEY_LANGUAGE = "app_language"
     private const val KEY_THEME = "theme"
     private const val KEY_DIM = "dim"
     private const val KEY_INVERT = "invert"
@@ -43,6 +87,15 @@ object Settings {
     private const val KEY_HIDDEN_LYRICS = "hidden_lyrics_"
     private const val KEY_TEMPO = "tempo_"
     private const val KEY_HEARD = "heard_"
+
+    fun language(context: Context): AppLanguage =
+        AppLanguage.of(context.prefs().getString(KEY_LANGUAGE, null))
+
+    fun setLanguage(context: Context, language: AppLanguage) {
+        context.prefs().edit {
+            if (language.tag == null) remove(KEY_LANGUAGE) else putString(KEY_LANGUAGE, language.tag)
+        }
+    }
 
     fun themeMode(context: Context): ThemeMode =
         ThemeMode.entries[context.prefs().getInt(KEY_THEME, ThemeMode.SYSTEM.ordinal)]

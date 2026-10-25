@@ -5,20 +5,25 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +45,8 @@ import com.musigatto.fosscore.library.BackupManifest
 import com.musigatto.fosscore.library.CheckItem
 import com.musigatto.fosscore.library.CheckStatus
 import com.musigatto.fosscore.library.LibraryBackup
+import com.musigatto.fosscore.ui.viewer.AppLanguage
+import com.musigatto.fosscore.ui.viewer.Settings
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -60,9 +68,14 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var inspection by remember { mutableStateOf<LibraryBackup.Inspection?>(null) }
+    var choosingLanguage by remember { mutableStateOf(false) }
     val backup = remember { LibraryBackup(app) }
 
     val failed = stringResource(R.string.backup_failed)
+    // The export result is worded outside composition, where stringResource cannot be used. The
+    // activity is recreated on a language change, so these are the resources of the chosen language.
+    @Suppress("LocalContextResourcesRead")
+    val resources = context.resources
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -74,7 +87,7 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
                 }
             }
             busy = false
-            onMessage(result.fold({ app.resources.getQuantityString(R.plurals.backup_exported, it.sheets, it.sheets) }, { failed }))
+            onMessage(result.fold({ resources.getQuantityString(R.plurals.backup_exported, it.sheets, it.sheets) }, { failed }))
         }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -130,6 +143,13 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
+                NavigationDrawerItem(
+                    label = { Text(stringResource(R.string.language_label)) },
+                    selected = false,
+                    onClick = { fromMenu { choosingLanguage = true } },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
                 SoonItem(R.string.library_menu_setlists)
                 SoonItem(R.string.library_menu_tags)
                 SoonItem(R.string.library_menu_practice)
@@ -140,6 +160,23 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
         },
         content = content
     )
+
+    if (choosingLanguage) {
+        LanguageDialog(
+            current = Settings.language(context),
+            onDismiss = { choosingLanguage = false },
+            onPick = { language ->
+                choosingLanguage = false
+                Settings.setLanguage(context, language)
+                // The activity is recreated to resolve every string again; the drawer is snapped
+                // shut first so it does not come back open.
+                scope.launch {
+                    drawerState.snapTo(DrawerValue.Closed)
+                    (context as? Activity)?.recreate()
+                }
+            }
+        )
+    }
 
     inspection?.let { current ->
         ImportCheckDialog(
@@ -157,6 +194,33 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
             }
         )
     }
+}
+
+/** System default first, then every language the app ships, each named in itself. */
+@Composable
+private fun LanguageDialog(current: AppLanguage, onDismiss: () -> Unit, onPick: (AppLanguage) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.language_label)) },
+        text = {
+            Column {
+                AppLanguage.entries.forEach { language ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(language) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = language == current, onClick = { onPick(language) })
+                        Spacer(Modifier.width(8.dp))
+                        Text(language.displayName.ifEmpty { stringResource(R.string.language_system) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
+    )
 }
 
 // an entry that is not built yet: greyed out, "Coming soon" under it, and a tap does nothing

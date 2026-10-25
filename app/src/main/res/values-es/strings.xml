@@ -41,7 +41,7 @@
     <string name="dim_label">Atenuar</string>
     <string name="thickness_label">Grosor</string>
     <string name="size_label">Tamaño</string>
-    <string name="stamp_default_save">Guardar como predeterminado</string>
+    <string name="stamp_default_save">Guardar</string>
     <string name="theme_auto">Auto</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
@@ -155,6 +155,8 @@
     <string name="menu_open">Abrir el menú</string>
     <string name="backup_export">Exportar la biblioteca</string>
     <string name="backup_import">Importar una biblioteca</string>
+    <string name="language_label">Idioma</string>
+    <string name="language_system">Predeterminado del sistema</string>
     <string name="library_menu_setlists">Setlists</string>
     <string name="library_menu_tags">Etiquetas</string>
     <string name="library_menu_practice">Práctica</string>

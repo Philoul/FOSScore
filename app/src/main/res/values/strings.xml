@@ -41,7 +41,7 @@
     <string name="dim_label">Dim</string>
     <string name="thickness_label">Thickness</string>
     <string name="size_label">Size</string>
-    <string name="stamp_default_save">Save as default</string>
+    <string name="stamp_default_save">Save</string>
     <string name="theme_auto">Auto</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
@@ -153,7 +153,9 @@
     <!-- Library menu: export / import -->
     <string name="menu_open">Open the menu</string>
     <string name="backup_export">Export the library</string>
-    <string name="backup_import">Import a library export</string>
+    <string name="backup_import">Import a library</string>
+    <string name="language_label">Language</string>
+    <string name="language_system">System default</string>
     <string name="library_menu_setlists">Setlists</string>
     <string name="library_menu_tags">Tags</string>
     <string name="library_menu_practice">Practice</string>

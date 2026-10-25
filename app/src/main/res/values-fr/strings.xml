@@ -21,6 +21,10 @@
     <string name="field_genre">Genre</string>
     <string name="field_key">Tonalité</string>
     <string name="field_tags">Étiquettes</string>
+    <string name="tag_hint">Saisissez une étiquette puis appuyez sur espace</string>
+    <string name="tag_remove">Retirer l’étiquette</string>
+    <string name="bulk_edit_title">Modifier %1$d partitions</string>
+    <string name="bulk_edit_hint">Seuls les champs remplis changent.</string>
     <string name="neg_label">Négatif</string>
     <string name="dim_label">Atténuer</string>
     <string name="thickness_label">Épaisseur</string>
@@ -153,6 +157,8 @@
     <string name="menu_open">Ouvrir le menu</string>
     <string name="backup_export">Exporter la bibliothèque</string>
     <string name="backup_import">Importer un export de la bibliothèque</string>
+    <string name="language_label">Langue</string>
+    <string name="language_system">Par défaut du système</string>
     <string name="library_menu_setlists">Set lists</string>
     <string name="library_menu_tags">Étiquettes</string>
     <string name="library_menu_practice">Travail</string>

@@ -64,16 +64,18 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
      *
      * Transposition, parts and lyrics are applied while loading: changing them reloads the score
      * (about a second on a large score on a slow tablet). Changing only the viewport or the scale
-     * keeps the measure widths Verovio cached and only breaks lines and pages again.
+     * lays the loaded score out again, measuring the measures anew: widths kept from another
+     * layout break the lines differently from a score opened at this size (going 90 % → 80 % →
+     * 90 %, or turning the screen and back, put one more measure on a line).
      */
     suspend fun layout(spec: LayoutSpec): Int = run {
         val doc = score ?: throw MusicXmlException("no score open")
         val t = toolkit()
-        val wanted = Triple(spec.semitones, spec.parts, spec.lyrics)
+        val wanted = listOf(spec.semitones, spec.parts, spec.lyrics, spec.hiddenLyrics)
         val options = VerovioOptions.layout(spec)
         if (loadedFor != wanted) {
             loadedFor = null
-            val xml = doc.prepare(ScoreFilter(spec.parts, spec.lyrics))
+            val xml = doc.prepare(ScoreFilter(spec.parts, spec.lyrics, hiddenLyrics = spec.hiddenLyrics))
             val above = doc.lyricsAbove(spec.lyrics)
             val credits = MeiFixes.forScreen(doc.creditSizes)
             if (MeiFixes.needed(above, credits)) {
@@ -92,7 +94,7 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
             loadedFor = wanted
         } else if (laidOut != spec) {
             t.setOptions(options.toString())
-            t.redoLayout("""{"resetCache": false}""")
+            t.redoLayout("""{"resetCache": true}""")
         }
         laidOut = spec
         t.pageCount
@@ -123,7 +125,9 @@ class ScoreEngine(context: Context, private val rasterLock: Any = Any()) : AutoC
         shown.setOptions(tempo)
         val displayMap = shown.renderTimemap()
         val heard = sound.audible ?: spec.parts
-        val separate = heard != spec.parts || sound.programs.isNotEmpty()
+        // voices of lyrics added for the display carry notes too: the sound comes from a clean copy
+        val voicesOfLyrics = spec.lyrics == LyricsPlacement.BOTTOM || spec.hiddenLyrics
+        val separate = heard != spec.parts || sound.programs.isNotEmpty() || voicesOfLyrics
         val player = if (!separate) shown else {
             val a = audio ?: Verovio(resources()).also { audio = it }
             val wanted = Triple(spec.semitones, heard, sound.programs)

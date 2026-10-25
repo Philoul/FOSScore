@@ -6,7 +6,9 @@ import org.json.JSONObject
 /**
  * How to lay out the score: pages of [width] × [height] pixels (the viewport), music at
  * [scale] percent of Verovio's default size, transposed by [semitones], showing [parts] (empty
- * shows them all) with lyrics placed as [lyrics].
+ * shows them all) with lyrics placed as [lyrics], keeping the lyrics of the parts left out when
+ * [hiddenLyrics]. [marginTop] and [marginBottom] pixels of every page stay free of music, for
+ * bars the viewer draws over the page.
  */
 data class LayoutSpec(
     val width: Int,
@@ -14,10 +16,14 @@ data class LayoutSpec(
     val scale: Int = 100,
     val semitones: Int = 0,
     val parts: Set<String> = emptySet(),
-    val lyrics: LyricsPlacement = LyricsPlacement.FILE
+    val lyrics: LyricsPlacement = LyricsPlacement.FILE,
+    val hiddenLyrics: Boolean = false,
+    val marginTop: Int = 0,
+    val marginBottom: Int = 0
 ) {
     init {
         require(width > 0 && height > 0) { "empty viewport" }
+        require(marginTop >= 0 && marginBottom >= 0 && marginTop + marginBottom < height) { "margins larger than the page" }
         require(scale in MIN_SCALE..MAX_SCALE) { "scale out of range: $scale" }
         require(semitones in -12..12) { "transposition out of range: $semitones" }
     }
@@ -76,8 +82,8 @@ internal object VerovioOptions {
         put("scale", spec.scale)
         put("pageMarginLeft", MARGIN)
         put("pageMarginRight", MARGIN)
-        put("pageMarginTop", MARGIN)
-        put("pageMarginBottom", MARGIN)
+        put("pageMarginTop", MARGIN + spec.marginTop * 100 / spec.scale)
+        put("pageMarginBottom", MARGIN + spec.marginBottom * 100 / spec.scale)
         put("breaks", "auto")
         put("footer", "none")
         put("header", "auto")

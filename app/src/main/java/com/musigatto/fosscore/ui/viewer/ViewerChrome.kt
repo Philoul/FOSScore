@@ -3,7 +3,10 @@ package com.musigatto.fosscore.ui.viewer
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,50 +17,73 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-// M3's touch target (IconButton's box): the ⊞ slot is mirrored on the right so the centered title
-// stays centered in the pill.
-private val OPTIONS_SLOT = 48.dp
+// a held − / + waits this long, then repeats at this pace
+private const val REPEAT_DELAY_MS = 400L
+private const val REPEAT_EVERY_MS = 70L
+// a typed number: its prefix or suffix ("♩ =", "%") and up to three digits
+private val NUMBER_FIELD_WIDTH = 112.dp
 
 /**
- * Title bar of the viewer: three floating pills (left · center · right) drawn over the page. No state
- * of its own: everything comes in as a parameter and goes out as a lambda.
+ * Title bar of the viewer, drawn over the page: the menu button on the left, the score and page in
+ * the middle, and while annotating a "Done" pill on the right. No state of its own: everything comes
+ * in as a parameter and goes out as a lambda.
  *
  * The row deliberately has NO clickable full-width background: it would eat the page taps in the gaps
  * between pills, which are the navigation (spec §3).
- *
- * ponytail: forScore *replaces* this bar with the annotation one (spec §5); here they coexist, the bar
- * on top and PdfViewerScreen's annotation panel below. The 2-row bar is its own step.
  */
 @Composable
 fun ViewerTitleBar(
@@ -65,9 +91,8 @@ fun ViewerTitleBar(
     composer: String,
     pageLabel: String,
     editing: Boolean,
-    onOpenLibrary: () -> Unit,
-    onToggleEdit: () -> Unit,
-    onShowOptions: () -> Unit,
+    onOpenMenu: () -> Unit,
+    onStopEditing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -80,83 +105,54 @@ fun ViewerTitleBar(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            // left pill: "where am I". forScore stacks Scores · Bookmarks · Setlists here; today only
-            // the library exists, so the pill has one entry and grows when the others do.
+            // one entry for everything else (library, display, layout, annotate...): ViewerMenuPanel
             Pill {
-                PillEntry(
-                    "♪",
-                    stringResource(R.string.library_title),
-                    compact = compact,
-                    onClick = onOpenLibrary,
-                )
+                PillEntry("☰", stringResource(R.string.menu_label), compact = compact, onClick = onOpenMenu)
             }
             Spacer(Modifier.width(8.dp))
             // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
             // reads as the main zone.
             Pill(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // always drawn — disabled while annotating (page modes are frozen then) — so the title
-                    // keeps its left inset and never runs under the pill's rounded corner
-                    val optionsLabel = stringResource(R.string.display_options_title)
-                    IconButton(
-                        onClick = onShowOptions,
-                        // the accent goes in the component's slot, not on the Text: otherwise the disabled
-                        // state (annotating) loses M3's greyed-out color
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                        modifier = Modifier
-                            .size(OPTIONS_SLOT)
-                            .semantics { contentDescription = optionsLabel },
-                    ) {
-                        Text("⊞", style = MaterialTheme.typography.titleLarge)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 40.dp)
+                        .padding(horizontal = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (pageLabel.isNotEmpty()) {
+                        Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
                     }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        if (pageLabel.isNotEmpty()) {
-                            Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                    // the ⊞'s box, mirrored: without it the weighted title is centerd on what is LEFT of
-                    // the glyph and reads off-center by half a slot. On a phone the slot is not worth
-                    // the room it takes from the title, so only the wide layout mirrors it.
-                    if (!compact) Spacer(Modifier.size(OPTIONS_SLOT))
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            // right pill: "make something happen". Editing tints the whole pill with the accent container:
-            // that is the M3 "active" tone, and it reads from across the room.
-            Pill(
-                color = if (editing) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface,
-            ) {
-                PillEntry(
-                    "✎",
-                    stringResource(R.string.action_edit),
-                    compact = compact,
-                    selected = editing,
-                    onClick = onToggleEdit,
-                )
+            // while annotating, the way out stays in sight: the accent container is the M3 "active"
+            // tone, and it reads from across the room
+            if (editing) {
+                Spacer(Modifier.width(8.dp))
+                Pill(color = MaterialTheme.colorScheme.primaryContainer) {
+                    PillEntry(
+                        "✓",
+                        stringResource(R.string.annotate_done),
+                        compact = compact,
+                        selected = true,
+                        onClick = onStopEditing,
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Display overlay, as a checklist: one row per option, the control in a fixed left slot, so the rows
- * never change width with their label. Closes on tap outside or with back.
- *
- * ponytail: it does not carry spec §7's modal ✕/✓ chrome — it is an overlay, not an inspector, and it
- * holds nothing that can be discarded. If it ever holds unapplied changes, that chrome becomes
- * mandatory.
+ * Display panel, as a checklist: one row per option, the control in a fixed left slot, so the rows
+ * never change width with their label.
  */
 @Composable
 fun DisplayOptionsOverlay(
@@ -180,6 +176,60 @@ fun DisplayOptionsOverlay(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    PanelOverlay(stringResource(R.string.display_options_title), onDismiss, modifier) {
+        // the page modes are exclusive, and what is ticked is what the viewer is showing:
+        // half wins over two-up (PageFlow.showTwoUp requires !halfEnabled)
+        val twoUpChecked = twoUpVisible && twoUp && !halfEnabled
+        SectionLabel(stringResource(R.string.page_section_label))
+        OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton, enabled = pageModes) {
+            onSetHalf(true)
+        }
+        OptionRow(stringResource(R.string.one_page_label), !halfEnabled && !twoUpChecked, Role.RadioButton, enabled = pageModes) {
+            onSetHalf(false)
+            onSetTwoUp(false)
+        }
+        if (twoUpVisible) {
+            OptionRow(stringResource(R.string.two_pages_label), twoUpChecked, Role.RadioButton, enabled = pageModes) {
+                onSetHalf(false)
+                onSetTwoUp(true)
+            }
+        }
+        SectionLabel(stringResource(R.string.screen_section_label))
+        OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onClick = onToggleInvert)
+        OptionRow(stringResource(R.string.keep_screen_on_label), keepScreenOn, Role.Checkbox, onClick = onToggleKeepScreenOn)
+        ValueRow(stringResource(R.string.theme_row_label), themeLabel, onToggleTheme)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyLarge)
+            Slider(
+                value = dimPct,
+                onValueChange = onDimChange,
+                onValueChangeFinished = onDimChangeFinished,
+                valueRange = 0f..80f,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            )
+            Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+/**
+ * The frame of every settings panel of the viewer: a scrim that closes on tap, and a centered card
+ * with a title, a close button and [content]. The card scrolls when the screen is short (a phone in
+ * landscape). Closes with back too.
+ *
+ * ponytail: it does not carry spec §7's modal ✕/✓ chrome — it is an overlay, not an inspector, and it
+ * holds nothing that can be discarded: every change applies at once. If a panel ever holds unapplied
+ * changes, that chrome becomes mandatory.
+ */
+@Composable
+internal fun PanelOverlay(
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     BackHandler(onBack = onDismiss)
     Box(
         modifier = modifier
@@ -197,58 +247,19 @@ fun DisplayOptionsOverlay(
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // the page modes are exclusive, and what is ticked is what the viewer is showing:
-                // half wins over two-up (PageFlow.showTwoUp requires !halfEnabled)
-                val twoUpChecked = twoUpVisible && twoUp && !halfEnabled
-                SectionLabel(stringResource(R.string.page_section_label))
-                OptionRow(stringResource(R.string.half_page_label), halfEnabled, Role.RadioButton, enabled = pageModes) {
-                    onSetHalf(true)
-                }
-                OptionRow(
-                    stringResource(R.string.one_page_label),
-                    !halfEnabled && !twoUpChecked,
-                    Role.RadioButton,
-                    enabled = pageModes,
-                ) {
-                    onSetHalf(false)
-                    onSetTwoUp(false)
-                }
-                if (twoUpVisible) {
-                    OptionRow(
-                        stringResource(R.string.two_pages_label),
-                        twoUpChecked,
-                        Role.RadioButton,
-                        enabled = pageModes,
-                    ) {
-                        onSetHalf(false)
-                        onSetTwoUp(true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    val closeLabel = stringResource(R.string.action_close)
+                    TextButton(onClick = onDismiss, modifier = Modifier.semantics { contentDescription = closeLabel }) {
+                        Text("✕", style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                SectionLabel(stringResource(R.string.screen_section_label))
-                OptionRow(stringResource(R.string.neg_label), invert, Role.Checkbox, onClick = onToggleInvert)
-                OptionRow(
-                    stringResource(R.string.keep_screen_on_label),
-                    keepScreenOn,
-                    Role.Checkbox,
-                    onClick = onToggleKeepScreenOn,
-                )
-                ValueRow(stringResource(R.string.theme_row_label), themeLabel, onToggleTheme)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.dim_label), style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = dimPct,
-                        onValueChange = onDimChange,
-                        onValueChangeFinished = onDimChangeFinished,
-                        valueRange = 0f..80f,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp),
-                    )
-                    Text("${dimPct.toInt()}%", style = MaterialTheme.typography.bodyLarge)
-                }
+                content()
             }
         }
     }
@@ -256,7 +267,7 @@ fun DisplayOptionsOverlay(
 
 /** Group header of the checklist. */
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelLarge,
@@ -270,7 +281,7 @@ private fun SectionLabel(text: String) {
  * (and may wrap) — the row never changes width under the finger.
  */
 @Composable
-private fun OptionRow(
+internal fun OptionRow(
     label: String,
     checked: Boolean,
     role: Role,
@@ -285,10 +296,152 @@ private fun OptionRow(
             .selectable(selected = checked, enabled = enabled, role = role, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (role == Role.RadioButton) RadioButton(selected = checked, onClick = null)
-        else Checkbox(checked = checked, onCheckedChange = null)
+        if (role == Role.RadioButton) RadioButton(selected = checked, onClick = null, enabled = enabled)
+        else Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
         Spacer(Modifier.width(4.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** − value + on the right of the label; each tap is one step, so the value never jumps under the finger. */
+@Composable
+internal fun StepperRow(
+    label: String,
+    value: String,
+    lessLabel: String,
+    moreLabel: String,
+    canLess: Boolean,
+    canMore: Boolean,
+    onLess: () -> Unit,
+    onMore: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        TextButton(onClick = onLess, enabled = canLess, modifier = Modifier.semantics { contentDescription = lessLabel }) {
+            Text("−", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+        TextButton(onClick = onMore, enabled = canMore, modifier = Modifier.semantics { contentDescription = moreLabel }) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
+        }
+    }
+}
+
+/**
+ * − [value] +, as AndroidAPS's NumberInputRow: the value is typed in place (kept with Done or when
+ * the field loses focus, and brought into [range], shown under the field while typing), and − / +
+ * move it to the next multiple of [step] on each press, at once (not on release), repeating while
+ * held after a short wait.
+ */
+@Composable
+internal fun NumberFieldRow(
+    label: String,
+    value: Int,
+    range: IntRange,
+    step: Int,
+    lessLabel: String,
+    moreLabel: String,
+    rangeText: String,
+    onValue: (Int) -> Unit,
+    prefix: String? = null,
+    suffix: String? = null,
+) {
+    // the held button reads the value it changes, not the one it saw when the press began
+    val current by rememberUpdatedState(value)
+    val focus = LocalFocusManager.current
+    var text by remember { mutableStateOf(TextFieldValue(value.toString())) }
+    var focused by remember { mutableStateOf(false) }
+    val typed = text.text.toIntOrNull()
+    val wrong = typed == null || typed !in range
+    // − / + and other controls change the value from outside the field
+    LaunchedEffect(value) { if (typed != value) text = TextFieldValue(value.toString()) }
+    fun keep() {
+        val kept = (typed ?: current).coerceIn(range)
+        text = TextFieldValue(kept.toString())
+        if (kept != current) onValue(kept)
+    }
+    // the panel may close while the field still has the focus
+    val keepLatest by rememberUpdatedState(::keep)
+    val focusedLatest by rememberUpdatedState(focused)
+    DisposableEffect(Unit) { onDispose { if (focusedLatest) keepLatest() } }
+    fun stepBy(direction: Int) {
+        focus.clearFocus()
+        onValue(stepped(current, step, direction).coerceIn(range))
+    }
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        RepeatButton("−", lessLabel, enabled = value > range.first) { stepBy(-1) }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { new -> text = new.copy(text = new.text.filter(Char::isDigit).take(4)) },
+            prefix = prefix?.let { { Text(it) } },
+            suffix = suffix?.let { { Text(it) } },
+            singleLine = true,
+            isError = wrong,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+            modifier = Modifier
+                .width(NUMBER_FIELD_WIDTH)
+                .onFocusChanged { state ->
+                    // leaving the field keeps what was typed; entering it selects the value, to type over it
+                    if (focused && !state.isFocused) keep()
+                    if (!focused && state.isFocused) text = text.copy(selection = TextRange(0, text.text.length))
+                    focused = state.isFocused
+                },
+        )
+        RepeatButton("+", moreLabel, enabled = value < range.last) { stepBy(1) }
+    }
+    if (focused) {
+        Text(
+            rangeText,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (wrong) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
+/** The next multiple of [step] above [value] (direction 1) or below it (-1): 87 › 90 or 85 by 5. */
+internal fun stepped(value: Int, step: Int, direction: Int): Int =
+    if (direction > 0) Math.floorDiv(value, step) * step + step
+    else Math.floorDiv(value + step - 1, step) * step - step
+
+/** A button that acts on press, then again and again while held. */
+@Composable
+internal fun RepeatButton(text: String, label: String, enabled: Boolean, onStep: () -> Unit) {
+    val step by rememberUpdatedState(onStep)
+    val scope = rememberCoroutineScope()
+    val color = if (enabled) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+                if (enabled) onClick { step(); true }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    awaitFirstDown()
+                    step()
+                    val repeating = scope.launch {
+                        delay(REPEAT_DELAY_MS)
+                        while (true) {
+                            step()
+                            delay(REPEAT_EVERY_MS)
+                        }
+                    }
+                    waitForUpOrCancellation()
+                    repeating.cancel()
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleLarge, color = color)
     }
 }
 

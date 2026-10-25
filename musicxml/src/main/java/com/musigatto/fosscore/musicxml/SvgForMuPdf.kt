@@ -9,17 +9,70 @@ import java.io.File
 internal object SvgForMuPdf {
     private val STYLE = Regex("<style.*?</style>", RegexOption.DOT_MATCHES_ALL)
     private val UNSTROKED = Regex("<(path|rect|polygon|polyline|ellipse)(?![^>]*\\bstroke=)")
+    private val HIDDEN = Regex("""<([a-zA-Z]+)\b[^>]*\bvisibility="hidden"[^>]*>""")
+    private val VERSE = Regex("""<g\b[^>]*\bclass="verse"[^>]*>""")
 
     /**
      * - the nested `definition-scale` <svg> gets width/height 100% (otherwise nothing is drawn);
      * - the CSS rule `path, rect... {stroke: currentColor}` becomes an attribute (otherwise staff
      *   lines, stems and bar lines are missing);
-     * - the <style> blocks (including the embedded web font) are dropped.
+     * - the <style> blocks (including the embedded web font) are dropped;
+     * - what Verovio marks `visibility="hidden"` (invisible notes) is dropped, but for its lyrics:
+     *   MuPDF would draw it.
      */
-    fun fix(svg: String): String = svg
+    fun fix(svg: String): String = dropHidden(svg)
         .replace(STYLE, "")
         .replace("<svg class=\"definition-scale\"", "<svg class=\"definition-scale\" width=\"100%\" height=\"100%\"")
         .replace(UNSTROKED) { "<${it.groupValues[1]} stroke=\"currentColor\"" }
+
+    /**
+     * [svg] without the elements marked `visibility="hidden"`, except their lyrics: Verovio
+     * writes a note's verses inside the note, and an invisible note carrying lyrics (a hidden
+     * vocal line) must still show its words.
+     */
+    fun dropHidden(svg: String): String {
+        val out = StringBuilder(svg.length)
+        var from = 0
+        while (true) {
+            val hidden = HIDDEN.find(svg, from) ?: break
+            out.append(svg, from, hidden.range.first)
+            if (hidden.value.endsWith("/>")) {
+                from = hidden.range.last + 1
+                continue
+            }
+            from = endOf(svg, hidden.groupValues[1], hidden.range.last + 1)
+            // the verses it holds stay, the rest of it goes
+            var at = hidden.range.last + 1
+            while (true) {
+                val verse = VERSE.find(svg, at)?.takeIf { it.range.first < from } ?: break
+                val end = endOf(svg, "g", verse.range.last + 1)
+                out.append(svg, verse.range.first, end)
+                at = end
+            }
+        }
+        return out.append(svg, from, svg.length).toString()
+    }
+
+    // where the element opened just before [start] closes, counting the same tags nested in it
+    private fun endOf(svg: String, tag: String, start: Int): Int {
+        val open = Regex("<$tag\\b[^>]*>")
+        val close = "</$tag>"
+        var depth = 1
+        var at = start
+        while (depth > 0) {
+            val c = svg.indexOf(close, at)
+            if (c < 0) return svg.length
+            val o = open.find(svg, at)
+            if (o != null && o.range.first < c) {
+                if (!o.value.endsWith("/>")) depth++
+                at = o.range.last + 1
+            } else {
+                depth--
+                at = c + close.length
+            }
+        }
+        return at
+    }
 }
 
 /**

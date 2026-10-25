@@ -149,6 +149,99 @@ class MusicXmlScoreTest {
     }
 
     @Test
+    fun lyricsUnderTheSystemGoUnderTheLowestStaffOfTheScore() {
+        // the demo: a voice part with the lyrics, then a two-staff piano
+        val xml = MusicXmlScore.parse(demo()).prepare(ScoreFilter(lyrics = LyricsPlacement.BOTTOM))
+        assertEquals(listOf("P1", "P2"), partIds(xml, "part"))
+        // the voice keeps its notes, without the lyrics
+        assertFalse("<lyric" in part(xml, "part", "P1"))
+        // an invisible copy of it carries them on the lowest staff of the piano
+        val piano = part(xml, "part", "P2")
+        val carrier = hiddenNotesWithLyrics(piano)
+        assertTrue(carrier.isNotEmpty())
+        assertTrue(carrier.all { "<staff>2</staff>" in it })
+        assertTrue(carrier.any { "<text>Au</text>" in it })
+    }
+
+    @Test
+    fun theLyricsOfAHiddenVoiceStay() {
+        val score = MusicXmlScore.parse(demo())
+        val kept = score.prepare(ScoreFilter(parts = setOf("P2"), hiddenLyrics = true))
+        assertEquals(listOf("P2"), partIds(kept, "part"))
+        // under the lowest staff of the piano: under the right hand, the chords would run into the words
+        val carrier = hiddenNotesWithLyrics(part(kept, "part", "P2"))
+        assertTrue(carrier.any { "<text>Au</text>" in it })
+        assertTrue(carrier.all { "<staff>2</staff>" in it })
+        // drawn above, they go on the top staff, above the right hand
+        val above = score.prepare(ScoreFilter(parts = setOf("P2"), lyrics = LyricsPlacement.ABOVE, hiddenLyrics = true))
+        assertTrue(hiddenNotesWithLyrics(part(above, "part", "P2")).all { "<staff>1</staff>" in it })
+        // without the option the voice goes, lyrics and all
+        // (the file's <defaults> name a <lyric-font>: only <lyric> elements count)
+        assertFalse(Regex("<lyric[ >]").containsMatchIn(score.prepare(ScoreFilter(parts = setOf("P2")))))
+    }
+
+    @Test
+    fun aChoirKeepsOneLineOfLyricsPerVoice() {
+        val xml = MusicXmlScore.parse(choir).prepare(ScoreFilter(lyrics = LyricsPlacement.BOTTOM))
+        val piano = part(xml, "part", "P3")
+        // the sopranos' words stay verse 1, the altos' become verse 2: two lines, not one on another
+        val carrier = hiddenNotesWithLyrics(piano)
+        assertTrue(carrier.any { "<text>sun</text>" in it && "number=\"1\"" in it })
+        assertTrue(carrier.any { "<text>moon</text>" in it && "number=\"2\"" in it })
+        // each voice is a voice of its own on the left hand, its durations in the piano's divisions
+        val voices = carrier.mapNotNull { Regex("""<voice>(\d+)</voice>""").find(it)?.groupValues?.get(1) }.toSet()
+        assertEquals(2, voices.size)
+        assertTrue(carrier.any { "<text>sun</text>" in it && "<duration>8</duration>" in it })
+    }
+
+    // the invisible notes that carry lyrics in this part
+    private fun hiddenNotesWithLyrics(part: String): List<String> =
+        Regex("""<note print-object="no">.*?</note>""", RegexOption.DOT_MATCHES_ALL).findAll(part)
+            .map { it.value }.filter { "<lyric" in it }.toList()
+
+    /** Two voices singing different words at once, and a piano counting in other divisions. */
+    private val choir = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <score-partwise version="4.0">
+          <part-list>
+            <score-part id="P1"><part-name>Soprano</part-name></score-part>
+            <score-part id="P2"><part-name>Alto</part-name></score-part>
+            <score-part id="P3"><part-name>Piano</part-name></score-part>
+          </part-list>
+          <part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes>
+            <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice>
+              <lyric number="1"><text>sun</text></lyric></note></measure></part>
+          <part id="P2"><measure number="1"><attributes><divisions>1</divisions></attributes>
+            <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice>
+              <lyric number="1"><text>moon</text></lyric></note></measure></part>
+          <part id="P3"><measure number="1"><attributes><divisions>2</divisions><staves>2</staves></attributes>
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><staff>1</staff></note>
+            <backup><duration>8</duration></backup>
+            <note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration><voice>5</voice><staff>2</staff></note>
+          </measure></part>
+        </score-partwise>
+    """.trimIndent().toByteArray()
+
+    // ids of the <tag> elements, whatever the order of their attributes
+    private fun partIds(xml: String, tag: String): List<String> =
+        Regex("""<$tag\b[^>]*\bid="([^"]+)"""").findAll(xml).map { it.groupValues[1] }.toList()
+
+    // the text of the <tag> element with this id
+    private fun part(xml: String, tag: String, id: String): String {
+        val start = Regex("""<$tag\b[^>]*\bid="$id"""").find(xml)!!.range.first
+        return xml.substring(start).substringBefore("</$tag>")
+    }
+
+    @Test
+    fun linesOfLyricsLeaveTheScoreAsItWas() {
+        val score = MusicXmlScore.parse(demo())
+        val before = score.prepare()
+        score.prepare(ScoreFilter(parts = setOf("P2"), lyrics = LyricsPlacement.BOTTOM, hiddenLyrics = true))
+        score.prepare(ScoreFilter(lyrics = LyricsPlacement.BOTTOM))
+        assertEquals(before, score.prepare())
+    }
+
+    @Test
     fun lyricsAboveFollowTheFileOrTheChoice() {
         val score = MusicXmlScore.parse(song)
         // Two lyrics above out of three.

@@ -707,7 +707,7 @@ fun PdfViewerScreen(
     val twoUpSlots = isLandscape && twoUp && !halfEnabled
     // A MusicXML page fills the viewport, while the system bars, and the title bar and page
     // selector when the centre tap shows them, are drawn over it (a PDF has a paper margin there).
-    // The music keeps their room free: the side bars on both sides, the top and bottom chrome as
+    // The music keeps their room free: the sidebars on both sides, the top and bottom chrome as
     // page margins. Fixed, so showing the bars never lays the music out again.
     val density = LocalDensity.current
     val bars = WindowInsets.safeDrawing
@@ -721,7 +721,7 @@ fun PdfViewerScreen(
         // the system bars settle over the first frames, restarting this effect each time: a
         // layout for sizes about to change took seconds on a slow tablet, and could not be cut
         // short, so the right one waited behind it
-        delay(LAYOUT_SETTLE_MS)
+        delay(LAYOUT_SETTLE_MS.milliseconds)
         val usableW = (viewport.width - 2 * barsX).coerceAtLeast(1)
         val screen = MusicXmlScreen(
             viewportWidth = viewport.width,

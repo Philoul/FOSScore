@@ -218,30 +218,29 @@ private fun color(status: CheckStatus) = when (status) {
 
 @Composable
 private fun describe(check: BackupCheck, manifest: BackupManifest?): String {
-    val m = manifest
     return when (check.item) {
         CheckItem.FORMAT ->
             if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_format_ok)
             else stringResource(R.string.backup_check_format_error)
         CheckItem.DATABASE -> when (check.status) {
-            CheckStatus.OK -> stringResource(R.string.backup_check_db_ok, m!!.dbVersion)
-            CheckStatus.WARN -> stringResource(R.string.backup_check_db_older, m!!.dbVersion, AppDatabase.VERSION)
-            CheckStatus.ERROR -> stringResource(R.string.backup_check_db_newer, m!!.dbVersion, AppDatabase.VERSION)
+            CheckStatus.OK -> stringResource(R.string.backup_check_db_ok, manifest!!.dbVersion)
+            CheckStatus.WARN -> stringResource(R.string.backup_check_db_older, manifest!!.dbVersion, AppDatabase.VERSION)
+            CheckStatus.ERROR -> stringResource(R.string.backup_check_db_newer, manifest!!.dbVersion, AppDatabase.VERSION)
         }
         CheckItem.CONTENT ->
-            if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_content_ok, m!!.sheets, m.stamps, m.strokes)
+            if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_content_ok, manifest!!.sheets, manifest.stamps, manifest.strokes)
             else stringResource(R.string.backup_check_content_error)
         CheckItem.AGE -> {
-            val date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(m!!.createdAt))
+            val date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(manifest!!.createdAt))
             if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_age_ok, date)
             else stringResource(R.string.backup_check_age_old, date)
         }
         CheckItem.DEVICE ->
             if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_device_ok)
-            else stringResource(R.string.backup_check_device_other, m!!.device)
+            else stringResource(R.string.backup_check_device_other, manifest!!.device)
         CheckItem.FILES ->
             if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_files_ok)
-            else stringResource(R.string.backup_check_files_missing, m!!.missingFiles)
+            else stringResource(R.string.backup_check_files_missing, manifest!!.missingFiles)
     }
 }
 

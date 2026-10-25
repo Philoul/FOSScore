@@ -42,6 +42,7 @@ fun SheetDetailScreen(
     var genre by rememberSaveable(sheet.id) { mutableStateOf(sheet.genre) }
     var musicalKey by rememberSaveable(sheet.id) { mutableStateOf(sheet.musicalKey) }
     var tags by rememberSaveable(sheet.id) { mutableStateOf(sheet.tags) }
+    var tagDraft by rememberSaveable(sheet.id) { mutableStateOf("") }
     var confirmDelete by rememberSaveable(sheet.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -57,14 +58,26 @@ fun SheetDetailScreen(
         OutlinedTextField(value = composer, onValueChange = { composer = it }, label = { Text(stringResource(R.string.field_composer)) }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text(stringResource(R.string.field_genre)) }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = musicalKey, onValueChange = { musicalKey = it }, label = { Text(stringResource(R.string.field_key)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = tags, onValueChange = { tags = it }, label = { Text(stringResource(R.string.field_tags)) }, modifier = Modifier.fillMaxWidth())
+        TagField(
+            tags = tags,
+            draft = tagDraft,
+            onTagsChange = { tags = it },
+            onDraftChange = { tagDraft = it },
+            modifier = Modifier.fillMaxWidth()
+        )
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Button(
                 onClick = {
                     scope.launch {
                         repository.save(
-                            sheet.copy(title = title, composer = composer, genre = genre, musicalKey = musicalKey, tags = tags)
+                            sheet.copy(
+                                title = title,
+                                composer = composer,
+                                genre = genre,
+                                musicalKey = musicalKey,
+                                tags = mergeTags(tags, tagDraft)
+                            )
                         )
                         onDone()
                     }

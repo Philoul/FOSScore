@@ -1,7 +1,6 @@
 package com.musigatto.fosscore.ui.library
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,8 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -27,18 +28,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import com.musigatto.fosscore.R
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.score.SheetFormat
@@ -48,7 +49,6 @@ import kotlinx.coroutines.launch
  * The library list. A tap on a row opens the score; a long press starts selecting rows, and the
  * header then acts on the selection (edit one, delete one or more) instead of importing.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     repository: LibraryRepository,
@@ -67,6 +67,7 @@ fun LibraryScreen(
     var selected by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     val chosen = sheets.filter { it.id in selected }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var bulkEdit by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun toggle(sheet: Sheet) {
@@ -96,14 +97,15 @@ fun LibraryScreen(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // editing several scores at once comes later (roadmap 3.6)
-                    if (chosen.size == 1) {
-                        TextButton(onClick = {
+                    TextButton(onClick = {
+                        if (chosen.size == 1) {
                             selected = emptyList()
                             onEdit(chosen.single())
-                        }) { Text(stringResource(R.string.action_edit)) }
-                        Spacer(Modifier.width(8.dp))
-                    }
+                        } else {
+                            bulkEdit = true
+                        }
+                    }) { Text(stringResource(R.string.action_edit)) }
+                    Spacer(Modifier.width(8.dp))
                     Button(onClick = { confirmDelete = true }) { Text(stringResource(R.string.action_delete)) }
                 }
             } else {
@@ -203,9 +205,8 @@ fun LibraryScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    val doomed = chosen
                     selected = emptyList()
-                    scope.launch { doomed.forEach { repository.delete(it) } }
+                    scope.launch { chosen.forEach { repository.delete(it) } }
                 }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
@@ -213,6 +214,92 @@ fun LibraryScreen(
             }
         )
     }
+
+    if (bulkEdit && chosen.isNotEmpty()) {
+        BulkEditDialog(
+            count = chosen.size,
+            onDismiss = { bulkEdit = false },
+            onApply = { composer, genre, musicalKey, tags ->
+                bulkEdit = false
+                selected = emptyList()
+                scope.launch {
+                    chosen.forEach { sheet ->
+                        repository.save(
+                            sheet.copy(
+                                composer = composer.ifBlank { sheet.composer },
+                                genre = genre.ifBlank { sheet.genre },
+                                musicalKey = musicalKey.ifBlank { sheet.musicalKey },
+                                tags = if (tags.isBlank()) sheet.tags else mergeTags(sheet.tags, tags)
+                            )
+                        )
+                    }
+                }
+            }
+        )
+    }
+}
+
+/**
+ * What several scores can share. The title stays out (it is each score's own), and an empty field
+ * means "leave it as it is"; tags are added to the ones each score already has.
+ */
+@Composable
+private fun BulkEditDialog(
+    count: Int,
+    onDismiss: () -> Unit,
+    onApply: (composer: String, genre: String, musicalKey: String, tags: String) -> Unit
+) {
+    var composer by rememberSaveable { mutableStateOf("") }
+    var genre by rememberSaveable { mutableStateOf("") }
+    var musicalKey by rememberSaveable { mutableStateOf("") }
+    var tags by rememberSaveable { mutableStateOf("") }
+    var tagDraft by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.bulk_edit_title, count)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(stringResource(R.string.bulk_edit_hint), style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = composer,
+                    onValueChange = { composer = it },
+                    label = { Text(stringResource(R.string.field_composer)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = genre,
+                    onValueChange = { genre = it },
+                    label = { Text(stringResource(R.string.field_genre)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = musicalKey,
+                    onValueChange = { musicalKey = it },
+                    label = { Text(stringResource(R.string.field_key)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TagField(
+                    tags = tags,
+                    draft = tagDraft,
+                    onTagsChange = { tags = it },
+                    onDraftChange = { tagDraft = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApply(composer, genre, musicalKey, mergeTags(tags, tagDraft)) }) {
+                Text(stringResource(R.string.action_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
 }
 
 /**

@@ -22,6 +22,10 @@
     <string name="field_genre">Género</string>
     <string name="field_key">Tonalidad</string>
     <string name="field_tags">Etiquetas</string>
+    <string name="tag_hint">Escribe una etiqueta y pulsa espacio</string>
+    <string name="tag_remove">Quitar etiqueta</string>
+    <string name="bulk_edit_title">Editar %1$d partituras</string>
+    <string name="bulk_edit_hint">Solo cambian los campos que rellenes.</string>
     <string name="page_section_label">Página</string>
     <string name="screen_section_label">Pantalla</string>
     <string name="engraving_section_label">Grabado</string>

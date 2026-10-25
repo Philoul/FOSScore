@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 /**
  * The screen a MusicXML score is laid out for, apart from the score's own settings: the viewport,
- * the width of a page (the viewport less the side bars, halved in two-up), the music size of a
+ * the width of a page (the viewport less the sidebars, halved in two-up), the music size of a
  * note size of 100 %, and the room of the bars above and below. The viewer builds its layout from
  * it, and the scores are laid out and drawn ahead for the screens seen last
  * ([MusicXmlPages.prepare]), so both must give the very same layout and page pictures.

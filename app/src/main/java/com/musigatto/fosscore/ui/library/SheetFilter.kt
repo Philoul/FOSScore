@@ -17,5 +17,5 @@ fun filterSheets(sheets: List<Sheet>, query: String): List<Sheet> {
 
 private val MARKS = Regex("\\p{M}")
 
-private fun normalize(s: String): String =
+internal fun normalize(s: String): String =
     Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARKS, "").lowercase()

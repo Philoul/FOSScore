@@ -71,6 +71,7 @@ import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 // a held − / + waits this long, then repeats at this pace
 private const val REPEAT_DELAY_MS = 400L
@@ -431,10 +432,10 @@ internal fun RepeatButton(text: String, label: String, enabled: Boolean, size: D
                     awaitFirstDown()
                     step()
                     val repeating = scope.launch {
-                        delay(REPEAT_DELAY_MS)
+                        delay(REPEAT_DELAY_MS.milliseconds)
                         while (true) {
                             step()
-                            delay(REPEAT_EVERY_MS)
+                            delay(REPEAT_EVERY_MS.milliseconds)
                         }
                     }
                     waitForUpOrCancellation()

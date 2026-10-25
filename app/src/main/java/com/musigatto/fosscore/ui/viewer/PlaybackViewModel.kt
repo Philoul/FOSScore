@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val LOG_TAG = "FOSScore-Playback"
 
@@ -170,7 +171,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             warming?.cancel()
             warming = pages?.let {
                 viewModelScope.launch {
-                    delay(WARM_DELAY_MS)
+                    delay(WARM_DELAY_MS.milliseconds)
                     it.preparePlayback()
                 }
             }
@@ -357,7 +358,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         settling?.cancel()
         if (player == null) return
         settling = viewModelScope.launch {
-            delay(SETTLE_MS)
+            delay(SETTLE_MS.milliseconds)
             val pages = pages ?: return@launch
             var next: MediaPlayer? = null
             try {
@@ -375,7 +376,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                         ?: ahead
                     ready.seekTo(pb.msExact(at).toInt())
                     val due = oldPb.msExact(at) - START_LATENCY_MS
-                    while (old.isPlaying && old.currentPosition < due) delay(SWITCH_POLL_MS)
+                    while (old.isPlaying && old.currentPosition < due) delay(SWITCH_POLL_MS.milliseconds)
                 }
                 if (old.isPlaying) {
                     ready.start()
@@ -383,7 +384,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     for (step in FADE_STEPS - 1 downTo 0) {
                         val v = step.toFloat() / FADE_STEPS
                         old.setVolume(v, v)
-                        delay(FADE_MS / FADE_STEPS)
+                        delay((FADE_MS / FADE_STEPS).milliseconds)
                     }
                 } else {
                     at = oldPb.quartersAt(old.currentPosition.toLong())
@@ -443,7 +444,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     last = index
                     _cursor.value = pb.onsets[index].notes
                 }
-                delay(FOLLOW_MS)
+                delay(FOLLOW_MS.milliseconds)
             }
         }
     }

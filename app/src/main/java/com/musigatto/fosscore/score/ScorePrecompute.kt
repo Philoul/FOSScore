@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val LOG_TAG = "FOSScore-Precompute"
 
@@ -73,7 +74,7 @@ object ScorePrecompute {
     fun start(context: Context, scope: CoroutineScope, sheets: Flow<List<Sheet>>) {
         val app = context.applicationContext
         scope.launch(Dispatchers.IO) {
-            delay(START_DELAY_MS)
+            delay(START_DELAY_MS.milliseconds)
             // scores that could not be prepared are not tried again until the app starts again
             val failed = mutableSetOf<String>()
             while (true) {
@@ -98,7 +99,7 @@ object ScorePrecompute {
     private fun idle() = !playing && viewerWorks.get() == 0 && SystemClock.uptimeMillis() - lastTouch >= IDLE_MS
 
     private suspend fun awaitIdle() {
-        while (!idle()) delay(IDLE_POLL_MS)
+        while (!idle()) delay(IDLE_POLL_MS.milliseconds)
     }
 
     private fun ordered(context: Context, sheets: List<Sheet>): List<File> =

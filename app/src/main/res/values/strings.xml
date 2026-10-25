@@ -22,6 +22,10 @@
     <string name="field_genre">Genre</string>
     <string name="field_key">Key</string>
     <string name="field_tags">Tags</string>
+    <string name="tag_hint">Type a tag and press space</string>
+    <string name="tag_remove">Remove tag</string>
+    <string name="bulk_edit_title">Edit %1$d sheets</string>
+    <string name="bulk_edit_hint">Only the fields you fill in change.</string>
     <string name="page_section_label">Page</string>
     <string name="screen_section_label">Screen</string>
     <string name="engraving_section_label">Engraving</string>

@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -226,11 +227,17 @@ fun DisplayOptionsOverlay(
  * holds nothing that can be discarded: every change applies at once. If a panel ever holds unapplied
  * changes, that chrome becomes mandatory.
  */
+/** Where the panels start: under the bar at the top of the viewer while it shows. */
+val LocalPanelTop = compositionLocalOf { 0.dp }
+
 @Composable
 internal fun PanelOverlay(
     title: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    // at the top: the bottom of the page stays readable (the metronome counts its bars there)
+    alignment: Alignment = Alignment.TopCenter,
+    maxWidth: Dp = 420.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
@@ -239,13 +246,14 @@ internal fun PanelOverlay(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.4f))
             .pointerInput(Unit) { detectTapGestures { onDismiss() } },
-        contentAlignment = Alignment.Center,
+        contentAlignment = alignment,
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             // swallow taps on the panel: without this they reach the scrim behind and dismiss
             modifier = Modifier
-                .widthIn(max = 420.dp)
+                .padding(top = LocalPanelTop.current)
+                .widthIn(max = maxWidth)
                 .padding(16.dp)
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {

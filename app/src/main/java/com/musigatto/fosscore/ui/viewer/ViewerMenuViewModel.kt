@@ -20,7 +20,7 @@ const val MUSIC_SIZE_STEP = 5
 const val MAX_TRANSPOSE = 12
 
 /** What the viewer shows over the page: nothing, the menu, or one of the menu's panels. */
-enum class ViewerSurface { NONE, MENU, DISPLAY, LAYOUT, PLAYBACK }
+enum class ViewerSurface { NONE, MENU, DISPLAY, LAYOUT, PLAYBACK, METRONOME }
 
 /**
  * Every entry of the viewer menu, in its order. The groups are separated by a line: going
@@ -42,7 +42,7 @@ enum class MenuItemState { READY, SOON, MUSICXML_ONLY, NOT_ON_MUSICXML }
 /** Which entries work for this score. */
 fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
     when (item) {
-        ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY -> MenuItemState.READY
+        ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.METRONOME -> MenuItemState.READY
         ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK ->
             if (isMusicXml) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
         // annotations are stored per page, and a MusicXML page changes with the screen

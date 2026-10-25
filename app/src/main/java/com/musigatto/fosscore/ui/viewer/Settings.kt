@@ -7,6 +7,11 @@ import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.metronome.BarPages
+import com.musigatto.fosscore.metronome.ClickSound
+import com.musigatto.fosscore.metronome.Meter
+import com.musigatto.fosscore.metronome.MetronomeMode
+import com.musigatto.fosscore.metronome.MetronomeSettings
 import androidx.core.content.edit
 import java.util.Locale
 
@@ -87,6 +92,17 @@ object Settings {
     private const val KEY_HIDDEN_LYRICS = "hidden_lyrics_"
     private const val KEY_TEMPO = "tempo_"
     private const val KEY_HEARD = "heard_"
+    private const val KEY_MET_BPM = "metronome_bpm_"
+    private const val KEY_MET_METER = "metronome_meter_"
+    private const val KEY_MET_SUBDIVISION = "metronome_subdivision_"
+    private const val KEY_MET_COUNT_IN = "metronome_count_in_"
+    private const val KEY_MET_AUTO_TURN = "metronome_auto_turn_"
+    private const val KEY_MET_BARS = "metronome_bars_"
+    private const val KEY_MET_MODE = "metronome_mode"
+    private const val KEY_MET_SOUND = "metronome_sound"
+    private const val KEY_MET_ACCENT = "metronome_accent"
+    private const val KEY_MET_VOLUME = "metronome_volume"
+    private const val KEY_TURN_AHEAD = "turn_ahead"
 
     fun language(context: Context): AppLanguage =
         AppLanguage.of(context.prefs().getString(KEY_LANGUAGE, null))
@@ -219,6 +235,41 @@ object Settings {
 
     fun setMusicSize(context: Context, uri: String, percent: Int) {
         context.prefs().edit { putInt(KEY_MUSIC_SIZE + uri, percent) }
+    }
+
+    /** The metronome of [uri]: its own settings, and the ones shared by every score. */
+    fun metronome(context: Context, uri: String): MetronomeSettings {
+        val p = context.prefs()
+        val d = MetronomeSettings()
+        return MetronomeSettings(
+            bpm = p.getInt(KEY_MET_BPM + uri, d.bpm),
+            meter = Meter.parse(p.getString(KEY_MET_METER + uri, null)) ?: d.meter,
+            subdivision = p.getInt(KEY_MET_SUBDIVISION + uri, d.subdivision),
+            countIn = p.getInt(KEY_MET_COUNT_IN + uri, d.countIn),
+            autoTurn = p.getBoolean(KEY_MET_AUTO_TURN + uri, d.autoTurn),
+            barCounts = BarPages.parse(p.getString(KEY_MET_BARS + uri, null)),
+            mode = p.getString(KEY_MET_MODE, null)?.let { n -> MetronomeMode.entries.firstOrNull { it.name == n } } ?: d.mode,
+            sound = p.getString(KEY_MET_SOUND, null)?.let { n -> ClickSound.entries.firstOrNull { it.name == n } } ?: d.sound,
+            accent = p.getBoolean(KEY_MET_ACCENT, d.accent),
+            volume = p.getInt(KEY_MET_VOLUME, d.volume),
+            turnAhead = p.getInt(KEY_TURN_AHEAD, d.turnAhead),
+        )
+    }
+
+    fun setMetronome(context: Context, uri: String, s: MetronomeSettings) {
+        context.prefs().edit {
+            putInt(KEY_MET_BPM + uri, s.bpm)
+            putString(KEY_MET_METER + uri, s.meter.toString())
+            putInt(KEY_MET_SUBDIVISION + uri, s.subdivision)
+            putInt(KEY_MET_COUNT_IN + uri, s.countIn)
+            putBoolean(KEY_MET_AUTO_TURN + uri, s.autoTurn)
+            putString(KEY_MET_BARS + uri, BarPages.format(s.barCounts))
+            putString(KEY_MET_MODE, s.mode.name)
+            putString(KEY_MET_SOUND, s.sound.name)
+            putBoolean(KEY_MET_ACCENT, s.accent)
+            putInt(KEY_MET_VOLUME, s.volume)
+            putInt(KEY_TURN_AHEAD, s.turnAhead)
+        }
     }
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)

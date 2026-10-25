@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
@@ -194,6 +195,10 @@ private data class Resizing(
     val startPos: Offset
 )
 
+// in half page, the cut of the next turn for [page] as laid out in [layout]: the turn makes
+// [split], the dotted line shows it at [mark] (a fraction of the page height)
+private data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit, val mark: Float)
+
 // options panel hanging from the annotation bar (spec §5): tapping the selected tool again opens it
 private enum class ToolPanel { Stamps, Pen, Eraser, Color }
 
@@ -312,6 +317,9 @@ fun PdfViewerScreen(
     // list parse) the old page stays on screen instead of a spinner flash. Cleared when the doc
     // changes so a new score never shows the previous one's paper.
     var lastShown by remember(pdfUri) { mutableStateOf<Bitmap?>(null) }
+    // in half page, the cut of the next turn: the dotted line shows it and the turn makes it, so
+    // both always agree
+    var halfCut by remember(pdfUri) { mutableStateOf<HalfCut?>(null) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
     var invert by remember { mutableStateOf(Settings.invert(context)) }
@@ -779,7 +787,8 @@ fun PdfViewerScreen(
     val blankBands = remember { WeakHashMap<Bitmap, List<Band>>() }
     fun halfSplit(): HalfSplit {
         fun bands(index: Int) = bitmaps[index]?.let { bmp -> blankBands.getOrPut(bmp) { bmp.blankBands() } }.orEmpty()
-        return HalfSplit.of(bands(currentPage), bands(currentPage + 1))
+        return halfCut?.takeIf { it.page == currentPage && it.layout == layoutVersion }?.split
+            ?: HalfSplit.of(bands(currentPage), bands(currentPage + 1))
     }
 
     // Whether the notehead [id] is above [fraction] of its page's height (a hidden note counts as at the top).
@@ -938,8 +947,10 @@ fun PdfViewerScreen(
     // ahead of time makes the turn a cache hit in MuPdfDoc (same page, same width key).
     // Only at 1x: a turn resets the zoom, so a draw at a zoomed slot would never be reused.
     // The delay gives a quick turn the lock: turning before it fires cancels this effect.
+    // It waits for this page's own picture, which the cut of a half page is worked out from.
     LaunchedEffect(
         pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf, layoutVersion,
+        bitmaps[currentPage] != null,
     ) {
         val r = pageSource ?: return@LaunchedEffect
         if (branch.showTwoUp || (branch.showHalf && halfTurned)) return@LaunchedEffect
@@ -947,17 +958,29 @@ fun PdfViewerScreen(
         delay(RENDER_SETTLE_MS.milliseconds)
         val vpW = viewport.width.toFloat()
         val vpH = viewport.height.toFloat()
-        rendererLock.withLock {
+        val shown = bitmaps[currentPage]
+        halfCut = rendererLock.withLock {
             withContext(Dispatchers.Default) {
+                fun draw(page: Int) = r.ensurePageSize(page)?.takeIf { it.height > 0f }?.let { box ->
+                    val slot = ZoomMath.renderSlot(fitRect(vpW, vpH, box.width / box.height), 1f)
+                    r.render(page, slot.first, slot.second)
+                }
                 for (page in listOf(currentPage + 1, currentPage - 1)) {
                     if (page !in 0 until pageCount) continue
                     // a turn supersedes this prefetch: drop the rest instead of holding the lock
-                    if (!isActive) return@withContext
-                    val box = r.ensurePageSize(page) ?: continue
-                    if (box.height <= 0f) continue
-                    val fit = fitRect(vpW, vpH, box.width / box.height)
-                    val slot = ZoomMath.renderSlot(fit, 1f)
-                    r.render(page, slot.first, slot.second)
+                    if (!isActive) return@withContext null
+                    draw(page)
+                }
+                // in half page, the cut of the next turn, from this page and the next one just drawn
+                shown?.takeIf { branch.showHalf && currentPage + 1 < pageCount }?.let { here ->
+                    draw(currentPage + 1)?.let { next ->
+                        val bands = here.blankBands()
+                        val split = HalfSplit.of(bands, next.blankBands())
+                        // the line goes through the middle of the blank band the cut is in, clear of
+                        // the staves above and below: anywhere in it, the turn hides only paper
+                        val mark = bands.firstOrNull { split.lower in it.start..it.end }?.let { (it.start + it.end) / 2 }
+                        HalfCut(currentPage, layoutVersion, split, mark ?: split.lower)
+                    }
                 }
             }
         }
@@ -1742,6 +1765,23 @@ fun PdfViewerScreen(
                                             cursorGeo, cursorNotes, pageFit.left + offsetX, pageFit.top + offsetY,
                                             pageFit.width * scale
                                         )
+                                    }
+                                }
+                                // in half page, a thin dotted line where the next turn cuts this page;
+                                // a page cut through its music (no blank band) only gets a tick in
+                                // each margin, so the line does not cross out a staff
+                                halfCut?.takeIf { it.page == currentPage && it.layout == layoutVersion && branch.showHalf && !halfTurned }?.let { cut ->
+                                    val cutColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val left = pageFit.left + offsetX
+                                        val right = left + pageFit.width * scale
+                                        val y = pageFit.top + offsetY + pageFit.height * scale * cut.mark
+                                        val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                                        val spans = if (cut.split.onBlank) listOf(left to right)
+                                        else CUT_TICK_DP.dp.toPx().let { tick -> listOf(left to left + tick, right - tick to right) }
+                                        spans.forEach { (from, to) ->
+                                            drawLine(cutColor, Offset(from, y), Offset(to, y), strokeWidth = 1.dp.toPx(), pathEffect = dash)
+                                        }
                                     }
                                 }
                                 // the overlay belongs to currentPage: while lastShown is still the

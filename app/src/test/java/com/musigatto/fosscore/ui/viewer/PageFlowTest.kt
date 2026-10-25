@@ -96,21 +96,38 @@ class PageFlowTest {
     @Test
     fun halfSplit_cutsBetweenSystems() {
         // a page without blank bands: the middle
-        assertEquals(HalfSplit(0.5f, 0.5f), HalfSplit.of(emptyList(), emptyList()))
+        assertEquals(HalfSplit(0.5f, 0.5f, onBlank = false), HalfSplit.of(emptyList(), emptyList()))
+        // the next page's only band high enough is under its page number: this page cuts at its
+        // band nearest the middle and the next page shows down to there, not just its number
+        assertEquals(HalfSplit(0.49f, 0.49f), HalfSplit.of(listOf(Band(0.46f, 0.52f)), listOf(Band(0.03f, 0.08f), Band(0.7f, 0.72f))))
+        // only its bottom margin is blank (staves too close, grey paper): the middle, not the margin
+        assertEquals(HalfSplit(0.5f, 0.5f, onBlank = false), HalfSplit.of(listOf(Band(0.93f, 1f)), listOf(Band(0.1f, 0.12f))))
         // this page's band nearest the middle; the next page's band that shows the most above it
         val here = listOf(Band(0.22f, 0.26f), Band(0.46f, 0.52f), Band(0.72f, 0.76f))
         // its second system ends a little lower than this page's: still shown (it was cut off)
         assertEquals(HalfSplit(0.52f, 0.52f), HalfSplit.of(here, listOf(Band(0.24f, 0.28f), Band(0.5f, 0.55f))))
         // its bands are higher: blank paper between the two parts
         assertEquals(HalfSplit(0.46f, 0.42f), HalfSplit.of(here, listOf(Band(0.2f, 0.24f), Band(0.38f, 0.42f))))
-        // its first system reaches below this page's middle: this page keeps only its last system
-        assertEquals(HalfSplit(0.72f, 0.65f), HalfSplit.of(here, listOf(Band(0.6f, 0.65f))))
+        // its first system reaches below this page's middle: no cut in the bottom third, the next
+        // page shows down to this page's band nearest the middle
+        assertEquals(HalfSplit(0.49f, 0.49f), HalfSplit.of(here, listOf(Band(0.6f, 0.65f))))
         // three systems above four: two systems of the next page show, above the last of this one
         val three = listOf(Band(0.415f, 0.44f), Band(0.641f, 0.665f), Band(0.867f, 0.903f))
         val four = listOf(Band(0.244f, 0.267f), Band(0.47f, 0.489f), Band(0.695f, 0.718f), Band(0.92f, 0.947f))
         assertEquals(HalfSplit(0.641f, 0.489f), HalfSplit.of(three, four))
-        // no band of this page low enough in its upper three quarters: cut at its middle band
+        // a band of this page just under the next page's: the next page shows down to it
         assertEquals(HalfSplit(0.46f, 0.42f), HalfSplit.of(listOf(Band(0.46f, 0.52f)), listOf(Band(0.38f, 0.42f), Band(0.53f, 0.56f))))
+        // no band of the next page high enough: this page cuts at its band nearest the middle
+        assertEquals(HalfSplit(0.49f, 0.49f), HalfSplit.of(listOf(Band(0.46f, 0.52f)), listOf(Band(0.6f, 0.65f))))
+        // five systems over five: two of the next page above two of this one, cut nearest the
+        // middle, not four over one
+        val five = listOf(Band(0.166f, 0.184f), Band(0.355f, 0.368f), Band(0.519f, 0.537f), Band(0.704f, 0.718f))
+        val nextFive = listOf(Band(0.176f, 0.19f), Band(0.353f, 0.367f), Band(0.562f, 0.575f), Band(0.729f, 0.753f))
+        assertEquals(HalfSplit(0.519f, 0.367f), HalfSplit.of(five, nextFive))
+        // six systems: the next page shows two of its systems whether this one is cut after its
+        // second or its third; the cut nearest the middle wins
+        val six = listOf(Band(0.327f, 0.338f), Band(0.457f, 0.482f), Band(0.608f, 0.632f), Band(0.754f, 0.778f))
+        assertEquals(HalfSplit(0.457f, 0.35f), HalfSplit.of(six, listOf(Band(0.31f, 0.35f), Band(0.7f, 0.73f))))
     }
 
     @Test

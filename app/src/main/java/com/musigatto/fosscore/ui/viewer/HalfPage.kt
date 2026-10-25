@@ -7,6 +7,8 @@ import android.graphics.Bitmap
 private const val MIN_BAND = 0.01f
 // a pixel this light is paper
 private const val PAPER = 0xE0
+// length of each margin tick marking a cut through the music (screen dp)
+const val CUT_TICK_DP = 24f
 
 /**
  * The blank bands of a drawn page, where a turned half page can cut without cutting a system

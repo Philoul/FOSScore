@@ -1859,7 +1859,7 @@ fun PdfViewerScreen(
                 pageLabel = pageLabel,
                 editing = editing,
                 onOpenMenu = { menu.show(ViewerSurface.MENU) },
-                onStopEditing = { toggleEditing() },
+                onToggleEditing = { toggleEditing() },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     // edge-to-edge: the pills were slipping under the status bar, and in landscape

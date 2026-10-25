@@ -79,8 +79,8 @@ private val NUMBER_FIELD_WIDTH = 112.dp
 
 /**
  * Title bar of the viewer, drawn over the page: the menu button on the left, the score and page in
- * the middle, and while annotating a "Done" pill on the right. No state of its own: everything comes
- * in as a parameter and goes out as a lambda.
+ * the middle, and the edit toggle on the right (✎ to pick up the pen, ✓ to put it down). No state of
+ * its own: everything comes in as a parameter and goes out as a lambda.
  *
  * The row deliberately has NO clickable full-width background: it would eat the page taps in the gaps
  * between pills, which are the navigation (spec §3).
@@ -92,7 +92,7 @@ fun ViewerTitleBar(
     pageLabel: String,
     editing: Boolean,
     onOpenMenu: () -> Unit,
-    onStopEditing: () -> Unit,
+    onToggleEditing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -132,19 +132,20 @@ fun ViewerTitleBar(
                     }
                 }
             }
-            // while annotating, the way out stays in sight: the accent container is the M3 "active"
-            // tone, and it reads from across the room
-            if (editing) {
-                Spacer(Modifier.width(8.dp))
-                Pill(color = MaterialTheme.colorScheme.primaryContainer) {
-                    PillEntry(
-                        "✓",
-                        stringResource(R.string.annotate_done),
-                        compact = compact,
-                        selected = true,
-                        onClick = onStopEditing,
-                    )
-                }
+            // edit toggle, always in sight: ✎ picks up the pen, ✓ puts it down. The accent container
+            // is the M3 "active" tone, and it reads from across the room
+            Spacer(Modifier.width(8.dp))
+            Pill(
+                color = if (editing) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+            ) {
+                PillEntry(
+                    if (editing) "✓" else "✎",
+                    stringResource(if (editing) R.string.annotate_done else R.string.action_edit),
+                    compact = compact,
+                    selected = editing,
+                    onClick = onToggleEditing,
+                )
             }
         }
     }

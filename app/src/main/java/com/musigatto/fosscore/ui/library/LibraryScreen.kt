@@ -4,12 +4,15 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,6 +47,13 @@ import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.launch
+
+// the right end of every row, kept for the check box of a selection, as wide and as high as a
+// check box without a click of its own: the row is the same size with or without it
+private val SELECT_BOX_ROOM = 24.dp
+// the least height of a row's content, the check box with some room: a row with a title alone
+// does not grow when the box shows
+private val ROW_MIN_HEIGHT = 28.dp
 
 /**
  * The library list. A tap on a row opens the score; a long press starts selecting rows, and the
@@ -164,13 +174,10 @@ fun LibraryScreen(
                                 onClick = { if (chosen.isNotEmpty()) toggle(sheet) else onOpen(sheet) },
                                 onLongClick = { toggle(sheet) }
                             )
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .heightIn(min = ROW_MIN_HEIGHT),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (chosen.isNotEmpty()) {
-                            Checkbox(checked = sheet.id in selected, onCheckedChange = { toggle(sheet) })
-                            Spacer(Modifier.width(8.dp))
-                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(sheet.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
@@ -179,6 +186,14 @@ fun LibraryScreen(
                             }
                             if (sheet.composer.isNotBlank()) {
                                 Text(sheet.composer, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        // the check box shows in a room every row keeps, and a tap on the row ticks
+                        // it: on a long press nothing moves, the row stays under the finger
+                        Spacer(Modifier.width(8.dp))
+                        Box(Modifier.size(SELECT_BOX_ROOM), contentAlignment = Alignment.Center) {
+                            if (chosen.isNotEmpty()) {
+                                Checkbox(checked = sheet.id in selected, onCheckedChange = null)
                             }
                         }
                     }

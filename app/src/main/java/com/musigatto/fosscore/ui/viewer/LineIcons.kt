@@ -43,12 +43,13 @@ internal const val LINE_BOOKMARK = "M7,3h10v18l-5,-4l-5,4z"
 // two pages side by side, the page modes
 internal const val LINE_DISPLAY = "M3,5h8v14h-8zM13,5h8v14h-8z"
 // a staff and a note: how the music is laid out
-internal val LINE_LAYOUT = "M3,7h18M3,11h18M3,15h18M11,15v-9" + circle(9.5f, 15f, 1.5f)
+internal val LINE_LAYOUT = "M3,6h18M3,12h18M3,18h18M15,18v-15" + circle(13f, 18f, 2f)
 // a metronome: the case, its foot and the pendulum
 internal const val LINE_METRONOME = "M9,3h6l4,18h-14zM12,16l5,-10M6.5,15h11"
-// a tuning fork
-internal const val LINE_TUNER = "M9,3v7a3,3 0 0,0 6,0v-7M12,13v8"
-internal const val LINE_PIANO = "M3,5h18v14h-18zM9,5v14M15,5v14M6.5,5v8M12,5v8M17.5,5v8"
+// a tuning fork: two long prongs, a short stem ending in a ball
+internal val LINE_TUNER = "M9,2v11a3,3 0 0,0 6,0v-11M12,16v3" + circle(12f, 20.5f, 1.5f)
+// three white keys, and the two black keys between them (two strokes side by side make them thick)
+internal const val LINE_PIANO = "M3,3h18v18h-18zM9,12v9M15,12v9M8,3v9M10,3v9M14,3v9M16,3v9"
 internal val LINE_PLAY = circle(12f, 12f, 9f) + "M10,8.5v7l5.5,-3.5z"
 // a jump back: the route of a repeat
 internal const val LINE_LINKS = "M5,19v-6a5,5 0 0,1 5,-5h9M15,4l4,4l-4,4"

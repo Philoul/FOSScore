@@ -41,6 +41,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.LibraryRepository
@@ -94,8 +95,10 @@ fun LibraryScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // the title takes the room the buttons leave, on one line: the buttons keep their
+            // width and the header its height, so the list does not move when selecting starts
             if (chosen.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     val cancelLabel = stringResource(R.string.action_cancel)
                     TextButton(
                         onClick = { selected = emptyList() },
@@ -103,7 +106,9 @@ fun LibraryScreen(
                     ) { Text("✕", style = MaterialTheme.typography.headlineSmall) }
                     Text(
                         pluralStringResource(R.plurals.library_selected, chosen.size, chosen.size),
-                        style = MaterialTheme.typography.headlineSmall
+                        style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -119,12 +124,17 @@ fun LibraryScreen(
                     Button(onClick = { confirmDelete = true }) { Text(stringResource(R.string.action_delete)) }
                 }
             } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     val menuDescription = stringResource(R.string.menu_open)
                     TextButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = menuDescription }) {
                         Text("☰", style = MaterialTheme.typography.headlineSmall)
                     }
-                    Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        stringResource(R.string.library_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     onClose?.let { close ->

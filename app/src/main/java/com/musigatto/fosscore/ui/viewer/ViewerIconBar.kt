@@ -75,7 +75,8 @@ private val SEPARATOR_WIDTH = 1.dp
 /**
  * The top of the viewer as a row of icons, no text: the entries of the menu that work for this
  * score in groups as in the menu, a thin line between them, the edit toggle in Annotate's place,
- * the title and the page in small type in the room left, ⋯ for the full menu on the right. [open] is the entry whose panel shows (its icon is lit); [onSelect] gets
+ * ⋯ for the full menu right after the icons, the title and the page in small type in the room
+ * left. [open] is the entry whose panel shows (its icon is lit); [onSelect] gets
  * the middle of the icon tapped, where its panel hangs. With [tab] and a panel open, the bar's
  * lower corners square off so the panel reads as its continuation.
  *
@@ -140,6 +141,7 @@ fun ViewerIconBar(
                         BarIcon(item.icon, item.label(), lit = item == open, size = button, enabled = ready) { x -> onSelect(item, x) }
                     }
                 }
+                if (more) BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -151,7 +153,6 @@ fun ViewerIconBar(
                         Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                if (more) BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
             }
         }
     }

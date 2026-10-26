@@ -15,13 +15,19 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,6 +76,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
@@ -267,12 +274,18 @@ internal fun PanelOverlay(
     // with the icon bar, the scrim starts under it: the bar stays lit and one tap goes from a panel
     // to the next
     val icons = anchor.style != ChromeStyle.MENU
+    // the icon's middle is measured from the left of the screen, the panel from the left of the
+    // safe area
+    val left = WindowInsets.safeDrawing.asPaddingValues().calculateLeftPadding(LayoutDirection.Ltr)
     Box(
         modifier = modifier
             .fillMaxSize()
             .padding(top = if (icons) top else 0.dp)
             .background(Color.Black.copy(alpha = if (anchor.style == ChromeStyle.ICONS_TAB) 0.2f else 0.4f))
-            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+            .pointerInput(Unit) { detectTapGestures { onDismiss() } }
+            // the scrim covers the whole screen, the panel stays clear of the system bars (a
+            // navigation bar on the side of a phone in landscape)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)),
         contentAlignment = if (anchor.style == ChromeStyle.MENU) alignment else Alignment.TopStart,
     ) {
         Surface(
@@ -283,7 +296,7 @@ internal fun PanelOverlay(
             modifier = when (anchor.style) {
                 ChromeStyle.MENU -> Modifier.padding(top = top).widthIn(max = maxWidth).padding(16.dp)
                 // a card under the icon that opened it, kept on screen
-                ChromeStyle.ICONS_POPUP -> Modifier.padding(top = 4.dp).underIcon(anchor.x, maxWidth)
+                ChromeStyle.ICONS_POPUP -> Modifier.padding(top = 4.dp).underIcon(anchor.x - left, maxWidth)
                 // the bar's continuation, as wide as it
                 ChromeStyle.ICONS_TAB -> Modifier.padding(horizontal = 12.dp).fillMaxWidth()
             }.pointerInput(Unit) { detectTapGestures { } },

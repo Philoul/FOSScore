@@ -123,6 +123,13 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _cursor = MutableStateFlow<List<String>>(emptyList())
     val cursor: StateFlow<List<String>> = _cursor.asStateFlow()
 
+    // the notes [turnAhead] bars after the cursor: where the reader looks, for the page turns
+    private val _ahead = MutableStateFlow<List<String>>(emptyList())
+    val ahead: StateFlow<List<String>> = _ahead.asStateFlow()
+
+    /** Bars ahead of the music the pages turn (the metronome setting, shared by playback). */
+    var turnAhead = 0
+
     private val _tempo = MutableStateFlow(Settings.tempo(context, score))
     val tempo: StateFlow<Float> = _tempo.asStateFlow()
 
@@ -248,6 +255,9 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         followPaused = false
     }
 
+    /** The music of the score as laid out now: its bars and notes, for the metronome. */
+    suspend fun music(): Playback? = pages?.playback(sound())
+
     fun stop() {
         starting?.cancel()
         starting = null
@@ -259,6 +269,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         player = null
         playback = null
         followPaused = false
+        _ahead.value = emptyList()
         _cursor.value = emptyList()
         _state.value = PlayState.STOPPED
     }
@@ -289,7 +300,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     // the highlight and the page go to the notes at [quarters], without playing
     private fun showNotesAt(pb: Playback, quarters: Double) {
         val index = pb.onsetIndexAt(quarters).coerceAtLeast(0)
-        pb.onsets.getOrNull(index)?.let { _cursor.value = it.notes }
+        pb.onsets.getOrNull(index)?.let {
+            _ahead.value = emptyList()
+            _cursor.value = it.notes
+        }
     }
 
     private suspend fun preparePlayer(pb: Playback): MediaPlayer {
@@ -447,6 +461,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 val index = pb.onsetIndexAt(position)
                 if (index != last && index >= 0) {
                     last = index
+                    _ahead.value = pb.notesAhead(position, turnAhead) ?: pb.onsets[index].notes
                     _cursor.value = pb.onsets[index].notes
                 }
                 delay(FOLLOW_MS.milliseconds)
@@ -461,6 +476,17 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         }
     }
 }
+
+/** The bar (0-based) at [quarters], from the bar lines of the score; 0 before the first. */
+fun Playback.barAt(quarters: Double): Int = bars.indexOfLast { it <= quarters + 1e-6 }.coerceAtLeast(0)
+
+/** The first notes of bar [bar], or null past the last bar. */
+fun Playback.notesOfBar(bar: Int): List<String>? =
+    bars.getOrNull(bar)?.let { start -> onsets.firstOrNull { it.quarters >= start - 1e-6 }?.notes }
+
+/** The notes [bars] bars after [quarters], where the reader looks ahead; null when not looking ahead. */
+fun Playback.notesAhead(quarters: Double, bars: Int): List<String>? =
+    if (bars <= 0) null else notesOfBar(barAt(quarters) + bars) ?: onsets.lastOrNull()?.notes
 
 /**
  * Audio time of the score position [quarters], between two notes too: `msAt` goes back to the

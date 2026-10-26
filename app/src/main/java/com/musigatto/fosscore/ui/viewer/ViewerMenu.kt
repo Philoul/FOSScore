@@ -20,10 +20,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,15 +38,15 @@ import com.musigatto.fosscore.musicxml.LyricsPlacement
 import com.musigatto.fosscore.musicxml.Part
 
 // a glyph, not an icon font: the rest of the viewer chrome does the same (♪, ⊞, ✎), and these
-// all exist in the fonts of Android 6
-private val ViewerMenuItem.glyph: String
+// all exist in the fonts of Android 6; none for the metronome, drawn as on its band button
+private val ViewerMenuItem.glyph: String?
     get() = when (this) {
         ViewerMenuItem.LIBRARY -> "♪"
         ViewerMenuItem.SETLIST -> "≡"
         ViewerMenuItem.BOOKMARKS -> "⚑"
         ViewerMenuItem.DISPLAY -> "⊞"
         ViewerMenuItem.LAYOUT -> "♫"
-        ViewerMenuItem.METRONOME -> "♩"
+        ViewerMenuItem.METRONOME -> null
         // a tuning fork
         ViewerMenuItem.TUNER -> "Ψ"
         // keys
@@ -140,9 +142,12 @@ fun ViewerMenuPanel(
     }
 }
 
-/** Glyph, name, and under the name why the entry is greyed out. 48 dp high at least: a touch target. */
+/**
+ * Glyph (or, without one, the metronome icon), name, and under the name why the entry is greyed
+ * out. 48 dp high at least: a touch target.
+ */
 @Composable
-private fun MenuRow(glyph: String, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
+private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
     val content = if (enabled) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Row(
@@ -153,12 +158,19 @@ private fun MenuRow(glyph: String, label: String, hint: String?, enabled: Boolea
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            glyph,
-            style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) MaterialTheme.colorScheme.primary else content,
-            modifier = Modifier.width(32.dp),
-        )
+        val glyphColor = if (enabled) MaterialTheme.colorScheme.primary else content
+        if (glyph != null) {
+            Text(
+                glyph,
+                style = MaterialTheme.typography.titleMedium,
+                color = glyphColor,
+                modifier = Modifier.width(32.dp),
+            )
+        } else {
+            Box(Modifier.width(32.dp)) {
+                CompositionLocalProvider(LocalContentColor provides glyphColor) { ToolIcon(ICON_METRONOME) }
+            }
+        }
         Column {
             Text(label, style = MaterialTheme.typography.bodyLarge, color = content)
             if (hint != null) {

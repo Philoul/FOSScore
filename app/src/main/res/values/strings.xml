@@ -184,4 +184,35 @@
     <string name="backup_check_device_other">Exported from another device (%1$s)</string>
     <string name="backup_check_files_ok">All PDF files included</string>
     <string name="backup_check_files_missing">%1$d PDF files were missing when this export was made.</string>
+    <!-- metronome -->
+    <string name="metronome_start">Start the metronome</string>
+    <string name="metronome_stop">Stop the metronome</string>
+    <string name="metronome_tap">TAP</string>
+    <string name="metronome_settings">Metronome settings</string>
+    <string name="metronome_close">Close the metronome</string>
+    <string name="metronome_time_signature">Time signature</string>
+    <string name="metronome_meter_from_score">%1$s (score)</string>
+    <string name="metronome_fewer">Fewer</string>
+    <string name="metronome_more">More</string>
+    <string name="metronome_mode_sound">Clicks</string>
+    <string name="metronome_mode_visual">Page border flash</string>
+    <string name="metronome_mode_both">Clicks and flash</string>
+    <string name="metronome_sound_click">Click</string>
+    <string name="metronome_sound_hihat">Hi-hat</string>
+    <string name="metronome_sound_woodblock">Wood block</string>
+    <string name="metronome_sound_digital">Digital</string>
+    <string name="metronome_accent">Accent beat 1</string>
+    <string name="metronome_subdivision">Clicks/beat</string>
+    <string name="metronome_count_in">Count-in bars</string>
+    <string name="metronome_page_turns">Page turns</string>
+    <string name="metronome_auto_turn">Turn the pages</string>
+    <string name="turn_ahead">Ahead</string>
+    <string name="metronome_page_of">P. %1$d/%2$d</string>
+    <string name="metronome_bars_range">bars %1$d–%2$d</string>
+    <string name="metronome_copy_bars">Same count for the next pages</string>
+    <string name="metronome_mode_label">Given by</string>
+    <string name="metronome_bar">Bar %1$d</string>
+    <string name="tempo_as_written_short">As written</string>
+    <string name="metronome_previous_page">Previous page</string>
+    <string name="metronome_next_page">Next page</string>
 </resources>

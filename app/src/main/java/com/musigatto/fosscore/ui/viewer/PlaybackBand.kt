@@ -36,16 +36,20 @@ import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Part
 
 // Material's 24 dp paths (play_arrow, pause, skip_previous, repeat), drawn with ToolIcon
-private const val ICON_PLAY = "M8,5v14l11,-7z"
-private const val ICON_PAUSE = "M6,19h4V5H6v14zM14,5v14h4V5h-4z"
+internal const val ICON_PLAY = "M8,5v14l11,-7z"
+internal const val ICON_PAUSE = "M6,19h4V5H6v14zM14,5v14h4V5h-4z"
 private const val ICON_TO_START = "M6,6h2v12H6zM9.5,12l8.5,6V6z"
 // Material "tune": the playback options
-private const val ICON_OPTIONS = "M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,21v-2h8v-2h-8v-2h-2v6h2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2H11v2h10zM15,9h2V7h4V5h-4V3h-2v6z"
+internal const val ICON_OPTIONS = "M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,21v-2h8v-2h-8v-2h-2v6h2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2H11v2h10zM15,9h2V7h4V5h-4V3h-2v6z"
 private const val ICON_LOOP =
     "M7,7h10v3l4,-4,-4,-4v3H5v6h2V7zM17,17H7v-3l-4,4,4,4v-3h12v-6h-2v4z"
+// Material has no metronome: its case (the window cut out, wound the other way), the arm and its weight
+internal const val ICON_METRONOME =
+    "M9,2h6l5,20H4zM10.4,4L6.8,17h10.4L13.6,4z" +
+        "M11.28,14.64L16.28,4.64L17.72,5.36L12.72,15.36zM13.3,8.4h3v2h-3z"
 
 // the band's buttons: a little under M3's 48 dp, so the band stays one slim row
-private val BAND_BUTTON = 44.dp
+internal val BAND_BUTTON = 44.dp
 // the band holds − ♩ = N + and the options button from this width (a tablet, a phone in landscape)
 private val BAND_WITH_TEMPO_BUTTONS = 440.dp
 
@@ -59,7 +63,7 @@ private val CURSOR_HEAD = Color(0x8800A0FF)
  * markers (a tap sets one where the music is, a second tap clears it), the tempo with its − / +
  * (repeating while held), and the playback options. On a narrow screen − / + leave room, and a
  * tap on the tempo opens the options. It shows with the bars (centre tap); the music goes on when
- * they hide.
+ * they hide. The metronome button puts the metronome band in its place.
  */
 @Composable
 fun PlaybackBand(
@@ -75,6 +79,7 @@ fun PlaybackBand(
     onB: () -> Unit,
     onTempo: (Int) -> Unit,
     onOptions: () -> Unit,
+    onMetronome: () -> Unit,
     modifier: Modifier = Modifier,
 ) = BoxWithConstraints(modifier.fillMaxWidth()) {
     val wide = maxWidth >= BAND_WITH_TEMPO_BUTTONS
@@ -128,12 +133,13 @@ fun PlaybackBand(
                 Text(stringResource(R.string.tempo_value, bpm), style = MaterialTheme.typography.labelLarge)
             }
         }
+        BandButton(stringResource(R.string.menu_metronome), active = false, onClick = onMetronome) { ToolIcon(ICON_METRONOME) }
     }
 }
 
 /** A band button: filled while what it stands for is on (the loop, a marker set, ▶). */
 @Composable
-private fun BandButton(
+internal fun BandButton(
     label: String,
     active: Boolean,
     enabled: Boolean = true,
@@ -151,8 +157,9 @@ private fun BandButton(
 }
 
 /**
- * The playback options panel (menu › Playback): the tempo as ♩ = N, and the parts heard, last and
- * in their own scroll box, as in the mockup. The parts shown are in Score layout.
+ * The playback options panel (menu › Playback): the tempo (the same block as the metronome's),
+ * the bars to turn the pages ahead of the music, and the parts heard, last and in their own scroll
+ * box, as in the mockup. The parts shown are in Score layout.
  */
 @Composable
 fun PlaybackOptionsOverlay(
@@ -161,6 +168,8 @@ fun PlaybackOptionsOverlay(
     minBpm: Int,
     maxBpm: Int,
     onTempo: (Int) -> Unit,
+    turnAhead: Int,
+    onTurnAhead: (Int) -> Unit,
     parts: List<Part>,
     heard: Set<String>,
     onHeard: (String, Boolean) -> Unit,
@@ -169,10 +178,9 @@ fun PlaybackOptionsOverlay(
 ) {
     PanelOverlay(stringResource(R.string.menu_playback), onDismiss, modifier) {
         SectionLabel(stringResource(R.string.tempo_section_label))
-        TempoRow(bpm, minBpm, maxBpm, onTempo)
-        TextButton(onClick = { onTempo(writtenBpm) }, enabled = bpm != writtenBpm) {
-            Text(stringResource(R.string.tempo_as_written, writtenBpm))
-        }
+        TempoBlock(bpm, minBpm..maxBpm, writtenBpm, onTempo)
+        SectionLabel(stringResource(R.string.metronome_page_turns))
+        TurnAheadRow(turnAhead, onTurnAhead)
         if (parts.size > 1) {
             SectionLabel(stringResource(R.string.heard_section_label))
             Column(
@@ -193,22 +201,6 @@ fun PlaybackOptionsOverlay(
             }
         }
     }
-}
-
-/** − [♩ = N] +: typed in place, or one beat per minute on each press of − / +, repeating while held. */
-@Composable
-private fun TempoRow(bpm: Int, minBpm: Int, maxBpm: Int, onTempo: (Int) -> Unit) {
-    NumberFieldRow(
-        label = stringResource(R.string.tempo_label),
-        value = bpm,
-        range = minBpm..maxBpm,
-        step = 1,
-        lessLabel = stringResource(R.string.tempo_slower),
-        moreLabel = stringResource(R.string.tempo_faster),
-        rangeText = stringResource(R.string.tempo_range, minBpm, maxBpm),
-        onValue = onTempo,
-        prefix = "♩ =",
-    )
 }
 
 /**

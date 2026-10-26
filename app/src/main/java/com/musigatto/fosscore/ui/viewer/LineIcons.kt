@@ -7,23 +7,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * The app's own icons, drawn as lines on a 24 unit grid: one stroke width, round ends, nothing
- * filled. They replace the characters the chrome used as icons (☰ ✎ ✕ ⊞ ♫ ⚙...), whose shape
- * depends on the fonts of each device and some of which Android 6 does not have. Like ToolIcon,
- * they take the content color, so they grey out with their button.
+ * The app's own icons, drawn as lines on a 24 unit grid: one stroke width, round ends; what comes
+ * after [FILLED] in a path is filled as well (the black keys of the piano). They replace the
+ * characters the chrome used as icons (☰ ✎ ✕ ⊞ ♫ ⚙...), whose shape depends on the fonts of each
+ * device and some of which Android 6 does not have. Like ToolIcon, they take the content color, so
+ * they grey out with their button.
  */
 private const val LINE_UNITS = 24f
 private const val LINE_WIDTH = 1.75f
 private val LINE_ICON_SIZE = 22.dp
+// in a path, between the part only stroked and the part also filled
+private const val FILLED = "|"
 
 // a circle of radius r around (x, y), as two arcs
 private fun circle(x: Float, y: Float, r: Float) = "M${x - r},${y}a$r,$r 0 1,0 ${2 * r},0a$r,$r 0 1,0 ${-2 * r},0"
@@ -48,8 +54,10 @@ internal val LINE_LAYOUT = "M3,6h18M3,12h18M3,18h18M15,18v-15" + circle(13f, 18f
 internal const val LINE_METRONOME = "M9,3h6l4,18h-14zM12,16l5,-10M6.5,15h11"
 // a tuning fork: two long prongs, a short stem ending in a ball
 internal val LINE_TUNER = "M9,2v11a3,3 0 0,0 6,0v-11M12,16v3" + circle(12f, 20.5f, 1.5f)
-// three white keys, and the two black keys between them (two strokes side by side make them thick)
-internal const val LINE_PIANO = "M3,3h18v18h-18zM9,12v9M15,12v9M8,3v9M10,3v9M14,3v9M16,3v9"
+// three white keys and the two black keys between them, filled. As on a keyboard, at the top the
+// five keys (C, C#, D, D#, E) are as wide each, 3.6 units from line to line; the stroke widens the
+// black ones to that
+internal const val LINE_PIANO = "M3,3h18v18h-18zM9,12v9M15,12v9" + FILLED + "M7.475,3h1.85v9h-1.85zM14.675,3h1.85v9h-1.85z"
 internal val LINE_PLAY = circle(12f, 12f, 9f) + "M10,8.5v7l5.5,-3.5z"
 // a jump back: the route of a repeat
 internal const val LINE_LINKS = "M5,19v-6a5,5 0 0,1 5,-5h9M15,4l4,4l-4,4"
@@ -68,15 +76,19 @@ internal const val LINE_NEXT = "M9,5l7,7l-7,7"
 // the same bars on every page after: two arrows down
 internal const val LINE_COPY_DOWN = "M8,4v12M4,12l4,4l4,-4M16,4v12M12,12l4,4l4,-4"
 
-/** One of the paths above, stroked in the content color. */
+/** One of the paths above, stroked in the content color, and filled after [FILLED]. */
 @Composable
 fun LineIcon(path: String, modifier: Modifier = Modifier, size: Dp = LINE_ICON_SIZE) {
     val color = LocalContentColor.current
-    val shape = remember(path) { PathParser().parsePathString(path).toPath() }
-    Canvas(modifier.size(size)) {
+    val shapes = remember(path) { path.split(FILLED).map { PathParser().parsePathString(it).toPath() } }
+    // drawn opaque, then made as transparent as the color as a whole: where a filled part and a
+    // stroke overlap, a greyed out icon does not get darker
+    val opaque = color.copy(alpha = 1f)
+    Canvas(modifier.size(size).graphicsLayer { alpha = color.alpha; compositingStrategy = CompositingStrategy.Offscreen }) {
         val u = this.size.minDimension / LINE_UNITS
         withTransform({ scale(u, u, pivot = Offset.Zero) }) {
-            drawPath(shape, color, style = Stroke(width = LINE_WIDTH, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            shapes.forEach { drawPath(it, opaque, style = Stroke(width = LINE_WIDTH, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
+            shapes.drop(1).forEach { drawPath(it, opaque, style = Fill) }
         }
     }
 }

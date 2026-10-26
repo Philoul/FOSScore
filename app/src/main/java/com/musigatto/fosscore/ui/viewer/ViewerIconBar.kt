@@ -59,11 +59,11 @@ private val BAR_ITEMS = listOf(
     ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK,
 )
 
-private val BAR_BUTTON = 40.dp
+private val BAR_BUTTON = 36.dp
 // the smallest an icon button gets when every entry has to fit in the bar
-private val BAR_BUTTON_MIN = 30.dp
-// the room the title keeps beside the icons
-private val TITLE_MIN = 120.dp
+private val BAR_BUTTON_MIN = 28.dp
+// the share of the bar the title keeps beside the icons
+private const val TITLE_SHARE = 0.2f
 // the thin line between two groups of entries, as in the menu
 private val SEPARATOR_HEIGHT = 24.dp
 private val SEPARATOR_PADDING = 4.dp
@@ -77,7 +77,8 @@ private val SEPARATOR_WIDTH = 1.dp
  * lower corners square off so the panel reads as its continuation.
  *
  * With [allIcons] (a preview of the finished app), every entry of the menu has its icon, greyed
- * out while it is not built, and there is no ⋯. The buttons shrink to leave the title some room.
+ * out while it is not built, and there is no ⋯. The buttons shrink to leave the title some room;
+ * on a screen too narrow for them all, the first ones show and ⋯ opens the menu.
  */
 @Composable
 fun ViewerIconBar(
@@ -106,17 +107,24 @@ fun ViewerIconBar(
         shadowElevation = if (joined) 0.dp else 4.dp,
     ) {
         BoxWithConstraints(Modifier.padding(horizontal = 6.dp)) {
-            val separators = items.zipWithNext().count { (a, b) -> a.group != b.group }
-            // the icons, and ⋯ without all the icons
-            val buttons = items.size + if (allIcons) 0 else 1
-            val button = ((maxWidth - (SEPARATOR_WIDTH + SEPARATOR_PADDING * 2) * separators - TITLE_MIN) / buttons)
+            val room = maxWidth * (1 - TITLE_SHARE)
+            val gap = SEPARATOR_WIDTH + SEPARATOR_PADDING * 2
+            fun separatorsOf(list: List<ViewerMenuItem>) = list.zipWithNext().count { (a, b) -> a.group != b.group }
+            // on a narrow screen (a phone), the icons that fit at their smallest, the edit toggle
+            // always among them, and the others behind ⋯
+            val fits = ((room - gap * separatorsOf(items)) / BAR_BUTTON_MIN).toInt()
+            val all = items.size + (if (allIcons) 0 else 1) <= fits
+            val shown = if (all) items
+            else (items.filter { it != ViewerMenuItem.ANNOTATE }.take((fits - 2).coerceAtLeast(0)) + ViewerMenuItem.ANNOTATE).sorted()
+            val more = !allIcons || !all
+            val button = ((room - gap * separatorsOf(shown)) / (shown.size + if (more) 1 else 0))
                 .coerceIn(BAR_BUTTON_MIN, BAR_BUTTON)
             Row(
                 modifier = Modifier.height(48.dp + if (joined) 8.dp else 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                items.forEachIndexed { i, item ->
-                    if (i > 0 && item.group != items[i - 1].group) GroupSeparator()
+                shown.forEachIndexed { i, item ->
+                    if (i > 0 && item.group != shown[i - 1].group) GroupSeparator()
                     if (item == ViewerMenuItem.ANNOTATE) {
                         BarIcon(
                             if (editing) LINE_DONE else LINE_EDIT,
@@ -140,7 +148,7 @@ fun ViewerIconBar(
                         Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                if (!allIcons) BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
+                if (more) BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
             }
         }
     }

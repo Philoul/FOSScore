@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
  * they take the content color, so they grey out with their button.
  */
 private const val LINE_UNITS = 24f
-private const val LINE_WIDTH = 2f
+private const val LINE_WIDTH = 1.75f
 private val LINE_ICON_SIZE = 22.dp
 
 // a circle of radius r around (x, y), as two arcs

@@ -60,6 +60,9 @@ private val BAR_ITEMS = listOf(
 )
 
 private val BAR_BUTTON = 36.dp
+// the icon inside its button, and the margin it keeps from the button's edge
+private val BAR_ICON = 24.dp
+private val BAR_ICON_MARGIN = 12.dp
 // the smallest an icon button gets when every entry has to fit in the bar
 private val BAR_BUTTON_MIN = 28.dp
 // the share of the bar the title keeps beside the icons
@@ -192,7 +195,7 @@ private fun BarIcon(icon: String, label: String, lit: Boolean, size: Dp, enabled
                 .background(if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
-            CompositionLocalProvider(LocalContentColor provides tint) { LineIcon(icon, size = minOf(28.dp, size - 10.dp)) }
+            CompositionLocalProvider(LocalContentColor provides tint) { LineIcon(icon, size = minOf(BAR_ICON, size - BAR_ICON_MARGIN)) }
         }
     }
 }

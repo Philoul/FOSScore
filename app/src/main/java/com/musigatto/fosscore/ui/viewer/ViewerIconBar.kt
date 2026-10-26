@@ -79,8 +79,8 @@ private val SEPARATOR_WIDTH = 1.dp
  * the middle of the icon tapped, where its panel hangs. With [tab] and a panel open, the bar's
  * lower corners square off so the panel reads as its continuation.
  *
- * With [allIcons] (a preview of the finished app), every entry of the menu has its icon, greyed
- * out while it is not built, and there is no ⋯. The buttons shrink to leave the title some room;
+ * With [allIcons] (a preview of the finished app), every entry of the menu that fits the file has
+ * its icon, greyed out while it is not built, and there is no ⋯. The buttons shrink to leave the title some room;
  * on a screen too narrow for them all, the first ones show and ⋯ opens the menu.
  */
 @Composable
@@ -99,7 +99,7 @@ fun ViewerIconBar(
 ) {
     val joined = tab && open != null
     // in the menu's order; the edit toggle stands for Annotate, in its place (beside the pages)
-    val items = if (allIcons) ViewerMenuItem.entries
+    val items = if (allIcons) ViewerMenuItem.entries.filter { fitsFile(it, isMusicXml) }
     else (BAR_ITEMS.filter { menuItemState(it, isMusicXml) == MenuItemState.READY } + ViewerMenuItem.ANNOTATE).sorted()
     Surface(
         modifier = modifier

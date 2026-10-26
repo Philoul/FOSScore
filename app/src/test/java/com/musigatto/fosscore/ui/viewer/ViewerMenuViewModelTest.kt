@@ -128,6 +128,14 @@ class ViewerMenuViewModelTest {
     }
 
     @Test
+    fun theBarShowsOnlyWhatFitsTheFile() {
+        val pdf = ViewerMenuItem.entries.filterNot { fitsFile(it, isMusicXml = false) }
+        assertEquals(listOf(ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK), pdf)
+        val musicXml = ViewerMenuItem.entries.filterNot { fitsFile(it, isMusicXml = true) }
+        assertEquals(listOf(ViewerMenuItem.PAGES), musicXml)
+    }
+
+    @Test
     fun aPdfHasNoParts() {
         val vm = ViewerMenuViewModel(MemoryStore())
         assertEquals(emptyList<Part>(), vm.parts.value)

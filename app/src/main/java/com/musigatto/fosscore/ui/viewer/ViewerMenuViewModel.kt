@@ -51,6 +51,18 @@ fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
     }
 
 /**
+ * Whether an entry means anything for this kind of file; the icon bar leaves out the others. A
+ * PDF has no layout of its own and nothing to play until a MIDI or audio file can be attached to
+ * it (roadmap 3.2); the pages of a MusicXML score come from its layout, they cannot be moved.
+ */
+fun fitsFile(item: ViewerMenuItem, isMusicXml: Boolean): Boolean =
+    when (item) {
+        ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK -> isMusicXml
+        ViewerMenuItem.PAGES -> !isMusicXml
+        else -> true
+    }
+
+/**
  * How a MusicXML score is laid out. [shownParts] is null until the user picks parts: the score
  * then shows the parts its author left visible.
  */

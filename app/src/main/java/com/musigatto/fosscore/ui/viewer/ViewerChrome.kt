@@ -270,7 +270,8 @@ internal fun PanelOverlay(
 ) {
     BackHandler(onBack = onDismiss)
     val anchor = LocalPanelAnchor.current
-    val top = LocalPanelTop.current
+    // under the status bar at least, when the bar at the top is hidden
+    val top = maxOf(LocalPanelTop.current, WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding())
     // with the icon bar, the scrim starts under it: the bar stays lit and one tap goes from a panel
     // to the next
     val icons = anchor.style != ChromeStyle.MENU

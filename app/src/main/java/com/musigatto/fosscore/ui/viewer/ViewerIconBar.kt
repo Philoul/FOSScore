@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -60,21 +59,25 @@ private val BAR_ITEMS = listOf(
     ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK,
 )
 
-private val BAR_BUTTON = 44.dp
+private val BAR_BUTTON = 40.dp
 // the smallest an icon button gets when every entry has to fit in the bar
-private val BAR_BUTTON_MIN = 32.dp
-private val GROUP_GAP = 4.dp
+private val BAR_BUTTON_MIN = 30.dp
+// the room the title keeps beside the icons
+private val TITLE_MIN = 120.dp
+// the thin line between two groups of entries, as in the menu
+private val SEPARATOR_HEIGHT = 24.dp
+private val SEPARATOR_PADDING = 4.dp
+private val SEPARATOR_WIDTH = 1.dp
 
 /**
  * The top of the viewer as a row of icons, no text: the entries of the menu that work for this
- * score, the title and the page in small type in the room left, ⋯ for the full menu and the edit
- * toggle on the right. [open] is the entry whose panel shows (its icon is lit); [onSelect] gets
+ * score in groups as in the menu, a thin line between them, the edit toggle in Annotate's place,
+ * the title and the page in small type in the room left, ⋯ for the full menu on the right. [open] is the entry whose panel shows (its icon is lit); [onSelect] gets
  * the middle of the icon tapped, where its panel hangs. With [tab] and a panel open, the bar's
  * lower corners square off so the panel reads as its continuation.
  *
  * With [allIcons] (a preview of the finished app), every entry of the menu has its icon, greyed
- * out while it is not built, a small gap between the groups; the buttons shrink to fit the width,
- * and the title and ⋯ leave the room to them.
+ * out while it is not built, and there is no ⋯. The buttons shrink to leave the title some room.
  */
 @Composable
 fun ViewerIconBar(
@@ -91,9 +94,9 @@ fun ViewerIconBar(
     modifier: Modifier = Modifier,
 ) {
     val joined = tab && open != null
-    // the edit toggle stands for the Annotate entry
-    val items = if (allIcons) ViewerMenuItem.entries.filter { it != ViewerMenuItem.ANNOTATE }
-    else BAR_ITEMS.filter { menuItemState(it, isMusicXml) == MenuItemState.READY }
+    // in the menu's order; the edit toggle stands for Annotate, in its place (beside the pages)
+    val items = if (allIcons) ViewerMenuItem.entries
+    else (BAR_ITEMS.filter { menuItemState(it, isMusicXml) == MenuItemState.READY } + ViewerMenuItem.ANNOTATE).sorted()
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -103,43 +106,56 @@ fun ViewerIconBar(
         shadowElevation = if (joined) 0.dp else 4.dp,
     ) {
         BoxWithConstraints(Modifier.padding(horizontal = 6.dp)) {
-            val groups = items.map { it.group }.distinct().size
-            val button = if (!allIcons) BAR_BUTTON
-            else ((maxWidth - GROUP_GAP * (groups - 1)) / (items.size + 1)).coerceIn(BAR_BUTTON_MIN, BAR_BUTTON)
+            val separators = items.zipWithNext().count { (a, b) -> a.group != b.group }
+            // the icons, and ⋯ without all the icons
+            val buttons = items.size + if (allIcons) 0 else 1
+            val button = ((maxWidth - (SEPARATOR_WIDTH + SEPARATOR_PADDING * 2) * separators - TITLE_MIN) / buttons)
+                .coerceIn(BAR_BUTTON_MIN, BAR_BUTTON)
             Row(
                 modifier = Modifier.height(48.dp + if (joined) 8.dp else 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEachIndexed { i, item ->
-                    if (allIcons && i > 0 && item.group != items[i - 1].group) Spacer(Modifier.width(GROUP_GAP))
-                    val ready = menuItemState(item, isMusicXml) == MenuItemState.READY
-                    BarIcon(item.icon, item.label(), lit = item == open, size = button, enabled = ready) { x -> onSelect(item, x) }
-                }
-                if (allIcons) {
-                    Spacer(Modifier.weight(1f))
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
-                        if (pageLabel.isNotEmpty()) {
-                            Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.labelSmall)
-                        }
+                    if (i > 0 && item.group != items[i - 1].group) GroupSeparator()
+                    if (item == ViewerMenuItem.ANNOTATE) {
+                        BarIcon(
+                            if (editing) LINE_DONE else LINE_EDIT,
+                            stringResource(if (editing) R.string.annotate_done else R.string.action_edit),
+                            lit = editing,
+                            size = button,
+                        ) { onToggleEditing() }
+                    } else {
+                        val ready = menuItemState(item, isMusicXml) == MenuItemState.READY
+                        BarIcon(item.icon, item.label(), lit = item == open, size = button, enabled = ready) { x -> onSelect(item, x) }
                     }
-                    BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
                 }
-                BarIcon(
-                    if (editing) LINE_DONE else LINE_EDIT,
-                    stringResource(if (editing) R.string.annotate_done else R.string.action_edit),
-                    lit = editing,
-                    size = button,
-                ) { onToggleEditing() }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+                    if (pageLabel.isNotEmpty()) {
+                        Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (!allIcons) BarIcon(LINE_MORE, stringResource(R.string.menu_label), lit = false, size = button, onClick = onMore)
             }
         }
     }
+}
+
+// the thin line between two groups of entries
+@Composable
+private fun GroupSeparator() {
+    Box(
+        Modifier
+            .padding(horizontal = SEPARATOR_PADDING)
+            .width(SEPARATOR_WIDTH)
+            .height(SEPARATOR_HEIGHT)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+    )
 }
 
 // one icon of the bar, [size] wide; [lit] while its panel shows, greyed out unless [enabled].

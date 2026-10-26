@@ -2,6 +2,14 @@ package com.musigatto.fosscore.ui.viewer
 
 import kotlin.math.abs
 
+// Where a turned half page may cut, as fractions of the page height from its top: between these
+// two, on this page and on the next one. A cut higher or lower would turn nothing, or show little
+// more than a margin or a page number.
+private const val CUT_ZONE_TOP = 1f / 3
+private const val CUT_ZONE_BOTTOM = 2f / 3
+// The cut a half page aims for, and the one a page without blank paper gets.
+private const val PAGE_MIDDLE = 0.5f
+
 data class PageFlow(
     val page: Int,
     val halfTurned: Boolean,
@@ -72,33 +80,38 @@ data class Band(val start: Float, val end: Float)
 
 /**
  * Where a turned half page cuts, as fractions of the page height: this page shows below [lower],
- * the next one above [upper], blank paper between them.
+ * the next one above [upper], blank paper between them. [onBlank] is false when the page has no
+ * blank band and is cut at its middle, through whatever is there.
  */
-data class HalfSplit(val lower: Float = 0.5f, val upper: Float = lower) {
+data class HalfSplit(val lower: Float = PAGE_MIDDLE, val upper: Float = lower, val onBlank: Boolean = true) {
     companion object {
         /**
          * The cut goes through blank bands of the pages, the space between two systems, so no
-         * system is cut in two. The top half of the next page shows: down to its band nearest the
-         * middle, above the highest band of this page low enough for it, as long as this page
-         * keeps at least its last quarter. Otherwise (no such band) this page cuts at its band
-         * nearest the middle, and the next one shows the most it can above that. [bands] and
-         * [nextBands] are the blank bands of this page and the next (the top margin left out). A
-         * page with none cuts at its middle.
+         * system is cut in two: the next page shows down to one of its bands, above one of this
+         * page's, both between [CUT_ZONE_TOP] and [CUT_ZONE_BOTTOM] of their page. Of every such
+         * pair, the one that keeps the most of the smaller part, so both pages keep as close to a
+         * half as their systems allow (five systems: never four over one); then the one that
+         * cuts this page nearest its middle, so the turn comes at the same place on every page,
+         * even if blank paper is left between the parts; then the one with the least of that
+         * blank paper. Without such a pair, this page cuts at its band nearest the middle and the
+         * next one shows down to there; a page without any band cuts at its middle.
+         * [bands] and [nextBands] are the blank bands of this page and the next (the top margin
+         * left out).
          */
         fun of(bands: List<Band>, nextBands: List<Band>): HalfSplit {
-            val middle = { b: Band -> abs((b.start + b.end) / 2 - 0.5f) }
-            val inMiddle = { b: Band -> b.end >= 0.25f && b.start <= 0.75f }
-            // pages of different systems: a page of three systems above a page of four
-            nextBands.filter(inMiddle).minByOrNull(middle)?.let { next ->
-                bands.firstOrNull { it.end >= next.start && it.start <= 0.75f }?.let { here ->
+            val cuttable = bands.filter { it.end >= CUT_ZONE_TOP && it.start <= CUT_ZONE_BOTTOM }
+            val nearest = cuttable.minByOrNull { abs((it.start + it.end) / 2 - PAGE_MIDDLE) } ?: return HalfSplit(onBlank = false)
+            return cuttable.flatMap { here ->
+                nextBands.filter { it.end >= CUT_ZONE_TOP && it.start <= here.end }.map { next ->
                     val upper = minOf(next.end, here.end)
-                    return HalfSplit(maxOf(here.start, upper), upper)
+                    HalfSplit(maxOf(here.start, upper), upper)
                 }
-            }
-            val here = bands.filter(inMiddle).minByOrNull(middle) ?: return HalfSplit()
-            val upper = nextBands.filter { it.start <= here.end }.maxOfOrNull { minOf(it.end, here.end) }
-                ?: return ((here.start + here.end) / 2).let { HalfSplit(it, it) }
-            return HalfSplit(maxOf(here.start, upper), upper)
+            }.maxWithOrNull(
+                compareBy<HalfSplit> { minOf(it.upper, 1f - it.lower) }
+                    .thenBy { -abs(it.lower - PAGE_MIDDLE) }
+                    .thenBy { it.upper - it.lower }
+            )
+                ?: ((nearest.start + nearest.end) / 2).let { HalfSplit(it, it) }
         }
 
         /**

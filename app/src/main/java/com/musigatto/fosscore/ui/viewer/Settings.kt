@@ -79,6 +79,9 @@ object Settings {
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
     private const val KEY_LAST_PAGE = "last_page_"
     private const val KEY_OPENED_AT = "opened_at_"
+    private const val KEY_LAST_PAGE_AT = "last_page_at_"
+    // a score left longer ago than this opens at its first page again
+    const val LAST_PAGE_KEPT_MS = 30 * 60 * 1000L
     private const val KEY_STAMP_PX = "stamp_px"
     private const val KEY_MUSIC_SIZE = "music_size_"
     private const val KEY_TRANSPOSE = "transpose_"
@@ -146,12 +149,23 @@ object Settings {
         context.prefs().edit { putLong(KEY_OPENED_AT + uri, at) }
     }
 
-    fun lastPage(context: Context, uri: String): Int =
-        context.prefs().getInt(KEY_LAST_PAGE + uri, 0)
-
-    fun setLastPage(context: Context, uri: String, page: Int) {
-        context.prefs().edit { putInt(KEY_LAST_PAGE + uri, page) }
+    /**
+     * The page a score opens at: the one it was left at, when that was a short while ago (back from
+     * the library, a call...), otherwise the first one: a score worked on days ago starts again.
+     */
+    fun lastPage(context: Context, uri: String, now: Long = System.currentTimeMillis()): Int {
+        val prefs = context.prefs()
+        return if (keepsLastPage(prefs.getLong(KEY_LAST_PAGE_AT + uri, 0L), now)) prefs.getInt(KEY_LAST_PAGE + uri, 0) else 0
     }
+
+    fun setLastPage(context: Context, uri: String, page: Int, now: Long = System.currentTimeMillis()) {
+        context.prefs().edit {
+            putInt(KEY_LAST_PAGE + uri, page)
+            putLong(KEY_LAST_PAGE_AT + uri, now)
+        }
+    }
+
+    internal fun keepsLastPage(savedAt: Long, now: Long): Boolean = now - savedAt in 0 until LAST_PAGE_KEPT_MS
 
     // size the stamp tool starts with, saved from the stamps panel
     fun stampPx(context: Context): Float =

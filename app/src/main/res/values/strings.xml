@@ -260,4 +260,5 @@
     <string name="sound_bank_folder_title">The folder of your sound banks</string>
     <string name="sound_bank_folder_text">Android cannot show only the SF2 and SF3 files. In the next screen, open the folder that holds your banks (for example Download), without touching the files, which stay greyed out, then tap the button at the bottom (\"Select\" or \"Use this folder\"). FOSScore then lists the banks it holds, and remembers the folder for next time.</string>
     <string name="sound_bank_folder_choose">Choose the folder</string>
+    <string name="part_sound_variants">Variants (%1$d)</string>
 </resources>

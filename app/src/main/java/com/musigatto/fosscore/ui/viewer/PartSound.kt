@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -50,6 +52,9 @@ private const val FAMILY_SIZE = 8
 
 // lines left above the instrument chosen when the list opens on it: its neighbours show too
 private const val LINES_ABOVE = 2
+
+// a variant is set in under the instrument of its number
+private const val VARIANT_INDENT = "        "
 
 /**
  * The sounds of the parts, for the playback panel: the [banks] there are (the built-in one first),
@@ -169,19 +174,26 @@ private fun PartSoundDialog(
     val shownBank = loaded?.first ?: chosen.bankId
     val families = stringArrayResource(R.array.gm_families)
     val drumsTitle = stringResource(R.string.part_sound_drums)
-    val lines = remember(instruments) {
-        val (drums, melodic) = instruments.partition { it.kit }
+    val main = remember(instruments) { mainInstruments(instruments) }
+    // the bank's other instruments on the same numbers, shown on demand (and when one is playing)
+    var variants by remember { mutableStateOf(false) }
+    val chosenIsVariant = instruments.any { it.bank == chosen.bank && it.program == chosen.program } &&
+        main.none { it.bank == chosen.bank && it.program == chosen.program }
+    val showVariants = variants || chosenIsVariant
+    val lines = remember(instruments, main, showVariants) {
+        val (drums, melodic) = (if (showVariants) instruments else main).partition { it.kit }
         buildList {
             var family = -1
-            for (i in melodic.sortedWith(compareBy({ it.program }, { it.bank }))) {
+            for (i in melodic.sortedWith(compareBy({ it.program }, { it.bank !in main.map { m -> m.bank } }, { it.bank }))) {
                 if (i.program / FAMILY_SIZE != family) {
                     family = i.program / FAMILY_SIZE
                     families.getOrNull(family)?.let { add(Line.Family(it)) }
                 }
-                add(Line.Sound(i, "${i.program + 1}  ${i.name}"))
+                // a variant under its number, set in
+                add(Line.Sound(i, if (i in main) "${i.program + 1}  ${i.name}" else "${VARIANT_INDENT}${i.name}"))
             }
             if (drums.isNotEmpty()) add(Line.Family(drumsTitle))
-            drums.sortedWith(compareBy({ it.program }, { -it.bank })).forEach { add(Line.Sound(it, it.name)) }
+            drums.sortedWith(compareBy({ it.program }, { it !in main })).forEach { add(Line.Sound(it, it.name)) }
         }
     }
 
@@ -203,8 +215,20 @@ private fun PartSoundDialog(
         title = { Text(stringResource(R.string.part_sound_title, partName)) },
         text = {
             Column {
-                OutlinedButton(onClick = { choose(score) }, enabled = chosen != score) {
-                    Text(stringResource(R.string.part_sound_original))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = { choose(score) }, enabled = chosen != score) {
+                        Text(stringResource(R.string.part_sound_original))
+                    }
+                    val more = instruments.size - main.size
+                    if (more > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.toggleable(value = showVariants, enabled = !chosenIsVariant, role = Role.Checkbox) { variants = it },
+                        ) {
+                            Checkbox(checked = showVariants, onCheckedChange = null, enabled = !chosenIsVariant)
+                            Text(stringResource(R.string.part_sound_variants, more), modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
                 }
                 if (choices.banks.size > 1) {
                     Text(stringResource(R.string.part_sound_bank), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
@@ -239,6 +263,17 @@ private fun PartSoundDialog(
         confirmButton = { TextButton(onClick = { onOk(chosen) }) { Text(stringResource(android.R.string.ok)) } },
         dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+/**
+ * One instrument per number, as General MIDI numbers them: for each program its bank-0 instrument
+ * (or the lowest bank that has it), and for each drum kit its bank-128 one (or General MIDI 2's).
+ * The bank's other instruments on the same numbers are its variants.
+ */
+internal fun mainInstruments(all: List<SoundFont.Instrument>): List<SoundFont.Instrument> {
+    val (kits, melodic) = all.partition { it.kit }
+    return melodic.groupBy { it.program }.values.mapNotNull { same -> same.minByOrNull { it.bank } } +
+        kits.groupBy { it.program }.values.mapNotNull { same -> same.firstOrNull { it.bank == SoundFont.DRUM_BANK } ?: same.minByOrNull { it.bank } }
 }
 
 /**

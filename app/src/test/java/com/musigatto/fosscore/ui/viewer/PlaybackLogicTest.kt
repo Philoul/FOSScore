@@ -107,4 +107,18 @@ class PlaybackLogicTest {
         assertEquals(PartSound("b", SoundFont.DRUM_BANK, 0), sameIn("b", PartSound("a", 120, 0), other))
         assertTrue(SoundFont.Instrument(120, 0, "Standard 1 Kit").kit)
     }
+
+    @Test
+    fun aBankShowsOneInstrumentPerNumberAndItsVariantsApart() {
+        val all = listOf(
+            SoundFont.Instrument(0, 0, "Grand Piano"), SoundFont.Instrument(11, 0, "Piano & Str."),
+            SoundFont.Instrument(12, 0, "Bell Piano"), SoundFont.Instrument(8, 4, "Detuned EP"),
+            SoundFont.Instrument(120, 0, "Standard 1 Kit"), SoundFont.Instrument(SoundFont.DRUM_BANK, 0, "Standard 1"),
+        )
+        // bank 0 per number, or the lowest bank that has it; the kits of bank 128 first
+        assertEquals(
+            setOf(SoundFont.Instrument(0, 0, "Grand Piano"), SoundFont.Instrument(8, 4, "Detuned EP"), SoundFont.Instrument(SoundFont.DRUM_BANK, 0, "Standard 1")),
+            mainInstruments(all).toSet(),
+        )
+    }
 }

@@ -286,7 +286,6 @@ internal fun Modifier.pageGestures(
                     if (matteTap && currentEditing && currentCanEdit) {
                         onToolsDown()
                     } else if (rz != null) {
-                        resizing = null
                         val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
                         val changed = pts != rz.ptsPx
                         if (changed) {

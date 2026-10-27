@@ -208,7 +208,7 @@ private data class Resizing(
 internal data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit, val mark: Float)
 
 // options panel hanging from the annotation bar (spec §5): tapping the selected tool again opens it
-private enum class ToolPanel { Stamps, Pen, Eraser, Color }
+internal enum class ToolPanel { Stamps, Pen, Eraser, Color }
 
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
@@ -626,6 +626,111 @@ fun PdfViewerScreen(
                     offsetY = no.y
                 }
                 clampOffsets()
+            }
+        }
+    }
+
+    // What the annotation bar asks for (spec §5): the bar draws, these decide. One entry point per
+    // tool, so the "tap turns it on, tap again opens its options, tap again turns it off" cycle
+    // lives in one place instead of three copies inside the buttons.
+    val onToolTap: (ToolPanel) -> Unit = { tool ->
+        when (tool) {
+            ToolPanel.Stamps -> {
+                val wasOn = activeSymbol != null
+                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Stamps)
+                if (!wasOn && on) {
+                    activeSymbol = lastSymbol
+                    drawingTool = false
+                    eraserTool = false
+                } else if (!on) {
+                    activeSymbol = null   // neutral mode: select and move objects
+                }
+                openPanel = if (panel) ToolPanel.Stamps else null
+            }
+            ToolPanel.Pen -> {
+                val wasOn = drawingTool
+                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Pen)
+                drawingTool = on
+                if (!wasOn && on) {
+                    activeSymbol = null
+                    eraserTool = false
+                }
+                openPanel = if (panel) ToolPanel.Pen else null
+            }
+            ToolPanel.Eraser -> {
+                val wasOn = eraserTool
+                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Eraser)
+                eraserTool = on
+                if (!wasOn && on) {
+                    activeSymbol = null
+                    drawingTool = false
+                    selectedId = null
+                    selectedStrokeIds = emptySet()
+                }
+                inkPreview = emptyList()
+                openPanel = if (panel) ToolPanel.Eraser else null
+            }
+            ToolPanel.Color -> openPanel = if (openPanel == ToolPanel.Color) null else ToolPanel.Color
+        }
+    }
+
+    val onUndo: () -> Unit = {
+        val hash = sheetHash
+        val undo = undoStack.lastOrNull()
+        if (hash != null && undo != null) {
+            val (page, edit) = undo
+            undoStack = undoStack.dropLast(1)
+            // what redo puts back is the state we are leaving behind
+            if (page == currentPage) {
+                redoStack = (redoStack + (page to PageEdit(pageStamps, pageStrokes))).takeLast(10)
+            }
+            selectedId = null
+            selectedStrokeIds = emptySet()
+            dragStamp = null
+            dragStrokes = null
+            // the "looks deleted now" cache is stale after a restore: the
+            // snapshots go back with their original ids
+            hiddenStampIds = emptySet()
+            hiddenStrokeIds = emptySet()
+            editScope.launch {
+                stampRepo.restorePage(hash, page, edit.stamps)
+                strokeRepo.restorePage(hash, page, edit.strokes)
+            }
+        }
+    }
+
+    val onRedo: () -> Unit = {
+        val hash = sheetHash
+        val redo = redoStack.lastOrNull()
+        if (hash != null && redo != null) {
+            val (page, edit) = redo
+            redoStack = redoStack.dropLast(1)
+            if (page == currentPage) {
+                undoStack = (undoStack + (page to PageEdit(pageStamps, pageStrokes))).takeLast(10)
+            }
+            selectedId = null
+            selectedStrokeIds = emptySet()
+            dragStamp = null
+            dragStrokes = null
+            hiddenStampIds = emptySet()
+            hiddenStrokeIds = emptySet()
+            editScope.launch {
+                stampRepo.restorePage(hash, page, edit.stamps)
+                strokeRepo.restorePage(hash, page, edit.strokes)
+            }
+        }
+    }
+
+    val onDeleteSelection: () -> Unit = {
+        if (selectedStamp != null || selectedStrokes.isNotEmpty()) {
+            pushUndo()
+            selectedId = null
+            selectedStrokeIds = emptySet()
+            hiddenStampIds = hiddenStampIds + listOfNotNull(selectedStamp?.id)
+            hiddenStrokeIds = hiddenStrokeIds + selectedStrokes.map { it.id }
+            editScope.launch {
+                selectedStamp?.let { stampRepo.delete(it) }
+                if (selectedStrokes.isNotEmpty()) strokeRepo.deleteAll(selectedStrokes)
             }
         }
     }
@@ -1735,448 +1840,127 @@ fun PdfViewerScreen(
                     ),
             )
 
-            // The annotation bar hangs from the measured title bar. forScore *replaces* the title
-            // bar with it (spec §5) and that needs its row 1 (✕ / ✓ / ‹ ›), which is not built:
-            // until then they stack, and the stamps palette drops from the bar (spec §5).
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset { IntOffset(0, titleBarHeight) }
-                    .fillMaxWidth()
-                    // landscape: the same side inset the title bar takes, so the tools do not run
-                    // under the navigation bar
-                    .windowInsetsPadding(
-                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
-                    )
-            ) {
-                // the tools are drawn glyphs now, with no text of their own: the names come from here
-                val penLabel = stringResource(R.string.tool_pen)
-                val eraserLabel = stringResource(R.string.tool_eraser)
-                val undoLabel = stringResource(R.string.action_undo)
-                val redoLabel = stringResource(R.string.action_redo)
-                val deleteLabel = stringResource(R.string.action_delete)
-                // one row of tools; the stamps tool comes first (spec §5 row 2). Each tool opens its
-                // own options panel on a second tap, so no size slider sits in the bar all the time.
-                if (editing && canEdit) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surface)
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .horizontalScroll(rememberScrollState())
-                            // the tool row, not the whole column: an open panel must not move the
-                            // page down with it
-                            .onSizeChanged { annBarPx = it.height },
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // stamps tool (spec §5): shows the last stamp used. Tap once to select it,
-                        // again to open its panel (symbols + size). It never touches the selection.
-                        StampPaletteButton(
-                            symbol = activeSymbol ?: lastSymbol,
-                            selected = activeSymbol != null,
-                            onClick = {
-                                val wasOn = activeSymbol != null
-                                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Stamps)
-                                if (!wasOn && on) {
-                                    activeSymbol = lastSymbol
-                                    drawingTool = false
-                                    eraserTool = false
-                                } else if (!on) {
-                                    activeSymbol = null   // neutral mode: select and move objects
-                                }
-                                openPanel = if (panel) ToolPanel.Stamps else null
-                            }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val wasOn = drawingTool
-                                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Pen)
-                                drawingTool = on
-                                if (!wasOn && on) {
-                                    activeSymbol = null
-                                    eraserTool = false
-                                }
-                                openPanel = if (panel) ToolPanel.Pen else null
-                            },
-                            colors = if (drawingTool) ButtonDefaults.buttonColors()
-                            else ButtonDefaults.outlinedButtonColors(),
-                            modifier = Modifier.semantics {
-                                contentDescription = penLabel
-                            },
-                        ) { ToolIcon(ICON_PENCIL) }
-                        Spacer(Modifier.width(4.dp))
-                        Button(
-                            onClick = {
-                                val wasOn = eraserTool
-                                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Eraser)
-                                eraserTool = on
-                                if (!wasOn && on) {
-                                    activeSymbol = null
-                                    drawingTool = false
-                                    selectedId = null
-                                    selectedStrokeIds = emptySet()
-                                }
-                                inkPreview = emptyList()
-                                openPanel = if (panel) ToolPanel.Eraser else null
-                            },
-                            colors = if (eraserTool) ButtonDefaults.buttonColors()
-                            else ButtonDefaults.outlinedButtonColors(),
-                            modifier = Modifier.semantics {
-                                contentDescription = eraserLabel
-                            },
-                        ) { EraserIcon() }
-                        Spacer(Modifier.width(6.dp))
-                        // the tint for ink and stamps, in its own little panel (it used to be a whole
-                        // row of swatches eating the width of the bar)
-                        ColorSwatchButton(
-                            // null is the default colour: draw the ink it really gives
-                            color = inkTint(activeColor, invert),
-                            selected = openPanel == ToolPanel.Color,
-                            onClick = {
-                                openPanel = if (openPanel == ToolPanel.Color) null else ToolPanel.Color
-                            }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val (page, edit) = undoStack.lastOrNull() ?: return@Button
-                                undoStack = undoStack.dropLast(1)
-                                // what redo puts back is the state we are leaving behind
-                                if (page == currentPage) {
-                                    redoStack = (redoStack + (page to
-                                        PageEdit(currentPageStamps, currentPageStrokes))).takeLast(10)
-                                }
-                                selectedId = null
-                                selectedStrokeIds = emptySet()
-                                dragStamp = null
-                                dragStrokes = null
-                                // the "looks deleted now" cache is stale after a restore: the
-                                // snapshots go back with their original ids
-                                hiddenStampIds = emptySet()
-                                hiddenStrokeIds = emptySet()
-                                editScope.launch {
-                                    stampRepo.restorePage(sheetHash, page, edit.stamps)
-                                    strokeRepo.restorePage(sheetHash, page, edit.strokes)
-                                }
-                            },
-                            enabled = undoStack.isNotEmpty(),
-                            modifier = Modifier.semantics { contentDescription = undoLabel },
-                        ) { ToolIcon(ICON_UNDO) }
-                        Spacer(Modifier.width(4.dp))
-                        Button(
-                            onClick = {
-                                val (page, edit) = redoStack.lastOrNull() ?: return@Button
-                                redoStack = redoStack.dropLast(1)
-                                if (page == currentPage) {
-                                    undoStack = (undoStack + (page to
-                                        PageEdit(currentPageStamps, currentPageStrokes))).takeLast(10)
-                                }
-                                selectedId = null
-                                selectedStrokeIds = emptySet()
-                                dragStamp = null
-                                dragStrokes = null
-                                hiddenStampIds = emptySet()
-                                hiddenStrokeIds = emptySet()
-                                editScope.launch {
-                                    stampRepo.restorePage(sheetHash, page, edit.stamps)
-                                    strokeRepo.restorePage(sheetHash, page, edit.strokes)
-                                }
-                            },
-                            enabled = redoStack.isNotEmpty(),
-                            modifier = Modifier.semantics { contentDescription = redoLabel },
-                        ) { ToolIcon(ICON_REDO) }
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                if (selectedStamp == null && selectedStrokes.isEmpty()) return@Button
-                                pushUndo()
-                                selectedId = null
-                                selectedStrokeIds = emptySet()
-                                hiddenStampIds = hiddenStampIds + listOfNotNull(selectedStamp?.id)
-                                hiddenStrokeIds = hiddenStrokeIds + selectedStrokes.map { it.id }
-                                editScope.launch {
-                                    selectedStamp?.let { stampRepo.delete(it) }
-                                    if (selectedStrokes.isNotEmpty()) strokeRepo.deleteAll(selectedStrokes)
-                                }
-                            },
-                            enabled = selectedStamp != null || selectedStrokes.isNotEmpty(),
-                            modifier = Modifier.semantics { contentDescription = deleteLabel },
-                        ) { ToolIcon(ICON_TRASH) }
-                    }
-                    // one tool panel at a time drops from the bar (spec §5). They all step aside
-                    // while a finger is on the page, like forScore's panels.
-                    val panel = openPanel
-                    if (panel != null && !pageTouched) {
-                        when (panel) {
-                            ToolPanel.Stamps -> StampPalettePanel(
-                                active = activeSymbol ?: lastSymbol,
-                                sizePx = placePx,
-                                onSymbol = {
-                                    activeSymbol = it
-                                    lastSymbol = it
-                                },
-                                onSize = { placePx = it },
-                                onSaveDefault = {
-                                    Settings.setStampPx(context, placePx)
-                                    defaultStampPx = placePx
-                                },
-                                isDefault = placePx.roundToInt() == defaultStampPx.roundToInt(),
-                            )
-
-                            ToolPanel.Pen -> ToolSizePanel(
-                                label = stringResource(R.string.thickness_label),
-                                value = penWidthPx,
-                                range = MIN_PEN_PX..MAX_PEN_PX,
-                                onValue = { penWidthPx = it },
-                            )
-
-                            ToolPanel.Eraser -> ToolSizePanel(
-                                label = stringResource(R.string.size_label),
-                                value = eraserPx,
-                                range = MIN_ERASER_PX..MAX_ERASER_PX,
-                                onValue = { eraserPx = it },
-                            )
-
-                            ToolPanel.Color -> ColorPanel(
-                                active = activeColor,
-                                invert = invert,
-                                onPick = { argb ->
-                                    activeColor = argb
-                                    // the tint also recolours the selected stamp: forScore's
-                                    // selection tool changes colour, it does not resize
-                                    val current = selectedStamp
-                                    if (current != null && current.color != argb) {
-                                        pushUndo()
-                                        editScope.launch { stampRepo.update(current.copy(color = argb)) }
-                                    }
-                                }
-                            )
+            if (editing && canEdit) {
+                AnnotationBar(
+                    activeSymbol = activeSymbol,
+                    lastSymbol = lastSymbol,
+                    openPanel = openPanel,
+                    drawingTool = drawingTool,
+                    eraserTool = eraserTool,
+                    invert = invert,
+                    activeColor = activeColor,
+                    penWidthPx = penWidthPx,
+                    eraserPx = eraserPx,
+                    placePx = placePx,
+                    defaultStampPx = defaultStampPx,
+                    pageTouched = pageTouched,
+                    canUndo = undoStack.isNotEmpty(),
+                    canRedo = redoStack.isNotEmpty(),
+                    canDelete = selectedStamp != null || selectedStrokes.isNotEmpty(),
+                    onToolTap = onToolTap,
+                    onUndo = onUndo,
+                    onRedo = onRedo,
+                    onDelete = onDeleteSelection,
+                    onStampSymbol = { activeSymbol = it; lastSymbol = it },
+                    onStampSize = { placePx = it },
+                    onSaveDefault = {
+                        Settings.setStampPx(context, placePx)
+                        defaultStampPx = placePx
+                    },
+                    onPenWidth = { penWidthPx = it },
+                    onEraserPx = { eraserPx = it },
+                    onColor = { argb ->
+                        activeColor = argb
+                        // the tint also recolours the selected stamp: forScore's
+                        // selection tool changes colour, it does not resize
+                        val current = selectedStamp
+                        if (current != null && current.color != argb) {
+                            pushUndo()
+                            editScope.launch { stampRepo.update(current.copy(color = argb)) }
                         }
-                    }
-                }
+                    },
+                    onHeight = { annBarPx = it },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset { IntOffset(0, titleBarHeight) },
+                )
             }
 
-            // spec §2: the bottom of the reading chrome is the page selector, nothing else
             if (!editing) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .onSizeChanged { bottomChromePx = it.height }
-                        .background(surface)
-                        // edge-to-edge: the knob was sitting in the navigation gesture area
-                        .navigationBarsPadding()
-                ) {
-                    if (metronomeShown) {
-                        // the bar heard, counted from the start of the piece as the score numbers
-                        // its bars; a PDF score knows them once the bars of its pages are counted
-                        val barText = metronomeVm.barHeard(metronomeTick)
-                            ?.takeIf { format.isMusicXml || BarPages(metronome.barCounts, pageCount).known }
-                            ?.let { stringResource(R.string.metronome_bar, it + 1) }
-                        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
-                        MetronomeBand(
-                            running = metronomeOn,
-                            tick = metronomeTick,
-                            settings = metronome,
-                            barText = barText,
-                            onStartStop = ::startStopMetronome,
-                            // a MusicXML score has one tempo, the one of playback
-                            onBpm = { bpm ->
-                                if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm)) else metronomeVm.setBpm(bpm)
-                            },
-                            onTap = {
-                                metronomeVm.tap()?.let { bpm ->
-                                    if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
-                                }
-                            },
-                            onSettings = { menu.show(ViewerSurface.METRONOME) },
-                            onClose = { metronomeVm.show(false) },
-                            // a MusicXML score: the same button switches back to the playback band
-                            onPlayback = if (format.isMusicXml) ({ metronomeVm.show(false) }) else null,
-                        )
-                    } else if (format.isMusicXml) {
-                        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
-                        PlaybackBand(
-                            state = playState,
-                            loop = loop,
-                            bpm = bpmOf(tempoFactor, writtenBpm),
-                            minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
-                            maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
-                            onPlayPause = {
-                                metronomeVm.stop()
-                                playbackVm.playPause(notesOnScreen())
-                            },
-                            onRestart = playbackVm::restart,
-                            onLoop = playbackVm::toggleLoop,
-                            onA = playbackVm::tapA,
-                            onB = playbackVm::tapB,
-                            onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
-                            onOptions = { menu.show(ViewerSurface.PLAYBACK) },
-                            onMetronome = {
-                                playbackVm.stop()
-                                metronomeVm.show(true)
-                            },
-                        )
-                        if (playbackFailed) {
-                            Text(
-                                stringResource(R.string.playback_failed),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.align(Alignment.CenterHorizontally),
-                            )
-                        }
-                    }
-                    PageSelector(
-                        pageCount = pageCount,
-                        currentPage = currentPage,
-                        onJump = {
-                            playbackVm.pageTurnedByHand()
-                            currentPage = it
-                        },
-                        // air under the knob: flush with the edge it sat inside the system
-                        // navigation gesture area and was hard to grab
-                        modifier = Modifier.padding(
-                            start = 24.dp,
-                            end = 24.dp,
-                            // under a band, the dots need no air above them
-                            top = if (format.isMusicXml || metronomeShown) 0.dp else 10.dp,
-                            bottom = 10.dp,
-                        ),
-                    )
-                }
+                BottomChrome(
+                    metronomeVm = metronomeVm,
+                    playbackVm = playbackVm,
+                    metronome = metronome,
+                    metronomeOn = metronomeOn,
+                    metronomeTick = metronomeTick,
+                    metronomeShown = metronomeShown,
+                    pageSource = pageSource,
+                    pageCount = pageCount,
+                    currentPage = currentPage,
+                    format = format,
+                    playState = playState,
+                    loop = loop,
+                    tempoFactor = tempoFactor,
+                    playbackFailed = playbackFailed,
+                    onStartStop = { startStopMetronome() },
+                    onJump = {
+                        playbackVm.pageTurnedByHand()
+                        currentPage = it
+                    },
+                    onShowSurface = { menu.show(it) },
+                    onHeight = { bottomChromePx = it },
+                    notesOnScreen = { notesOnScreen() },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
 
         // the menu and its panels, over everything: one at a time (ViewerMenuViewModel), the panels
         // under the bar at the top while it shows
         val panelTop = with(density) { if (navVisible) (bars.getTop(density) + TITLE_BAR_ROOM.roundToPx()).toDp() else 0.dp }
-        CompositionLocalProvider(LocalPanelTop provides panelTop) {
-        when (surface) {
-            ViewerSurface.NONE -> Unit
-            ViewerSurface.MENU -> ViewerMenuPanel(
-                isMusicXml = format.isMusicXml,
-                onSelect = { item ->
-                    menu.dismiss()
-                    when (item) {
-                        ViewerMenuItem.LIBRARY -> onOpenLibrary()
-                        ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
-                        ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
-                        ViewerMenuItem.PLAYBACK -> {
-                            metronomeVm.show(false)
-                            menu.show(ViewerSurface.PLAYBACK)
-                        }
-                        // its settings, as for playback; its band takes the place of the playback band
-                        ViewerMenuItem.METRONOME -> {
-                            playbackVm.stop()
-                            metronomeVm.show(true)
-                            navVisible = true
-                            menu.show(ViewerSurface.METRONOME)
-                        }
-                        ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
-                        // greyed out in the menu: never chosen
-                        else -> Unit
-                    }
-                },
-                onDismiss = menu::dismiss,
-            )
-            ViewerSurface.METRONOME -> {
-                // a MusicXML score has one tempo, the one of playback, and a tempo as written
-                val written = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
-                val pages = BarPages(metronome.barCounts, pageCount)
-                MetronomeOverlay(
-                    settings = metronome,
-                    bpmRange = if (format.isMusicXml) bpmOf(MIN_TEMPO_FACTOR, written)..bpmOf(MAX_TEMPO_FACTOR, written) else MIN_BPM..MAX_BPM,
-                    writtenBpm = if (format.isMusicXml) bpmOf(1f, written) else null,
-                    wide = isLandscape,
-                    meterFromScore = meterFromScore,
-                    pageBars = if (format.isMusicXml || pageCount == 0) null else PageBars(
-                        page = currentPage,
-                        pageCount = pageCount,
-                        bars = pages.barsOf(currentPage).takeIf { it > 0 } ?: metronome.meter.beats.coerceAtLeast(4),
-                        firstBar = pages.firstBar(currentPage),
-                    ),
-                    onBpm = { bpm ->
-                        if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, written)) else metronomeVm.setBpm(bpm)
-                    },
-                    onMeter = metronomeVm::setMeter,
-                    onMode = metronomeVm::setMode,
-                    onSound = metronomeVm::setSound,
-                    onVolume = metronomeVm::setVolume,
-                    onAccent = metronomeVm::setAccent,
-                    onSubdivision = metronomeVm::setSubdivision,
-                    onCountIn = metronomeVm::setCountIn,
-                    onAutoTurn = metronomeVm::setAutoTurn,
-                    onTurnAhead = metronomeVm::setTurnAhead,
-                    // the page behind changes too, to check the number of its last bar
-                    onBarsPage = {
-                        currentPage = it.coerceIn(0, pageCount - 1)
-                        halfTurned = false
-                    },
-                    onBars = { metronomeVm.setBars(currentPage, it) },
-                    onCopyBars = { metronomeVm.copyBarsToFollowing(currentPage) },
-                    onDismiss = menu::dismiss,
-                )
-            }
-            ViewerSurface.DISPLAY -> DisplayOptionsOverlay(
-                pageModes = !editing,
-                halfEnabled = halfEnabled,
-                onSetHalf = {
-                    halfEnabled = it
-                    halfTurned = false
-                    Settings.setHalfPage(context, isLandscape, it)
-                },
-                twoUp = twoUp,
-                onSetTwoUp = {
-                    twoUp = it
-                    Settings.setTwoUp(context, it)
-                },
-                twoUpVisible = isLandscape,
-                themeLabel = themeMode.label(),
-                onToggleTheme = onToggleTheme,
-                invert = invert,
-                onToggleInvert = {
-                    invert = !invert
-                    Settings.setInvert(context, invert)
-                },
-                keepScreenOn = keepScreenOn,
-                onToggleKeepScreenOn = {
-                    keepScreenOn = !keepScreenOn
-                    Settings.setKeepScreenOn(context, keepScreenOn)
-                },
-                dimPct = dimPct,
-                onDimChange = { dimPct = it },
-                onDimChangeFinished = { Settings.setDimPct(context, dimPct) },
-                onDismiss = menu::dismiss,
-            )
-            ViewerSurface.PLAYBACK -> {
-                val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
-                PlaybackOptionsOverlay(
-                    bpm = bpmOf(tempoFactor, writtenBpm),
-                    writtenBpm = bpmOf(1f, writtenBpm),
-                    minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
-                    maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
-                    onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
-                    turnAhead = metronome.turnAhead,
-                    onTurnAhead = metronomeVm::setTurnAhead,
-                    parts = parts,
-                    heard = heardParts(heardPicked, shownIds, parts),
-                    onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },
-                    onDismiss = menu::dismiss,
-                )
-            }
-            ViewerSurface.LAYOUT -> ScoreLayoutOverlay(
-                layout = scoreLayout,
-                parts = parts,
-                onMusicSize = menu::setMusicSize,
-                onTranspose = menu::transpose,
-                onLyrics = menu::setLyrics,
-                onKeepHiddenLyrics = menu::setKeepHiddenLyrics,
-                onPartShown = menu::setPartShown,
-                onDismiss = menu::dismiss,
-            )
-        }
-        }
+        ViewerOverlays(
+            surface = surface,
+            menu = menu,
+            format = format,
+            onOpenLibrary = onOpenLibrary,
+            editing = editing,
+            onToggleEditing = { toggleEditing() },
+            onShowChrome = { navVisible = true },
+            metronomeVm = metronomeVm,
+            playbackVm = playbackVm,
+            metronome = metronome,
+            pageSource = pageSource,
+            pageCount = pageCount,
+            currentPage = currentPage,
+            onJumpPage = {
+                currentPage = it.coerceIn(0, pageCount - 1)
+                halfTurned = false
+            },
+            isLandscape = isLandscape,
+            meterFromScore = meterFromScore,
+            parts = parts,
+            heardPicked = heardPicked,
+            shownIds = shownIds,
+            scoreLayout = scoreLayout,
+            themeMode = themeMode,
+            onToggleTheme = onToggleTheme,
+            invert = invert,
+            onSetInvert = { invert = it; Settings.setInvert(context, it) },
+            keepScreenOn = keepScreenOn,
+            onSetKeepScreenOn = { keepScreenOn = it; Settings.setKeepScreenOn(context, it) },
+            dimPct = dimPct,
+            onSetDimPct = { dimPct = it },
+            onCommitDim = { Settings.setDimPct(context, dimPct) },
+            twoUp = twoUp,
+            onSetTwoUp = { twoUp = it; Settings.setTwoUp(context, it) },
+            halfEnabled = halfEnabled,
+            onSetHalf = {
+                halfEnabled = it
+                halfTurned = false
+                Settings.setHalfPage(context, isLandscape, it)
+            },
+            tempoFactor = tempoFactor,
+            panelTop = panelTop,
+        )
     }
 }

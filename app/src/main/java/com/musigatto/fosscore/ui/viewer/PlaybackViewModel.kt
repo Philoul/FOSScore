@@ -165,6 +165,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var song: MidiSong? = null
     // a part's sound the user is trying, not saved: the part, and its sound (null: the file's)
     private var trying: Pair<String, PartSound?>? = null
+    // the parts' new sounds being read, before they are heard
+    private var swapping: Job? = null
     // the last playback of this layout, kept after a stop: ⏮ can still show where it goes
     private var lastPlayback: Playback? = null
     private var starting: Job? = null
@@ -310,16 +312,23 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     }
 
     // the parts' sounds on the player's channels, from its next notes on
+    // The new sounds are heard once their samples are read (decoding a bank of the user's takes
+    // seconds on a slow tablet): the old ones play meanwhile, and a newer choice drops this one.
     private fun soundsChanged() {
+        swapping?.cancel()
         val pb = playback ?: return
         val playing = song ?: return
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.Default) {
-                    player?.setSounds(channelSounds(pb, playing))
-                    player?.warm(playing)
+        swapping = viewModelScope.launch {
+            try {
+                val sounds = withContext(Dispatchers.Default) {
+                    channelSounds(pb, playing).also { s -> player?.warm(playing, s) { !isActive } }
                 }
-            }.onFailure { Log.e(LOG_TAG, "new sound not set: ${it.message}", it) }
+                if (isActive) player?.setSounds(sounds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "new sound not set: ${e.message}", e)
+            }
         }
     }
 
@@ -483,13 +492,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             val pages = pages ?: return@launch
             try {
                 val pb = pages.playback(liveSound()) ?: return@launch
-                val read = withContext(Dispatchers.Default) {
-                    MidiSong.read(pb.midi).also {
-                        player?.setSounds(channelSounds(pb, it))
-                        player?.warm(it)
-                    }
+                // the samples first, then the new music with its sounds: nothing is decoded while it plays
+                val (read, sounds) = withContext(Dispatchers.Default) {
+                    val music = MidiSong.read(pb.midi)
+                    val chosen = channelSounds(pb, music)
+                    player?.warm(music, chosen)
+                    music to chosen
                 }
                 if (playback == null) return@launch
+                player?.setSounds(sounds)
                 player?.setSong(read)
                 song = read
                 player?.muted = _heard.value?.isEmpty() == true

@@ -57,8 +57,18 @@ class SoundFont private constructor(
     // the samples read so far, for every synth playing the bank
     private val values = ConcurrentHashMap<Sample, ShortArray>()
 
-    /** [sample]'s values ([read]), read once and kept. Safe on any thread. */
-    fun valuesOf(sample: Sample): ShortArray = values.getOrPut(sample) { read(sample) }
+    /**
+     * [sample]'s values ([read]), read once and kept. Safe on any thread: two threads asking for
+     * the same sample decode it once, the second one waits for the first.
+     */
+    fun valuesOf(sample: Sample): ShortArray =
+        values[sample] ?: synchronized(sample) { values[sample] ?: read(sample).also { values[sample] = it } }
+
+    /**
+     * [sample]'s values when they are ready, without waiting: for the audio thread, which must never
+     * decode. A sample of 16-bit values is copied at once; a compressed one not read yet is null.
+     */
+    fun readyValuesOf(sample: Sample): ShortArray? = values[sample] ?: if (sample.compressed) null else valuesOf(sample)
 
     /**
      * [sample]'s values, followed by [GUARD_FRAMES] frames for the interpolation past its end (the

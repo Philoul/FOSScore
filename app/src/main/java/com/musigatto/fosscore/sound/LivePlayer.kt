@@ -108,8 +108,11 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
      * Gets [song] ready to play: its samples read, and the synth's code run once by a spare synth.
      * Call it off the main thread before [setSong].
      */
-    fun warm(song: MidiSong) {
-        synth.warm(song, sounds)
+    fun warm(song: MidiSong, chosen: List<ChannelSound?> = sounds, cancelled: () -> Boolean = { false }) {
+        val started = System.nanoTime()
+        val read = synth.warm(song, chosen, cancelled)
+        Log.d(LOG_TAG, "warm: $read samples in ${(System.nanoTime() - started) / 1_000_000} ms")
+        if (cancelled()) return
         val spare = Synth(font, sampleRate)
         song.events.firstOrNull { it.type == MidiSong.NOTE_ON && it.data2 > 0 }?.let { spare.noteOn(it.channel, it.data1, it.data2) }
         val scratch = FloatArray(BLOCK_FRAMES * 2)
@@ -132,7 +135,8 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
 
     /**
      * The instrument of each channel, by channel (null, or a channel left out: the file's own),
-     * from the next notes on. Call [warm] after it, off the main thread, to read its samples ahead.
+     * from the next notes on. Call [warm] with them first, off the main thread: a sample not read
+     * yet is not played.
      */
     fun setSounds(chosen: List<ChannelSound?>) {
         sounds = chosen.toList()

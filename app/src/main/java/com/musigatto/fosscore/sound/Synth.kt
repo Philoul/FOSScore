@@ -86,8 +86,10 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         for (region in from.regions(sound?.bank ?: ch.bank, sound?.program ?: ch.program, key, velocity)) {
             val exclusive = region.gens[Gen.EXCLUSIVE_CLASS]
             if (exclusive != 0) voices.forEach { if (it.channel == channel && it.exclusive == exclusive) it.cut() }
+            // a sample still being decoded is left out: the music must not wait for it (see [warm])
+            val data = from.readyValuesOf(region.sample) ?: continue
             if (voices.size >= maxVoices) steal()
-            voices += Voice(region, from.valuesOf(region.sample), channel, key, velocity, noteCount, ch)
+            voices += Voice(region, data, channel, key, velocity, noteCount, ch)
         }
     }
 
@@ -124,14 +126,16 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
 
     /**
      * Reads ahead every sample [song] plays with the channels' [sounds] (by channel, null for the
-     * file's instrument), so the first notes do not wait for them on the audio thread. Safe on any
-     * thread.
+     * file's instrument): the audio thread plays only the samples read. Safe on any thread; it
+     * gives up as soon as [cancelled] says so. Returns how many samples it read.
      */
-    fun warm(song: MidiSong, sounds: List<ChannelSound?> = emptyList()) {
+    fun warm(song: MidiSong, sounds: List<ChannelSound?> = emptyList(), cancelled: () -> Boolean = { false }): Int {
+        var count = 0
         val program = IntArray(16)
         val bank = IntArray(16) { if (it == DRUM_CHANNEL) SoundFont.DRUM_BANK else 0 }
         val seen = HashSet<Pair<SoundFont, Long>>()
         for (e in song.events) {
+            if (cancelled()) break
             when (e.type) {
                 MidiSong.PROGRAM -> program[e.channel] = e.data1
                 MidiSong.CONTROL -> if (e.data1 == 0 && e.channel != DRUM_CHANNEL) bank[e.channel] = e.data2
@@ -141,10 +145,14 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
                     val b = sound?.bank ?: bank[e.channel]
                     val p = sound?.program ?: program[e.channel]
                     val key = (b.toLong() shl 24) or (p.toLong() shl 16) or (e.data1.toLong() shl 8) or e.data2.toLong()
-                    if (seen.add(from to key)) from.regions(b, p, e.data1, e.data2).forEach { from.valuesOf(it.sample) }
+                    if (seen.add(from to key)) from.regions(b, p, e.data1, e.data2).forEach {
+                        from.valuesOf(it.sample)
+                        count++
+                    }
                 }
             }
         }
+        return count
     }
 
     /** Every note released at once (a pause, a jump): they fade out in their release time. */

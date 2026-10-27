@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.ui.settings
 
+import android.app.Activity
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.sound.SoundBank
 import com.musigatto.fosscore.sound.SoundBankEntry
+import com.musigatto.fosscore.ui.viewer.AppLanguage
 import com.musigatto.fosscore.ui.viewer.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,14 +53,19 @@ import kotlinx.coroutines.withContext
 // the widest the preferences get on a tablet: lines longer than this are hard to read
 private const val MAX_WIDTH_DP = 640
 
+/** The sections of the preferences, in their order. Each one opens under its title. */
+private enum class Section { LANGUAGE, MIDI, LIBRARY }
+
 /**
- * The app's preferences, over the screen it was opened from. For now one sub-menu, MIDI, with the
- * sound banks; the other settings of the app join it later (language, page-turn keys...).
+ * The app's preferences, over the screen it was opened from: what applies to every score. A list
+ * of sections, each opened under its title (one at a time), so new ones join without changing the
+ * others: the language, MIDI (the sound banks), and the library (export and import).
  */
 @Composable
 fun PreferencesScreen(onDone: () -> Unit) {
-    var midi by rememberSaveable { mutableStateOf(false) }
-    BackHandler { if (midi) midi = false else onDone() }
+    // the section open, by name (kept when the screen turns, and when a new language recreates it)
+    var open by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(onBack = onDone)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -67,33 +74,83 @@ fun PreferencesScreen(onDone: () -> Unit) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(modifier = Modifier.widthIn(max = MAX_WIDTH_DP.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (midi) {
-                Text(stringResource(R.string.prefs_midi), style = MaterialTheme.typography.headlineSmall)
-                SoundBanks()
-                OutlinedButton(onClick = { midi = false }) { Text(stringResource(R.string.action_back)) }
-            } else {
-                Text(stringResource(R.string.menu_settings), style = MaterialTheme.typography.headlineSmall)
-                Entry(stringResource(R.string.prefs_midi), stringResource(R.string.prefs_midi_summary)) { midi = true }
+        Column(modifier = Modifier.widthIn(max = MAX_WIDTH_DP.dp).fillMaxWidth()) {
+            Text(stringResource(R.string.menu_settings), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 8.dp))
+            Section.entries.forEach { section ->
+                val isOpen = open == section.name
+                SectionTitle(section.title(), section.summary(), isOpen) { open = if (isOpen) null else section.name }
+                if (isOpen) {
+                    Column(modifier = Modifier.padding(start = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        when (section) {
+                            Section.LANGUAGE -> LanguageSection()
+                            Section.MIDI -> SoundBanks()
+                            Section.LIBRARY -> LibraryBackupSection()
+                        }
+                    }
+                }
                 HorizontalDivider()
-                OutlinedButton(onClick = onDone) { Text(stringResource(R.string.action_back)) }
             }
+            OutlinedButton(onClick = onDone, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.action_back)) }
         }
     }
 }
 
-// a sub-menu: its name, and what it holds under it
 @Composable
-private fun Entry(title: String, summary: String, onClick: () -> Unit) {
-    Column(
+private fun Section.title(): String = stringResource(
+    when (this) {
+        Section.LANGUAGE -> R.string.language_label
+        Section.MIDI -> R.string.prefs_midi
+        Section.LIBRARY -> R.string.prefs_library
+    }
+)
+
+@Composable
+private fun Section.summary(): String = when (this) {
+    Section.LANGUAGE -> Settings.language(LocalContext.current).displayName.ifEmpty { stringResource(R.string.language_system) }
+    Section.MIDI -> stringResource(R.string.prefs_midi_summary)
+    Section.LIBRARY -> stringResource(R.string.prefs_library_summary)
+}
+
+// a section's title, what it holds under it, and ▸ / ▾ for closed / open; a tap opens or closes it
+@Composable
+private fun SectionTitle(title: String, summary: String, open: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(vertical = 8.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(if (open) "▾" else "▸", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** The app's language: the device's, or one the app ships, each named in itself. The app restarts its screen in it. */
+@Composable
+private fun LanguageSection() {
+    val context = LocalContext.current
+    val current = Settings.language(context)
+    AppLanguage.entries.forEach { language ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .selectable(selected = language == current, role = Role.RadioButton) {
+                    if (language == current) return@selectable
+                    Settings.setLanguage(context, language)
+                    // every string is resolved again in the new language
+                    (context as? Activity)?.recreate()
+                },
+        ) {
+            RadioButton(selected = language == current, onClick = null)
+            Text(language.displayName.ifEmpty { stringResource(R.string.language_system) }, modifier = Modifier.padding(start = 12.dp))
+        }
     }
 }
 
@@ -131,7 +188,6 @@ private fun SoundBanks() {
         }
     }
 
-    Text(stringResource(R.string.sound_banks_label), style = MaterialTheme.typography.titleMedium)
     Text(stringResource(R.string.sound_banks_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text(stringResource(R.string.sound_bank_default), style = MaterialTheme.typography.labelLarge)
     banks.forEach { bank ->

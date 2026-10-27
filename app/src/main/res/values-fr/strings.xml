@@ -223,7 +223,6 @@
     <string name="metronome_next_page">Page suivante</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Banques de sons de la lecture</string>
-    <string name="sound_banks_label">Banques de sons</string>
     <string name="sound_banks_hint">Les banques SoundFont (SF2 ou SF3) donnent ses instruments à la lecture. La banque par défaut joue toutes les parties qui n’ont pas de son à elles.</string>
     <string name="sound_bank_default">Banque par défaut</string>
     <string name="sound_bank_built_in">Fournie avec l’application</string>
@@ -237,4 +236,6 @@
     <string name="part_sound_title">Son de %1$s</string>
     <string name="part_sound_bank">Banque</string>
     <string name="part_sound_drums">Batteries</string>
+    <string name="prefs_library">Bibliothèque</string>
+    <string name="prefs_library_summary">Exporter ou importer une copie de toute la bibliothèque</string>
 </resources>

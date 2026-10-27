@@ -143,8 +143,6 @@ private fun FOSScoreNav(
 ) {
     var nav by rememberSaveable(stateSaver = NavSaver) { mutableStateOf(NavState()) }
     var messageRes by remember { mutableStateOf<Int?>(null) }
-    // already formatted texts (counts), from the library export / import
-    var messageText by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // the library's side menu, kept here for the back key below
@@ -191,7 +189,7 @@ private fun FOSScoreNav(
         // ponytail: the library covers the whole screen. The sliding/tiled sidebar and its animation
         // are their own step — this layering is what they will need.
         if (s.libraryOpen || s.sheet == null) {
-            LibraryMenuDrawer(drawerState, onMessage = { messageText = it }, onOpenPreferences = { nav = nav.copy(preferences = true) }) {
+            LibraryMenuDrawer(drawerState, onOpenPreferences = { nav = nav.copy(preferences = true) }) {
                 Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
                     Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                         LibraryScreen(
@@ -207,12 +205,6 @@ private fun FOSScoreNav(
                             LaunchedEffect(msg) {
                                 snackbar.showSnackbar(msg)
                                 messageRes = null
-                            }
-                        }
-                        messageText?.let { msg ->
-                            LaunchedEffect(msg) {
-                                snackbar.showSnackbar(msg)
-                                messageText = null
                             }
                         }
                     }

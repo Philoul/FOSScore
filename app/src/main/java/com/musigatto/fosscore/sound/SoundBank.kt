@@ -24,6 +24,9 @@ private const val LOG_TAG = "FOSScore-SoundBank"
 // how long the decoder waits for a free buffer, in microseconds
 private const val DECODE_WAIT_US = 10_000L
 
+// a decoder that gives nothing for this long is stuck: the sample is given up (and silent)
+private const val DECODE_STALL_MS = 2_000L
+
 /**
  * The instrument chosen for a part: [program] (0-127) of [bank] (128 for drum kits) in sound bank
  * [bankId] ([SoundBank.BUILT_IN] or one the user added).
@@ -216,6 +219,7 @@ object SoundBank {
 
     // One Ogg Vorbis stream into 16-bit values, by Android's decoder (no code of our own).
     private fun decode(ogg: ByteBuffer): ShortArray {
+        val started = System.nanoTime()
         val bytes = ByteArray(ogg.remaining()).also { ogg.duplicate().get(it) }
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
@@ -242,7 +246,12 @@ object SoundBank {
             var total = 0
             val info = MediaCodec.BufferInfo()
             var inputDone = false
+            var lastProgress = System.nanoTime()
             while (true) {
+                if ((System.nanoTime() - lastProgress) / 1_000_000 > DECODE_STALL_MS) {
+                    Log.w(LOG_TAG, "decoder stuck after ${total} values of ${bytes.size} bytes: sample given up")
+                    break
+                }
                 if (!inputDone) {
                     val i = decoder.dequeueInputBuffer(DECODE_WAIT_US)
                     if (i >= 0) {
@@ -259,6 +268,7 @@ object SoundBank {
                 }
                 val o = decoder.dequeueOutputBuffer(info, DECODE_WAIT_US)
                 if (o >= 0) {
+                    lastProgress = System.nanoTime()
                     decoder.getOutputBuffer(o)?.let { buffer ->
                         buffer.position(info.offset)
                         buffer.limit(info.offset + info.size)
@@ -271,6 +281,7 @@ object SoundBank {
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
                 }
             }
+            Log.d(LOG_TAG, "decoded ${bytes.size} bytes into $total values in ${(System.nanoTime() - started) / 1_000_000} ms")
             val pcm = ShortArray(total)
             var at = 0
             for (part in out) {

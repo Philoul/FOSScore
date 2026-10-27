@@ -62,7 +62,12 @@ import kotlinx.coroutines.withContext
  * 3.6). [onMessage] shows a short result to the user.
  */
 @Composable
-fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, content: @Composable () -> Unit) {
+fun LibraryMenuDrawer(
+    drawerState: DrawerState,
+    onMessage: (String) -> Unit,
+    onOpenPreferences: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
     val app = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -155,7 +160,12 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
                 SoonItem(R.string.library_menu_tags)
                 SoonItem(R.string.library_menu_practice)
                 HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
-                SoonItem(R.string.library_menu_settings)
+                NavigationDrawerItem(
+                    label = { Text(stringResource(R.string.library_menu_settings)) },
+                    selected = false,
+                    onClick = { fromMenu(onOpenPreferences) },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
                 SoonItem(R.string.library_menu_about)
             }
         },

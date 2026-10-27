@@ -217,4 +217,20 @@
     <string name="tempo_as_written_short">As written</string>
     <string name="metronome_previous_page">Previous page</string>
     <string name="metronome_next_page">Next page</string>
+    <string name="prefs_midi">MIDI</string>
+    <string name="prefs_midi_summary">Sound banks for playback</string>
+    <string name="sound_banks_label">Sound banks</string>
+    <string name="sound_banks_hint">SoundFont banks (SF2 or SF3) give playback its instruments. The default bank plays every part that has no sound of its own.</string>
+    <string name="sound_bank_default">Default bank</string>
+    <string name="sound_bank_built_in">Comes with the app</string>
+    <string name="sound_bank_add">Add a sound bank…</string>
+    <string name="sound_bank_adding">Adding the bank…</string>
+    <string name="sound_bank_not_read">This file is not a SoundFont bank (SF2 or SF3).</string>
+    <string name="sound_bank_delete">Delete</string>
+    <string name="sound_bank_delete_title">Delete %1$s?</string>
+    <string name="sound_bank_delete_text">Parts that play it go back to the default bank.</string>
+    <string name="part_sound_as_written">As in the score</string>
+    <string name="part_sound_title">Sound of %1$s</string>
+    <string name="part_sound_bank">Bank</string>
+    <string name="part_sound_drums">Drum kits</string>
 </resources>

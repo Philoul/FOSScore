@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -127,6 +128,8 @@ import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.ScorePrecompute
+import com.musigatto.fosscore.sound.SoundBank
+import com.musigatto.fosscore.sound.SoundBankEntry
 import com.musigatto.fosscore.score.PageSource
 import com.musigatto.fosscore.score.SheetFormat
 import java.util.WeakHashMap
@@ -264,6 +267,7 @@ fun PdfViewerScreen(
     onOpenLibrary: () -> Unit = onBack,
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
+    onOpenPreferences: () -> Unit = {},
     sheetHash: String? = null
 ) {
     val context = LocalContext.current
@@ -285,6 +289,12 @@ fun PdfViewerScreen(
         factory = PlaybackViewModel.factory(context, pdfUri.toString()),
     )
     val playState by playbackVm.state.collectAsState()
+    val partSounds by playbackVm.partSounds.collectAsState()
+    // the sound banks and their instruments, for the sound of each part (read off the main thread)
+    val banks by produceState(emptyList<SoundBankEntry>()) { value = withContext(Dispatchers.IO) { SoundBank.list(context) } }
+    val soundChoices = remember(banks) {
+        SoundChoices(banks, Settings.soundBank(context)) { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } }
+    }
     val loop by playbackVm.loop.collectAsState()
     val cursorNotes by playbackVm.cursor.collectAsState()
     val tempoFactor by playbackVm.tempo.collectAsState()
@@ -2412,6 +2422,7 @@ fun PdfViewerScreen(
                             menu.show(ViewerSurface.METRONOME)
                         }
                         ViewerMenuItem.ANNOTATE -> if (!editing) toggleEditing()
+                        ViewerMenuItem.SETTINGS -> onOpenPreferences()
                         // greyed out in the menu: never chosen
                         else -> Unit
                     }
@@ -2507,6 +2518,9 @@ fun PdfViewerScreen(
                     parts = parts,
                     heard = heardParts(heardPicked, shownIds, parts),
                     onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },
+                    partSounds = partSounds,
+                    soundChoices = soundChoices,
+                    onPartSound = playbackVm::setPartSound,
                     onDismiss = menu::dismiss,
                 )
             }

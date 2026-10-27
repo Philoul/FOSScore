@@ -32,6 +32,9 @@ private const val PREFILL_BLOCKS = BUFFER_BLOCKS - 2
 // not while the first notes play (they came out cut on a slow tablet)
 private const val COMPILE_BLOCKS = 200
 
+// the MIDI channels
+private const val CHANNELS = 16
+
 /**
  * The live player: a [MidiSong] played by a [Synth] into an [AudioTrack], event after event, on
  * its own audio thread. The music advances in quarter notes at the song's tempo times
@@ -69,6 +72,8 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     private val sounding = ArrayList<Sounding>()
     // semitones the music is heard up (or down), the score shown staying as it is
     private var semitones = 0
+    // the instrument chosen for each channel (null: the file's), read by [warm] off the audio thread
+    @Volatile private var sounds: List<ChannelSound?> = emptyList()
 
     // what was written, block by block: the frame (since the track started) and the music there
     private val historyFrame = LongArray(HISTORY)
@@ -104,7 +109,7 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
      * Call it off the main thread before [setSong].
      */
     fun warm(song: MidiSong) {
-        synth.warm(song)
+        synth.warm(song, sounds)
         val spare = Synth(font, sampleRate)
         song.events.firstOrNull { it.type == MidiSong.NOTE_ON && it.data2 > 0 }?.let { spare.noteOn(it.channel, it.data1, it.data2) }
         val scratch = FloatArray(BLOCK_FRAMES * 2)
@@ -123,6 +128,15 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
         }
         song = newSong
         next = song.firstEventAt(at)
+    }
+
+    /**
+     * The instrument of each channel, by channel (null, or a channel left out: the file's own),
+     * from the next notes on. Call [warm] after it, off the main thread, to read its samples ahead.
+     */
+    fun setSounds(chosen: List<ChannelSound?>) {
+        sounds = chosen.toList()
+        run { for (c in 0 until CHANNELS) synth.setSound(c, chosen.getOrNull(c)) }
     }
 
     /**

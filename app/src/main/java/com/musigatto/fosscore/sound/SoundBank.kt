@@ -5,12 +5,17 @@ import android.media.MediaCodec
 import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import java.io.File
 import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.min
 
 private const val LOG_TAG = "FOSScore-SoundBank"
@@ -19,32 +24,133 @@ private const val LOG_TAG = "FOSScore-SoundBank"
 private const val DECODE_WAIT_US = 10_000L
 
 /**
- * The app's sound bank, GeneralUser GS by S. Christian Collins (its licence is next to it in the
- * assets), in SF3: its samples are Ogg Vorbis streams (9 MB instead of 32). The bank is mapped
- * from the APK, where it is stored uncompressed, so it is never copied into the app's memory. A
- * sample is decoded by Android's own Vorbis decoder the first time a piece plays it, then kept in
- * the app's cache: the next pieces read it straight from there.
+ * The instrument chosen for a part: [program] (0-127) of [bank] (128 for drum kits) in sound bank
+ * [bankId] ([SoundBank.BUILT_IN] or one the user added).
+ */
+data class PartSound(val bankId: String, val bank: Int, val program: Int)
+
+/** One sound bank the app can play: [BUILT_IN], or one the user added ([size] bytes). */
+data class SoundBankEntry(val id: String, val name: String, val size: Long) {
+    val builtIn: Boolean get() = id == SoundBank.BUILT_IN
+}
+
+/**
+ * The sound banks of the app. The built-in one is GeneralUser GS by S. Christian Collins (its
+ * licence is next to it in the assets), in SF3: its samples are Ogg Vorbis streams (9 MB instead
+ * of 32). It is mapped from the APK, where it is stored uncompressed, so it is never copied into
+ * the app's memory, and it cannot be deleted. The user adds SF2 or SF3 banks of their own: each is
+ * copied into the app's files, then mapped the same way.
+ *
+ * A compressed sample is decoded by Android's own Vorbis decoder the first time a piece plays it,
+ * then kept in the app's cache: the next pieces read it straight from there.
  */
 object SoundBank {
+    /** The id of the bank that comes with the app. */
+    const val BUILT_IN = "builtin"
+
     private const val ASSET = "soundfont/GeneralUser-GS.sf3"
+    private const val BUILT_IN_NAME = "GeneralUser GS"
 
-    // the decoded samples of this version of the bank
+    // the decoded samples of this version of the built-in bank; a bank added has its own folder
     private const val CACHE = "soundbank/GeneralUser-GS-2.0.3"
+    private const val ADDED_CACHE = "soundbank/added-"
 
-    @Volatile private var font: SoundFont? = null
+    // the banks the user added, with a text file holding the name shown for each
+    private const val FOLDER = "soundbanks"
+    private const val NAME_SUFFIX = ".name"
 
-    /** The bank, read on the first call (a few tens of milliseconds): call it off the main thread. */
-    fun load(context: Context): SoundFont = font ?: synchronized(this) {
-        font ?: context.assets.openFd(ASSET).use { fd ->
-            FileInputStream(fd.fileDescriptor).channel.use { channel ->
-                SoundFont.read(channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length))
-            }
-        }.also { read ->
-            val cache = File(context.cacheDir, CACHE)
-            read.decoder = { index, ogg -> cached(cache, index) ?: decode(ogg).also { keep(cache, index, it) } }
-            font = read
+    // the banks read so far, by id
+    private val fonts = ConcurrentHashMap<String, SoundFont>()
+
+    /** The built-in bank, read on the first call (a few tens of milliseconds): call it off the main thread. */
+    fun load(context: Context): SoundFont = load(context, BUILT_IN)
+
+    /**
+     * Bank [id], read on the first call: call it off the main thread. A bank that is gone (deleted,
+     * or a file that can no longer be read) gives the built-in one.
+     */
+    fun load(context: Context, id: String): SoundFont = fonts[id] ?: synchronized(this) {
+        fonts[id] ?: (if (id == BUILT_IN) readBuiltIn(context) else readAdded(context, id))
+            ?.also { fonts[id] = it }
+            ?: load(context, BUILT_IN)
+    }
+
+    /** Whether bank [id] is there: the built-in one always is, one added until it is deleted. */
+    fun has(context: Context, id: String): Boolean =
+        id == BUILT_IN || folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }.orEmpty().isNotEmpty()
+
+    /** The banks the user can choose from: the built-in one first, then the ones added, by name. */
+    fun list(context: Context): List<SoundBankEntry> {
+        val added = folder(context).listFiles { f -> f.isFile && isBank(f.name) }.orEmpty().map { f ->
+            val id = f.nameWithoutExtension
+            SoundBankEntry(id, File(f.parentFile, id + NAME_SUFFIX).takeIf { it.isFile }?.readText()?.trim().orEmpty().ifBlank { f.name }, f.length())
+        }.sortedBy { it.name.lowercase() }
+        return listOf(SoundBankEntry(BUILT_IN, BUILT_IN_NAME, builtInSize(context))) + added
+    }
+
+    /**
+     * Copies the bank the user picked at [uri] into the app, after reading it once to check it is
+     * a SoundFont 2 or SF3 bank. Off the main thread. Null when it is not one.
+     */
+    fun add(context: Context, uri: Uri): SoundBankEntry? {
+        val dir = folder(context).apply { mkdirs() }
+        val id = UUID.randomUUID().toString()
+        val part = File(dir, "$id.part")
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input -> part.outputStream().use { input.copyTo(it) } } ?: return null
+            val font = map(part)
+            val shown = font.name.ifBlank { displayName(context, uri)?.substringBeforeLast('.').orEmpty() }.ifBlank { id }
+            val ext = if (font.compressed) "sf3" else "sf2"
+            val file = File(dir, "$id.$ext")
+            if (!part.renameTo(file)) return null
+            File(dir, id + NAME_SUFFIX).writeText(shown)
+            SoundBankEntry(id, shown, file.length())
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "not a sound bank: ${e.message}")
+            null
+        } finally {
+            part.delete()
         }
     }
+
+    /** Removes bank [id] the user added, with its decoded samples. The built-in bank stays. */
+    fun delete(context: Context, id: String) {
+        if (id == BUILT_IN) return
+        fonts.remove(id)
+        folder(context).listFiles { f -> f.nameWithoutExtension == id }.orEmpty().forEach { it.delete() }
+        File(context.cacheDir, ADDED_CACHE + id).deleteRecursively()
+    }
+
+    private fun folder(context: Context) = File(context.filesDir, FOLDER)
+
+    private fun isBank(name: String) = name.endsWith(".sf2", ignoreCase = true) || name.endsWith(".sf3", ignoreCase = true)
+
+    private fun builtInSize(context: Context): Long = runCatching { context.assets.openFd(ASSET).use { it.length } }.getOrDefault(0L)
+
+    private fun displayName(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
+
+    private fun readBuiltIn(context: Context): SoundFont = context.assets.openFd(ASSET).use { fd ->
+        FileInputStream(fd.fileDescriptor).channel.use { channel ->
+            SoundFont.read(channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length))
+        }
+    }.also { it.decoder = decoderFor(File(context.cacheDir, CACHE)) }
+
+    private fun readAdded(context: Context, id: String): SoundFont? =
+        folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }?.firstOrNull()?.let { file ->
+            runCatching { map(file) }.onFailure { Log.w(LOG_TAG, "bank $id not read: ${it.message}") }.getOrNull()
+        }?.also { it.decoder = decoderFor(File(context.cacheDir, ADDED_CACHE + id)) }
+
+    // the whole file mapped: its samples are read in place
+    private fun map(file: File): SoundFont = RandomAccessFile(file, "r").use { f ->
+        SoundFont.read(f.channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length()))
+    }
+
+    private fun decoderFor(cache: File): (Int, ByteBuffer) -> ShortArray =
+        { index, ogg -> cached(cache, index) ?: decode(ogg).also { keep(cache, index, it) } }
 
     private fun cached(dir: File, index: Int): ShortArray? = runCatching {
         val file = File(dir, "$index.pcm").takeIf { it.isFile } ?: return null

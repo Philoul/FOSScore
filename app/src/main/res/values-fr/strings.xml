@@ -221,4 +221,20 @@
     <string name="tempo_as_written_short">Comme écrit</string>
     <string name="metronome_previous_page">Page précédente</string>
     <string name="metronome_next_page">Page suivante</string>
+    <string name="prefs_midi">MIDI</string>
+    <string name="prefs_midi_summary">Banques de sons de la lecture</string>
+    <string name="sound_banks_label">Banques de sons</string>
+    <string name="sound_banks_hint">Les banques SoundFont (SF2 ou SF3) donnent ses instruments à la lecture. La banque par défaut joue toutes les parties qui n’ont pas de son à elles.</string>
+    <string name="sound_bank_default">Banque par défaut</string>
+    <string name="sound_bank_built_in">Fournie avec l’application</string>
+    <string name="sound_bank_add">Ajouter une banque de sons…</string>
+    <string name="sound_bank_adding">Ajout de la banque…</string>
+    <string name="sound_bank_not_read">Ce fichier n’est pas une banque SoundFont (SF2 ou SF3).</string>
+    <string name="sound_bank_delete">Supprimer</string>
+    <string name="sound_bank_delete_title">Supprimer %1$s ?</string>
+    <string name="sound_bank_delete_text">Les parties qui la jouent reviennent à la banque par défaut.</string>
+    <string name="part_sound_as_written">Comme dans la partition</string>
+    <string name="part_sound_title">Son de %1$s</string>
+    <string name="part_sound_bank">Banque</string>
+    <string name="part_sound_drums">Batteries</string>
 </resources>

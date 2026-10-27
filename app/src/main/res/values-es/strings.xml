@@ -219,4 +219,20 @@
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
+    <string name="prefs_midi">MIDI</string>
+    <string name="prefs_midi_summary">Bancos de sonidos de la reproducción</string>
+    <string name="sound_banks_label">Bancos de sonidos</string>
+    <string name="sound_banks_hint">Los bancos SoundFont (SF2 o SF3) dan sus instrumentos a la reproducción. El banco predeterminado toca todas las partes que no tienen un sonido propio.</string>
+    <string name="sound_bank_default">Banco predeterminado</string>
+    <string name="sound_bank_built_in">Incluido con la aplicación</string>
+    <string name="sound_bank_add">Añadir un banco de sonidos…</string>
+    <string name="sound_bank_adding">Añadiendo el banco…</string>
+    <string name="sound_bank_not_read">Este archivo no es un banco SoundFont (SF2 o SF3).</string>
+    <string name="sound_bank_delete">Eliminar</string>
+    <string name="sound_bank_delete_title">¿Eliminar %1$s?</string>
+    <string name="sound_bank_delete_text">Las partes que lo tocan vuelven al banco predeterminado.</string>
+    <string name="part_sound_as_written">Como en la partitura</string>
+    <string name="part_sound_title">Sonido de %1$s</string>
+    <string name="part_sound_bank">Banco</string>
+    <string name="part_sound_drums">Baterías</string>
 </resources>

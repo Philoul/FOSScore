@@ -264,6 +264,13 @@ fun PdfViewerScreen(
     val metronomeShown by metronomeVm.shown.collectAsState()
     val metronomeTick by metronomeVm.tick.collectAsState()
     val meterFromScore by metronomeVm.meterFromScore.collectAsState()
+
+    // the page edits: undo/redo, the ink and stamps waiting for the DB, the selection
+    // (AnnotationViewModel). One per score, like the menu and the playback.
+    val editor: AnnotationViewModel = viewModel(
+        key = "annotation:$pdfUri",
+        factory = AnnotationViewModel.factory(context, sheetHash),
+    )
     // a MusicXML score's bars and notes, for the page turns of the metronome
     var metronomeMusic by remember { mutableStateOf<Playback?>(null) }
     SideEffect { playbackVm.turnAhead = metronome.turnAhead }
@@ -327,7 +334,6 @@ fun PdfViewerScreen(
         } ?: flowOf(emptyList())
     }
     val stamps by stampsFlow.collectAsState(initial = emptyList())
-    val stampRepo = (context.applicationContext as FOSScoreApp).stampRepository
 
     val strokesFlow = remember(sheetHash, currentPage) {
         sheetHash?.let {
@@ -335,7 +341,6 @@ fun PdfViewerScreen(
         } ?: flowOf(emptyList())
     }
     val strokes by strokesFlow.collectAsState(initial = emptyList())
-    val strokeRepo = (context.applicationContext as FOSScoreApp).strokeRepository
 
     // height of the title bar, measured: the annotation bar hangs from it. Hoisted out of the chrome
     // block because the bar is removed while the loupe is up (and the height must survive that).
@@ -366,26 +371,13 @@ fun PdfViewerScreen(
         if (loupeAnchor == anchor) loupeAt = anchor
     }
     // selected stamp (for the box with handles) or the selected word of ink
-    var selectedStrokeIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     // handle in use: (base object, grabbed corner) while scaling
     var resizing by remember { mutableStateOf<Resizing?>(null) }
     var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // tint ARGB; null = theme
     var drawingTool by rememberSaveable { mutableStateOf(false) }      // pen mode: ink, not stamps
     var eraserTool by rememberSaveable { mutableStateOf(false) }      // eraser mode: removes stamps and strokes
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
-    var dragStamp by remember { mutableStateOf<Stamp?>(null) }
-    var dragStrokes by remember { mutableStateOf<List<Stroke>?>(null) }   // preview of the ink being moved/stretched
-    var selectedId by remember { mutableStateOf<Long?>(null) }
-    var undoStack by remember { mutableStateOf<List<Pair<Int, PageEdit>>>(emptyList()) }
-    var redoStack by remember { mutableStateOf<List<Pair<Int, PageEdit>>>(emptyList()) }
     var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
-    // ink already lifted that the DB has not handed back yet: without this the stroke blinks ~20 ms
-    var pendingInk by remember { mutableStateOf<List<Stroke>>(emptyList()) }
-    LaunchedEffect(currentPage, editing) { pendingInk = emptyList() }
-    // optimistic delete: the view hides what is gone at once and the DB confirms afterward.
-    // ponytail: a Set of ids pruned by LaunchedEffect; enough, because deleting never brings ids back.
-    var hiddenStampIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    var hiddenStrokeIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val editScope = rememberCoroutineScope()
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
@@ -424,8 +416,8 @@ fun PdfViewerScreen(
     // the first frame and the overlay does not wait for a draw to land.
     val pageBox = pageSource?.pageSize(currentPage)
     // the DAO already returns only this page's rows; this drops the ones deleted a second ago
-    val pageStamps = remember(stamps, hiddenStampIds) { stamps.filter { it.id !in hiddenStampIds } }
-    val pageStrokes = remember(strokes, hiddenStrokeIds) { strokes.filter { it.id !in hiddenStrokeIds } }
+    val pageStamps = remember(stamps, editor.hiddenStampIds) { stamps.filter { it.id !in editor.hiddenStampIds } }
+    val pageStrokes = remember(strokes, editor.hiddenStrokeIds) { strokes.filter { it.id !in editor.hiddenStrokeIds } }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
             viewport.width.toFloat(),
@@ -437,9 +429,9 @@ fun PdfViewerScreen(
     // centring margin). The whole overlay and the edit gesture live here.
     val hitFit = RectPx(0f, 0f, pageFit.width, pageFit.height)
     // the ink that is on screen: what the DB returned plus what it has not handed back yet
-    // (pendingInk). Drawing, hit-testing and grouping must all see the same set, or a letter
+    // (editor.pendingInk). Drawing, hit-testing and grouping must all see the same set, or a letter
     // written a second ago is not selectable and the word's box comes out short.
-    val inkStrokes = (pendingInk + pageStrokes).distinctBy { it.id }
+    val inkStrokes = (editor.pendingInk + pageStrokes).distinctBy { it.id }
     // the same ink, ready to draw: decode + Path once per change, not once per frame
     val inkDraws = remember(inkStrokes, hitFit, invert) {
         inkStrokes.map { st ->
@@ -468,13 +460,13 @@ fun PdfViewerScreen(
     // content. The gesture takes this through rememberUpdatedState: it always reads the live value.
     val currentSpread by rememberUpdatedState(branch.showTwoUp || (branch.showHalf && halfTurned))
 
-    val selectedStamp = pageStamps.firstOrNull { it.id == selectedId }
-    val selectedStrokes = inkStrokes.filter { it.id in selectedStrokeIds }
+    val selectedStamp = pageStamps.firstOrNull { it.id == editor.selectedId }
+    val selectedStrokes = inkStrokes.filter { it.id in editor.selectedStrokeIds }
 
     // selection box in px: the stamp's or the ink's. While dragging or stretching we use the
-    // live position (dragStamp/dragStrokes) so the box follows the object.
-    val selectionRect: RectPx? = dragStamp?.let { stampRect(it, hitFit) }
-        ?: dragStrokes?.let { inkBounds(it, hitFit) }
+    // live position (editor.dragStamp/editor.dragStrokes) so the box follows the object.
+    val selectionRect: RectPx? = editor.dragStamp?.let { stampRect(it, hitFit) }
+        ?: editor.dragStrokes?.let { inkBounds(it, hitFit) }
         ?: selectedStamp?.let { stampRect(it, hitFit) }
         ?: inkBounds(selectedStrokes, hitFit)
     val currentSelectionRect by rememberUpdatedState(selectionRect)
@@ -487,14 +479,7 @@ fun PdfViewerScreen(
         !drawingTool && !eraserTool
     // corner handles belong to an INK selection: a stamp's size is the palette slider, and forScore
     // moves a placed stamp with the selection tool instead of resizing it by its corners (spec §5)
-    val strokeSelection = selectedStamp == null && (selectedStrokes.isNotEmpty() || dragStrokes != null)
-
-    // stacks snapshots BEFORE every change, each with its page; 10 levels. A new change throws the
-    // redo branch away, like any editor.
-    fun pushUndo(snapshot: PageEdit = PageEdit(pageStamps, pageStrokes), page: Int = currentPage) {
-        undoStack = (undoStack + listOf(page to snapshot)).takeLast(10)
-        redoStack = emptyList()
-    }
+    val strokeSelection = selectedStamp == null && (selectedStrokes.isNotEmpty() || editor.dragStrokes != null)
 
     // what Annotate (menu) and Done (pill) do. Leaving edit mode must not leave anything armed or
     // selected behind.
@@ -512,20 +497,15 @@ fun PdfViewerScreen(
             // back to the pages as the user set them
             twoUp = Settings.twoUp(context)
             halfEnabled = Settings.halfPage(context, isLandscape)
-            undoStack = emptyList()
-            redoStack = emptyList()
-            selectedId = null
-            selectedStrokeIds = emptySet()
-            dragStamp = null
-            dragStrokes = null
+            editor.clearHistory()
+            editor.clearSelection()
             drawingTool = false
             eraserTool = false
             // leaving edit mode must not leave a stamp tool armed for the next time we come back in
             activeSymbol = null
             openPanel = null
             inkPreview = emptyList()
-            hiddenStampIds = emptySet()
-            hiddenStrokeIds = emptySet()
+            editor.clearHidden()
         }
     }
 
@@ -664,8 +644,8 @@ fun PdfViewerScreen(
                 if (!wasOn && on) {
                     activeSymbol = null
                     drawingTool = false
-                    selectedId = null
-                    selectedStrokeIds = emptySet()
+                    editor.selectedId = null
+                    editor.selectedStrokeIds = emptySet()
                 }
                 inkPreview = emptyList()
                 openPanel = if (panel) ToolPanel.Eraser else null
@@ -674,65 +654,12 @@ fun PdfViewerScreen(
         }
     }
 
-    val onUndo: () -> Unit = {
-        val hash = sheetHash
-        val undo = undoStack.lastOrNull()
-        if (hash != null && undo != null) {
-            val (page, edit) = undo
-            undoStack = undoStack.dropLast(1)
-            // what redo puts back is the state we are leaving behind
-            if (page == currentPage) {
-                redoStack = (redoStack + (page to PageEdit(pageStamps, pageStrokes))).takeLast(10)
-            }
-            selectedId = null
-            selectedStrokeIds = emptySet()
-            dragStamp = null
-            dragStrokes = null
-            // the "looks deleted now" cache is stale after a restore: the
-            // snapshots go back with their original ids
-            hiddenStampIds = emptySet()
-            hiddenStrokeIds = emptySet()
-            editScope.launch {
-                stampRepo.restorePage(hash, page, edit.stamps)
-                strokeRepo.restorePage(hash, page, edit.strokes)
-            }
-        }
-    }
+    val onUndo: () -> Unit = { editor.undo(currentPage, PageEdit(pageStamps, pageStrokes)) }
 
-    val onRedo: () -> Unit = {
-        val hash = sheetHash
-        val redo = redoStack.lastOrNull()
-        if (hash != null && redo != null) {
-            val (page, edit) = redo
-            redoStack = redoStack.dropLast(1)
-            if (page == currentPage) {
-                undoStack = (undoStack + (page to PageEdit(pageStamps, pageStrokes))).takeLast(10)
-            }
-            selectedId = null
-            selectedStrokeIds = emptySet()
-            dragStamp = null
-            dragStrokes = null
-            hiddenStampIds = emptySet()
-            hiddenStrokeIds = emptySet()
-            editScope.launch {
-                stampRepo.restorePage(hash, page, edit.stamps)
-                strokeRepo.restorePage(hash, page, edit.strokes)
-            }
-        }
-    }
+    val onRedo: () -> Unit = { editor.redo(currentPage, PageEdit(pageStamps, pageStrokes)) }
 
     val onDeleteSelection: () -> Unit = {
-        if (selectedStamp != null || selectedStrokes.isNotEmpty()) {
-            pushUndo()
-            selectedId = null
-            selectedStrokeIds = emptySet()
-            hiddenStampIds = hiddenStampIds + listOfNotNull(selectedStamp?.id)
-            hiddenStrokeIds = hiddenStrokeIds + selectedStrokes.map { it.id }
-            editScope.launch {
-                selectedStamp?.let { stampRepo.delete(it) }
-                if (selectedStrokes.isNotEmpty()) strokeRepo.deleteAll(selectedStrokes)
-            }
-        }
+        editor.deleteSelection(currentPage, selectedStamp, selectedStrokes, PageEdit(pageStamps, pageStrokes))
     }
 
     BackHandler(onBack = onBack)
@@ -753,25 +680,10 @@ fun PdfViewerScreen(
     }
 
     // the DB no longer has what we hid: clear the optimistic delete (and the drag preview)
-    LaunchedEffect(stamps, strokes) {
-        val liveStamps = stamps.map { it.id }.toSet()
-        val liveStrokes = strokes.map { it.id }.toSet()
-        if (hiddenStampIds.any { it !in liveStamps }) hiddenStampIds = hiddenStampIds intersect liveStamps
-        if (hiddenStrokeIds.any { it !in liveStrokes }) hiddenStrokeIds = hiddenStrokeIds intersect liveStrokes
-        dragStamp?.let { d ->
-            if (stamps.any { it.id == d.id && it.x == d.x && it.y == d.y && it.size == d.size }) dragStamp = null
-        }
-        dragStrokes?.let { list ->
-            // all or nothing: dropping strokes one by one shrank the box to the rows that had not
-            // landed yet, which looked like the box jumping from the word to a single stroke
-            val settled = list.all { d ->
-                strokes.any { s -> s.id == d.id && s.points == d.points && s.width == d.width }
-            }
-            if (settled) dragStrokes = null
-        }
-        // the DB has this ink already: drop it from the optimistic layer
-        pendingInk = pendingInk.filter { p -> strokes.none { it.id == p.id && it.points == p.points } }
-    }
+    LaunchedEffect(stamps, strokes) { editor.settle(stamps, strokes) }
+
+    // a fresh page (or leaving edit mode) must not keep the ink the DB has not handed back
+    LaunchedEffect(currentPage, editing) { editor.pendingInk = emptyList() }
 
     // MuPDF (prebuilt AAR, AGPL-3.0: see LICENSE). Opens and works out sizes in the background:
     // opening parses the PDF index and must not touch the main thread.
@@ -1311,17 +1223,17 @@ fun PdfViewerScreen(
                                     if (hitS != null) {
                                         movingStamp = hitS
                                         movingOrigin = hitS
-                                        selectedId = hitS.id
-                                        selectedStrokeIds = emptySet()
+                                        editor.selectedId = hitS.id
+                                        editor.selectedStrokeIds = emptySet()
                                         // Selecting a stamp must NOT arm its symbol, or the next tap
                                         // outside it silently stamps a second copy.
-                                        dragStamp = hitS
+                                        editor.dragStamp = hitS
                                     } else if (group != null) {
                                         movingStrokes = group.strokes
                                         movingStrokesBase = group.strokes
                                         moveStrokeLastPos = downF
-                                        selectedStrokeIds = group.strokes.map { it.id }.toSet()
-                                        selectedId = null
+                                        editor.selectedStrokeIds = group.strokes.map { it.id }.toSet()
+                                        editor.selectedId = null
                                         // no preview yet: the box comes from the ids, which are
                                         // already the whole word. The preview is armed on the first
                                         // real movement (see the move branch).
@@ -1371,31 +1283,27 @@ fun PdfViewerScreen(
                                         drawingTool = false
                                         eraserTool = false
                                         openPanel = null
-                                        selectedId = null
-                                        selectedStrokeIds = emptySet()
-                                        dragStamp = null
-                                        dragStrokes = null
+                                        editor.clearSelection()
                                     } else if (rz != null) {
                                         resizing = null
                                         val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
                                         val changed = pts != rz.ptsPx
                                         if (changed) {
-                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                            editScope.launch {
-                                                rz.strokes.forEachIndexed { i, base ->
-                                                    strokeRepo.update(
-                                                        base.copy(
-                                                            points = encodePoints(
-                                                                pts[i].map {
-                                                                    pxToNormalized(it, currentHitFit)
-                                                                }
-                                                            ),
-                                                            width = (base.width * scaleF)
-                                                                .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
-                                                        )
+                                            editor.updateStrokes(
+                                                currentPage,
+                                                rz.strokes.mapIndexed { i, base ->
+                                                    base.copy(
+                                                        points = encodePoints(
+                                                            pts[i].map {
+                                                                pxToNormalized(it, currentHitFit)
+                                                            }
+                                                        ),
+                                                        width = (base.width * scaleF)
+                                                            .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
                                                     )
-                                                }
-                                            }
+                                                },
+                                                PageEdit(currentPageStamps, currentPageStrokes),
+                                            )
                                         }
                                     } else if (inkActive) {
                                         // ink capture lives in fit coordinates (F): the sampling
@@ -1403,7 +1311,6 @@ fun PdfViewerScreen(
                                         val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / scale)
                                         inkPreview = emptyList()
                                         if (pts.size >= 2 && !onMatte && sheetHash != null && currentPageFit.width > 0f) {
-                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                             val s = Stroke(
                                                 sheetHash = sheetHash,
                                                 page = currentPage,
@@ -1413,16 +1320,12 @@ fun PdfViewerScreen(
                                                 width = penWidthPxToFrac(penWidthPx, currentHitFit),
                                                 color = activeColor
                                             )
-                                            editScope.launch {
-                                                val stored = s.copy(id = strokeRepo.insert(s))
-                                                pendingInk = pendingInk + stored
-                                            }
+                                            editor.addInk(currentPage, s, PageEdit(currentPageStamps, currentPageStrokes))
                                         }
                                     } else if (eraserActive) {
                                         val path = eraserPath
                                         inkPreview = emptyList()
                                         if (path.isNotEmpty() && sheetHash != null && currentPageFit.width > 0f) {
-                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
                                             val radiusPx = currentEraserPx
                                             // the eraser always deletes what it grazes: to remove a whole
                                             // word, tap it (that selects it) and press the bin
@@ -1448,18 +1351,13 @@ fun PdfViewerScreen(
                                                     }
                                                 }
                                             }
-                                            selectedId = null
-                                            selectedStrokeIds = emptySet()
-                                            // make it look deleted NOW: the DB lags behind (~20 ms)
-                                            hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
-                                            hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
-                                            editScope.launch {
-                                                if (goneStamps.isNotEmpty()) stampRepo.deleteAll(goneStamps)
-                                                if (goneStrokes.isNotEmpty()) {
-                                                    strokeRepo.deleteAll(goneStrokes)
-                                                    strokeRepo.insertAll(newRuns)
-                                                }
-                                            }
+                                            editor.erase(
+                                                currentPage,
+                                                goneStamps,
+                                                goneStrokes,
+                                                newRuns,
+                                                PageEdit(currentPageStamps, currentPageStrokes),
+                                            )
                                         }
                                     } else if (movingStrokes != null) {
                                         val done = movingStrokes
@@ -1469,9 +1367,10 @@ fun PdfViewerScreen(
                                         if (moved) {
                                             // keep the final position until the DB confirms it, or
                                             // the overlay would draw the old one for a few ms
-                                            dragStrokes = done
-                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                            editScope.launch { done.forEach { strokeRepo.update(it) } }
+                                            editor.dragStrokes = done
+                                            editor.updateStrokes(
+                                                currentPage, done, PageEdit(currentPageStamps, currentPageStrokes)
+                                            )
                                         }
                                     } else if (movingStamp != null) {
                                         val done = movingStamp
@@ -1479,11 +1378,10 @@ fun PdfViewerScreen(
                                         // keep the final position: clearing it here would make the
                                         // overlay draw the DB's old position for a few ms until the flow
                                         // emits again (a glitch).
-                                        dragStamp = done
-                                        if (origin != null && (done.x != origin.x || done.y != origin.y)) {
-                                            pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                        }
-                                        editScope.launch { stampRepo.update(done) }
+                                        editor.dragStamp = done
+                                        editor.updateStamp(
+                                            currentPage, done, origin, PageEdit(currentPageStamps, currentPageStrokes)
+                                        )
                                     } else if (!isTransform) {
                                         // double tap: toggles fit <-> 2.5x on the point touched. It is the
                                         // shortcut back to the whole page (and into a detail) without
@@ -1509,10 +1407,7 @@ fun PdfViewerScreen(
                                             val sym = currentActiveSymbol
                                             if (sym == null) {
                                                 // no tool: just deselect
-                                                selectedId = null
-                                                selectedStrokeIds = emptySet()
-                                                dragStamp = null
-                                                dragStrokes = null
+                                                editor.clearSelection()
                                             } else if (sheetHash != null &&
                                                 (aimed || totalPan.getDistance() <= touchSlopPx)
                                             ) {
@@ -1524,21 +1419,19 @@ fun PdfViewerScreen(
                                                 // instead of stamping again.
                                                 activeSymbol = null
                                                 openPanel = null
-                                                pushUndo(PageEdit(currentPageStamps, currentPageStrokes))
-                                                editScope.launch {
-                                                    val id = stampRepo.insert(
-                                                        Stamp(
-                                                            sheetHash = sheetHash,
-                                                            page = currentPage,
-                                                            symbol = sym.name,
-                                                            x = pos.x.coerceIn(0f, 1f),
-                                                            y = pos.y.coerceIn(0f, 1f),
-                                                            size = stampSizePxToFrac(placePx, currentHitFit),
-                                                            color = activeColor
-                                                        )
-                                                    )
-                                                    selectedId = id
-                                                }
+                                                editor.placeStamp(
+                                                    currentPage,
+                                                    Stamp(
+                                                        sheetHash = sheetHash,
+                                                        page = currentPage,
+                                                        symbol = sym.name,
+                                                        x = pos.x.coerceIn(0f, 1f),
+                                                        y = pos.y.coerceIn(0f, 1f),
+                                                        size = stampSizePxToFrac(placePx, currentHitFit),
+                                                        color = activeColor
+                                                    ),
+                                                    PageEdit(currentPageStamps, currentPageStrokes),
+                                                )
                                             }
                                         } else {
                                             val isSwipe = scale <= 1f &&
@@ -1587,7 +1480,7 @@ fun PdfViewerScreen(
                                     val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                                     val f = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
                                     scaleF = f
-                                    dragStrokes = rz.strokes.mapIndexed { i, st ->
+                                    editor.dragStrokes = rz.strokes.mapIndexed { i, st ->
                                         st.copy(
                                             points = encodePoints(
                                                 scalePoints(rz.ptsPx[i], rz.center, f)
@@ -1620,7 +1513,7 @@ fun PdfViewerScreen(
                                         )
                                     }
                                     movingStrokes = ns
-                                    dragStrokes = ns
+                                    editor.dragStrokes = ns
                                     prevCentroid = tracking.position
                                     event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                                     continue
@@ -1638,7 +1531,7 @@ fun PdfViewerScreen(
                                         y = (movingStamp.y + m.y).coerceIn(0f, 1f)
                                     )
                                     movingStamp = ns
-                                    dragStamp = ns
+                                    editor.dragStamp = ns
                                     prevCentroid = centroid(pressed)
                                     event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                                     continue
@@ -1782,14 +1675,14 @@ fun PdfViewerScreen(
                     layoutVersion = layoutVersion,
                     canEdit = canEdit,
                     inkDraws = inkDraws,
-                    dragStrokes = dragStrokes,
+                    dragStrokes = editor.dragStrokes,
                     inkPreview = inkPreview,
                     eraserTool = eraserTool,
                     activeColor = activeColor,
                     eraserPx = eraserPx,
                     penWidthPx = penWidthPx,
                     pageStamps = pageStamps,
-                    dragStamp = dragStamp,
+                    dragStamp = editor.dragStamp,
                     selectionRect = selectionRect,
                     strokeSelection = strokeSelection,
                     showSelection = showSelection,
@@ -1854,8 +1747,8 @@ fun PdfViewerScreen(
                     placePx = placePx,
                     defaultStampPx = defaultStampPx,
                     pageTouched = pageTouched,
-                    canUndo = undoStack.isNotEmpty(),
-                    canRedo = redoStack.isNotEmpty(),
+                    canUndo = editor.canUndo,
+                    canRedo = editor.canRedo,
                     canDelete = selectedStamp != null || selectedStrokes.isNotEmpty(),
                     onToolTap = onToolTap,
                     onUndo = onUndo,
@@ -1874,9 +1767,10 @@ fun PdfViewerScreen(
                         // the tint also recolours the selected stamp: forScore's
                         // selection tool changes colour, it does not resize
                         val current = selectedStamp
-                        if (current != null && current.color != argb) {
-                            pushUndo()
-                            editScope.launch { stampRepo.update(current.copy(color = argb)) }
+                        if (current != null) {
+                            editor.recolorStamp(
+                                currentPage, current, argb, PageEdit(pageStamps, pageStrokes)
+                            )
                         }
                     },
                     onHeight = { annBarPx = it },

@@ -24,6 +24,8 @@ class SoundFont private constructor(
     val instruments: List<Instrument>,
     /** Whether its samples are Ogg Vorbis streams (SF3) rather than 16-bit values (SoundFont 2). */
     val compressed: Boolean,
+    /** Every sample of the bank, in the file's order. */
+    val samples: List<Sample> = emptyList(),
 ) {
     /** One instrument of the bank: [program] (0-127) of [bank] (128 for drum kits). */
     data class Instrument(val bank: Int, val program: Int, val name: String) {
@@ -331,7 +333,7 @@ class SoundFont private constructor(
             val name = chunks["INAM"]?.let { (start, size) -> text(b, start, size) }.orEmpty()
             val offered = names.entries.sortedBy { it.key }
                 .map { (key, text) -> Instrument(key shr 7, key and 0x7F, text) }
-            return SoundFont(data, presets, name, offered, sampleList.any { it.compressed })
+            return SoundFont(data, presets, name, offered, sampleList.any { it.compressed }, sampleList)
         }
 
         private fun tag(b: ByteBuffer, at: Int) = String(ByteArray(4) { b.get(at + it) }, Charsets.ISO_8859_1)

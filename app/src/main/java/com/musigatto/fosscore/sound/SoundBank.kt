@@ -18,6 +18,15 @@ import java.nio.channels.FileChannel
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlin.math.min
 
 private const val LOG_TAG = "FOSScore-SoundBank"
@@ -37,9 +46,22 @@ data class PartSound(val bankId: String, val bank: Int, val program: Int)
 /** A bank file found in a folder of the device, not added yet: its file [name], [size] and [uri]. */
 data class BankFile(val name: String, val size: Long, val uri: Uri)
 
-/** One sound bank the app can play: [BUILT_IN], or one the user added ([size] bytes). */
-data class SoundBankEntry(val id: String, val name: String, val size: Long) {
+/**
+ * One sound bank the app can play: [BUILT_IN], or one the user added ([size] bytes). A bank in SF3
+ * has its samples [compressed]; [prepared] of its [samples] are decoded and kept on the device.
+ */
+data class SoundBankEntry(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val compressed: Boolean = false,
+    val samples: Int = 0,
+    val prepared: Int = 0,
+) {
     val builtIn: Boolean get() = id == SoundBank.BUILT_IN
+
+    /** Whether every sample plays at once: a SoundFont 2 bank, or an SF3 one prepared. */
+    val ready: Boolean get() = !compressed || prepared >= samples
 }
 
 /**
@@ -50,7 +72,10 @@ data class SoundBankEntry(val id: String, val name: String, val size: Long) {
  * copied into the app's files, then mapped the same way.
  *
  * A compressed sample is decoded by Android's own Vorbis decoder the first time a piece plays it,
- * then kept in the app's cache: the next pieces read it straight from there.
+ * then kept: the next pieces read it straight from there. Android's decoder is slow on an old
+ * tablet (a few times faster than the music), so a bank in SF3 the user adds is prepared once, in
+ * the background, when it is added ([prepare]): all its samples decoded and kept in the app's
+ * files, where the system does not clear them.
  */
 object SoundBank {
     /** The id of the bank that comes with the app. */
@@ -62,6 +87,13 @@ object SoundBank {
     // the decoded samples of this version of the built-in bank; a bank added has its own folder
     private const val CACHE = "soundbank/GeneralUser-GS-2.0.3"
     private const val ADDED_CACHE = "soundbank/added-"
+    private const val DECODED_SUFFIX = ".decoded"
+
+    // the threads that prepare a bank: a slow tablet has two cores
+    private const val PREPARE_THREADS = 2
+
+    // how often the progress of a preparation is told, in samples
+    private const val PROGRESS_EVERY = 8
 
     // the banks the user added, with a text file holding the name shown for each
     private const val FOLDER = "soundbanks"
@@ -72,6 +104,12 @@ object SoundBank {
 
     // the banks read so far, by id
     private val fonts = ConcurrentHashMap<String, SoundFont>()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val _preparing = MutableStateFlow<Map<String, Pair<Int, Int>>>(emptyMap())
+
+    /** The banks being prepared, by id: the samples done and the samples in all. */
+    val preparing: StateFlow<Map<String, Pair<Int, Int>>> = _preparing.asStateFlow()
 
     /** The built-in bank, read on the first call (a few tens of milliseconds): call it off the main thread. */
     fun load(context: Context): SoundFont = load(context, BUILT_IN)
@@ -94,9 +132,55 @@ object SoundBank {
     fun list(context: Context): List<SoundBankEntry> {
         val added = folder(context).listFiles { f -> f.isFile && isBank(f.name) }.orEmpty().map { f ->
             val id = f.nameWithoutExtension
-            SoundBankEntry(id, File(f.parentFile, id + NAME_SUFFIX).takeIf { it.isFile }?.readText()?.trim().orEmpty().ifBlank { f.name }, f.length())
+            val compressed = f.name.endsWith(".sf3", ignoreCase = true)
+            SoundBankEntry(
+                id = id,
+                name = File(f.parentFile, id + NAME_SUFFIX).takeIf { it.isFile }?.readText()?.trim().orEmpty().ifBlank { f.name },
+                size = f.length(),
+                compressed = compressed,
+                samples = if (compressed) load(context, id).samples.count { it.compressed } else 0,
+                prepared = if (compressed) decodedFolder(context, id).list { _, name -> name.endsWith(".pcm") }?.size ?: 0 else 0,
+            )
         }.sortedBy { it.name.lowercase() }
         return listOf(SoundBankEntry(BUILT_IN, BUILT_IN_NAME, builtInSize(context))) + added
+    }
+
+    /**
+     * Decodes every sample of bank [id] not decoded yet and keeps them, in the background, the
+     * progress in [preparing]. Samples already there are skipped: a preparation stopped (the app
+     * closed) goes on where it was. Does nothing while the bank is being prepared already.
+     */
+    fun prepare(context: Context, id: String) {
+        if (id == BUILT_IN || _preparing.value.containsKey(id)) return
+        val app = context.applicationContext
+        _preparing.update { it + (id to (0 to 0)) }
+        scope.launch {
+            try {
+                val font = load(app, id)
+                val wanted = font.samples.filter { it.compressed }
+                val queue = ConcurrentLinkedQueue(wanted)
+                val done = AtomicInteger()
+                val started = System.nanoTime()
+                val workers = List(PREPARE_THREADS) {
+                    launch {
+                        while (true) {
+                            val sample = queue.poll() ?: break
+                            // decoded and kept on the device, not in memory: the piece reads it later
+                            font.read(sample)
+                            val n = done.incrementAndGet()
+                            if (n % PROGRESS_EVERY == 0 || n == wanted.size) _preparing.update { it + (id to (n to wanted.size)) }
+                        }
+                    }
+                }
+                workers.forEach { it.join() }
+                Log.i(LOG_TAG, "bank $id prepared: ${wanted.size} samples in ${(System.nanoTime() - started) / 1_000_000_000} s")
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "bank $id not prepared: ${e.message}", e)
+            } finally {
+                releaseDecoders()
+                _preparing.update { it - id }
+            }
+        }
     }
 
     /**
@@ -166,10 +250,14 @@ object SoundBank {
         if (id == BUILT_IN) return
         fonts.remove(id)
         folder(context).listFiles { f -> f.nameWithoutExtension == id }.orEmpty().forEach { it.delete() }
+        decodedFolder(context, id).deleteRecursively()
         File(context.cacheDir, ADDED_CACHE + id).deleteRecursively()
     }
 
     private fun folder(context: Context) = File(context.filesDir, FOLDER)
+
+    // the decoded samples of a bank the user added: with the bank, not in the cache the system clears
+    private fun decodedFolder(context: Context, id: String) = File(folder(context), id + DECODED_SUFFIX)
 
     private fun isBank(name: String) = name.endsWith(".sf2", ignoreCase = true) || name.endsWith(".sf3", ignoreCase = true)
 
@@ -190,7 +278,7 @@ object SoundBank {
     private fun readAdded(context: Context, id: String): SoundFont? =
         folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }?.firstOrNull()?.let { file ->
             runCatching { map(file) }.onFailure { Log.w(LOG_TAG, "bank $id not read: ${it.message}") }.getOrNull()
-        }?.also { it.decoder = decoderFor(File(context.cacheDir, ADDED_CACHE + id)) }
+        }?.also { it.decoder = decoderFor(decodedFolder(context, id)) }
 
     // the whole file mapped: its samples are read in place
     private fun map(file: File): SoundFont = RandomAccessFile(file, "r").use { f ->

@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -163,6 +164,28 @@ private fun LanguageSection() {
 }
 
 /**
+ * Under a bank in SF3, how far its sounds are prepared: being prepared (with how much is done),
+ * ready, or to prepare (a preparation stopped when the app closed), with a button to go on.
+ */
+@Composable
+private fun BankState(bank: SoundBankEntry, progress: Pair<Int, Int>?, onPrepare: () -> Unit) {
+    if (!bank.compressed) return
+    val style = MaterialTheme.typography.bodySmall
+    when {
+        progress != null -> {
+            val (done, total) = progress
+            val percent = if (total > 0) done * 100 / total else 0
+            Text(stringResource(R.string.sound_bank_preparing, percent), style = style, color = MaterialTheme.colorScheme.primary)
+        }
+        bank.ready -> Text(stringResource(R.string.sound_bank_ready), style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.sound_bank_to_prepare, bank.prepared, bank.samples), style = style, color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onPrepare) { Text(stringResource(R.string.sound_bank_prepare)) }
+        }
+    }
+}
+
+/**
  * The sound banks: the default one picked with its radio button, the ones added deleted with
  * their button (the built-in one stays), and more added from a folder of the device. Android's
  * file picker filters by type, not by extension, and knows no type for .sf2 and .sf3: so the user
@@ -190,7 +213,9 @@ private fun SoundBanks() {
         // a default bank that is gone falls back to the built-in one
         if (banks.none { it.id == chosen }) chosen = SoundBank.BUILT_IN
     }
-    LaunchedEffect(Unit) { reload() }
+    // the banks being prepared, and their progress; the list is read again when one starts or ends
+    val preparing by SoundBank.preparing.collectAsState()
+    LaunchedEffect(preparing.keys) { reload() }
 
     suspend fun browse(tree: Uri) {
         found = withContext(Dispatchers.IO) {
@@ -216,6 +241,8 @@ private fun SoundBanks() {
             val added = withContext(Dispatchers.IO) { SoundBank.add(app, file.uri) }
             adding = false
             notRead = added == null
+            // a bank in SF3 is prepared at once, in the background: its pieces then play at once
+            added?.let { SoundBank.prepare(app, it.id) }
             reload()
         }
     }
@@ -249,6 +276,7 @@ private fun SoundBanks() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                BankState(bank, preparing[bank.id]) { SoundBank.prepare(app, bank.id) }
             }
             if (!bank.builtIn) {
                 TextButton(onClick = { deleting = bank }) { Text(stringResource(R.string.sound_bank_delete)) }

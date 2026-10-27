@@ -26,7 +26,10 @@ class SoundFont private constructor(
     val compressed: Boolean,
 ) {
     /** One instrument of the bank: [program] (0-127) of [bank] (128 for drum kits). */
-    data class Instrument(val bank: Int, val program: Int, val name: String)
+    data class Instrument(val bank: Int, val program: Int, val name: String) {
+        /** Whether it is a drum kit rather than a melodic instrument. */
+        val kit: Boolean get() = isKitBank(bank)
+    }
 
     /**
      * Turns sample [index]'s Ogg Vorbis stream into 16-bit values (SF3 banks); without it, their
@@ -159,6 +162,12 @@ class SoundFont private constructor(
     companion object {
         /** The drums: bank 128, as General MIDI channel 10 plays. */
         const val DRUM_BANK = 128
+
+        // General MIDI 2's bank of drum kits, which banks made for it (GeneralUser GS) have too
+        private const val GM2_KIT_BANK = 120
+
+        /** Whether [bank] holds drum kits: 128, as SoundFont 2 says, or General MIDI 2's 120. */
+        fun isKitBank(bank: Int) = bank == DRUM_BANK || bank == GM2_KIT_BANK
 
         /** The frames kept after every sample's end. */
         const val GUARD_FRAMES = 46

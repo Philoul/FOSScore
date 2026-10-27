@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -163,11 +164,13 @@ private fun PartSoundDialog(
     val loaded by produceState<Pair<String, List<SoundFont.Instrument>>?>(null, chosen.bankId) {
         value = chosen.bankId to choices.instrumentsOf(chosen.bankId)
     }
-    val instruments = loaded?.takeIf { it.first == chosen.bankId }?.second.orEmpty()
+    // the bank before stays on screen until the new one is read: the list is replaced, not emptied
+    val instruments = loaded?.second.orEmpty()
+    val shownBank = loaded?.first ?: chosen.bankId
     val families = stringArrayResource(R.array.gm_families)
     val drumsTitle = stringResource(R.string.part_sound_drums)
     val lines = remember(instruments) {
-        val (melodic, drums) = instruments.partition { it.bank != SoundFont.DRUM_BANK }
+        val (drums, melodic) = instruments.partition { it.kit }
         buildList {
             var family = -1
             for (i in melodic.sortedWith(compareBy({ it.program }, { it.bank }))) {
@@ -178,7 +181,7 @@ private fun PartSoundDialog(
                 add(Line.Sound(i, "${i.program + 1}  ${i.name}"))
             }
             if (drums.isNotEmpty()) add(Line.Family(drumsTitle))
-            drums.forEach { add(Line.Sound(it, it.name)) }
+            drums.sortedWith(compareBy({ it.program }, { -it.bank })).forEach { add(Line.Sound(it, it.name)) }
         }
     }
 
@@ -189,6 +192,7 @@ private fun PartSoundDialog(
 
     val list = rememberLazyListState()
     LaunchedEffect(lines) {
+        if (loaded?.first != chosen.bankId) return@LaunchedEffect
         val at = lines.indexOfFirst { it is Line.Sound && PartSound(chosen.bankId, it.instrument.bank, it.instrument.program) == chosen }
         if (at >= 0) list.scrollToItem((at - LINES_ABOVE).coerceAtLeast(0))
     }
@@ -213,7 +217,8 @@ private fun PartSoundDialog(
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                LazyColumn(state = list, modifier = Modifier.heightIn(max = INSTRUMENTS_HEIGHT_DP.dp)) {
+                // one height whatever the bank: the window does not move when the list changes
+                LazyColumn(state = list, modifier = Modifier.height(INSTRUMENTS_HEIGHT_DP.dp)) {
                     items(lines.size) { k ->
                         when (val line = lines[k]) {
                             is Line.Family -> Text(
@@ -223,7 +228,7 @@ private fun PartSoundDialog(
                                 modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
                             )
                             is Line.Sound -> {
-                                val sound = PartSound(chosen.bankId, line.instrument.bank, line.instrument.program)
+                                val sound = PartSound(shownBank, line.instrument.bank, line.instrument.program)
                                 Choice(line.label, sound == chosen, sound == score) { choose(sound) }
                             }
                         }
@@ -241,10 +246,11 @@ private fun PartSoundDialog(
  * program in its first bank (0, or the drum kits'), or the first instrument of the same kind.
  */
 internal fun sameIn(bankId: String, sound: PartSound, list: List<SoundFont.Instrument>): PartSound? {
-    val drums = sound.bank == SoundFont.DRUM_BANK
+    val drums = SoundFont.isKitBank(sound.bank)
     val same = list.firstOrNull { it.bank == sound.bank && it.program == sound.program }
         ?: list.firstOrNull { it.bank == (if (drums) SoundFont.DRUM_BANK else 0) && it.program == sound.program }
-        ?: list.firstOrNull { (it.bank == SoundFont.DRUM_BANK) == drums }
+        ?: list.firstOrNull { it.kit == drums && it.program == sound.program }
+        ?: list.firstOrNull { it.kit == drums }
         ?: return null
     return PartSound(bankId, same.bank, same.program)
 }

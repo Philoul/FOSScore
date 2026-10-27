@@ -78,6 +78,8 @@ class SynthTest {
         assertTrue(bank.compressed)
         assertTrue(bank.instruments.any { it.bank == 0 && it.program == 0 })
         assertTrue(bank.instruments.any { it.bank == SoundFont.DRUM_BANK })
+        // its General MIDI 2 kits are kits, not pianos
+        assertTrue(bank.instruments.filter { it.bank == 120 }.all { it.kit })
     }
 
     @Test

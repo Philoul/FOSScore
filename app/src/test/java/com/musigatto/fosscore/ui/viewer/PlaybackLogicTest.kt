@@ -4,6 +4,7 @@ import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.sound.PartSound
 import com.musigatto.fosscore.sound.SoundFont
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackLogicTest {
@@ -102,5 +103,8 @@ class PlaybackLogicTest {
         assertEquals(PartSound("b", 0, 52), sameIn("b", PartSound("a", 16, 52), other))
         assertEquals(PartSound("b", 0, 0), sameIn("b", PartSound("a", 0, 40), other))
         assertEquals(PartSound("b", SoundFont.DRUM_BANK, 0), sameIn("b", PartSound("a", SoundFont.DRUM_BANK, 25), other))
+        // General MIDI 2's kits (bank 120) are kits too, never a piano
+        assertEquals(PartSound("b", SoundFont.DRUM_BANK, 0), sameIn("b", PartSound("a", 120, 0), other))
+        assertTrue(SoundFont.Instrument(120, 0, "Standard 1 Kit").kit)
     }
 }

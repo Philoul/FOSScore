@@ -1,6 +1,8 @@
 package com.musigatto.fosscore.ui.viewer
 
 import com.musigatto.fosscore.musicxml.Part
+import com.musigatto.fosscore.sound.PartSound
+import com.musigatto.fosscore.sound.SoundFont
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -79,5 +81,13 @@ class PlaybackLogicTest {
         // the bar then follows the music without sound
         val parts = listOf(Part("P1", "Piano"))
         assertEquals(emptySet<String>(), heardParts(emptySet(), setOf("P1"), parts))
+    }
+
+    @Test
+    fun aPartPlaysTheInstrumentItsScoreNames() {
+        // MusicXML numbers programs from 1, MIDI from 0; a part that names none is a piano
+        assertEquals(PartSound("bank", 0, 52), Part("P1", "Choir", program = 53).scoreSound("bank"))
+        assertEquals(PartSound("bank", 0, 0), Part("P2", "Piano").scoreSound("bank"))
+        assertEquals(PartSound("bank", SoundFont.DRUM_BANK, 0), Part("P3", "Drums", program = 1, drums = true).scoreSound("bank"))
     }
 }

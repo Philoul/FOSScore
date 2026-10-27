@@ -223,7 +223,7 @@ fun PlaybackOptionsOverlay(
                     val name = part.name.ifBlank { part.id }
                     // every part can be muted: the bar then follows the music without sound
                     OptionRow(name, isHeard, Role.Checkbox) { onHeard(part.id, !isHeard) }
-                    PartSoundButton(name, partSounds[part.id], soundChoices) { onPartSound(part.id, it) }
+                    PartSoundButton(part, partSounds[part.id], soundChoices) { onPartSound(part.id, it) }
                 }
             }
         }

@@ -232,10 +232,29 @@
     <string name="sound_bank_delete">Supprimer</string>
     <string name="sound_bank_delete_title">Supprimer %1$s ?</string>
     <string name="sound_bank_delete_text">Les parties qui la jouent reviennent à la banque par défaut.</string>
-    <string name="part_sound_as_written">Comme dans la partition</string>
     <string name="part_sound_title">Son de %1$s</string>
     <string name="part_sound_bank">Banque</string>
     <string name="part_sound_drums">Batteries</string>
     <string name="prefs_library">Bibliothèque</string>
     <string name="prefs_library_summary">Exporter ou importer une copie de toute la bibliothèque</string>
+    <string name="part_sound_from_score">de la partition</string>
+    <!-- the 16 families of General MIDI, 8 programs each, in order -->
+    <string-array name="gm_families">
+        <item>Pianos</item>
+        <item>Percussions chromatiques</item>
+        <item>Orgues</item>
+        <item>Guitares</item>
+        <item>Basses</item>
+        <item>Cordes</item>
+        <item>Ensembles</item>
+        <item>Cuivres</item>
+        <item>Anches</item>
+        <item>Flûtes</item>
+        <item>Synthés solo</item>
+        <item>Nappes de synthé</item>
+        <item>Effets de synthé</item>
+        <item>Instruments du monde</item>
+        <item>Percussions</item>
+        <item>Effets sonores</item>
+    </string-array>
 </resources>

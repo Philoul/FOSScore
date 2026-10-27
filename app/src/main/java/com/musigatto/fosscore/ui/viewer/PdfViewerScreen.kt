@@ -12,36 +12,26 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,28 +49,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
@@ -89,7 +67,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -97,21 +74,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.createBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.metronome.BarPages
-import com.musigatto.fosscore.metronome.MAX_BPM
-import com.musigatto.fosscore.metronome.MIN_BPM
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.musicxml.LayoutSpec
@@ -138,13 +110,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
-import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
-import android.graphics.Rect as AndroidRect
-import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 
 // The render (memory) cap now lives in MuPdfDoc.MAX_RENDER_PIXELS: MuPDF draws at whatever
 // resolution we ask for, so zoom looks sharp instead of slightly soft.
@@ -355,13 +323,16 @@ fun PdfViewerScreen(
     val rendererLock = remember(pdfUri) { Mutex() }
 
     val branch = PageFlow(currentPage, halfTurned, halfEnabled, twoUp, isLandscape, pageCount)
+    // two pages on screen at once: the reading modes scale the whole viewport, a single page
+    // scales its own content instead
+    val spread = branch.showTwoUp || (branch.showHalf && halfTurned)
 
     // "Página 5 de 9" / "Páginas 3-4 de 9". Empty while the PDF still has no pages, so the pill
     // never says "Página 1 de 0".
     val pageLabel = visiblePageRange(
         currentPage,
         pageCount,
-        branch.showTwoUp || (branch.showHalf && halfTurned),
+        spread,
     ).let { r ->
         when {
             r.isEmpty() -> ""
@@ -415,7 +386,7 @@ fun PdfViewerScreen(
     val currentBase by rememberUpdatedState(Offset(pageFit.left, pageFit.top))
     // the reading modes (two-up, half page) scale the whole viewport; a single page scales its
     // content.
-    val currentSpread by rememberUpdatedState(branch.showTwoUp || (branch.showHalf && halfTurned))
+    val currentSpread by rememberUpdatedState(spread)
 
     val selectedStamp = pageStamps.firstOrNull { it.id == editor.selectedId }
     val selectedStrokes = inkStrokes.filter { it.id in editor.selectedStrokeIds }
@@ -852,7 +823,6 @@ fun PdfViewerScreen(
         if (!pages.known) return@LaunchedEffect
         val target = pages.pageOf(bar)
         val aheadPage = pages.pageOf(ahead)
-        val spread = branch.showTwoUp || (branch.showHalf && halfTurned)
         val onScreen = target == currentPage || (spread && target == currentPage + 1)
         val f = branch.follow(target, pages.inLowerHalf(ahead), onScreen, aheadPage)
         if (f.page > currentPage || (f.page == currentPage && f.halfTurned && !halfTurned)) {
@@ -904,12 +874,11 @@ fun PdfViewerScreen(
             branch.showHalf && halfTurned -> listOf(currentPage, currentPage + 1).filter { it < pageCount }
             else -> listOf(currentPage)
         }
-        val isSpread = branch.showTwoUp || (branch.showHalf && halfTurned)
         // Single page: the draw slot is the fit × zoom step (the bitmap is shown 1:1 on screen, the
         // GPU rescales nothing). Reading modes (two-up, half page): the slot is the viewport and
         // the layer keeps scaling (they are for reading, not for zooming in).
         val spreadSlot =
-            if (isSpread) Pair(if (branch.showTwoUp) viewport.width / 2 else viewport.width, viewport.height)
+            if (spread) Pair(if (branch.showTwoUp) viewport.width / 2 else viewport.width, viewport.height)
             else null
         // read Compose state BEFORE going into the draw dispatcher
         val rs = renderScale
@@ -970,7 +939,7 @@ fun PdfViewerScreen(
         bitmaps[currentPage] != null,
     ) {
         val r = pageSource ?: return@LaunchedEffect
-        if (branch.showTwoUp || (branch.showHalf && halfTurned)) return@LaunchedEffect
+        if (spread) return@LaunchedEffect
         if (renderScale != 1f || viewport == IntSize.Zero) return@LaunchedEffect
         delay(RENDER_SETTLE_MS.milliseconds)
         val vpW = viewport.width.toFloat()
@@ -1087,7 +1056,7 @@ fun PdfViewerScreen(
                     page = currentPage,
                     sheetHash = sheetHash,
                     pageFit = pageFit,
-                    spread = branch.showTwoUp || (branch.showHalf && halfTurned),
+                    spread = spread,
                     stamps = pageStamps,
                     strokes = pageStrokes,
                     inkStrokes = inkStrokes,
@@ -1203,8 +1172,9 @@ fun PdfViewerScreen(
                     showSelection = showSelection,
                     loupeAt = loupeAt,
                     placePx = placePx,
-                    spreadMod = spreadMod,
-                    gestureMod = gestureMod,
+                    // in the reading modes the whole viewport is scaled; a single page scales its
+                    // own content, so the zoom layer is not used
+                    modifier = if (spread) spreadMod.then(gestureMod) else gestureMod,
                 )
             } else {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))

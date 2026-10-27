@@ -30,8 +30,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.metronome.BarPages
-import com.musigatto.fosscore.metronome.MAX_BPM
-import com.musigatto.fosscore.metronome.MIN_BPM
 import com.musigatto.fosscore.metronome.MetronomeSettings
 import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.score.MusicXmlPages

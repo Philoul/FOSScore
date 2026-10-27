@@ -90,6 +90,19 @@ private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Floa
     )
 }
 
+// ink, live ink and the selection box all draw in page coordinates: this puts the page's fit rect
+// and its zoom into the DrawScope transform
+private inline fun DrawScope.inPage(
+    pageFit: RectPx,
+    offsetX: Float,
+    offsetY: Float,
+    zoom: Float,
+    block: DrawScope.() -> Unit
+) = withTransform({
+    translate(pageFit.left + offsetX, pageFit.top + offsetY)
+    scale(zoom, zoom, pivot = Offset.Zero)
+}, block)
+
 /**
  * The page itself: paper, playback cursor, half-page cut line, ink, stamps, selection and the loupe.
  * It only draws what it is given; the reading modes and the fit rect are decided by the viewer.
@@ -132,12 +145,11 @@ internal fun PageCanvas(
     showSelection: Boolean,
     loupeAt: Offset?,
     placePx: Float,
-    spreadMod: Modifier,
-    gestureMod: Modifier,
+    modifier: Modifier = Modifier,
 ) {
     when {
         branch.showTwoUp -> {
-            Row(modifier = spreadMod.then(gestureMod)) {
+            Row(modifier = modifier) {
                 for (index in listOf(currentPage, currentPage + 1)) {
                     val bmp = bitmaps[index] ?: continue
                     Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -184,7 +196,7 @@ internal fun PageCanvas(
                 canvas.drawLine(0f, lower.toFloat(), w.toFloat(), lower.toFloat(), paint)
                 out
             }
-            Box(spreadMod.then(gestureMod)) {
+            Box(modifier) {
                 Image(
                     bitmap = combined.asImageBitmap(),
                     contentDescription = null,
@@ -260,7 +272,7 @@ internal fun PageCanvas(
                             style = DrawStroke(width = 2.dp.toPx())
                         )
                     }
-                    .then(gestureMod)) {
+                    .then(modifier)) {
                         Image(
                             bitmap = bmp.asImageBitmap(),
                             contentDescription = stringResource(
@@ -321,10 +333,7 @@ internal fun PageCanvas(
                         // committed ink: paths already built (inkDraws), so this canvas
                         // only re-issues them when something redraws the page
                         Canvas(modifier = Modifier.fillMaxSize()) {
-                            withTransform({
-                                translate(pageFit.left + offsetX(), pageFit.top + offsetY())
-                                scale(scale(), scale(), pivot = Offset.Zero)
-                            }) {
+                            inPage(pageFit, offsetX(), offsetY(), scale()) {
                                 for (d in inkDraws) {
                                     // the ink being moved/stretched is drawn only at its
                                     // live position (otherwise two copies = a ghost)
@@ -344,10 +353,7 @@ internal fun PageCanvas(
                         // live ink (the stroke being written, the eraser trail, the word
                         // being moved) in its own canvas: a pen point only redraws this one
                         Canvas(modifier = Modifier.fillMaxSize()) {
-                            withTransform({
-                                translate(pageFit.left + offsetX(), pageFit.top + offsetY())
-                                scale(scale(), scale(), pivot = Offset.Zero)
-                            }) {
+                            inPage(pageFit, offsetX(), offsetY(), scale()) {
                                 dragStrokes?.forEach { ds ->
                                     drawInkPath(
                                         strokePointsPx(ds, hitFit),
@@ -417,10 +423,7 @@ internal fun PageCanvas(
                             val hr = handleRadiusPx(hitFit)
                             val frame = Color(0xFF00A0FF)
                             Canvas(modifier = Modifier.fillMaxSize()) {
-                                withTransform({
-                                    translate(pageFit.left + offsetX(), pageFit.top + offsetY())
-                                    scale(scale(), scale(), pivot = Offset.Zero)
-                                }) {
+                                inPage(pageFit, offsetX(), offsetY(), scale()) {
                                     drawRect(
                                         color = frame,
                                         topLeft = Offset(sel.left, sel.top),

@@ -100,8 +100,8 @@ fun MetronomeBand(
     onTap: () -> Unit,
     onSettings: () -> Unit,
     onClose: () -> Unit,
-    onPlayback: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onPlayback: (() -> Unit)? = null,
 ) = BoxWithConstraints(modifier.fillMaxWidth()) {
     val wide = maxWidth >= BAND_WITH_TEMPO_NAME
     val bpm by rememberUpdatedState(settings.bpm)
@@ -391,7 +391,7 @@ private fun MiniButton(glyph: String, label: String, enabled: Boolean, onClick: 
     }
 }
 
-// a check box and its label, as one target
+// a checkbox and its label, as one target
 @Composable
 private fun CheckLabel(label: String, checked: Boolean, onToggle: () -> Unit) {
     Row(

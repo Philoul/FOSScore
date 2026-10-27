@@ -60,6 +60,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -290,6 +291,16 @@ fun PdfViewerScreen(
     val heardPicked by playbackVm.heard.collectAsState()
     val playbackFailed by playbackVm.failed.collectAsState()
     val aheadNotes by playbackVm.ahead.collectAsState()
+    // another score opened, or the viewer closed: this score's music stops (its ViewModel stays
+    // in memory with the screen, and its player would go on playing)
+    DisposableEffect(playbackVm) { onDispose { playbackVm.stop() } }
+    // the music heard, read from the audio clock at every frame while it plays: the playback bar
+    // glides with it (only the bar is drawn again, nothing is composed again)
+    var playQuarters by remember { mutableStateOf<Double?>(null) }
+    LaunchedEffect(playState, cursorNotes) {
+        playQuarters = playbackVm.positionNow()
+        if (playState == PlayState.PLAYING) while (true) withFrameNanos { playQuarters = playbackVm.positionNow() }
+    }
 
     // the metronome: its band, its clicks and the page turns it drives (MetronomeViewModel)
     val metronomeVm: MetronomeViewModel = viewModel(
@@ -1707,8 +1718,10 @@ fun PdfViewerScreen(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                     val geo = (pageSource as? MusicXmlPages)?.geometry(index)
-                                    if (geo != null && cursorNotes.isNotEmpty()) {
-                                        FitPlaybackCursor(geo, cursorNotes, bmp.width, bmp.height, Modifier.fillMaxSize())
+                                    val pb = playbackVm.currentPlayback
+                                    if (geo != null && pb != null) {
+                                        val path = remember(geo, pb) { BarPath(pb, geo) }
+                                        FitPlaybackBar(path, { playQuarters }, bmp.width, bmp.height, Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -1750,14 +1763,23 @@ fun PdfViewerScreen(
                                 colorFilter = if (invert) INVERT_FILTER else null,
                                 modifier = Modifier.fillMaxSize()
                             )
-                            // the cursor, on whichever part the music is in
+                            // the playback bar, on whichever part the music is in
                             val pages = pageSource as? MusicXmlPages
-                            if (pages != null && cursorNotes.isNotEmpty()) {
+                            val pb = playbackVm.currentPlayback
+                            if (pages != null && pb != null) {
+                                // a line of music is on the part its middle is in
+                                fun middle(s: BarSpot) = (s.top + s.bottom) / 2
                                 pages.geometry(currentPage + 1)?.let { geo ->
-                                    FitPlaybackCursor(geo, cursorNotes.filter { above(geo, it, split.upper) }, w, h, Modifier.fillMaxSize())
+                                    val path = remember(geo, pb) { BarPath(pb, geo) }
+                                    FitPlaybackBar(path, { playQuarters }, w, h, Modifier.fillMaxSize(), keep = { s ->
+                                        pageHeight?.let { middle(s) < it(geo) * split.upper } ?: true
+                                    })
                                 }
                                 pages.geometry(currentPage)?.let { geo ->
-                                    FitPlaybackCursor(geo, cursorNotes.filter { !above(geo, it, split.lower) }, w, h, Modifier.fillMaxSize())
+                                    val path = remember(geo, pb) { BarPath(pb, geo) }
+                                    FitPlaybackBar(path, { playQuarters }, w, h, Modifier.fillMaxSize(), keep = { s ->
+                                        pageHeight?.let { middle(s) >= it(geo) * split.lower } ?: true
+                                    })
                                 }
                             }
                         }
@@ -1846,14 +1868,14 @@ fun PdfViewerScreen(
                                                 translationY = pageFit.top + offsetY
                                             }
                                     )
-                                // the playback cursor, at the page's place and zoom
+                                // the playback bar, at the page's place and zoom
                                 val cursorGeo = (pageSource as? MusicXmlPages)?.geometry(currentPage)
-                                if (cursorGeo != null && cursorNotes.isNotEmpty() && bitmaps[currentPage] != null) {
+                                val cursorPb = playbackVm.currentPlayback
+                                if (cursorGeo != null && cursorPb != null && bitmaps[currentPage] != null) {
+                                    val path = remember(cursorGeo, cursorPb) { BarPath(cursorPb, cursorGeo) }
                                     Canvas(modifier = Modifier.fillMaxSize()) {
-                                        drawPlaybackCursor(
-                                            cursorGeo, cursorNotes, pageFit.left + offsetX, pageFit.top + offsetY,
-                                            pageFit.width * scale
-                                        )
+                                        val spot = playQuarters?.let { path.at(it) } ?: return@Canvas
+                                        drawPlaybackBar(spot, path.width, pageFit.left + offsetX, pageFit.top + offsetY, pageFit.width * scale)
                                     }
                                 }
                                 // in half page, a thin dotted line where the next turn cuts this page;

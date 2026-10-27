@@ -118,6 +118,8 @@ class RenderingTextTest {
         assertEquals(500f, head.top, 0.01f)
         assertEquals(1220f, head.bottom, 0.01f)
         assertEquals(180f, head.space, 0.01f)
+        // the bar goes on past the line's last notes to where its staves end
+        assertEquals(900f + 400f, head.lineEnd, 0.01f)
         assertNull(page.head("n2"))
     }
 }

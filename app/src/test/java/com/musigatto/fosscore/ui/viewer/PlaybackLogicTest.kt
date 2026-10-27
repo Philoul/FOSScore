@@ -90,4 +90,17 @@ class PlaybackLogicTest {
         assertEquals(PartSound("bank", 0, 0), Part("P2", "Piano").scoreSound("bank"))
         assertEquals(PartSound("bank", SoundFont.DRUM_BANK, 0), Part("P3", "Drums", program = 1, drums = true).scoreSound("bank"))
     }
+
+    @Test
+    fun anotherBankKeepsTheSameInstrument() {
+        val other = listOf(
+            SoundFont.Instrument(0, 0, "Piano"), SoundFont.Instrument(0, 52, "Choir"),
+            SoundFont.Instrument(8, 52, "Choir 2"), SoundFont.Instrument(SoundFont.DRUM_BANK, 0, "Standard"),
+        )
+        // the same bank and program, else the program in bank 0, else the first of its kind
+        assertEquals(PartSound("b", 8, 52), sameIn("b", PartSound("a", 8, 52), other))
+        assertEquals(PartSound("b", 0, 52), sameIn("b", PartSound("a", 16, 52), other))
+        assertEquals(PartSound("b", 0, 0), sameIn("b", PartSound("a", 0, 40), other))
+        assertEquals(PartSound("b", SoundFont.DRUM_BANK, 0), sameIn("b", PartSound("a", SoundFont.DRUM_BANK, 25), other))
+    }
 }

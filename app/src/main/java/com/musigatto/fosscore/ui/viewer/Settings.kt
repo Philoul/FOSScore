@@ -99,6 +99,7 @@ object Settings {
     private const val KEY_PLAY_TRANSPOSE = "play_transpose_"
     private const val KEY_HEARD = "heard_"
     private const val KEY_SOUND_BANK = "sound_bank"
+    private const val KEY_BANK_FOLDER = "sound_bank_folder"
     private const val KEY_PART_SOUNDS = "part_sounds_"
     // between the fields of a part's sound in its saved text: never in a part id
     private const val SOUND_FIELDS = '\t'
@@ -246,6 +247,13 @@ object Settings {
 
     fun setSoundBank(context: Context, id: String) {
         context.prefs().edit { putString(KEY_SOUND_BANK, id) }
+    }
+
+    /** The folder the sound banks were last added from (a folder picker's uri), or null. */
+    fun bankFolder(context: Context): String? = context.prefs().getString(KEY_BANK_FOLDER, null)
+
+    fun setBankFolder(context: Context, uri: String) {
+        context.prefs().edit { putString(KEY_BANK_FOLDER, uri) }
     }
 
     /** The sound chosen for each part, by part id; a part left out plays the file's. Per score. */

@@ -163,6 +163,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var playback: Playback? = null
     // the music the player plays now, to set the parts' sounds on its channels
     private var song: MidiSong? = null
+    // a part's sound the user is trying, not saved: the part, and its sound (null: the file's)
+    private var trying: Pair<String, PartSound?>? = null
     // the last playback of this layout, kept after a stop: ⏮ can still show where it goes
     private var lastPlayback: Playback? = null
     private var starting: Job? = null
@@ -289,10 +291,26 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
      * when the music plays.
      */
     fun setPartSound(id: String, sound: PartSound?) {
+        trying = null
         val next = if (sound == null) _partSounds.value - id else _partSounds.value + (id to sound)
-        if (next == _partSounds.value) return
-        _partSounds.value = next
-        Settings.setPartSounds(context, score, next)
+        if (next != _partSounds.value) {
+            _partSounds.value = next
+            Settings.setPartSounds(context, score, next)
+        }
+        soundsChanged()
+    }
+
+    /**
+     * Part [id] heard with [sound] (null: the instrument its file gives it) while the user tries
+     * sounds, nothing saved; [setPartSound] keeps one, and a null [id] goes back to the saved ones.
+     */
+    fun tryPartSound(id: String?, sound: PartSound?) {
+        trying = id?.let { it to sound }
+        soundsChanged()
+    }
+
+    // the parts' sounds on the player's channels, from its next notes on
+    private fun soundsChanged() {
         val pb = playback ?: return
         val playing = song ?: return
         viewModelScope.launch {
@@ -382,7 +400,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     // its tracks. Reads the banks it needs: off the main thread.
     private fun channelSounds(pb: Playback, music: MidiSong): List<ChannelSound?> {
         val out = arrayOfNulls<ChannelSound>(MIDI_CHANNELS)
-        for ((part, sound) in _partSounds.value) {
+        val tried = trying
+        val sounds = if (tried == null) _partSounds.value
+        else tried.second?.let { _partSounds.value + (tried.first to it) } ?: (_partSounds.value - tried.first)
+        for ((part, sound) in sounds) {
             // a bank deleted since: the same instrument from the default bank
             val font = SoundBank.load(context, sound.bankId.takeIf { SoundBank.has(context, it) } ?: Settings.soundBank(context))
             for (track in pb.partTracks[part].orEmpty()) {

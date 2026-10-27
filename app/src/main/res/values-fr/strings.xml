@@ -257,4 +257,8 @@
         <item>Percussions</item>
         <item>Effets sonores</item>
     </string-array>
+    <string name="part_sound_original">D’origine</string>
+    <string name="sound_bank_found_title">Banques de sons dans %1$s</string>
+    <string name="sound_bank_none_found">Aucun fichier SF2 ou SF3 dans ce dossier.</string>
+    <string name="sound_bank_other_folder">Autre dossier…</string>
 </resources>

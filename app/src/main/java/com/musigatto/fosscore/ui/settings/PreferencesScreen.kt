@@ -1,6 +1,8 @@
 package com.musigatto.fosscore.ui.settings
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -42,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.sound.BankFile
 import com.musigatto.fosscore.sound.SoundBank
 import com.musigatto.fosscore.sound.SoundBankEntry
 import com.musigatto.fosscore.ui.viewer.AppLanguage
@@ -49,6 +54,9 @@ import com.musigatto.fosscore.ui.viewer.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+// the list of the banks found in a folder: tall enough for a few, short enough for a phone
+private const val FOUND_HEIGHT_DP = 320
 
 // the widest the preferences get on a tablet: lines longer than this are hard to read
 private const val MAX_WIDTH_DP = 640
@@ -156,7 +164,9 @@ private fun LanguageSection() {
 
 /**
  * The sound banks: the default one picked with its radio button, the ones added deleted with
- * their button (the built-in one stays), and one more added from the device's files.
+ * their button (the built-in one stays), and more added from a folder of the device. Android's
+ * file picker filters by type, not by extension, and knows no type for .sf2 and .sf3: so the user
+ * picks the folder, and the app lists its SF2 and SF3 files only. The folder is kept for next time.
  */
 @Composable
 private fun SoundBanks() {
@@ -168,6 +178,10 @@ private fun SoundBanks() {
     var adding by remember { mutableStateOf(false) }
     var notRead by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<SoundBankEntry?>(null) }
+    // the folder the banks are added from, and what it holds (null: its list is not shown)
+    var folder by remember { mutableStateOf(Settings.bankFolder(app)?.let { Uri.parse(it) }) }
+    var found by remember { mutableStateOf<List<BankFile>?>(null) }
+    var folderName by remember { mutableStateOf("") }
 
     suspend fun reload() {
         banks = withContext(Dispatchers.IO) { SoundBank.list(app) }
@@ -176,16 +190,39 @@ private fun SoundBanks() {
     }
     LaunchedEffect(Unit) { reload() }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    suspend fun browse(tree: Uri) {
+        found = withContext(Dispatchers.IO) {
+            folderName = SoundBank.folderName(app, tree)
+            SoundBank.filesIn(app, tree)
+        }
+    }
+
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree == null) return@rememberLauncherForActivityResult
+        // kept for next time, beyond this screen
+        runCatching { app.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        Settings.setBankFolder(app, tree.toString())
+        folder = tree
+        scope.launch { browse(tree) }
+    }
+
+    fun add(file: BankFile) {
+        found = null
         adding = true
         notRead = false
         scope.launch {
-            val added = withContext(Dispatchers.IO) { SoundBank.add(app, uri) }
+            val added = withContext(Dispatchers.IO) { SoundBank.add(app, file.uri) }
             adding = false
             notRead = added == null
             reload()
         }
+    }
+
+    // the folder of last time when the app can still read it, else the folder picker
+    fun startAdding() {
+        notRead = false
+        val tree = folder?.takeIf { f -> app.contentResolver.persistedUriPermissions.any { it.uri == f && it.isReadPermission } }
+        if (tree != null) scope.launch { browse(tree) } else runCatching { folderPicker.launch(null) }
     }
 
     Text(stringResource(R.string.sound_banks_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -216,11 +253,45 @@ private fun SoundBanks() {
             }
         }
     }
-    OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !adding) {
+    OutlinedButton(onClick = ::startAdding, enabled = !adding) {
         Text(stringResource(if (adding) R.string.sound_bank_adding else R.string.sound_bank_add))
     }
     if (notRead) {
         Text(stringResource(R.string.sound_bank_not_read), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+    }
+
+    found?.let { files ->
+        AlertDialog(
+            onDismissRequest = { found = null },
+            title = { Text(stringResource(R.string.sound_bank_found_title, folderName)) },
+            text = {
+                if (files.isEmpty()) {
+                    Text(stringResource(R.string.sound_bank_none_found))
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = FOUND_HEIGHT_DP.dp)) {
+                        items(files) { file ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .clickable(role = Role.Button) { add(file) }
+                                    .padding(vertical = 8.dp),
+                            ) {
+                                Text(file.name, style = MaterialTheme.typography.bodyLarge)
+                                Text(Formatter.formatShortFileSize(context, file.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    found = null
+                    runCatching { folderPicker.launch(folder) }
+                }) { Text(stringResource(R.string.sound_bank_other_folder)) }
+            },
+            dismissButton = { TextButton(onClick = { found = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
     }
 
     deleting?.let { bank ->

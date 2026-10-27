@@ -6,6 +6,7 @@ import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import java.io.File
@@ -28,6 +29,9 @@ private const val DECODE_WAIT_US = 10_000L
  * [bankId] ([SoundBank.BUILT_IN] or one the user added).
  */
 data class PartSound(val bankId: String, val bank: Int, val program: Int)
+
+/** A bank file found in a folder of the device, not added yet: its file [name], [size] and [uri]. */
+data class BankFile(val name: String, val size: Long, val uri: Uri)
 
 /** One sound bank the app can play: [BUILT_IN], or one the user added ([size] bytes). */
 data class SoundBankEntry(val id: String, val name: String, val size: Long) {
@@ -58,6 +62,9 @@ object SoundBank {
     // the banks the user added, with a text file holding the name shown for each
     private const val FOLDER = "soundbanks"
     private const val NAME_SUFFIX = ".name"
+
+    // how deep [filesIn] looks into the sub-folders of the folder chosen
+    private const val FOLDER_DEPTH = 3
 
     // the banks read so far, by id
     private val fonts = ConcurrentHashMap<String, SoundFont>()
@@ -112,6 +119,43 @@ object SoundBank {
             part.delete()
         }
     }
+
+    /**
+     * The SF2 and SF3 files in the folder the user gave access to ([tree], from the system's folder
+     * picker) and in its sub-folders, by name; nothing else is listed. Off the main thread.
+     */
+    fun filesIn(context: Context, tree: Uri): List<BankFile> {
+        val found = ArrayList<BankFile>()
+        fun walk(documentId: String, depth: Int) {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+            val columns = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE,
+            )
+            context.contentResolver.query(children, columns, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: continue
+                    val name = c.getString(1).orEmpty()
+                    if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        if (depth < FOLDER_DEPTH) walk(id, depth + 1)
+                    } else if (isBank(name)) {
+                        found += BankFile(name, c.getLong(3), DocumentsContract.buildDocumentUriUsingTree(tree, id))
+                    }
+                }
+            }
+        }
+        runCatching { walk(DocumentsContract.getTreeDocumentId(tree), 0) }
+            .onFailure { Log.w(LOG_TAG, "folder not read: ${it.message}") }
+        return found.sortedBy { it.name.lowercase() }
+    }
+
+    /** The name of the folder the user gave access to ([tree]), to show it. */
+    fun folderName(context: Context, tree: Uri): String = runCatching {
+        val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        context.contentResolver.query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull().orEmpty()
 
     /** Removes bank [id] the user added, with its decoded samples. The built-in bank stays. */
     fun delete(context: Context, id: String) {

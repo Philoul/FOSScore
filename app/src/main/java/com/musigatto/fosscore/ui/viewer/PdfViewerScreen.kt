@@ -2521,6 +2521,7 @@ fun PdfViewerScreen(
                     partSounds = partSounds,
                     soundChoices = soundChoices,
                     onPartSound = playbackVm::setPartSound,
+                    onTryPartSound = playbackVm::tryPartSound,
                     onDismiss = menu::dismiss,
                 )
             }

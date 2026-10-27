@@ -253,4 +253,8 @@
         <item>Percussive</item>
         <item>Sound effects</item>
     </string-array>
+    <string name="part_sound_original">Original</string>
+    <string name="sound_bank_found_title">Sound banks in %1$s</string>
+    <string name="sound_bank_none_found">No SF2 or SF3 file in this folder.</string>
+    <string name="sound_bank_other_folder">Another folder…</string>
 </resources>

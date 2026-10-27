@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.sound
 
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -33,6 +34,9 @@ private const val MASTER_GAIN = 0.8f
 
 // above this level the mix is bent down gently instead of clipping (a hard clip crackles)
 private const val SOFT_LIMIT = 0.8f
+
+// the threads that read a piece's samples ahead: a slow tablet has two cores
+private const val WARM_THREADS = 2
 
 // what the reverb sends get when a MIDI file says nothing (General MIDI's CC 91 default)
 private const val DEFAULT_REVERB_CC = 40
@@ -130,7 +134,7 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
      * gives up as soon as [cancelled] says so. Returns how many samples it read.
      */
     fun warm(song: MidiSong, sounds: List<ChannelSound?> = emptyList(), cancelled: () -> Boolean = { false }): Int {
-        var count = 0
+        val wanted = LinkedHashSet<Pair<SoundFont, SoundFont.Sample>>()
         val program = IntArray(16)
         val bank = IntArray(16) { if (it == DRUM_CHANNEL) SoundFont.DRUM_BANK else 0 }
         val seen = HashSet<Pair<SoundFont, Long>>()
@@ -145,14 +149,22 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
                     val b = sound?.bank ?: bank[e.channel]
                     val p = sound?.program ?: program[e.channel]
                     val key = (b.toLong() shl 24) or (p.toLong() shl 16) or (e.data1.toLong() shl 8) or e.data2.toLong()
-                    if (seen.add(from to key)) from.regions(b, p, e.data1, e.data2).forEach {
-                        from.valuesOf(it.sample)
-                        count++
-                    }
+                    if (seen.add(from to key)) from.regions(b, p, e.data1, e.data2).forEach { wanted += from to it.sample }
                 }
             }
         }
-        return count
+        // in the order the music needs them, by a few threads: decoding is most of the time
+        val queue = ConcurrentLinkedQueue(wanted)
+        val readers = List(WARM_THREADS) {
+            Thread {
+                while (!cancelled()) {
+                    val (font, sample) = queue.poll() ?: break
+                    font.valuesOf(sample)
+                }
+            }.apply { start() }
+        }
+        readers.forEach { it.join() }
+        return wanted.size
     }
 
     /** Every note released at once (a pause, a jump): they fade out in their release time. */

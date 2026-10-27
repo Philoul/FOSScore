@@ -111,6 +111,7 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     fun warm(song: MidiSong, chosen: List<ChannelSound?> = sounds, cancelled: () -> Boolean = { false }) {
         val started = System.nanoTime()
         val read = synth.warm(song, chosen, cancelled)
+        SoundBank.releaseDecoders()
         Log.d(LOG_TAG, "warm: $read samples in ${(System.nanoTime() - started) / 1_000_000} ms")
         if (cancelled()) return
         val spare = Synth(font, sampleRate)

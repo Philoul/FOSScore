@@ -17,6 +17,7 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.min
 
 private const val LOG_TAG = "FOSScore-SoundBank"
@@ -217,12 +218,26 @@ object SoundBank {
         }
     }
 
+    // Decoders kept between samples: making one takes a good part of a sample's time on a slow
+    // tablet. [warm] reads with a few threads, each takes one and gives it back; [releaseDecoders]
+    // frees them once a piece is read.
+    private val decoders = ConcurrentLinkedQueue<MediaCodec>()
+
+    /** Frees the decoders kept: call it when the samples of a piece are read. */
+    fun releaseDecoders() {
+        while (true) {
+            val codec = decoders.poll() ?: break
+            runCatching { codec.release() }
+        }
+    }
+
     // One Ogg Vorbis stream into 16-bit values, by Android's decoder (no code of our own).
     private fun decode(ogg: ByteBuffer): ShortArray {
         val started = System.nanoTime()
         val bytes = ByteArray(ogg.remaining()).also { ogg.duplicate().get(it) }
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        var reusable = false
         try {
             extractor.setDataSource(object : MediaDataSource() {
                 override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
@@ -239,34 +254,38 @@ object SoundBank {
             extractor.selectTrack(0)
             val format = extractor.getTrackFormat(0)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: return ShortArray(0)
-            val decoder = MediaCodec.createDecoderByType(mime).also { codec = it }
+            // a kept decoder is set up again for this stream (its headers differ), else a new one
+            val decoder = decoders.poll() ?: MediaCodec.createDecoderByType(mime)
+            codec = decoder
             decoder.configure(format, null, null, 0)
             decoder.start()
             val out = ArrayList<ShortArray>()
             var total = 0
             val info = MediaCodec.BufferInfo()
             var inputDone = false
+            var ended = false
             var lastProgress = System.nanoTime()
-            while (true) {
+            while (!ended) {
                 if ((System.nanoTime() - lastProgress) / 1_000_000 > DECODE_STALL_MS) {
-                    Log.w(LOG_TAG, "decoder stuck after ${total} values of ${bytes.size} bytes: sample given up")
+                    Log.w(LOG_TAG, "decoder stuck after $total values of ${bytes.size} bytes: sample given up")
                     break
                 }
-                if (!inputDone) {
-                    val i = decoder.dequeueInputBuffer(DECODE_WAIT_US)
-                    if (i >= 0) {
-                        val buffer = decoder.getInputBuffer(i) ?: continue
-                        val n = extractor.readSampleData(buffer, 0)
-                        if (n < 0) {
-                            decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
+                // every packet the decoder has room for, without waiting
+                while (!inputDone) {
+                    val i = decoder.dequeueInputBuffer(0)
+                    if (i < 0) break
+                    val buffer = decoder.getInputBuffer(i)
+                    val n = buffer?.let { extractor.readSampleData(it, 0) } ?: -1
+                    if (n < 0) {
+                        decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inputDone = true
+                    } else {
+                        decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
+                        extractor.advance()
                     }
                 }
-                val o = decoder.dequeueOutputBuffer(info, DECODE_WAIT_US)
+                // then what it has made, waiting only once all is in
+                val o = decoder.dequeueOutputBuffer(info, if (inputDone) DECODE_WAIT_US else 0L)
                 if (o >= 0) {
                     lastProgress = System.nanoTime()
                     decoder.getOutputBuffer(o)?.let { buffer ->
@@ -278,9 +297,23 @@ object SoundBank {
                         total += part.size
                     }
                     decoder.releaseOutputBuffer(o, false)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                    ended = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                } else if (!inputDone) {
+                    // nothing to take yet and no room to give: a short wait instead of spinning
+                    decoder.dequeueInputBuffer(DECODE_WAIT_US).takeIf { it >= 0 }?.let { i ->
+                        val buffer = decoder.getInputBuffer(i)
+                        val n = buffer?.let { extractor.readSampleData(it, 0) } ?: -1
+                        if (n < 0) {
+                            decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
+                            extractor.advance()
+                        }
+                    }
                 }
             }
+            reusable = ended
             Log.d(LOG_TAG, "decoded ${bytes.size} bytes into $total values in ${(System.nanoTime() - started) / 1_000_000} ms")
             val pcm = ShortArray(total)
             var at = 0
@@ -294,8 +327,11 @@ object SoundBank {
             Log.e(LOG_TAG, "sample not decoded: ${e.message}", e)
             return ShortArray(0)
         } finally {
-            runCatching { codec?.stop() }
-            runCatching { codec?.release() }
+            codec?.let { c ->
+                runCatching { c.stop() }
+                // a decoder that ended its stream cleanly is kept for the next sample
+                if (reusable) decoders.add(c) else runCatching { c.release() }
+            }
             extractor.release()
         }
     }

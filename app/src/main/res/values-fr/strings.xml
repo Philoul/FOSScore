@@ -261,4 +261,7 @@
     <string name="sound_bank_found_title">Banques de sons dans %1$s</string>
     <string name="sound_bank_none_found">Aucun fichier SF2 ou SF3 dans ce dossier.</string>
     <string name="sound_bank_other_folder">Autre dossier…</string>
+    <string name="sound_bank_folder_title">Le dossier de vos banques de sons</string>
+    <string name="sound_bank_folder_text">Android ne sait pas montrer uniquement les fichiers SF2 et SF3. À l’écran suivant, ouvrez le dossier qui contient vos banques (par exemple Download), sans toucher les fichiers, qui restent grisés, puis touchez le bouton en bas (« Sélectionner » ou « Utiliser ce dossier »). FOSScore liste alors les banques qu’il contient, et retient le dossier pour la prochaine fois.</string>
+    <string name="sound_bank_folder_choose">Choisir le dossier</string>
 </resources>

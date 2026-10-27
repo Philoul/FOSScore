@@ -291,9 +291,12 @@ fun PdfViewerScreen(
     val playState by playbackVm.state.collectAsState()
     val partSounds by playbackVm.partSounds.collectAsState()
     // the sound banks and their instruments, for the sound of each part (read off the main thread)
-    val banks by produceState(emptyList<SoundBankEntry>()) { value = withContext(Dispatchers.IO) { SoundBank.list(context) } }
+    // read again whenever a panel opens: banks added or deleted in the preferences meanwhile show
+    val banks by produceState(emptyList<SoundBankEntry>() to SoundBank.BUILT_IN, surface) {
+        value = withContext(Dispatchers.IO) { SoundBank.list(context) to Settings.soundBank(context) }
+    }
     val soundChoices = remember(banks) {
-        SoundChoices(banks, Settings.soundBank(context)) { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } }
+        SoundChoices(banks.first, banks.second) { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } }
     }
     val loop by playbackVm.loop.collectAsState()
     val cursorNotes by playbackVm.cursor.collectAsState()

@@ -182,6 +182,8 @@ private fun SoundBanks() {
     var folder by remember { mutableStateOf(Settings.bankFolder(app)?.let { Uri.parse(it) }) }
     var found by remember { mutableStateOf<List<BankFile>?>(null) }
     var folderName by remember { mutableStateOf("") }
+    // the folder picker is explained before it opens: it shows every file, greyed out
+    var explaining by remember { mutableStateOf(false) }
 
     suspend fun reload() {
         banks = withContext(Dispatchers.IO) { SoundBank.list(app) }
@@ -222,7 +224,7 @@ private fun SoundBanks() {
     fun startAdding() {
         notRead = false
         val tree = folder?.takeIf { f -> app.contentResolver.persistedUriPermissions.any { it.uri == f && it.isReadPermission } }
-        if (tree != null) scope.launch { browse(tree) } else runCatching { folderPicker.launch(null) }
+        if (tree != null) scope.launch { browse(tree) } else explaining = true
     }
 
     Text(stringResource(R.string.sound_banks_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -287,10 +289,25 @@ private fun SoundBanks() {
             confirmButton = {
                 TextButton(onClick = {
                     found = null
-                    runCatching { folderPicker.launch(folder) }
+                    explaining = true
                 }) { Text(stringResource(R.string.sound_bank_other_folder)) }
             },
             dismissButton = { TextButton(onClick = { found = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+
+    if (explaining) {
+        AlertDialog(
+            onDismissRequest = { explaining = false },
+            title = { Text(stringResource(R.string.sound_bank_folder_title)) },
+            text = { Text(stringResource(R.string.sound_bank_folder_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    explaining = false
+                    runCatching { folderPicker.launch(folder) }
+                }) { Text(stringResource(R.string.sound_bank_folder_choose)) }
+            },
+            dismissButton = { TextButton(onClick = { explaining = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 

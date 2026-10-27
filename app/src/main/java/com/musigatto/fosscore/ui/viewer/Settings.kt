@@ -94,6 +94,7 @@ object Settings {
     private const val KEY_LYRICS = "lyrics_"
     private const val KEY_HIDDEN_LYRICS = "hidden_lyrics_"
     private const val KEY_TEMPO = "tempo_"
+    private const val KEY_PLAY_TRANSPOSE = "play_transpose_"
     private const val KEY_HEARD = "heard_"
     private const val KEY_MET_BPM = "metronome_bpm_"
     private const val KEY_MET_METER = "metronome_meter_"
@@ -231,6 +232,14 @@ object Settings {
 
     fun setTempo(context: Context, uri: String, factor: Float) {
         context.prefs().edit { putFloat(KEY_TEMPO + uri, factor) }
+    }
+
+    /** Semitones playback is heard up or down, the score shown staying as written. Per score. */
+    fun playbackTranspose(context: Context, uri: String): Int =
+        context.prefs().getInt(KEY_PLAY_TRANSPOSE + uri, 0)
+
+    fun setPlaybackTranspose(context: Context, uri: String, semitones: Int) {
+        context.prefs().edit { putInt(KEY_PLAY_TRANSPOSE + uri, semitones) }
     }
 
     /** Ids of the MusicXML parts heard, or null for the parts shown. Per score. */

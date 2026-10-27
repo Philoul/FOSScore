@@ -161,8 +161,10 @@ internal fun BandButton(
 
 /**
  * The playback options panel (menu › Playback): the tempo (the same block as the metronome's),
- * the bars to turn the pages ahead of the music, and the parts heard, last and in their own scroll
- * box, as in the mockup. The parts shown are in Score layout.
+ * the bars to turn the pages ahead of the music, the transposition heard (the score shown staying
+ * as it is, until [onApplyTranspose] writes it into the score's layout; null when the score
+ * cannot be laid out again), and the parts heard, last and in their own scroll box, as in the
+ * mockup. The parts shown are in Score layout.
  */
 @Composable
 fun PlaybackOptionsOverlay(
@@ -173,6 +175,9 @@ fun PlaybackOptionsOverlay(
     onTempo: (Int) -> Unit,
     turnAhead: Int,
     onTurnAhead: (Int) -> Unit,
+    transpose: Int,
+    onTranspose: (Int) -> Unit,
+    onApplyTranspose: (() -> Unit)?,
     parts: List<Part>,
     heard: Set<String>,
     onHeard: (String, Boolean) -> Unit,
@@ -184,6 +189,23 @@ fun PlaybackOptionsOverlay(
         TempoBlock(bpm, minBpm..maxBpm, writtenBpm, onTempo)
         SectionLabel(stringResource(R.string.metronome_page_turns))
         TurnAheadRow(turnAhead, onTurnAhead)
+        SectionLabel(stringResource(R.string.playback_transpose_label))
+        StepperRow(
+            label = stringResource(R.string.transpose_label),
+            value = if (transpose == 0) stringResource(R.string.transpose_none)
+            else stringResource(R.string.transpose_value, transpose),
+            lessLabel = stringResource(R.string.transpose_down),
+            moreLabel = stringResource(R.string.transpose_up),
+            canLess = transpose > -MAX_TRANSPOSE,
+            canMore = transpose < MAX_TRANSPOSE,
+            onLess = { onTranspose(transpose - 1) },
+            onMore = { onTranspose(transpose + 1) },
+        )
+        if (onApplyTranspose != null) {
+            TextButton(onClick = onApplyTranspose, enabled = transpose != 0, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(R.string.playback_transpose_apply))
+            }
+        }
         // listed even when the score has one part (a PDF has no parts)
         if (parts.isNotEmpty()) {
             SectionLabel(stringResource(R.string.heard_section_label))

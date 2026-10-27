@@ -128,6 +128,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _tempo = MutableStateFlow(Settings.tempo(context, score))
     val tempo: StateFlow<Float> = _tempo.asStateFlow()
 
+    // semitones the music is heard up or down, the score shown staying as it is
+    private val _transpose = MutableStateFlow(Settings.playbackTranspose(context, score))
+    val transpose: StateFlow<Int> = _transpose.asStateFlow()
+
     // null: the parts shown are the parts heard
     private val _heard = MutableStateFlow(Settings.heardParts(context, score))
     val heard: StateFlow<Set<String>?> = _heard.asStateFlow()
@@ -241,6 +245,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         Settings.setTempo(context, score, f)
         // the live player takes it at once
         player?.tempoFactor = f.toDouble()
+    }
+
+    /** Plays the music [semitones] up or down, at once; the score shown does not change. */
+    fun setTranspose(semitones: Int) {
+        val s = semitones.coerceIn(-MAX_TRANSPOSE, MAX_TRANSPOSE)
+        if (s == _transpose.value) return
+        _transpose.value = s
+        Settings.setPlaybackTranspose(context, score, s)
+        player?.transpose(s)
     }
 
     fun setHeard(id: String, heard: Boolean, parts: List<Part>) {
@@ -359,6 +372,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 withContext(Dispatchers.Default) { next.warm(song) }
                 if (!isActive) return@launch
                 next.tempoFactor = _tempo.value.toDouble()
+                next.transpose(_transpose.value)
                 next.setLoop(loop.on, loop.start, loop.b)
                 next.setSong(song)
                 next.play(from)

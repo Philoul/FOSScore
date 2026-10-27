@@ -291,6 +291,7 @@ fun PdfViewerScreen(
     val heardPicked by playbackVm.heard.collectAsState()
     val playbackFailed by playbackVm.failed.collectAsState()
     val aheadNotes by playbackVm.ahead.collectAsState()
+    val playTranspose by playbackVm.transpose.collectAsState()
     // another score opened, or the viewer closed: this score's music stops (its ViewModel stays
     // in memory with the screen, and its player would go on playing)
     DisposableEffect(playbackVm) { onDispose { playbackVm.stop() } }
@@ -2496,6 +2497,13 @@ fun PdfViewerScreen(
                     onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
                     turnAhead = metronome.turnAhead,
                     onTurnAhead = metronomeVm::setTurnAhead,
+                    transpose = playTranspose,
+                    onTranspose = playbackVm::setTranspose,
+                    // the key found by ear goes into the score: it is laid out in it, and heard the same
+                    onApplyTranspose = if (format.isMusicXml) ({
+                        menu.transpose(scoreLayout.semitones + playTranspose)
+                        playbackVm.setTranspose(0)
+                    }) else null,
                     parts = parts,
                     heard = heardParts(heardPicked, shownIds, parts),
                     onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },

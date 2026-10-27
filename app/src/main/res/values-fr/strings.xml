@@ -125,6 +125,8 @@
     <string name="transpose_none">Comme écrit</string>
     <string name="transpose_value">%1$+d</string>
     <string name="transpose_down">Un demi-ton plus bas</string>
+    <string name="playback_transpose_label">Transposition à l\'écoute</string>
+    <string name="playback_transpose_apply">Appliquer à la partition</string>
     <string name="transpose_up">Un demi-ton plus haut</string>
     <string name="lyrics_section_label">Paroles</string>
     <string name="lyrics_file">Comme dans le fichier</string>

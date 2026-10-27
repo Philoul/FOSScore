@@ -115,6 +115,8 @@
     <string name="transpose_none">Como está escrito</string>
     <string name="transpose_value">%1$+d</string>
     <string name="transpose_down">Un semitono más bajo</string>
+    <string name="playback_transpose_label">Transposición al oído</string>
+    <string name="playback_transpose_apply">Aplicar a la partitura</string>
     <string name="transpose_up">Un semitono más alto</string>
     <string name="lyrics_section_label">Letra</string>
     <string name="lyrics_file">Como en el archivo</string>

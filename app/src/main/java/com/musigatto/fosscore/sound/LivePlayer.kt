@@ -62,8 +62,13 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     private var loopOn = false
     private var loopStart = 0.0
     private var loopEnd: Double? = null
-    // the notes on (channel, key, where they started): to stop the ones a new song does not play
-    private val sounding = ArrayList<Triple<Int, Int, Double>>()
+    // a note on: its channel, its key in the song and the key heard (transposed), its velocity and
+    // where it started; to stop the ones a new song does not play, and move them to a new key
+    private class Sounding(val channel: Int, val key: Int, var played: Int, val velocity: Int, val quarters: Double)
+
+    private val sounding = ArrayList<Sounding>()
+    // semitones the music is heard up (or down), the score shown staying as it is
+    private var semitones = 0
 
     // what was written, block by block: the frame (since the track started) and the music there
     private val historyFrame = LongArray(HISTORY)
@@ -111,13 +116,29 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
         val wanted = newSong.events.filter { it.type == MidiSong.NOTE_ON && it.data2 > 0 }
             .map { Triple(it.channel, it.data1, it.quarters) }.toHashSet()
         for (n in sounding.toList()) {
-            if (n !in wanted) {
-                synth.noteOff(n.first, n.second)
+            if (Triple(n.channel, n.key, n.quarters) !in wanted) {
+                synth.noteOff(n.channel, n.played)
                 sounding.remove(n)
             }
         }
         song = newSong
         next = song.firstEventAt(at)
+    }
+
+    /**
+     * Plays the music [by] semitones up (down when negative), the drums excepted; the notes held
+     * move to their new key at once.
+     */
+    fun transpose(by: Int) = run {
+        if (by != semitones) {
+            semitones = by
+            for (n in sounding) {
+                if (n.channel == Synth.DRUM_CHANNEL) continue
+                synth.noteOff(n.channel, n.played)
+                n.played = heard(n.channel, n.key)
+                synth.noteOn(n.channel, n.played, n.velocity)
+            }
+        }
     }
 
     /** The loop: [on], from [start] to [end] (null: the end of the song). */
@@ -230,8 +251,9 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     private fun send(e: MidiSong.Event) {
         when (e.type) {
             MidiSong.NOTE_ON -> if (e.data2 > 0) {
-                synth.noteOn(e.channel, e.data1, e.data2)
-                sounding += Triple(e.channel, e.data1, e.quarters)
+                val played = heard(e.channel, e.data1)
+                synth.noteOn(e.channel, played, e.data2)
+                sounding += Sounding(e.channel, e.data1, played, e.data2, e.quarters)
             } else {
                 noteOff(e.channel, e.data1)
             }
@@ -242,9 +264,14 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     }
 
     private fun noteOff(channel: Int, key: Int) {
-        synth.noteOff(channel, key)
-        sounding.removeAll { it.first == channel && it.second == key }
+        sounding.removeAll { n ->
+            (n.channel == channel && n.key == key).also { if (it) synth.noteOff(channel, n.played) }
+        }
     }
+
+    // the key heard for [key] of the song
+    private fun heard(channel: Int, key: Int) =
+        if (channel == Synth.DRUM_CHANNEL) key else (key + semitones).coerceIn(0, 127)
 
     // On the audio thread: block after block until paused. The track blocks the writes once its
     // buffer is full, which paces the loop on the audio clock.

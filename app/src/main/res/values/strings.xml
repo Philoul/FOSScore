@@ -114,6 +114,8 @@
     <string name="transpose_none">As written</string>
     <string name="transpose_value">%1$+d</string>
     <string name="transpose_down">Down a semitone</string>
+    <string name="playback_transpose_label">Transposition heard</string>
+    <string name="playback_transpose_apply">Apply to the score</string>
     <string name="transpose_up">Up a semitone</string>
     <string name="lyrics_section_label">Lyrics</string>
     <string name="lyrics_file">As in the file</string>

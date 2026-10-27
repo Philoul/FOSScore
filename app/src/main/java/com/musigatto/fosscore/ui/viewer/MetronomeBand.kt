@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,7 +34,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,12 +48,10 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.metronome.BEAT_UNITS
 import com.musigatto.fosscore.metronome.ClickSound
 import com.musigatto.fosscore.metronome.MAX_BEATS
-import com.musigatto.fosscore.metronome.MAX_BPM
 import com.musigatto.fosscore.metronome.MAX_COUNT_IN
 import com.musigatto.fosscore.metronome.MAX_SUBDIVISION
 import com.musigatto.fosscore.metronome.MAX_TURN_AHEAD
 import com.musigatto.fosscore.metronome.MIN_BEATS
-import com.musigatto.fosscore.metronome.MIN_BPM
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.metronome.MetronomeSettings
@@ -64,11 +60,6 @@ import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.metronome.tempoName
 import kotlin.math.roundToInt
 
-// the band holds the Italian name of the tempo from this width
-private val BAND_WITH_TEMPO_NAME = 520.dp
-// the tempo name or the bar heard: room for "Prestissimo" and "Mesure 88 / 88"
-private val BAND_TEXT_WIDTH = 112.dp
-private val BAND_TEMPO_WIDTH = 64.dp
 // the dots of the beats: the first one bigger (the accent)
 private val BEAT_DOT = 10.dp
 private val ACCENT_DOT = 14.dp
@@ -83,79 +74,9 @@ private val COMPACT_BUTTON = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
 // in landscape the settings spread wider and stay low
 private val WIDE_PANEL = 640.dp
 
-/**
- * The metronome band, in the bottom bar: ▶ / ⏸, a dot for each beat of the bar (the one heard
- * lit), − ♩ = N + (repeating while held), TAP, the settings and ✕. [barText] tells where the
- * page turns stand ("Bar 3 / 8") when they follow the metronome. With [onPlayback] (a MusicXML
- * score) the metronome button, lit, gives the place back to the playback band instead of ✕.
- */
-@Composable
-fun MetronomeBand(
-    running: Boolean,
-    tick: Tick?,
-    settings: MetronomeSettings,
-    barText: String?,
-    onStartStop: () -> Unit,
-    onBpm: (Int) -> Unit,
-    onTap: () -> Unit,
-    onSettings: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-    onPlayback: (() -> Unit)? = null,
-) = BoxWithConstraints(modifier.fillMaxWidth()) {
-    val wide = maxWidth >= BAND_WITH_TEMPO_NAME
-    val bpm by rememberUpdatedState(settings.bpm)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BandButton(
-            stringResource(if (running) R.string.metronome_stop else R.string.metronome_start),
-            active = true,
-            onClick = onStartStop,
-        ) { ToolIcon(if (running) ICON_PAUSE else ICON_PLAY) }
-        Spacer(Modifier.width(8.dp))
-        BeatDots(settings.meter.pulses, tick?.beat?.takeIf { running }, counting = (tick?.bar ?: 0) < 0)
-        Spacer(Modifier.width(8.dp))
-        RepeatButton("−", stringResource(R.string.tempo_slower), enabled = settings.bpm > MIN_BPM, size = BAND_BUTTON) {
-            onBpm(bpm - 1)
-        }
-        Text(
-            stringResource(R.string.tempo_value, settings.bpm),
-            style = MaterialTheme.typography.labelLarge,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(BAND_TEMPO_WIDTH),
-        )
-        RepeatButton("+", stringResource(R.string.tempo_faster), enabled = settings.bpm < MAX_BPM, size = BAND_BUTTON) {
-            onBpm(bpm + 1)
-        }
-        if (wide) {
-            Text(
-                barText ?: tempoName(settings.bpm),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                // a fixed width: the band must not move under the finger as the bars go by
-                modifier = Modifier.width(BAND_TEXT_WIDTH),
-            )
-        }
-        TextButton(onClick = onTap) { Text(stringResource(R.string.metronome_tap)) }
-        BandButton(stringResource(R.string.metronome_settings), active = false, onClick = onSettings) { ToolIcon(ICON_OPTIONS) }
-        if (onPlayback != null) {
-            BandButton(stringResource(R.string.menu_playback), active = true, onClick = onPlayback) { ToolIcon(ICON_METRONOME) }
-        } else {
-            BandButton(stringResource(R.string.metronome_close), active = false, onClick = onClose) {
-                Text("✕", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-    }
-}
-
 /** One dot per beat of the bar, [lit] the one heard; during the count-in they show in the error colour. */
 @Composable
-private fun BeatDots(beats: Int, lit: Int?, counting: Boolean) {
+internal fun BeatDots(beats: Int, lit: Int?, counting: Boolean) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         // a long bar (12/4...) keeps the band on one row: the beat number instead of dots
         if (beats > 8) {

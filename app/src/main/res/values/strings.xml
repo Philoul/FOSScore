@@ -187,10 +187,7 @@
     <string name="backup_check_files_ok">All PDF files included</string>
     <string name="backup_check_files_missing">%1$d PDF files were missing when this export was made.</string>
     <!-- metronome -->
-    <string name="metronome_start">Start the metronome</string>
-    <string name="metronome_stop">Stop the metronome</string>
     <string name="metronome_tap">TAP</string>
-    <string name="metronome_settings">Metronome settings</string>
     <string name="metronome_close">Close the metronome</string>
     <string name="metronome_time_signature">Time signature</string>
     <string name="metronome_meter_from_score">%1$s (score)</string>
@@ -213,7 +210,6 @@
     <string name="metronome_bars_range">bars %1$d–%2$d</string>
     <string name="metronome_copy_bars">Same count for the next pages</string>
     <string name="metronome_mode_label">Given by</string>
-    <string name="metronome_bar">Bar %1$d</string>
     <string name="tempo_as_written_short">As written</string>
     <string name="metronome_previous_page">Previous page</string>
     <string name="metronome_next_page">Next page</string>
@@ -265,4 +261,6 @@
     <string name="sound_bank_ready">Sounds ready</string>
     <string name="sound_bank_to_prepare">Sounds to prepare (%1$d of %2$d ready)</string>
     <string name="sound_bank_prepare">Prepare</string>
+    <string name="playback_clicks_on">Metronome on</string>
+    <string name="playback_clicks_off">Metronome off</string>
 </resources>

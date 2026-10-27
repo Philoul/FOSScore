@@ -35,6 +35,12 @@ private const val COMPILE_BLOCKS = 200
 // the MIDI channels
 private const val CHANNELS = 16
 
+// the metronome's clicks heard at once at most (a subdivision over the end of the beat before)
+private const val CLICK_VOICES = 4
+
+// 16-bit values to the -1..1 of the track
+private const val CLICK_SCALE = 32768f
+
 /**
  * The live player: a [MidiSong] played by a [Synth] into an [AudioTrack], event after event, on
  * its own audio thread. The music advances in quarter notes at the song's tempo times
@@ -51,6 +57,12 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
 
     /** No sound, the music going on: the playback bar follows it all the same. */
     @Volatile var muted = false
+
+    /**
+     * The metronome's clicks heard over the music (see [setClicks]); off, they are not played, and
+     * the music's own sound does not change. [muted] silences the music, not the clicks.
+     */
+    @Volatile var clicking = false
 
     /** Called on the audio thread when the music ends (not while looping). */
     @Volatile var onEnd: (() -> Unit)? = null
@@ -70,6 +82,17 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     private class Sounding(val channel: Int, val key: Int, var played: Int, val velocity: Int, val quarters: Double)
 
     private val sounding = ArrayList<Sounding>()
+
+    // the metronome over the music: where each click is (in quarter notes) and which sound it
+    // takes, the sounds as floats at the track's rate, their level, and the next click to play
+    private var clickAt = DoubleArray(0)
+    private var clickSound = IntArray(0)
+    private var clickSounds: Array<FloatArray> = emptyArray()
+    private var clickGain = 0f
+    private var nextClick = 0
+    // the clicks sounding: which sound (-1: none) and how far into it
+    private val voiceSound = IntArray(CLICK_VOICES) { -1 }
+    private val voiceAt = IntArray(CLICK_VOICES)
     // semitones the music is heard up (or down), the score shown staying as it is
     private var semitones = 0
     // the instrument chosen for each channel (null: the file's), read by [warm] off the audio thread
@@ -142,6 +165,23 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     fun setSounds(chosen: List<ChannelSound?>) {
         sounds = chosen.toList()
         run { for (c in 0 until CHANNELS) synth.setSound(c, chosen.getOrNull(c)) }
+    }
+
+    /**
+     * The metronome's clicks: where they are in the music ([at], in quarter notes, in time order),
+     * which of [sounds] each one plays ([which]), at [gain]. [sounds] are 16-bit values at
+     * [sampleRate]. Heard while [clicking].
+     */
+    fun setClicks(at: DoubleArray, which: IntArray, sounds: List<ShortArray>, gain: Float) {
+        // made here, not on the audio thread
+        val floats = Array(sounds.size) { k -> FloatArray(sounds[k].size) { sounds[k][it] / CLICK_SCALE } }
+        run {
+            clickAt = at
+            clickSound = which
+            clickSounds = floats
+            clickGain = gain
+            nextClick = firstClickAt(this.at)
+        }
     }
 
     /**
@@ -254,8 +294,10 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     private fun jump(quarters: Double) {
         synth.silence()
         sounding.clear()
+        voiceSound.fill(-1)
         at = quarters
         next = song.firstEventAt(quarters)
+        nextClick = firstClickAt(quarters)
         // programs and controllers as the music has set them by then
         synth.reset()
         for (i in 0 until next) {
@@ -288,6 +330,43 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
         }
     }
 
+    // the index of the first click at or after [quarters]
+    private fun firstClickAt(quarters: Double): Int {
+        var lo = 0
+        var hi = clickAt.size
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (clickAt[mid] < quarters - 1e-9) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
+
+    // a click starts with the frames rendered next: in a free voice, else in the first one
+    private fun startClick(sound: Int) {
+        if (sound !in clickSounds.indices) return
+        val v = voiceSound.indexOf(-1).takeIf { it >= 0 } ?: 0
+        voiceSound[v] = sound
+        voiceAt[v] = 0
+    }
+
+    // the clicks sounding, added to [frames] frames of [block] from frame [from]
+    private fun mixClicks(block: FloatArray, from: Int, frames: Int) {
+        for (v in 0 until CLICK_VOICES) {
+            val s = voiceSound[v]
+            if (s < 0) continue
+            val samples = clickSounds[s]
+            var p = voiceAt[v]
+            for (i in from until from + frames) {
+                if (p >= samples.size) break
+                val x = samples[p++] * clickGain
+                block[i * 2] += x
+                block[i * 2 + 1] += x
+            }
+            voiceAt[v] = p
+            if (p >= samples.size) voiceSound[v] = -1
+        }
+    }
+
     // the key heard for [key] of the song
     private fun heard(channel: Int, key: Int) =
         if (channel == Synth.DRUM_CHANNEL) key else (key + semitones).coerceIn(0, 127)
@@ -307,6 +386,10 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                     val step = 1_000_000.0 / song.microsPerQuarter(at) * tempoFactor / sampleRate
                     // the next thing that happens: an event, a tempo change, the loop's or the song's end
                     while (next < song.events.size && song.events[next].quarters <= at + 1e-9) send(song.events[next++])
+                    while (nextClick < clickAt.size && clickAt[nextClick] <= at + 1e-9) {
+                        if (clicking) startClick(clickSound[nextClick])
+                        nextClick++
+                    }
                     val end = if (loopOn) loopEnd ?: song.length else song.length + TAIL_QUARTERS
                     if (at >= end - 1e-9) {
                         if (loopOn) {
@@ -319,6 +402,7 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                     }
                     var until = end
                     if (next < song.events.size) until = min(until, song.events[next].quarters)
+                    if (nextClick < clickAt.size) until = min(until, clickAt[nextClick])
                     song.nextTempoChange(at)?.let { until = min(until, it) }
                     val frames = ceil((until - at) / step).toInt().coerceIn(1, BLOCK_FRAMES - done)
                     val slot = historyCount % HISTORY
@@ -328,6 +412,7 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                     historyCount++
                     synth.render(block, done * 2, frames)
                     if (muted) block.fill(0f, done * 2, (done + frames) * 2)
+                    mixClicks(block, done, frames)
                     at += frames * step
                     done += frames
                 }

@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.Playback
@@ -62,20 +63,26 @@ private const val BAR_WIDTH_SPACES = 0.4f
 private const val BAR_OVERHANG_SPACES = 1.5f
 
 /**
- * The playback band, in the bottom bar above the page dots: ⏮ (back to the start of the loop or
- * of the piece), ▶ / ⏸, the loop (on / off, the whole piece unless A or B is set), the A and B
- * markers (a tap sets one where the music is, a second tap clears it), the tempo with its − / +
- * (repeating while held), and the playback options. On a narrow screen − / + leave room, and a
- * tap on the tempo opens the options. It shows with the bars (centre tap); the music goes on when
- * they hide. The metronome button puts the metronome band in its place.
+ * The playback band, in the bottom bar above the page dots, the same for the music of a MusicXML
+ * score and for the metronome alone (a PDF): ⏮ (back to the start of the loop or of the piece),
+ * ▶ / ⏸, the loop (on / off, the whole piece unless A or B is set) and the A and B markers (a tap
+ * sets one where the music is, a second tap clears it) when there is music ([loop] not null), the
+ * tempo with its − / + (repeating while held), the options, and the metronome: a tap switches its
+ * clicks on or off, the band staying as it is. While they are on, the beats of the bar show next
+ * to it, the one heard lit, with TAP. On a narrow screen − / + leave room, and a tap on the tempo
+ * opens the options. It shows with the bars (centre tap); the music goes on when they hide.
+ * [onClose] (the metronome alone) puts the band away.
  */
 @Composable
 fun PlaybackBand(
     state: PlayState,
-    loop: Loop,
+    loop: Loop?,
     bpm: Int,
     minBpm: Int,
     maxBpm: Int,
+    clicking: Boolean,
+    tick: Tick?,
+    pulses: Int,
     onPlayPause: () -> Unit,
     onRestart: () -> Unit,
     onLoop: () -> Unit,
@@ -84,7 +91,9 @@ fun PlaybackBand(
     onTempo: (Int) -> Unit,
     onOptions: () -> Unit,
     onMetronome: () -> Unit,
+    onTap: () -> Unit,
     modifier: Modifier = Modifier,
+    onClose: (() -> Unit)? = null,
 ) = BoxWithConstraints(modifier.fillMaxWidth()) {
     val wide = maxWidth >= BAND_WITH_TEMPO_BUTTONS
     // the held button reads the tempo it changes, not the one it saw when the press began
@@ -95,7 +104,7 @@ fun PlaybackBand(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BandButton(
-            stringResource(if (loop.on) R.string.playback_to_loop_start else R.string.playback_to_start),
+            stringResource(if (loop?.on == true) R.string.playback_to_loop_start else R.string.playback_to_start),
             active = false,
             onClick = onRestart,
         ) { ToolIcon(ICON_TO_START) }
@@ -107,22 +116,24 @@ fun PlaybackBand(
             onClick = onPlayPause,
         ) { ToolIcon(if (playing) ICON_PAUSE else ICON_PLAY) }
         Spacer(Modifier.width(8.dp))
-        BandButton(
-            stringResource(if (loop.on) R.string.loop_off else R.string.loop_on),
-            active = loop.on,
-            onClick = onLoop,
-        ) { ToolIcon(ICON_LOOP) }
-        BandButton(
-            stringResource(if (loop.a != null) R.string.loop_clear_a else R.string.loop_set_a),
-            active = loop.a != null,
-            onClick = onA,
-        ) { Text("A", style = MaterialTheme.typography.labelLarge) }
-        BandButton(
-            stringResource(if (loop.b != null) R.string.loop_clear_b else R.string.loop_set_b),
-            active = loop.b != null,
-            onClick = onB,
-        ) { Text("B", style = MaterialTheme.typography.labelLarge) }
-        Spacer(Modifier.width(8.dp))
+        if (loop != null) {
+            BandButton(
+                stringResource(if (loop.on) R.string.loop_off else R.string.loop_on),
+                active = loop.on,
+                onClick = onLoop,
+            ) { ToolIcon(ICON_LOOP) }
+            BandButton(
+                stringResource(if (loop.a != null) R.string.loop_clear_a else R.string.loop_set_a),
+                active = loop.a != null,
+                onClick = onA,
+            ) { Text("A", style = MaterialTheme.typography.labelLarge) }
+            BandButton(
+                stringResource(if (loop.b != null) R.string.loop_clear_b else R.string.loop_set_b),
+                active = loop.b != null,
+                onClick = onB,
+            ) { Text("B", style = MaterialTheme.typography.labelLarge) }
+            Spacer(Modifier.width(8.dp))
+        }
         if (wide) {
             RepeatButton("−", stringResource(R.string.tempo_slower), enabled = bpm > minBpm, size = BAND_BUTTON) {
                 onTempo((current - 1).coerceAtLeast(minBpm))
@@ -137,7 +148,23 @@ fun PlaybackBand(
                 Text(stringResource(R.string.tempo_value, bpm), style = MaterialTheme.typography.labelLarge)
             }
         }
-        BandButton(stringResource(R.string.menu_metronome), active = false, onClick = onMetronome) { ToolIcon(ICON_METRONOME) }
+        BandButton(
+            stringResource(if (clicking) R.string.playback_clicks_off else R.string.playback_clicks_on),
+            active = clicking,
+            onClick = onMetronome,
+        ) { ToolIcon(ICON_METRONOME) }
+        if (clicking) {
+            if (wide) {
+                Spacer(Modifier.width(4.dp))
+                BeatDots(pulses, tick?.beat?.takeIf { playing }, counting = (tick?.bar ?: 0) < 0)
+            }
+            TextButton(onClick = onTap) { Text(stringResource(R.string.metronome_tap)) }
+        }
+        if (onClose != null) {
+            BandButton(stringResource(R.string.metronome_close), active = false, onClick = onClose) {
+                Text("✕", style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }
 

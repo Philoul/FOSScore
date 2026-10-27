@@ -189,10 +189,7 @@
     <string name="backup_check_files_ok">Todos los PDF incluidos</string>
     <string name="backup_check_files_missing">Faltaban %1$d archivos PDF cuando se hizo esta exportación.</string>
     <!-- metronome -->
-    <string name="metronome_start">Iniciar el metrónomo</string>
-    <string name="metronome_stop">Detener el metrónomo</string>
     <string name="metronome_tap">TAP</string>
-    <string name="metronome_settings">Ajustes del metrónomo</string>
     <string name="metronome_close">Cerrar el metrónomo</string>
     <string name="metronome_time_signature">Compás</string>
     <string name="metronome_meter_from_score">%1$s (partitura)</string>
@@ -215,7 +212,6 @@
     <string name="metronome_bars_range">compases %1$d–%2$d</string>
     <string name="metronome_copy_bars">Mismo número en las páginas siguientes</string>
     <string name="metronome_mode_label">Indicados con</string>
-    <string name="metronome_bar">Compás %1$d</string>
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
@@ -267,4 +263,6 @@
     <string name="sound_bank_ready">Sonidos listos</string>
     <string name="sound_bank_to_prepare">Sonidos por preparar (%1$d de %2$d listos)</string>
     <string name="sound_bank_prepare">Preparar</string>
+    <string name="playback_clicks_on">Activar el metrónomo</string>
+    <string name="playback_clicks_off">Desactivar el metrónomo</string>
 </resources>

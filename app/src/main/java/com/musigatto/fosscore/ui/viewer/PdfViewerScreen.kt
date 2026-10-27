@@ -184,6 +184,8 @@ fun PdfViewerScreen(
         factory = PlaybackViewModel.factory(context, pdfUri.toString()),
     )
     val playState by playbackVm.state.collectAsState()
+    val playClicking by playbackVm.clicking.collectAsState()
+    val playTick by playbackVm.tick.collectAsState()
     val loop by playbackVm.loop.collectAsState()
     val cursorNotes by playbackVm.cursor.collectAsState()
     val tempoFactor by playbackVm.tempo.collectAsState()
@@ -207,6 +209,7 @@ fun PdfViewerScreen(
         factory = MetronomeViewModel.factory(context, pdfUri.toString()),
     )
     val metronome by metronomeVm.settings.collectAsState()
+    LaunchedEffect(metronome) { playbackVm.setMetronome(metronome) }
     val metronomeOn by metronomeVm.running.collectAsState()
     val metronomeShown by metronomeVm.shown.collectAsState()
     val metronomeTick by metronomeVm.tick.collectAsState()
@@ -1198,6 +1201,8 @@ fun PdfViewerScreen(
 
         // the visual metronome: the border of the page flashes on the beats
         if (metronomeOn && metronome.mode != MetronomeMode.SOUND) BeatFlash(metronomeTick)
+        // and over the music, while the metronome is switched on in the playback band
+        if (playClicking && playState == PlayState.PLAYING && metronome.mode != MetronomeMode.SOUND) BeatFlash(playTick)
 
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).

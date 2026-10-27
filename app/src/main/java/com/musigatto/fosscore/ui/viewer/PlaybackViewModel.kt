@@ -7,6 +7,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.musigatto.fosscore.metronome.BeatGrid
+import com.musigatto.fosscore.metronome.ClickKind
+import com.musigatto.fosscore.metronome.Clicks
+import com.musigatto.fosscore.metronome.MetronomeSettings
+import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.musicxml.SoundSpec
@@ -50,6 +55,9 @@ private const val WARM_DELAY_MS = 1000L
 
 // the MIDI channels a part's sound can be set on
 private const val MIDI_CHANNELS = 16
+
+// the clicks over the music at the metronome's volume 100: a little under the music's loudest
+private const val CLICK_LEVEL = 0.6f
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
@@ -140,6 +148,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     // null: the parts shown are the parts heard
     private val _heard = MutableStateFlow(Settings.heardParts(context, score))
     val heard: StateFlow<Set<String>?> = _heard.asStateFlow()
+
+    // the metronome's clicks over the music: on or off (for the whole app), the beat heard, and
+    // the settings they take (the viewer's metronome: sound, volume, accent, subdivision, meter)
+    private val _clicking = MutableStateFlow(Settings.playbackClicks(context))
+    val clicking: StateFlow<Boolean> = _clicking.asStateFlow()
+    private val _tick = MutableStateFlow<Tick?>(null)
+    val tick: StateFlow<Tick?> = _tick.asStateFlow()
+    private var metronome: MetronomeSettings? = null
+    private var grid: BeatGrid? = null
 
     // the sound chosen for each part, by part id (a part left out plays the file's instrument)
     private val _partSounds = MutableStateFlow(Settings.partSounds(context, score))
@@ -332,6 +349,34 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         }
     }
 
+    /** The metronome's clicks over the music, on or off; they follow the music from where it is. */
+    fun toggleClicks() {
+        val on = !_clicking.value
+        _clicking.value = on
+        Settings.setPlaybackClicks(context, on)
+        player?.clicking = on
+    }
+
+    /** The metronome's settings, for its clicks over the music: a change is heard at once. */
+    fun setMetronome(settings: MetronomeSettings) {
+        if (settings == metronome) return
+        metronome = settings
+        val pb = playback ?: return
+        val music = song ?: return
+        applyClicks(pb, music)
+    }
+
+    // the clicks of [music]'s bars ([pb]) with the metronome's settings, to the player
+    private fun applyClicks(pb: Playback, music: MidiSong) {
+        val m = metronome ?: return
+        val p = player ?: return
+        val beats = BeatGrid(pb.bars, music.length, m.meter, m.subdivision, m.accent)
+        grid = beats
+        val sounds = ClickKind.entries.map { Clicks.of(m.sound, it, p.sampleRate) }
+        p.setClicks(beats.at, IntArray(beats.kinds.size) { beats.kinds[it].ordinal }, sounds, m.volume / 100f * CLICK_LEVEL)
+        p.clicking = _clicking.value
+    }
+
     /** A page turned by hand during playback: let the reader look ahead or back. */
     fun pageTurnedByHand() {
         if (_state.value == PlayState.PLAYING) followPaused = true
@@ -355,6 +400,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         player?.pause()
         playback = null
         song = null
+        _tick.value = null
         followPaused = false
         _ahead.value = emptyList()
         _cursor.value = emptyList()
@@ -463,9 +509,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 next.transpose(_transpose.value)
                 next.setLoop(loop.on, loop.start, loop.b)
                 next.setSong(read)
-                next.play(from)
                 song = read
                 playback = pb
+                applyClicks(pb, read)
+                next.play(from)
                 lastPlayback = pb
                 position = from
                 resumeAt = null
@@ -537,6 +584,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     _ahead.value = pb.notesAhead(position, turnAhead) ?: pb.onsets[index].notes
                     _cursor.value = pb.onsets[index].notes
                 }
+                _tick.value = grid?.tickAt(position)
                 delay(FOLLOW_MS.milliseconds)
             }
         }

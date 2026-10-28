@@ -93,7 +93,7 @@ class SynthTest {
 
     @Test
     fun theVoicesHeldFollowTheLoadOfTheTablet() {
-        // a slow tablet cannot render every voice of a dense piece in time: past 85 % of the
+        // a slow tablet cannot render every voice of a dense piece in time: past 75 % of the
         // time, the synth holds fewer voices, and more again once there is room
         val budget = VoiceBudget(max = 48, min = 16)
         assertEquals(48, budget.limit)

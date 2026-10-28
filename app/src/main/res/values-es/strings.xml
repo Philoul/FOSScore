@@ -226,4 +226,6 @@
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
+    <string name="prefs_library">Biblioteca</string>
+    <string name="prefs_library_summary">Exportar o importar una copia de toda la biblioteca</string>
 </resources>

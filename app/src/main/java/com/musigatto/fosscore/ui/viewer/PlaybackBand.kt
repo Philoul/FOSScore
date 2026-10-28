@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.metronome.Tick
@@ -56,6 +57,8 @@ internal const val ICON_METRONOME =
 internal val BAND_BUTTON = 44.dp
 // the band holds − ♩ = N + and the options button from this width (a tablet, a phone in landscape)
 private val BAND_WITH_TEMPO_BUTTONS = 440.dp
+// the bar of the score: room for "Mesure 188"
+private val BAND_BAR_WIDTH = 84.dp
 
 // the playback bar: a line across the line of music being played, a little past its staves
 private val BAR_COLOR = Color(0xCCE53935)
@@ -67,11 +70,12 @@ private const val BAR_OVERHANG_SPACES = 1.5f
  * score and for the metronome alone (a PDF): ⏮ (back to the start of the loop or of the piece),
  * ▶ / ⏸, the loop (on / off, the whole piece unless A or B is set) and the A and B markers (a tap
  * sets one where the music is, a second tap clears it) when there is music ([loop] not null), the
- * tempo with its − / + (repeating while held), the options, and the metronome: a tap switches its
- * clicks on or off, the band staying as it is. While they are on, the beats of the bar show next
- * to it, the one heard lit, with TAP. On a narrow screen − / + leave room, and a tap on the tempo
- * opens the options. It shows with the bars (centre tap); the music goes on when they hide.
- * [onClose] (the metronome alone) puts the band away.
+ * tempo with its − / + (repeating while held), the bar of the score ([barText]) and the options.
+ * Over the music the metronome button switches the clicks on or off ([onMetronome]); while they
+ * are on, the beats of the bar show next to it, the one heard lit, with TAP. The metronome alone
+ * (a PDF, [onMetronome] null) has no switch: its beats and TAP always show. On a narrow screen
+ * − / + and the bar leave room, and a tap on the tempo opens the options. It shows with the bars
+ * (centre tap); the music goes on when they hide. [onClose] (the metronome alone) puts it away.
  */
 @Composable
 fun PlaybackBand(
@@ -90,9 +94,10 @@ fun PlaybackBand(
     onB: () -> Unit,
     onTempo: (Int) -> Unit,
     onOptions: () -> Unit,
-    onMetronome: () -> Unit,
+    onMetronome: (() -> Unit)?,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
+    barText: String? = null,
     onClose: (() -> Unit)? = null,
 ) = BoxWithConstraints(modifier.fillMaxWidth()) {
     val wide = maxWidth >= BAND_WITH_TEMPO_BUTTONS
@@ -142,17 +147,30 @@ fun PlaybackBand(
             RepeatButton("+", stringResource(R.string.tempo_faster), enabled = bpm < maxBpm, size = BAND_BUTTON) {
                 onTempo((current + 1).coerceAtMost(maxBpm))
             }
+            if (barText != null) {
+                Text(
+                    barText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    // a fixed width: the band must not move under the finger as the bars go by
+                    modifier = Modifier.width(BAND_BAR_WIDTH),
+                )
+            }
             BandButton(stringResource(R.string.menu_playback), active = false, onClick = onOptions) { ToolIcon(ICON_OPTIONS) }
         } else {
             TextButton(onClick = onOptions) {
                 Text(stringResource(R.string.tempo_value, bpm), style = MaterialTheme.typography.labelLarge)
             }
         }
-        BandButton(
-            stringResource(if (clicking) R.string.playback_clicks_off else R.string.playback_clicks_on),
-            active = clicking,
-            onClick = onMetronome,
-        ) { ToolIcon(ICON_METRONOME) }
+        if (onMetronome != null) {
+            BandButton(
+                stringResource(if (clicking) R.string.playback_clicks_off else R.string.playback_clicks_on),
+                active = clicking,
+                onClick = onMetronome,
+            ) { ToolIcon(ICON_METRONOME) }
+        }
         if (clicking) {
             if (wide) {
                 Spacer(Modifier.width(4.dp))
@@ -213,6 +231,8 @@ fun PlaybackOptionsOverlay(
     soundChoices: SoundChoices,
     onPartSound: (String, PartSound?) -> Unit,
     onTryPartSound: (String?, PartSound?) -> Unit,
+    musicOff: Boolean,
+    onMusicOff: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -241,6 +261,8 @@ fun PlaybackOptionsOverlay(
         // listed even when the score has one part (a PDF has no parts)
         if (parts.isNotEmpty()) {
             SectionLabel(stringResource(R.string.heard_section_label))
+            // the metronome alone, the parts heard kept for when the music comes back
+            OptionRow(stringResource(R.string.playback_music_off), musicOff, Role.Checkbox, onClick = onMusicOff)
             Column(
                 modifier = Modifier
                     .heightIn(max = 240.dp)

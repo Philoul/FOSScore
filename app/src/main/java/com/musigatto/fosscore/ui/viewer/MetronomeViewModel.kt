@@ -55,18 +55,6 @@ class MetronomeViewModel(app: Application, private val score: String) : AndroidV
 
     private val tapTempo = TapTempo()
 
-    // the clicks heard, or the beats only seen (dots, flash) and the pages turned; the same switch
-    // as over the music of a MusicXML score
-    private val _clicking = MutableStateFlow(Settings.playbackClicks(context))
-    val clicking: StateFlow<Boolean> = _clicking.asStateFlow()
-
-    /** The clicks on or off; the beats go on. */
-    fun toggleClicks() {
-        _clicking.value = !_clicking.value
-        Settings.setPlaybackClicks(context, _clicking.value)
-        apply(_settings.value)
-    }
-
     // the bar of the piece where the counting started: the first bar of the page on screen
     private var startBar = 0
 
@@ -151,7 +139,7 @@ class MetronomeViewModel(app: Application, private val score: String) : AndroidV
         engine.subdivision = s.subdivision
         engine.accent = s.accent
         engine.sound = s.sound
-        engine.audible = _clicking.value && s.mode != MetronomeMode.VISUAL
+        engine.audible = s.mode != MetronomeMode.VISUAL
         engine.volume = s.volume / 100f
     }
 

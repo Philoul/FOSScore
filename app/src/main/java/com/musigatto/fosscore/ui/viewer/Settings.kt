@@ -99,6 +99,7 @@ object Settings {
     private const val KEY_PLAY_TRANSPOSE = "play_transpose_"
     private const val KEY_HEARD = "heard_"
     private const val KEY_PLAY_CLICKS = "play_clicks"
+    private const val KEY_MUSIC_OFF = "music_off_"
     private const val KEY_SOUND_BANK = "sound_bank"
     private const val KEY_BANK_FOLDER = "sound_bank_folder"
     private const val KEY_PART_SOUNDS = "part_sounds_"
@@ -240,6 +241,13 @@ object Settings {
 
     fun setTempo(context: Context, uri: String, factor: Float) {
         context.prefs().edit { putFloat(KEY_TEMPO + uri, factor) }
+    }
+
+    /** Whether the music of a score is silenced (the metronome alone). Per score. */
+    fun musicOff(context: Context, uri: String): Boolean = context.prefs().getBoolean(KEY_MUSIC_OFF + uri, false)
+
+    fun setMusicOff(context: Context, uri: String, off: Boolean) {
+        context.prefs().edit { putBoolean(KEY_MUSIC_OFF + uri, off) }
     }
 
     /** Whether the metronome clicks over the music while it plays. For the whole app. */

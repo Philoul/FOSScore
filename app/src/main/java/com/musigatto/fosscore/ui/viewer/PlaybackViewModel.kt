@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.musigatto.fosscore.metronome.BeatGrid
 import com.musigatto.fosscore.metronome.ClickKind
 import com.musigatto.fosscore.metronome.Clicks
+import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.metronome.MetronomeSettings
 import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.musicxml.Part
@@ -155,6 +156,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     val clicking: StateFlow<Boolean> = _clicking.asStateFlow()
     private val _tick = MutableStateFlow<Tick?>(null)
     val tick: StateFlow<Tick?> = _tick.asStateFlow()
+
+    // the bar of the score the music is in (0 the first), for the band
+    private val _bar = MutableStateFlow<Int?>(null)
+    val bar: StateFlow<Int?> = _bar.asStateFlow()
+
+    // the music silenced at once, the parts heard kept as they are: the metronome alone, the
+    // playback bar going on. Per score
+    private val _musicOff = MutableStateFlow(Settings.musicOff(context, score))
+    val musicOff: StateFlow<Boolean> = _musicOff.asStateFlow()
     private var metronome: MetronomeSettings? = null
     private var grid: BeatGrid? = null
 
@@ -300,7 +310,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         _heard.value = next
         Settings.setHeardParts(context, score, next)
         // silent at once; heard again once the new parts' music is ready (at once when stopped)
-        if (next.isEmpty() || playback == null) player?.muted = next.isEmpty()
+        if (next.isEmpty() || playback == null) player?.muted = silent()
         // all muted: the music goes on as it is, unheard
         if (next.isNotEmpty()) soundChanged()
     }
@@ -349,6 +359,16 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         }
     }
 
+    /** The music silenced, or heard again with the parts heard; the metronome and the bar go on. */
+    fun toggleMusic() {
+        _musicOff.value = !_musicOff.value
+        Settings.setMusicOff(context, score, _musicOff.value)
+        player?.muted = silent()
+    }
+
+    // nothing to hear of the music: silenced, or every part muted
+    private fun silent() = _musicOff.value || _heard.value?.isEmpty() == true
+
     /** The metronome's clicks over the music, on or off; they follow the music from where it is. */
     fun toggleClicks() {
         val on = !_clicking.value
@@ -373,7 +393,9 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         val beats = BeatGrid(pb.bars, music.length, m.meter, m.subdivision, m.accent)
         grid = beats
         val sounds = ClickKind.entries.map { Clicks.of(m.sound, it, p.sampleRate) }
-        p.setClicks(beats.at, IntArray(beats.kinds.size) { beats.kinds[it].ordinal }, sounds, m.volume / 100f * CLICK_LEVEL)
+        // the flash alone: the beats are seen, not heard
+        val gain = if (m.mode == MetronomeMode.VISUAL) 0f else m.volume / 100f * CLICK_LEVEL
+        p.setClicks(beats.at, IntArray(beats.kinds.size) { beats.kinds[it].ordinal }, sounds, gain)
         p.clicking = _clicking.value
     }
 
@@ -447,7 +469,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         LivePlayer(SoundBank.load(context, SoundBank.usable(context, Settings.soundBank(context))))
     }.also { made ->
         made.onEnd = { viewModelScope.launch { onEnd() } }
-        made.muted = _heard.value?.isEmpty() == true
+        made.muted = silent()
         player = made
     }
 
@@ -473,6 +495,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
 
     // the highlight and the page go to the notes at [quarters], without playing
     private fun showNotesAt(pb: Playback, quarters: Double) {
+        _bar.value = pb.barAt(quarters)
         val index = pb.onsetIndexAt(quarters).coerceAtLeast(0)
         pb.onsets.getOrNull(index)?.let {
             _ahead.value = emptyList()
@@ -551,7 +574,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 player?.setSounds(sounds)
                 player?.setSong(read)
                 song = read
-                player?.muted = _heard.value?.isEmpty() == true
+                player?.muted = silent()
                 playback = pb
                 lastPlayback = pb
             } catch (e: CancellationException) {
@@ -586,6 +609,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     _cursor.value = pb.onsets[index].notes
                 }
                 _tick.value = grid?.tickAt(position)
+                _bar.value = pb.barAt(position)
                 delay(FOLLOW_MS.milliseconds)
             }
         }

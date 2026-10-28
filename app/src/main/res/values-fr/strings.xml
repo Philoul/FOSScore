@@ -267,4 +267,6 @@
     <string name="sound_bank_waiting">Ses sons vont être préparés (disponible une fois prête)</string>
     <string name="part_sound_bank_preparing">%1$s (préparation des sons… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (sons à préparer)</string>
+    <string name="playback_bar">Mesure %1$d</string>
+    <string name="playback_music_off">Couper la musique (métronome seul)</string>
 </resources>

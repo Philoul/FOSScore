@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.MAX_BPM
 import com.musigatto.fosscore.metronome.MIN_BPM
 import com.musigatto.fosscore.metronome.MetronomeSettings
@@ -234,7 +235,9 @@ internal fun BottomChrome(
             val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
             val clicking by playbackVm.clicking.collectAsState()
             val tick by playbackVm.tick.collectAsState()
+            val bar by playbackVm.bar.collectAsState()
             PlaybackBand(
+                barText = bar?.let { stringResource(R.string.playback_bar, it + 1) },
                 state = playState,
                 loop = loop,
                 bpm = bpmOf(tempoFactor, writtenBpm),
@@ -265,14 +268,19 @@ internal fun BottomChrome(
         } else if (metronomeShown) {
             // a PDF has no music: the same band drives the metronome alone, its beats turning
             // the pages; it has no loop, and closes
-            val clicking by metronomeVm.clicking.collectAsState()
             PlaybackBand(
+                // the bar heard, counted from the start of the piece as the score numbers its
+                // bars, once the bars of the pages are counted
+                barText = metronomeVm.barHeard(metronomeTick)
+                    ?.takeIf { BarPages(metronome.barCounts, pageCount).known }
+                    ?.let { stringResource(R.string.playback_bar, it + 1) },
                 state = if (metronomeOn) PlayState.PLAYING else PlayState.STOPPED,
                 loop = null,
                 bpm = metronome.bpm,
                 minBpm = MIN_BPM,
                 maxBpm = MAX_BPM,
-                clicking = clicking,
+                // the metronome alone: its beats always show, its settings say what is heard
+                clicking = true,
                 tick = metronomeTick,
                 pulses = metronome.meter.pulses,
                 onPlayPause = onStartStop,
@@ -285,7 +293,7 @@ internal fun BottomChrome(
                 onB = {},
                 onTempo = metronomeVm::setBpm,
                 onOptions = { onShowSurface(ViewerSurface.METRONOME) },
-                onMetronome = metronomeVm::toggleClicks,
+                onMetronome = null,
                 onTap = { metronomeVm.tap() },
                 onClose = { metronomeVm.show(false) },
             )

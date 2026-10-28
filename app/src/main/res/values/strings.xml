@@ -263,4 +263,6 @@
     <string name="sound_bank_waiting">Its sounds will be prepared (it can be chosen once ready)</string>
     <string name="part_sound_bank_preparing">%1$s (preparing its sounds… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (its sounds will be prepared)</string>
+    <string name="playback_bar">Bar %1$d</string>
+    <string name="playback_music_off">Mute the music (the metronome alone)</string>
 </resources>

@@ -153,6 +153,7 @@ internal fun ViewerOverlays(
                 val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
                 val playTranspose by playbackVm.transpose.collectAsState()
                 val partSounds by playbackVm.partSounds.collectAsState()
+                val musicOff by playbackVm.musicOff.collectAsState()
                 // the sound banks and their instruments, for the sound of each part, read off the
                 // main thread each time the panel opens: banks added or deleted meanwhile show
                 val context = LocalContext.current
@@ -188,6 +189,8 @@ internal fun ViewerOverlays(
                     soundChoices = soundChoices,
                     onPartSound = playbackVm::setPartSound,
                     onTryPartSound = playbackVm::tryPartSound,
+                    musicOff = musicOff,
+                    onMusicOff = playbackVm::toggleMusic,
                     onDismiss = menu::dismiss,
                 )
             }

@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.LyricsPlacement
@@ -91,8 +93,8 @@ private fun MenuItemState.hint(): String? = when (this) {
 
 /**
  * The viewer menu: one vertical list under the ☰ button, every entry always in the same place.
- * What does not work yet is greyed out with the reason under its name, so the menu shows where the
- * app is going and never moves when an entry arrives. Closes on tap outside, with back, or when an
+ * What does not work yet is greyed out, so the menu shows where the app is going and never moves
+ * when an entry arrives; one line per entry keeps the whole menu in sight on a phone. Closes on tap outside, with back, or when an
  * entry is chosen.
  */
 @Composable
@@ -143,8 +145,8 @@ fun ViewerMenuPanel(
 }
 
 /**
- * Glyph (or, without one, the metronome icon), name, and under the name why the entry is greyed
- * out. 48 dp high at least: a touch target.
+ * Glyph (or, without one, the metronome icon) and name, on one line. Why the entry is greyed out
+ * is not written (the grey says it) but read out by a screen reader.
  */
 @Composable
 private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
@@ -153,9 +155,10 @@ private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boole
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = MENU_ROW_HEIGHT)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .semantics { if (hint != null) stateDescription = hint }
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val glyphColor = if (enabled) MaterialTheme.colorScheme.primary else content
@@ -171,14 +174,12 @@ private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boole
                 CompositionLocalProvider(LocalContentColor provides glyphColor) { ToolIcon(ICON_METRONOME) }
             }
         }
-        Column {
-            Text(label, style = MaterialTheme.typography.bodyLarge, color = content)
-            if (hint != null) {
-                Text(hint, style = MaterialTheme.typography.bodySmall, color = content)
-            }
-        }
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = content)
     }
 }
+
+// a row of the menu: the whole list fits on a phone, and a finger still finds its row
+private val MENU_ROW_HEIGHT = 40.dp
 
 /**
  * The MusicXML layout panel: what changes how the music is laid out on the page, saved per score.

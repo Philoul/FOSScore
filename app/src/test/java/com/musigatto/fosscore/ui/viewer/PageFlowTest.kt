@@ -212,4 +212,21 @@ class PageFlowTest {
     fun visiblePageRange_spreadEnLaPrimera() {
         assertEquals(0..1, visiblePageRange(currentPage = 0, pageCount = 2, showSpread = true))
     }
+
+    @Test
+    fun pagesToDraw_onePageWhenReadingAlone() {
+        assertEquals(listOf(2), pagesToDraw(false, false, false, currentPage = 2, pageCount = 9))
+    }
+
+    @Test
+    fun pagesToDraw_bothPagesOfASpread() {
+        assertEquals(listOf(2, 3), pagesToDraw(true, false, false, currentPage = 2, pageCount = 9))
+        // the turned half page shows the top of the next one
+        assertEquals(listOf(2, 3), pagesToDraw(false, true, true, currentPage = 2, pageCount = 9))
+    }
+
+    @Test
+    fun pagesToDraw_lastPageOfAnOddScoreHasNoCompanion() {
+        assertEquals(listOf(8), pagesToDraw(true, false, false, currentPage = 8, pageCount = 9))
+    }
 }

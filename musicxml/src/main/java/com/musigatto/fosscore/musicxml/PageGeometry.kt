@@ -26,7 +26,9 @@ class PageGeometry private constructor(
         private val INNER = Regex("""class="definition-scale"[^>]*viewBox="0 0 ([\d.]+) ([\d.]+)"""")
         private val MARGIN = Regex("""class="page-margin" transform="translate\((-?[\d.]+), (-?[\d.]+)\)"""")
         private val SYSTEM = Regex("""class="system"""")
-        private val STAFF_LINES = Regex("""class="staff">((?:<path d="M-?\d+ -?\d+ L-?\d+ -?\d+" stroke-width="\d+"/>)+)""")
+        // a staff's lines; the staff may carry its number before them (data-n, which the annotations
+        // ask Verovio for): the lines are group 2 in both cases
+        private val STAFF_LINES = Regex("""class="staff"(?: data-n="(\d+)")?>((?:<path d="M-?\d+ -?\d+ L-?\d+ -?\d+" stroke-width="\d+"/>)+)""")
         private val LINE_Y = Regex("""<path d="M-?\d+ (-?\d+) L""")
         private val LINE_END = Regex("""<path d="M-?\d+ -?\d+ L(-?\d+) """)
         private val NOTE = Regex("""<g id="([^"]+)" class="note"""")
@@ -52,11 +54,11 @@ class PageGeometry private constructor(
             val systems = starts.mapIndexed { i, start ->
                 val end = starts.getOrElse(i + 1) { svg.length }
                 val ys = STAFF_LINES.findAll(svg.substring(start, end))
-                    .flatMap { m -> LINE_Y.findAll(m.groupValues[1]).map { it.groupValues[1].toFloat() } }.toList()
+                    .flatMap { m -> LINE_Y.findAll(m.groupValues[2]).map { it.groupValues[1].toFloat() } }.toList()
                 val space = if (ys.size >= 2) ys[1] - ys[0] else DEFAULT_SPACE
                 // Verovio draws the staff lines measure by measure: the last one ends the system
                 val right = STAFF_LINES.findAll(svg.substring(start, end))
-                    .flatMap { m -> LINE_END.findAll(m.groupValues[1]).map { it.groupValues[1].toFloat() } }.maxOrNull()
+                    .flatMap { m -> LINE_END.findAll(m.groupValues[2]).map { it.groupValues[1].toFloat() } }.maxOrNull()
                 System(start, (ys.minOrNull() ?: 0f) + my, (ys.maxOrNull() ?: 0f) + my, space, (right ?: 0f) + mx)
             }
 

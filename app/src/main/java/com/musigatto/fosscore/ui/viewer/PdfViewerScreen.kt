@@ -77,6 +77,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
+import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
@@ -151,6 +152,16 @@ internal enum class ToolPanel { Stamps, Pen, Eraser, Color }
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
 internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float)
+
+private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): List<InkDraw> =
+    strokes.map { st ->
+        InkDraw(
+            id = st.id,
+            path = inkPath(strokePointsPx(st, fit)),
+            color = inkTint(st.color, invert),
+            width = st.width * fit.height
+        )
+    }
 
 @Composable
 fun PdfViewerScreen(
@@ -335,6 +346,22 @@ fun PdfViewerScreen(
         }
     }
 
+    // the second page of a spread. The viewer is reading, not editing, there, but its ink and its
+    // stamps are drawn too: half of a two-up (or the top of a turned half page) would come out bare.
+    val companion = if (spread && currentPage + 1 < pageCount) currentPage + 1 else null
+    val companionStampsFlow = remember(sheetHash, companion) {
+        if (sheetHash != null && companion != null) {
+            (context.applicationContext as FOSScoreApp).stampRepository.observe(sheetHash, companion)
+        } else flowOf(emptyList())
+    }
+    val companionStamps by companionStampsFlow.collectAsState(initial = emptyList())
+    val companionStrokesFlow = remember(sheetHash, companion) {
+        if (sheetHash != null && companion != null) {
+            (context.applicationContext as FOSScoreApp).strokeRepository.observe(sheetHash, companion)
+        } else flowOf(emptyList())
+    }
+    val companionStrokes by companionStrokesFlow.collectAsState(initial = emptyList())
+
     // ponytail: no annotations on MusicXML yet. They are stored per page, and a MusicXML page
     // changes with the screen and the music size; they need to be tied to measures first.
     val canEdit = sheetHash != null && !format.isMusicXml && !branch.showTwoUp &&
@@ -362,15 +389,11 @@ fun PdfViewerScreen(
     // written a second ago is not selectable and the word's box comes out short.
     val inkStrokes = (editor.pendingInk + pageStrokes).distinctBy { it.id }
     // the same ink, ready to draw: decode + Path once per change, not once per frame
-    val inkDraws = remember(inkStrokes, hitFit, invert) {
-        inkStrokes.map { st ->
-            InkDraw(
-                id = st.id,
-                path = inkPath(strokePointsPx(st, hitFit)),
-                color = inkTint(st.color, invert),
-                width = st.width * hitFit.height
-            )
-        }
+    val inkDraws = remember(inkStrokes, hitFit, invert) { inkDrawsOf(inkStrokes, hitFit, invert) }
+    // the next page's ink, same fit: its path only has to land on the paper that page takes, and
+    // PageOverlay stretches it there
+    val companionInkDraws = remember(companionStrokes, hitFit, invert) {
+        inkDrawsOf(companionStrokes, hitFit, invert)
     }
     // the zoom frame reads these through rememberUpdatedState: the gesture that calls it captured
     // it when it started, and must see the live page
@@ -1143,6 +1166,8 @@ fun PdfViewerScreen(
                     showSelection = showSelection,
                     loupeAt = loupeAt,
                     placePx = placePx,
+                    nextInkDraws = companionInkDraws,
+                    nextStamps = companionStamps,
                     // in the reading modes the whole viewport is scaled; a single page scales its
                     // own content, so the zoom layer is not used
                     modifier = if (spread) spreadMod.then(gestureMod) else gestureMod,

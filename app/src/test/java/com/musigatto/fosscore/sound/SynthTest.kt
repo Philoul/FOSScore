@@ -80,6 +80,31 @@ class SynthTest {
     }
 
     @Test
+    fun aVoiceGivenUpForANewNoteFadesInsteadOfStoppingDead() {
+        // past the voices it can hold, the synth gives up the oldest one: cut dead it clicks (the
+        // crackle heard with a bank of many voices, 2026-10-28); it fades out in a few ms instead
+        val synth = Synth(font, 44100, maxVoices = 2)
+        val out = FloatArray(4410 * 2)
+        for (key in listOf(60, 64, 67)) synth.noteOn(0, key, 100)
+        assertEquals("the voice given up still sounds, fading", 3, synth.activeVoices)
+        synth.render(out, 0, 4410)
+        assertEquals("then it is gone", 2, synth.activeVoices)
+    }
+
+    @Test
+    fun theVoicesHeldFollowTheLoadOfTheTablet() {
+        // a slow tablet cannot render every voice of a dense piece in time: past 85 % of the
+        // time, the synth holds fewer voices, and more again once there is room
+        val budget = VoiceBudget(max = 48, min = 16)
+        assertEquals(48, budget.limit)
+        repeat(20) { budget.update(load = 1.1f) }
+        assertTrue(budget.limit < 48)
+        assertTrue(budget.limit >= 16)
+        repeat(200) { budget.update(load = 0.3f) }
+        assertEquals(48, budget.limit)
+    }
+
+    @Test
     fun aSofterNoteIsQuieter() {
         fun level(velocity: Int): Float {
             val synth = Synth(font, 44100)

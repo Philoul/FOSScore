@@ -16,8 +16,15 @@ private const val CONTROL_FRAMES = 32
 // EMU's sound cards, which SoundFonts are made for, play the attenuation at 0.4 of its value
 private const val ATTENUATION_SCALE = 0.4f
 
-// a released voice below this attenuation (centibels, -96 dB) is silent: it stops
+// a voice's envelope below this attenuation (centibels, -96 dB) is silent: it stops
 private const val SILENT_CB = 960f
+
+// a released voice below this (-72 dB) cannot be heard in the music any more: it stops, and
+// leaves its place (a bank's long piano releases held the voices of a dense piece)
+private const val RELEASED_SILENT_CB = 720f
+
+// the voices given up that may still be fading out, past the voice limit
+private const val FADING_VOICES = 16
 
 // the envelopes run down 100 dB (1440 cB) in their decay and release times
 private const val FULL_RANGE_CB = 1440f
@@ -47,6 +54,16 @@ private const val DEFAULT_REVERB_CC = 40
  */
 class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoices: Int = 48) {
 
+    /**
+     * The voices held now, up to [maxVoices]: fewer on a tablet that cannot render them all in
+     * time (see VoiceBudget). Past it, a new note gives up a voice, which fades out in a few ms.
+     */
+    var voiceLimit = maxVoices
+        set(value) {
+            field = value.coerceIn(1, maxVoices)
+        }
+
+
     private class Channel {
         var program = 0
         var bank = 0
@@ -75,7 +92,7 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         for (region in font.regions(ch.bank, ch.program, key, velocity)) {
             val exclusive = region.gens[Gen.EXCLUSIVE_CLASS]
             if (exclusive != 0) voices.forEach { if (it.channel == channel && it.exclusive == exclusive) it.cut() }
-            if (voices.size >= maxVoices) steal()
+            if (sounding() >= voiceLimit) steal()
             voices += Voice(region, channel, key, velocity, noteCount, ch)
         }
     }
@@ -186,10 +203,35 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         ch.sustain = false
     }
 
-    // the voice to give up for a new note: the quietest released one, else the oldest
+    // the voices not fading out (given up already)
+    private fun sounding(): Int {
+        var n = 0
+        for (i in voices.indices) if (!voices[i].cutting) n++
+        return n
+    }
+
+    // The voice to give up for a new note, the quietest released one, else the oldest: it fades
+    // out in a few ms (cut dead, it clicks). Too many fading at once: the oldest of them goes now.
+    // By index, without a list made on the audio thread.
     private fun steal() {
-        val victim = voices.filter { it.released }.minByOrNull { it.level() } ?: voices.minByOrNull { it.order } ?: return
-        voices.remove(victim)
+        var victim: Voice? = null
+        for (i in voices.indices) {
+            val v = voices[i]
+            if (v.cutting) continue
+            val better = when {
+                victim == null -> true
+                v.released != victim.released -> v.released
+                v.released -> v.level() < victim.level()
+                else -> v.order < victim.order
+            }
+            if (better) victim = v
+        }
+        victim?.cut()
+        if (voices.size >= voiceLimit + FADING_VOICES) {
+            var oldest = -1
+            for (i in voices.indices) if (voices[i].cutting && (oldest < 0 || voices[i].order < voices[oldest].order)) oldest = i
+            if (oldest >= 0) voices.removeAt(oldest)
+        }
     }
 
     // read once by the bank, ahead by [warm] off the audio thread
@@ -236,7 +278,8 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         private var leftGain = 0f
         private var rightGain = 0f
         private var reverbSend = 0f
-        private var cutting = false
+        var cutting = false
+            private set
 
         init {
             controllersChanged()
@@ -331,7 +374,7 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
             modEnv.advance(seconds)
             modLfo.advance(seconds)
             vibLfo.advance(seconds)
-            if (volEnv.done || (released && volEnv.attenuation >= SILENT_CB)) return false
+            if (volEnv.done || (released && volEnv.attenuation >= RELEASED_SILENT_CB)) return false
 
             val cents = (noteKey - rootKey) * g(Gen.SCALE_TUNING) + g(Gen.COARSE_TUNE) * 100 + g(Gen.FINE_TUNE) +
                 region.sample.correction + modEnv.value * g(Gen.MOD_ENV_TO_PITCH) +
@@ -346,32 +389,45 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
             val target = targetGain()
             val from = gain
             val ramp = (target - from) / n
+            // The loop runs 48 000 times a second for every voice: what it reads is taken into
+            // locals first (a field is read again at every turn on a slow tablet), the 16-bit
+            // scale goes into the gains, and the loop's bounds are worked out once.
+            val samples = data
+            val last = samples.size - 1
+            val stop = end
+            val looping = (loopMode == 1 || (loopMode == 3 && !released)) && loopEnd > loopStart
+            val loopTo = loopEnd.toDouble()
+            val loopLength = (loopEnd - loopStart).toDouble()
+            val left = leftGain / 32768f
+            val right = rightGain / 32768f
+            val send = reverbSend / 32768f
+            var p = position
             for (i in 0 until n) {
-                val ip = position.toInt()
-                if (ip >= end) {
+                val ip = p.toInt()
+                if (ip >= stop) {
+                    position = p
                     gain = 0f
                     return false
                 }
                 // 4-point cubic (Hermite) interpolation: smoother highs than a straight line
-                val t = (position - ip).toFloat()
-                val last = data.size - 1
-                val y0 = data[max(ip - 1, 0)].toFloat()
-                val y1 = data[ip].toFloat()
-                val y2 = data[min(ip + 1, last)].toFloat()
-                val y3 = data[min(ip + 2, last)].toFloat()
+                val t = (p - ip).toFloat()
+                val y0 = samples[if (ip > 0) ip - 1 else 0].toFloat()
+                val y1 = samples[ip].toFloat()
+                val y2 = samples[if (ip < last) ip + 1 else last].toFloat()
+                val y3 = samples[if (ip + 1 < last) ip + 2 else last].toFloat()
                 val c1 = 0.5f * (y2 - y0)
                 val c2 = y0 - 2.5f * y1 + 2f * y2 - 0.5f * y3
                 val c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2)
-                var s = (((c3 * t + c2) * t + c1) * t + y1) / 32768f
+                var s = ((c3 * t + c2) * t + c1) * t + y1
                 if (filtered) s = filter.process(s)
                 s *= from + ramp * i
-                out[at + i * 2] += s * leftGain
-                out[at + i * 2 + 1] += s * rightGain
-                reverbIn[i] += s * reverbSend
-                position += step
-                val looping = loopMode == 1 || (loopMode == 3 && !released)
-                if (looping && loopEnd > loopStart && position >= loopEnd) position -= (loopEnd - loopStart)
+                out[at + i * 2] += s * left
+                out[at + i * 2 + 1] += s * right
+                reverbIn[i] += s * send
+                p += step
+                if (looping && p >= loopTo) p -= loopLength
             }
+            position = p
             gain = target
             return true
         }
@@ -502,8 +558,14 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         private var x2 = 0f
         private var y1 = 0f
         private var y2 = 0f
+        // what the coefficients were worked out for: most voices keep it from block to block
+        private var setCents = Float.NaN
+        private var setResonance = Float.NaN
 
         fun set(cents: Float, resonanceCb: Float, sampleRate: Int) {
+            if (cents == setCents && resonanceCb == setResonance) return
+            setCents = cents
+            setResonance = resonanceCb
             val hz = (8.176f * 2f.pow(cents / 1200f)).coerceIn(20f, sampleRate * 0.45f)
             val q = max(0.7071f, 10f.pow(resonanceCb / 200f))
             val w = 2 * PI.toFloat() * hz / sampleRate

@@ -32,6 +32,10 @@ private const val PREFILL_BLOCKS = BUFFER_BLOCKS - 2
 // not while the first notes play (they came out cut on a slow tablet)
 private const val COMPILE_BLOCKS = 200
 
+// the voices the synth holds at most, and at least when the tablet cannot keep up
+private const val MAX_VOICES = 48
+private const val MIN_VOICES = 16
+
 /**
  * The live player: a [MidiSong] played by a [Synth] into an [AudioTrack], event after event, on
  * its own audio thread. The music advances in quarter notes at the song's tempo times
@@ -41,7 +45,9 @@ private const val COMPILE_BLOCKS = 200
  */
 class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC)) {
 
-    private val synth = Synth(font, sampleRate)
+    private val synth = Synth(font, sampleRate, MAX_VOICES)
+    // the voices held, from how long the blocks take to render (a slow tablet, a dense piece)
+    private val budget = VoiceBudget(MAX_VOICES, MIN_VOICES)
     private val commands = ConcurrentLinkedQueue<() -> Unit>()
 
     @Volatile var tempoFactor = 1.0
@@ -257,6 +263,7 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                 if (blocks++ == PREFILL_BLOCKS) t.play()
                 while (true) commands.poll()?.invoke() ?: break
                 var done = 0
+                val started = System.nanoTime()
                 while (done < BLOCK_FRAMES) {
                     val step = 1_000_000.0 / song.microsPerQuarter(at) * tempoFactor / sampleRate
                     // the next thing that happens: an event, a tempo change, the loop's or the song's end
@@ -284,6 +291,11 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                     if (muted) block.fill(0f, done * 2, (done + frames) * 2)
                     at += frames * step
                     done += frames
+                }
+                // the block's render time over its own time: past the time, the music would lag
+                if (done > 0) {
+                    budget.update((System.nanoTime() - started) / (done * 1e9f / sampleRate))
+                    synth.voiceLimit = budget.limit
                 }
                 if (done > 0) t.write(block, 0, done * 2, AudioTrack.WRITE_BLOCKING)
                 written += done

@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -40,6 +41,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.sound.PartSound
+import com.musigatto.fosscore.sound.SoundBank
 import com.musigatto.fosscore.sound.SoundBankEntry
 import com.musigatto.fosscore.sound.SoundFont
 import kotlinx.coroutines.launch
@@ -232,8 +234,13 @@ private fun PartSoundDialog(
                 }
                 if (choices.banks.size > 1) {
                     Text(stringResource(R.string.part_sound_bank), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                    val preparing by SoundBank.preparing.collectAsState()
                     choices.banks.forEach { bank ->
-                        OptionRow(bank.name, bank.id == chosen.bankId, Role.RadioButton) {
+                        // a bank still being prepared shows, greyed, with how far it is
+                        val label = if (bank.ready) bank.name else preparing[bank.id]?.let { (done, total) ->
+                            stringResource(R.string.part_sound_bank_preparing, bank.name, if (total > 0) done * 100 / total else 0)
+                        } ?: stringResource(R.string.part_sound_bank_waiting, bank.name)
+                        OptionRow(label, bank.id == chosen.bankId, Role.RadioButton, enabled = bank.ready) {
                             if (bank.id != chosen.bankId) {
                                 scope.launch { sameIn(bank.id, chosen, choices.instrumentsOf(bank.id))?.let { choose(it) } }
                             }

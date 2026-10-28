@@ -213,6 +213,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         if (pages !== this.pages || loaded != attachedFor) {
             stop()
             lastPlayback = null
+            // the music stands at the start: the band shows its first bar until it moves
+            _bar.value = pages?.let { 0 }
             resumeAt = null
             warming?.cancel()
             warming = pages?.let {

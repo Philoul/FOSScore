@@ -162,7 +162,12 @@ internal fun ViewerOverlays(
                     }
                 }
                 val soundChoices = remember(banks) {
-                    SoundChoices(banks.first, banks.second) { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } }
+                    SoundChoices(
+                        banks.first,
+                        banks.second,
+                        instrumentsOf = { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } },
+                        resolve = { saved, score -> withContext(Dispatchers.IO) { SoundBank.resolve(context, saved, score) } },
+                    )
                 }
                 PlaybackOptionsOverlay(
                     bpm = bpmOf(tempoFactor, writtenBpm),

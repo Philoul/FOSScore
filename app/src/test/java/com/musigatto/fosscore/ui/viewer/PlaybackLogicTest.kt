@@ -2,6 +2,8 @@ package com.musigatto.fosscore.ui.viewer
 
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.sound.PartSound
+import com.musigatto.fosscore.sound.SoundBank
+import com.musigatto.fosscore.sound.resolveSound
 import com.musigatto.fosscore.sound.SoundFont
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -120,5 +122,23 @@ class PlaybackLogicTest {
             setOf(SoundFont.Instrument(0, 0, "Grand Piano"), SoundFont.Instrument(8, 4, "Detuned EP"), SoundFont.Instrument(SoundFont.DRUM_BANK, 0, "Standard 1")),
             mainInstruments(all).toSet(),
         )
+    }
+
+    @Test
+    fun aPartAlwaysPlaysASoundAndShowsTheBankItComesFrom() {
+        // the banks: "muse" is there and ready, "gone" was deleted, "half" is not ready yet; the
+        // built-in one has every General MIDI program, "muse" has no program 120
+        val playable = { id: String -> id == SoundBank.BUILT_IN || id == "muse" }
+        val has = { s: PartSound -> s.bankId == SoundBank.BUILT_IN || (s.bankId == "muse" && s.program != 120) }
+        val score = PartSound("muse", 0, 0)
+        // the sound saved, its bank there: it
+        assertEquals(PartSound("muse", 0, 52), resolveSound(PartSound("muse", 0, 52), score, playable, has))
+        // its bank deleted, or not ready: the same instrument from the default bank
+        assertEquals(PartSound("muse", 0, 52), resolveSound(PartSound("gone", 0, 52), score, playable, has))
+        assertEquals(PartSound("muse", 0, 52), resolveSound(PartSound("half", 0, 52), score, playable, has))
+        // the default bank without that instrument: the bank that comes with the app plays it
+        assertEquals(PartSound(SoundBank.BUILT_IN, 0, 120), resolveSound(PartSound("gone", 0, 120), score, playable, has))
+        // nothing saved: the score's own instrument, from the default bank
+        assertEquals(score, resolveSound(null, score, playable, has))
     }
 }

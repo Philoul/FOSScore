@@ -66,6 +66,8 @@ class SoundChoices(
     val banks: List<SoundBankEntry>,
     val default: String,
     val instrumentsOf: suspend (bankId: String) -> List<SoundFont.Instrument>,
+    /** The sound a part plays, from its sound saved (or none) and the score's: see resolveSound. */
+    val resolve: suspend (saved: PartSound?, score: PartSound) -> PartSound = { saved, score -> saved ?: score },
 )
 
 /**
@@ -92,7 +94,9 @@ internal fun PartSoundButton(
 ) {
     var open by remember { mutableStateOf(false) }
     val score = part.scoreSound(choices.default)
-    val playing = sound ?: score
+    // what is heard, from the bank it comes from: the sound saved, or another one when its bank is
+    // gone, not ready, or without it
+    val playing by produceState(sound ?: score, sound, score, choices) { value = choices.resolve(sound, score) }
     val instruments by produceState(emptyList<SoundFont.Instrument>(), playing.bankId) {
         value = choices.instrumentsOf(playing.bankId)
     }

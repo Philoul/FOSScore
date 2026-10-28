@@ -180,18 +180,15 @@ fun eraseStrokePoints(pts: List<Offset>, eraser: List<Offset>, radius: Float): L
     if (eraser.isEmpty() || pts.isEmpty()) return listOf(pts)
     val keep = pts.map { minDistanceToPolyline(it, eraser) >= radius }
     if (keep.none { it }) return emptyList()
+    // Only the points the eraser removed break a stroke. Splitting on point spacing as well broke
+    // strokes nobody touched: a fast stroke stores its points far apart, so a pass anywhere on the
+    // page turned it into pieces with a visible white gap between the round caps.
     val runs = mutableListOf<MutableList<Offset>>()
     var cur = mutableListOf<Offset>()
-    // ponytail: a gap wider than 2*radius between survivors splits the pieces; it gets it wrong
-    // if a stroke has naturally very spread-out points. Upgrade: split by distance to the trail.
-    val splitGap = radius * 2f
     for (i in pts.indices) {
         if (!keep[i]) {
             if (cur.isNotEmpty()) { runs.add(cur); cur = mutableListOf() }
             continue
-        }
-        if (cur.isNotEmpty() && (pts[i] - cur.last()).getDistance() > splitGap) {
-            runs.add(cur); cur = mutableListOf()
         }
         cur.add(pts[i])
     }

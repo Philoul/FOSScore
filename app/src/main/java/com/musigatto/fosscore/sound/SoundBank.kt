@@ -47,6 +47,20 @@ private const val DECODE_STALL_MS = 2_000L
  */
 data class PartSound(val bankId: String, val bank: Int, val program: Int)
 
+/**
+ * The sound a part plays, the one its sound list shows: [saved] (or, without one, the score's own
+ * [score], whose bank is the default one) while its bank can play ([playable]: there, and ready)
+ * and has it ([has]); else the same instrument from the default bank; else from the bank that
+ * comes with the app, which always plays something. A sound is always heard, and its bank shown.
+ */
+fun resolveSound(saved: PartSound?, score: PartSound, playable: (String) -> Boolean, has: (PartSound) -> Boolean): PartSound {
+    val wanted = saved ?: score
+    if (playable(wanted.bankId) && has(wanted)) return wanted
+    val inDefault = wanted.copy(bankId = score.bankId)
+    if (playable(score.bankId) && has(inDefault)) return inDefault
+    return wanted.copy(bankId = SoundBank.BUILT_IN)
+}
+
 /** A bank file found in a folder of the device, not added yet: its file [name], [size] and [uri]. */
 data class BankFile(val name: String, val size: Long, val uri: Uri)
 
@@ -251,6 +265,13 @@ object SoundBank {
             list(app).filter { !it.ready }.forEach { prepare(app, it.id) }
         }
     }
+
+    /** Whether bank [id] has [sound]'s instrument (its bank and program). Reads the bank: off the main thread. */
+    fun hasSound(context: Context, sound: PartSound): Boolean = load(context, sound.bankId).has(sound.bank, sound.program)
+
+    /** [sound]'s resolution ([resolveSound]) with the banks there: reads them, off the main thread. */
+    fun resolve(context: Context, saved: PartSound?, score: PartSound): PartSound =
+        resolveSound(saved, score, { usable(context, it) == it }) { hasSound(context, it) }
 
     /** [id] when that bank can play now; else the built-in one (a bank gone, or not ready). */
     fun usable(context: Context, id: String): String {

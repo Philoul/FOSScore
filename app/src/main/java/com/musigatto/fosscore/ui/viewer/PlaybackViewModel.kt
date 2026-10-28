@@ -482,11 +482,16 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         val tried = trying
         val sounds = if (tried == null) _partSounds.value
         else tried.second?.let { _partSounds.value + (tried.first to it) } ?: (_partSounds.value - tried.first)
-        for ((part, sound) in sounds) {
-            // a bank deleted since, or not ready yet: the same instrument from the default bank
-            val bankId = sound.bankId.takeIf { SoundBank.usable(context, it) == it } ?: SoundBank.usable(context, Settings.soundBank(context))
-            val font = SoundBank.load(context, bankId)
-            for (track in pb.partTracks[part].orEmpty()) {
+        val default = SoundBank.usable(context, Settings.soundBank(context))
+        for (part in pages?.parts.orEmpty()) {
+            // what the part plays: its sound, or the score's; from another bank when that one is
+            // gone, not ready, or without the instrument (resolveSound)
+            val score = part.scoreSound(default)
+            val sound = SoundBank.resolve(context, sounds[part.id], score)
+            // the score's own instrument in the default bank: the player's bank plays the file
+            if (sound == score) continue
+            val font = SoundBank.load(context, sound.bankId)
+            for (track in pb.partTracks[part.id].orEmpty()) {
                 for (channel in music.trackChannels.getOrNull(track).orEmpty()) {
                     out[channel] = ChannelSound(font, sound.bank, sound.program)
                 }

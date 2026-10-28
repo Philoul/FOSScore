@@ -219,7 +219,7 @@
     <string name="metronome_next_page">Next page</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Sound banks for playback</string>
-    <string name="sound_banks_hint">SoundFont banks (SF2 or SF3) give playback its instruments. The default bank plays every part that has no sound of its own. A bank in SF3 is prepared once when it is added (a few minutes on an old tablet): its sounds then play at once.</string>
+    <string name="sound_banks_hint">SoundFont banks (SF2 or SF3) give playback its instruments. The default bank plays every part that has no sound of its own. A bank in SF3 is prepared once when it is added (a few minutes on an old tablet), by itself: it can be chosen once its sounds are ready, and they then play at once.</string>
     <string name="sound_bank_default">Default bank</string>
     <string name="sound_bank_built_in">Comes with the app</string>
     <string name="sound_bank_add">Add a sound bank…</string>
@@ -261,8 +261,6 @@
     <string name="sound_bank_folder_text">Android cannot show only the SF2 and SF3 files. In the next screen, open the folder that holds your banks (for example Download), without touching the files, which stay greyed out, then tap the button at the bottom (\"Select\" or \"Use this folder\"). FOSScore then lists the banks it holds, and remembers the folder for next time.</string>
     <string name="sound_bank_folder_choose">Choose the folder</string>
     <string name="part_sound_variants">Variants (%1$d)</string>
-    <string name="sound_bank_preparing">Preparing its sounds… %1$d %%</string>
-    <string name="sound_bank_ready">Sounds ready</string>
-    <string name="sound_bank_to_prepare">Sounds to prepare (%1$d of %2$d ready)</string>
-    <string name="sound_bank_prepare">Prepare</string>
+    <string name="sound_bank_preparing">Preparing its sounds… %1$d %% (it can be chosen once ready)</string>
+    <string name="sound_bank_waiting">Its sounds will be prepared (it can be chosen once ready)</string>
 </resources>

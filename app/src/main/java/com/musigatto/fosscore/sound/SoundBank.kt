@@ -48,20 +48,16 @@ data class BankFile(val name: String, val size: Long, val uri: Uri)
 
 /**
  * One sound bank the app can play: [BUILT_IN], or one the user added ([size] bytes). A bank in SF3
- * has its samples [compressed]; [prepared] of its [samples] are decoded and kept on the device.
+ * has its samples [compressed]: it can be chosen once [ready], every sample decoded and kept.
  */
 data class SoundBankEntry(
     val id: String,
     val name: String,
     val size: Long,
     val compressed: Boolean = false,
-    val samples: Int = 0,
-    val prepared: Int = 0,
+    val ready: Boolean = true,
 ) {
     val builtIn: Boolean get() = id == SoundBank.BUILT_IN
-
-    /** Whether every sample plays at once: a SoundFont 2 bank, or an SF3 one prepared. */
-    val ready: Boolean get() = !compressed || prepared >= samples
 }
 
 /**
@@ -75,7 +71,9 @@ data class SoundBankEntry(
  * then kept: the next pieces read it straight from there. Android's decoder is slow on an old
  * tablet (a few times faster than the music), so a bank in SF3 the user adds is prepared once, in
  * the background, when it is added ([prepare]): all its samples decoded and kept in the app's
- * files, where the system does not clear them.
+ * files, where the system does not clear them. It cannot be chosen, and does not play, until it
+ * is ready ([usable]); a preparation cut short (the app closed) goes on by itself the next time
+ * the app starts ([prepareAll]).
  */
 object SoundBank {
     /** The id of the bank that comes with the app. */
@@ -88,6 +86,8 @@ object SoundBank {
     private const val CACHE = "soundbank/GeneralUser-GS-2.0.3"
     private const val ADDED_CACHE = "soundbank/added-"
     private const val DECODED_SUFFIX = ".decoded"
+    // written once every sample of a bank is decoded: the bank can be chosen
+    private const val READY_SUFFIX = ".ready"
 
     // the threads that prepare a bank: a slow tablet has two cores
     private const val PREPARE_THREADS = 2
@@ -138,8 +138,7 @@ object SoundBank {
                 name = File(f.parentFile, id + NAME_SUFFIX).takeIf { it.isFile }?.readText()?.trim().orEmpty().ifBlank { f.name },
                 size = f.length(),
                 compressed = compressed,
-                samples = if (compressed) load(context, id).samples.count { it.compressed } else 0,
-                prepared = if (compressed) decodedFolder(context, id).list { _, name -> name.endsWith(".pcm") }?.size ?: 0 else 0,
+                ready = !compressed || File(f.parentFile, id + READY_SUFFIX).isFile,
             )
         }.sortedBy { it.name.lowercase() }
         return listOf(SoundBankEntry(BUILT_IN, BUILT_IN_NAME, builtInSize(context))) + added
@@ -158,21 +157,25 @@ object SoundBank {
             try {
                 val font = load(app, id)
                 val wanted = font.samples.filter { it.compressed }
+                val decoded = decodedFolder(app, id)
                 val queue = ConcurrentLinkedQueue(wanted)
                 val done = AtomicInteger()
                 val started = System.nanoTime()
                 val workers = List(PREPARE_THREADS) {
                     launch {
-                        while (true) {
+                        while (has(app, id)) {
                             val sample = queue.poll() ?: break
-                            // decoded and kept on the device, not in memory: the piece reads it later
-                            font.read(sample)
+                            // decoded and kept on the device, not in memory: the piece reads it
+                            // later. A sample decoded before (a preparation cut short) is skipped
+                            if (!File(decoded, "${sample.index}.pcm").isFile) font.read(sample)
                             val n = done.incrementAndGet()
                             if (n % PROGRESS_EVERY == 0 || n == wanted.size) _preparing.update { it + (id to (n to wanted.size)) }
                         }
                     }
                 }
                 workers.forEach { it.join() }
+                // every sample gone through, the bank still there: it can be chosen
+                if (done.get() == wanted.size && has(app, id)) File(folder(app), id + READY_SUFFIX).writeText("")
                 Log.i(LOG_TAG, "bank $id prepared: ${wanted.size} samples in ${(System.nanoTime() - started) / 1_000_000_000} s")
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "bank $id not prepared: ${e.message}", e)
@@ -181,6 +184,25 @@ object SoundBank {
                 _preparing.update { it - id }
             }
         }
+    }
+
+    /**
+     * Prepares every bank in SF3 the user added that is not ready: a preparation cut short when the
+     * app closed goes on from where it was. Called when the app starts.
+     */
+    fun prepareAll(context: Context) {
+        val app = context.applicationContext
+        scope.launch {
+            list(app).filter { !it.ready }.forEach { prepare(app, it.id) }
+        }
+    }
+
+    /** [id] when that bank can play now; else the built-in one (a bank gone, or not ready). */
+    fun usable(context: Context, id: String): String {
+        if (id == BUILT_IN) return id
+        val file = folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }?.firstOrNull() ?: return BUILT_IN
+        val ready = !file.name.endsWith(".sf3", ignoreCase = true) || File(folder(context), id + READY_SUFFIX).isFile
+        return if (ready) id else BUILT_IN
     }
 
     /**
@@ -199,7 +221,7 @@ object SoundBank {
             val file = File(dir, "$id.$ext")
             if (!part.renameTo(file)) return null
             File(dir, id + NAME_SUFFIX).writeText(shown)
-            SoundBankEntry(id, shown, file.length())
+            SoundBankEntry(id, shown, file.length(), compressed = ext == "sf3", ready = ext != "sf3")
         } catch (e: Exception) {
             Log.w(LOG_TAG, "not a sound bank: ${e.message}")
             null

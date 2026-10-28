@@ -155,7 +155,10 @@ internal fun ViewerOverlays(
                 // main thread each time the panel opens: banks added or deleted meanwhile show
                 val context = LocalContext.current
                 val banks by produceState(emptyList<SoundBankEntry>() to SoundBank.BUILT_IN) {
-                    value = withContext(Dispatchers.IO) { SoundBank.list(context) to Settings.soundBank(context) }
+                    // a bank still being prepared cannot be chosen yet
+                    value = withContext(Dispatchers.IO) {
+                        SoundBank.list(context).filter { it.ready } to SoundBank.usable(context, Settings.soundBank(context))
+                    }
                 }
                 val soundChoices = remember(banks) {
                     SoundChoices(banks.first, banks.second) { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } }

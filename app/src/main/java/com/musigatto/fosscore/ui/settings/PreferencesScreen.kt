@@ -164,25 +164,17 @@ private fun LanguageSection() {
 }
 
 /**
- * Under a bank in SF3, how far its sounds are prepared: being prepared (with how much is done),
- * ready, or to prepare (a preparation stopped when the app closed), with a button to go on.
+ * Under a bank in SF3 not ready yet: how far its sounds are prepared, and that it can be chosen
+ * only then. The preparation goes on by itself (when it is added, and each time the app starts).
  */
 @Composable
-private fun BankState(bank: SoundBankEntry, progress: Pair<Int, Int>?, onPrepare: () -> Unit) {
-    if (!bank.compressed) return
+private fun BankState(bank: SoundBankEntry, progress: Pair<Int, Int>?) {
+    if (bank.ready) return
     val style = MaterialTheme.typography.bodySmall
-    when {
-        progress != null -> {
-            val (done, total) = progress
-            val percent = if (total > 0) done * 100 / total else 0
-            Text(stringResource(R.string.sound_bank_preparing, percent), style = style, color = MaterialTheme.colorScheme.primary)
-        }
-        bank.ready -> Text(stringResource(R.string.sound_bank_ready), style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        else -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.sound_bank_to_prepare, bank.prepared, bank.samples), style = style, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = onPrepare) { Text(stringResource(R.string.sound_bank_prepare)) }
-        }
-    }
+    val text = progress?.let { (done, total) ->
+        stringResource(R.string.sound_bank_preparing, if (total > 0) done * 100 / total else 0)
+    } ?: stringResource(R.string.sound_bank_waiting)
+    Text(text, style = style, color = MaterialTheme.colorScheme.primary)
 }
 
 /**
@@ -216,6 +208,8 @@ private fun SoundBanks() {
     // the banks being prepared, and their progress; the list is read again when one starts or ends
     val preparing by SoundBank.preparing.collectAsState()
     LaunchedEffect(preparing.keys) { reload() }
+    // a preparation cut short goes on (it does when the app starts, too)
+    LaunchedEffect(Unit) { SoundBank.prepareAll(app) }
 
     suspend fun browse(tree: Uri) {
         found = withContext(Dispatchers.IO) {
@@ -262,12 +256,13 @@ private fun SoundBanks() {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .selectable(selected = bank.id == chosen, role = Role.RadioButton) {
+                // a bank not ready yet cannot be chosen
+                .selectable(selected = bank.id == chosen, enabled = bank.ready, role = Role.RadioButton) {
                     chosen = bank.id
                     Settings.setSoundBank(app, bank.id)
                 },
         ) {
-            RadioButton(selected = bank.id == chosen, onClick = null)
+            RadioButton(selected = bank.id == chosen, onClick = null, enabled = bank.ready)
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(bank.name, style = MaterialTheme.typography.bodyLarge)
                 val size = Formatter.formatShortFileSize(context, bank.size)
@@ -276,7 +271,7 @@ private fun SoundBanks() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                BankState(bank, preparing[bank.id]) { SoundBank.prepare(app, bank.id) }
+                BankState(bank, preparing[bank.id])
             }
             if (!bank.builtIn) {
                 TextButton(onClick = { deleting = bank }) { Text(stringResource(R.string.sound_bank_delete)) }

@@ -221,7 +221,7 @@
     <string name="metronome_next_page">Página siguiente</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Bancos de sonidos de la reproducción</string>
-    <string name="sound_banks_hint">Los bancos SoundFont (SF2 o SF3) dan sus instrumentos a la reproducción. El banco predeterminado toca todas las partes que no tienen un sonido propio. Un banco SF3 se prepara una vez, al añadirlo (unos minutos en una tableta antigua): sus sonidos se tocan después enseguida.</string>
+    <string name="sound_banks_hint">Los bancos SoundFont (SF2 o SF3) dan sus instrumentos a la reproducción. El banco predeterminado toca todas las partes que no tienen un sonido propio. Un banco SF3 se prepara una vez, al añadirlo, por sí solo (unos minutos en una tableta antigua): está disponible cuando sus sonidos están listos, y entonces se tocan enseguida.</string>
     <string name="sound_bank_default">Banco predeterminado</string>
     <string name="sound_bank_built_in">Incluido con la aplicación</string>
     <string name="sound_bank_add">Añadir un banco de sonidos…</string>
@@ -263,8 +263,6 @@
     <string name="sound_bank_folder_text">Android no puede mostrar solo los archivos SF2 y SF3. En la siguiente pantalla, abra la carpeta que contiene sus bancos (por ejemplo Download), sin tocar los archivos, que quedan en gris, y luego toque el botón de abajo («Seleccionar» o «Usar esta carpeta»). FOSScore muestra entonces los bancos que contiene y recuerda la carpeta para la próxima vez.</string>
     <string name="sound_bank_folder_choose">Elegir la carpeta</string>
     <string name="part_sound_variants">Variantes (%1$d)</string>
-    <string name="sound_bank_preparing">Preparando los sonidos… %1$d %%</string>
-    <string name="sound_bank_ready">Sonidos listos</string>
-    <string name="sound_bank_to_prepare">Sonidos por preparar (%1$d de %2$d listos)</string>
-    <string name="sound_bank_prepare">Preparar</string>
+    <string name="sound_bank_preparing">Preparando los sonidos… %1$d %% (disponible cuando esté listo)</string>
+    <string name="sound_bank_waiting">Sus sonidos se van a preparar (disponible cuando esté listo)</string>
 </resources>

@@ -217,6 +217,12 @@ fun PdfViewerScreen(
         key = "annotation:$pdfUri",
         factory = AnnotationViewModel.factory(context, sheetHash),
     )
+    // how the pages show (two-up, half page, dim, invert, keep the screen on): one ViewModel for
+    // every score, reading and writing the settings in one place
+    val viewer: ViewerViewModel = viewModel(
+        key = "viewer:$isLandscape",
+        factory = ViewerViewModel.factory(context, isLandscape),
+    )
     // a MusicXML score's bars and notes, for the page turns of the metronome
     var metronomeMusic by remember { mutableStateOf<Playback?>(null) }
     SideEffect { playbackVm.turnAhead = metronome.turnAhead }
@@ -230,9 +236,10 @@ fun PdfViewerScreen(
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
     }
-    // the same for every score, half page for each orientation (Settings)
-    var twoUp by remember { mutableStateOf(Settings.twoUp(context)) }
-    var halfEnabled by remember(isLandscape) { mutableStateOf(Settings.halfPage(context, isLandscape)) }
+    // the same for every score, half page for each orientation (ViewerViewModel)
+    val display by viewer.display.collectAsState()
+    val twoUp = display.twoUp
+    val halfEnabled = display.halfPage
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     // the chrome starts hidden: the app is the page (spec §0)
     var navVisible by rememberSaveable { mutableStateOf(false) }
@@ -256,9 +263,9 @@ fun PdfViewerScreen(
     // both always agree
     var halfCut by remember(pdfUri) { mutableStateOf<HalfCut?>(null) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
-    var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
-    var invert by remember { mutableStateOf(Settings.invert(context)) }
-    var keepScreenOn by remember { mutableStateOf(Settings.keepScreenOn(context)) }
+    val dimPct = display.dimPct
+    val invert = display.invert
+    val keepScreenOn = display.keepScreenOn
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
     val view = LocalView.current
@@ -428,13 +435,11 @@ fun PdfViewerScreen(
         if (!editing && (sheetHash == null || format.isMusicXml)) return
         editing = !editing
         if (editing) {
-            twoUp = false
-            halfEnabled = false
+            viewer.singlePage()
             halfTurned = false
         } else {
             // back to the pages as the user set them
-            twoUp = Settings.twoUp(context)
-            halfEnabled = Settings.halfPage(context, isLandscape)
+            viewer.restoreReadingMode()
             editor.clearHistory()
             editor.clearSelection()
             drawingTool = false
@@ -1319,19 +1324,18 @@ fun PdfViewerScreen(
             themeMode = themeMode,
             onToggleTheme = onToggleTheme,
             invert = invert,
-            onSetInvert = { invert = it; Settings.setInvert(context, it) },
+            onSetInvert = viewer::setInvert,
             keepScreenOn = keepScreenOn,
-            onSetKeepScreenOn = { keepScreenOn = it; Settings.setKeepScreenOn(context, it) },
+            onSetKeepScreenOn = viewer::setKeepScreenOn,
             dimPct = dimPct,
-            onSetDimPct = { dimPct = it },
-            onCommitDim = { Settings.setDimPct(context, dimPct) },
+            onSetDimPct = viewer::setDimPct,
+            onCommitDim = viewer::commitDimPct,
             twoUp = twoUp,
-            onSetTwoUp = { twoUp = it; Settings.setTwoUp(context, it) },
+            onSetTwoUp = viewer::setTwoUp,
             halfEnabled = halfEnabled,
             onSetHalf = {
-                halfEnabled = it
+                viewer.setHalfPage(it)
                 halfTurned = false
-                Settings.setHalfPage(context, isLandscape, it)
             },
             tempoFactor = tempoFactor,
             panelTop = panelTop,

@@ -233,9 +233,9 @@ fun PdfViewerScreen(
     // bitmap draw step: the bitmap is drawn at fit × renderScale (1:1 on screen, no GPU
     // rescaling). The gesture feeds it through ZoomMath.renderBucket.
     var renderScale by remember { mutableFloatStateOf(1f) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
+    // zoom and pan: read in the gesture's pointer loop and in the canvas' draw lambdas, never
+    // in composition (a per-frame read here would recompose the screen on every pinch frame)
+    val zoom = rememberZoomState()
     var renderGeneration by remember { mutableIntStateOf(0) }
     // last page that was actually drawn: while the next one renders (~300 ms, plus the display
     // list parse) the old page stays on screen instead of a spinner flash. Cleared when the doc
@@ -372,12 +372,9 @@ fun PdfViewerScreen(
             )
         }
     }
-    // the zoom helpers below read these through rememberUpdatedState: the gesture that calls
-    // them captured them when it started, and must see the live page
+    // the zoom frame reads these through rememberUpdatedState: the gesture that calls it captured
+    // it when it started, and must see the live page
     val currentPageFit by rememberUpdatedState(pageFit)
-    // where the page is centred in the viewport, and the pure fit rect (origin 0,0):
-    // content work and zoom anchoring live in these coordinates
-    val currentBase by rememberUpdatedState(Offset(pageFit.left, pageFit.top))
     // the reading modes (two-up, half page) scale the whole viewport; a single page scales its
     // content.
     val currentSpread by rememberUpdatedState(spread)
@@ -478,27 +475,18 @@ fun PdfViewerScreen(
     val currentApplyNext by rememberUpdatedState(applyNext)
     val currentApplyPrev by rememberUpdatedState(applyPrev)
 
-    fun clampOffsets() {
-        if (viewport == IntSize.Zero) return
-        // Single page: the content is the page at its fit; the reading modes (two-up, half page)
-        // scale the whole viewport. `currentSpread`/`currentPageFit` are states updated on every
-        // composition, so the gesture — which captured this function when it started — always
-        // reads live values.
+    // The frame the zoom is clamped against: a single page scales its own content (centred on
+    // pageFit), the reading modes scale the whole viewport. It reads currentPageFit/currentSpread
+    // and viewport live, so the gesture and the double-tap animation get the frame on screen now.
+    fun zoomFrameNow(): ZoomFrame {
         val vps = Size(viewport.width.toFloat(), viewport.height.toFloat())
-        val (content, base) = if (currentSpread) {
-            Size(viewport.width.toFloat(), viewport.height.toFloat()) to Offset.Zero
+        val fit = currentPageFit
+        return if (currentSpread) {
+            ZoomFrame(vps, vps, Offset.Zero)
         } else {
-            Size(currentPageFit.width, currentPageFit.height) to
-                Offset(currentPageFit.left, currentPageFit.top)
+            ZoomFrame(Size(fit.width, fit.height), vps, Offset(fit.left, fit.top))
         }
-        val o = ZoomMath.clampOffset(Offset(offsetX, offsetY), content, vps, scale, base)
-        offsetX = o.x
-        offsetY = o.y
     }
-
-    // anchor base: a single page scales its content (centred in pageFit); the reading modes scale
-    // the whole viewport (origin 0). Same one the gesture uses.
-    fun anchorBaseOf(): Offset = if (currentSpread) Offset.Zero else currentBase
 
     // Animated zoom to a point (double tap): the scale is interpolated geometrically and anchored
     // on every frame with the pinch formula, so it lands exactly where it should, and you see it
@@ -506,24 +494,24 @@ fun PdfViewerScreen(
     fun animateZoomTo(targetScale: Float, anchor: Offset) {
         zoomAnimJob?.cancel()
         zoomAnimJob = editScope.launch {
-            val s0 = scale
-            val o0 = Offset(offsetX, offsetY)
-            val base = anchorBaseOf()
+            val frame = zoomFrameNow()
+            val s0 = zoom.transform.scale
+            val o0 = zoom.transform.offset
             if (s0 == targetScale) return@launch
             Animatable(0f).animateTo(1f, tween(DOUBLE_TAP_ANIM_MS, easing = FastOutSlowInEasing)) {
                 val e = value
-                if (targetScale <= 1f) {
-                    scale = s0 + (1f - s0) * e
-                    offsetX = o0.x * (1f - e)
-                    offsetY = o0.y * (1f - e)
-                } else {
-                    val k = (targetScale / s0).pow(e)
-                    val no = ZoomMath.anchoredOffset(o0, k, anchor, base)
-                    scale = (s0 * k).coerceIn(1f, DOUBLE_TAP_ZOOM)
-                    offsetX = no.x
-                    offsetY = no.y
-                }
-                clampOffsets()
+                zoom.set(
+                    frame,
+                    if (targetScale <= 1f) {
+                        ZoomTransform(s0 + (1f - s0) * e, o0 * (1f - e))
+                    } else {
+                        val k = (targetScale / s0).pow(e)
+                        ZoomTransform(
+                            (s0 * k).coerceIn(1f, DOUBLE_TAP_ZOOM),
+                            ZoomMath.anchoredOffset(o0, k, anchor, frame.base),
+                        )
+                    },
+                )
             }
         }
     }
@@ -828,9 +816,7 @@ fun PdfViewerScreen(
     // zoom back to zero when the page or the reading mode changes (the draw step too: otherwise
     // paging would draw every page zoomed in)
     LaunchedEffect(currentPage, branch.showTwoUp, branch.showHalf, halfTurned) {
-        scale = 1f
-        offsetX = 0f
-        offsetY = 0f
+        zoom.reset()
         renderScale = 1f
     }
 
@@ -840,7 +826,7 @@ fun PdfViewerScreen(
     // 250 ms) the final step is tuned in, which can also go DOWN after zooming out.
     LaunchedEffect(pageSource, viewport) {
         var lastUpgradeMs = 0L
-        snapshotFlow { scale }.collectLatest { s ->
+        snapshotFlow { zoom.transform.scale }.collectLatest { s ->
             val target = ZoomMath.renderBucket(s)
             val now = System.currentTimeMillis()
             if (target > renderScale && now - lastUpgradeMs >= RENDER_DURING_ZOOM_MS) {
@@ -850,7 +836,7 @@ fun PdfViewerScreen(
             }
             delay(RENDER_SETTLE_MS.milliseconds)
             // if the scale kept changing while we waited, the next emission picks it up
-            if (target >= ZoomMath.renderBucket(scale)) renderScale = target
+            if (target >= ZoomMath.renderBucket(zoom.transform.scale)) renderScale = target
         }
     }
 
@@ -991,7 +977,7 @@ fun PdfViewerScreen(
     val bandTopInset = with(LocalDensity.current) { (if (bandShown) chromeTop else 0).toDp() }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
-    LaunchedEffect(viewport) { clampOffsets() }
+    LaunchedEffect(viewport) { zoom.set(zoomFrameNow(), zoom.transform) }
 
     Box(
         modifier = Modifier
@@ -1037,11 +1023,13 @@ fun PdfViewerScreen(
                 val spreadMod = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        // read in the layout phase, not in composition: no recomposition per frame
+                        val t = zoom.transform
                         transformOrigin = TransformOrigin(0f, 0f)
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offsetX
-                        translationY = offsetY
+                        scaleX = t.scale
+                        scaleY = t.scale
+                        translationX = t.offset.x
+                        translationY = t.offset.y
                         compositingStrategy = CompositingStrategy.Offscreen
                     }
                 val gestureMod = Modifier.pageGestures(
@@ -1050,7 +1038,6 @@ fun PdfViewerScreen(
                     page = currentPage,
                     sheetHash = sheetHash,
                     pageFit = pageFit,
-                    spread = spread,
                     stamps = pageStamps,
                     strokes = pageStrokes,
                     inkStrokes = inkStrokes,
@@ -1064,19 +1051,9 @@ fun PdfViewerScreen(
                     eraserPx = eraserPx,
                     activeColor = activeColor,
                     loupeAt = loupeAt,
-                    scale = scale,
-                    offsetX = offsetX,
-                    offsetY = offsetY,
+                    zoom = zoom,
+                    zoomFrame = zoomFrameNow(),
                     editor = editor,
-                    // every zoom/pan frame goes through here: store, clamp, and hand back the
-                    // offset that stuck, so the next frame of the same touch starts from it
-                    onTransform = { s, o ->
-                        scale = s
-                        offsetX = o.x
-                        offsetY = o.y
-                        clampOffsets()
-                        Offset(offsetX, offsetY)
-                    },
                     onCancelZoom = { zoomAnimJob?.cancel() },
                     onDoubleTapZoom = { target, anchor -> animateZoomTo(target, anchor) },
                     onTurn = { turn ->
@@ -1143,9 +1120,9 @@ fun PdfViewerScreen(
                     above = { geo, id, fraction -> above(geo, id, fraction) },
                     pageFit = pageFit,
                     hitFit = hitFit,
-                    scale = { scale },
-                    offsetX = { offsetX },
-                    offsetY = { offsetY },
+                    scale = { zoom.transform.scale },
+                    offsetX = { zoom.transform.offset.x },
+                    offsetY = { zoom.transform.offset.y },
                     invert = invert,
                     pageSource = pageSource,
                     cursorNotes = cursorNotes,

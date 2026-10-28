@@ -47,9 +47,9 @@ private fun centroid(changes: List<PointerInputChange>): Offset =
  * Everything a finger does on the page: tap zones, page turns, pinch and pan, and the whole
  * annotation gesture (select, move, stretch, draw, erase, place a stamp).
  *
- * It reads the page state it hit-tests against, and reports back what it changed: the zoom and pan
- * it produced (through [onTransform], which stores and clamps them), the loupe, the ink trail, the
- * tools standing down. Annotations go straight to [editor], which is where they are written.
+ * It reads the page state it hit-tests against, and writes the zoom/pan it produces straight to
+ * [zoom] (which clamps), plus the loupe, the ink trail and the tools standing down. Annotations
+ * go to [editor], which is where they are written.
  */
 @Composable
 internal fun Modifier.pageGestures(
@@ -58,7 +58,6 @@ internal fun Modifier.pageGestures(
     page: Int,
     sheetHash: String?,
     pageFit: RectPx,
-    spread: Boolean,
     stamps: List<Stamp>,
     strokes: List<Stroke>,
     inkStrokes: List<Stroke>,
@@ -72,11 +71,9 @@ internal fun Modifier.pageGestures(
     eraserPx: Float,
     activeColor: Int?,
     loupeAt: Offset?,
-    scale: Float,
-    offsetX: Float,
-    offsetY: Float,
+    zoom: ZoomState,
+    zoomFrame: ZoomFrame,
     editor: AnnotationViewModel,
-    onTransform: (Float, Offset) -> Offset,
     onCancelZoom: () -> Unit,
     onDoubleTapZoom: (Float, Offset) -> Unit,
     onTurn: (PageTurn) -> Unit,
@@ -101,9 +98,9 @@ internal fun Modifier.pageGestures(
     // content work and zoom anchoring live in these coordinates
     val currentBase by rememberUpdatedState(Offset(pageFit.left, pageFit.top))
     val currentHitFit by rememberUpdatedState(RectPx(0f, 0f, pageFit.width, pageFit.height))
-    // the reading modes (two-up, half page) scale the whole viewport; a single page scales its
-    // content
-    val currentSpread by rememberUpdatedState(spread)
+    // the frame the zoom is clamped against (the reading modes scale the whole viewport, a
+    // single page scales its content)
+    val currentFrame by rememberUpdatedState(zoomFrame)
     val currentSelectionRect by rememberUpdatedState(selectionRect)
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
@@ -114,10 +111,6 @@ internal fun Modifier.pageGestures(
     val currentEraserPx by rememberUpdatedState(eraserPx)
     val currentPenWidth by rememberUpdatedState(penWidthPx)
     val currentActiveColor by rememberUpdatedState(activeColor)
-    // the zoom a new touch starts from: a gesture reads it once and then owns its own copy
-    val currentScale by rememberUpdatedState(scale)
-    val currentOffsetX by rememberUpdatedState(offsetX)
-    val currentOffsetY by rememberUpdatedState(offsetY)
 
     // touch noise, the double-tap window and the swipe that turns a page: they belong to the
     // gesture, so they are read here
@@ -134,17 +127,17 @@ internal fun Modifier.pageGestures(
             if (down.isConsumed) return@awaitEachGesture
             onPageTouched(true)   // the stamps palette steps aside while you touch the page
             onCancelZoom()    // any new touch cancels the double-tap animation
-            // the zoom and pan this touch starts from: the gesture owns them until it ends, and
-            // reports every change through onTransform (which clamps and hands back what stuck)
-            var scaleNow = currentScale
-            var offsetNow = Offset(currentOffsetX, currentOffsetY)
             // screen -> fit coordinates (0..fitW x 0..fitH): the content no longer
-            // lives in a scaled layer, so the gesture translates the finger point here
+            // lives in a scaled layer, so the gesture translates the finger point here.
+            // zoom.transform is read live: whatever resets it mid-touch (a turn, a mode
+            // change) is already in effect on the next event, instead of being overwritten
+            // by a copy this touch took at down.
             fun fitPoint(p: Offset): Offset {
+                val t = zoom.transform
                 val b = currentBase
                 return Offset(
-                    (p.x - b.x - offsetNow.x) / scaleNow,
-                    (p.y - b.y - offsetNow.y) / scaleNow
+                    (p.x - b.x - t.offset.x) / t.scale,
+                    (p.y - b.y - t.offset.y) / t.scale
                 )
             }
             // the page is the canvas: a stroke that runs onto the matte stops at the
@@ -162,9 +155,6 @@ internal fun Modifier.pageGestures(
             // drawing at the page edge (see the tap branch below)
             val onMatte = downF.x < 0f || downF.x > currentHitFit.width ||
                 downF.y < 0f || downF.y > currentHitFit.height
-            // anchor base: a single page scales its content (centred in
-            // pageFit.left/top); the reading modes scale the whole viewport (origin 0)
-            val anchorBase = if (currentSpread) Offset.Zero else currentBase
             var ids = setOf(down.id)
             var prevCount = 1
             var prevCentroid = down.position
@@ -308,7 +298,7 @@ internal fun Modifier.pageGestures(
                     } else if (inkActive) {
                         // ink capture lives in fit coordinates (F): the sampling
                         // threshold is a screen distance, so it scales with the zoom
-                        val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / scaleNow)
+                        val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / zoom.transform.scale)
                         onInkPreview(emptyList())
                         if (pts.size >= 2 && !onMatte && sheetHash != null && currentPageFit.width > 0f) {
                             val s = Stroke(
@@ -390,7 +380,7 @@ internal fun Modifier.pageGestures(
                         val isDoubleTap = nowMs - lastTapMs < 320L &&
                             (down.position - lastTapPos).getDistance() < doubleTapSlopPx
                         if (isDoubleTap && !currentEditing) {
-                            if (scaleNow > 1.05f) {
+                            if (zoom.transform.scale > 1.05f) {
                                 onDoubleTapZoom(1f, down.position)
                             } else {
                                 onDoubleTapZoom(DOUBLE_TAP_ZOOM, down.position)
@@ -418,7 +408,7 @@ internal fun Modifier.pageGestures(
                                 onPlaceStamp(pxToNormalized(fitPoint(lastPlacePos), currentHitFit))
                             }
                         } else {
-                            val isSwipe = scaleNow <= 1f &&
+                            val isSwipe = zoom.transform.scale <= 1f &&
                                 totalPan.getDistance() > swipeThresholdPx &&
                                 abs(totalPan.x) > abs(totalPan.y)
                             if (isSwipe) {
@@ -525,7 +515,7 @@ internal fun Modifier.pageGestures(
                         val p = pagePoint(tracking.position)
                         // points captured in fit coordinates: the screen threshold scales
                         // with the zoom
-                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / scaleNow) {
+                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / zoom.transform.scale) {
                             inkPts.add(p)
                             onInkPreview(inkPts.toList())
                         }
@@ -544,7 +534,7 @@ internal fun Modifier.pageGestures(
                         val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                         val last = eraserPath.last()
                         val p = pagePoint(tracking.position)
-                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / scaleNow) {
+                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / zoom.transform.scale) {
                             eraserPath.add(p)
                             onInkPreview(eraserPath.toList())
                             // stamps are only removed on release, like strokes: the
@@ -591,33 +581,20 @@ internal fun Modifier.pageGestures(
                     // finger stays on its content when the pinch is symmetric (see
                     // ZoomGestureSimTest symmetricPinchKeepsFingersPinned).
                     val pinchAnchor = c
-                    if (anchorDist == 0f) {
-                        // first frame of the pinch applies no zoom (the reference is
-                        // taken against this distance)
-                        anchorDist = d
-                    } else if (d > 0f) {
-                        // INCREMENTAL: how much the distance changed in THIS frame.
-                        val ratio = d / anchorDist
-                        anchorDist = d   // the next frame measures against this distance
-                        // dead zone against touch noise (±1 px, still fingers)
-                        if (abs(ratio - 1f) > ZOOM_NOISE_RATIO) {
-                            val target = (scaleNow * ratio).coerceIn(1f, MAX_ZOOM)
-                            if (target != scaleNow) {
-                                // Anchor on the live midpoint: the content under the
-                                // centroid stays still. No centroid follow.
-                                val k = target / scaleNow
-                                val no = ZoomMath.anchoredOffset(offsetNow, k, pinchAnchor, anchorBase)
-                                scaleNow = target
-                                offsetNow = onTransform(scaleNow, no)
-                            }
-                        }
-                    }
-                } else if (scaleNow > 1f && delta.getDistance() > 0f) {
+                    // INCREMENTAL: how much the distance changed in THIS frame. The reference
+                    // is always taken, even on a frame that does not zoom, or the next frame
+                    // would be measured against a distance two events old.
+                    val previous = anchorDist
+                    if (d > 0f) anchorDist = d
+                    val s = zoom.transform.scale
+                    val target = ZoomMath.nextScale(s, previous, d, ZOOM_NOISE_RATIO, MAX_ZOOM)
+                    if (target != s) zoom.pinch(currentFrame, target / s, pinchAnchor)
+                } else if (zoom.transform.scale > 1f && delta.getDistance() > 0f) {
                     // One finger and NO pinch in progress: pan. While there are 2+ fingers
                     // this branch does not run, so the two branches never fight over the
                     // offset.
                     isTransform = true
-                    offsetNow = onTransform(scaleNow, offsetNow + delta)
+                    zoom.pan(currentFrame, delta)
                 }
                 prevCentroid = c
                 event.changes.forEach { change -> if (change.positionChanged()) change.consume() }

@@ -206,7 +206,6 @@ internal fun BottomChrome(
     metronome: MetronomeSettings,
     metronomeOn: Boolean,
     metronomeTick: Tick?,
-    metronomeShown: Boolean,
     pageSource: PageSource?,
     pageCount: Int,
     currentPage: Int,
@@ -265,9 +264,9 @@ internal fun BottomChrome(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
-        } else if (metronomeShown) {
+        } else {
             // a PDF has no music: the same band drives the metronome alone, its beats turning
-            // the pages; it has no loop, and closes
+            // the pages; it has no loop. It shows with the bars, as over the music
             PlaybackBand(
                 // the bar heard, counted from the start of the piece as the score numbers its
                 // bars, once the bars of the pages are counted
@@ -295,7 +294,6 @@ internal fun BottomChrome(
                 onOptions = { onShowSurface(ViewerSurface.METRONOME) },
                 onMetronome = null,
                 onTap = { metronomeVm.tap() },
-                onClose = { metronomeVm.show(false) },
             )
         }
         PageSelector(
@@ -308,7 +306,7 @@ internal fun BottomChrome(
                 start = 24.dp,
                 end = 24.dp,
                 // under a band, the dots need no air above them
-                top = if (format.isMusicXml || metronomeShown) 0.dp else 10.dp,
+                top = 0.dp,
                 bottom = 10.dp,
             ),
         )

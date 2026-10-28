@@ -75,17 +75,10 @@ internal fun ViewerOverlays(
                         ViewerMenuItem.LIBRARY -> onOpenLibrary()
                         ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
                         ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
-                        ViewerMenuItem.PLAYBACK -> {
-                            metronomeVm.show(false)
-                            menu.show(ViewerSurface.PLAYBACK)
-                        }
-                        // its settings, as for playback; a PDF, which has no music, shows the band
-                        // with it (a MusicXML score's band has its switch already)
+                        ViewerMenuItem.PLAYBACK -> menu.show(ViewerSurface.PLAYBACK)
+                        // its settings, the band with the bars under them
                         ViewerMenuItem.METRONOME -> {
-                            if (!format.isMusicXml) {
-                                metronomeVm.show(true)
-                                onShowChrome()
-                            }
+                            onShowChrome()
                             menu.show(ViewerSurface.METRONOME)
                         }
                         ViewerMenuItem.ANNOTATE -> if (!editing) onToggleEditing()

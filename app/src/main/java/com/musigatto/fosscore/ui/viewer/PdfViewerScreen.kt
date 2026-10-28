@@ -211,7 +211,8 @@ fun PdfViewerScreen(
     val metronome by metronomeVm.settings.collectAsState()
     LaunchedEffect(metronome) { playbackVm.setMetronome(metronome) }
     val metronomeOn by metronomeVm.running.collectAsState()
-    val metronomeShown by metronomeVm.shown.collectAsState()
+    // leaving the score stops its metronome, as it stops its music
+    DisposableEffect(metronomeVm) { onDispose { metronomeVm.stop() } }
     val metronomeTick by metronomeVm.tick.collectAsState()
     val meterFromScore by metronomeVm.meterFromScore.collectAsState()
 
@@ -998,12 +999,6 @@ fun PdfViewerScreen(
     val chromeInset = with(LocalDensity.current) {
         (if (editing && canEdit) titleBarHeight + annBarPx else 0).toDp()
     }
-    // With the metronome band, the bars stay on screen: a PDF page fits between the bar at the top
-    // and the bottom chrome, which hid its first and last staves. (A MusicXML page is laid out
-    // with that room already.)
-    val bandShown = metronomeShown && !format.isMusicXml && !editing
-    val bandInset = with(LocalDensity.current) { (if (bandShown) bottomChromePx else 0).toDp() }
-    val bandTopInset = with(LocalDensity.current) { (if (bandShown) chromeTop else 0).toDp() }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
     LaunchedEffect(viewport) { clampOffsets() }
@@ -1031,7 +1026,7 @@ fun PdfViewerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = chromeInset + bandTopInset, bottom = bandInset)
+                .padding(top = chromeInset)
                 .onSizeChanged { viewport = it }
         ) {
             if (error != null) {
@@ -1283,7 +1278,6 @@ fun PdfViewerScreen(
                     metronome = metronome,
                     metronomeOn = metronomeOn,
                     metronomeTick = metronomeTick,
-                    metronomeShown = metronomeShown,
                     pageSource = pageSource,
                     pageCount = pageCount,
                     currentPage = currentPage,

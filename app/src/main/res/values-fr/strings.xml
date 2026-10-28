@@ -192,7 +192,6 @@
     <string name="backup_check_files_missing">%1$d fichiers PDF manquaient au moment de cet export.</string>
     <!-- metronome -->
     <string name="metronome_tap">TAP</string>
-    <string name="metronome_close">Fermer le métronome</string>
     <string name="metronome_time_signature">Mesure</string>
     <string name="metronome_meter_from_score">%1$s (partition)</string>
     <string name="metronome_fewer">Moins</string>

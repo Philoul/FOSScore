@@ -75,7 +75,7 @@ private const val BAR_OVERHANG_SPACES = 1.5f
  * are on, the beats of the bar show next to it, the one heard lit, with TAP. The metronome alone
  * (a PDF, [onMetronome] null) has no switch: its beats and TAP always show. On a narrow screen
  * − / + and the bar leave room, and a tap on the tempo opens the options. It shows with the bars
- * (centre tap); the music goes on when they hide. [onClose] (the metronome alone) puts it away.
+ * (centre tap); the music, or the metronome, goes on when they hide.
  */
 @Composable
 fun PlaybackBand(
@@ -98,7 +98,6 @@ fun PlaybackBand(
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
     barText: String? = null,
-    onClose: (() -> Unit)? = null,
 ) = BoxWithConstraints(modifier.fillMaxWidth()) {
     val wide = maxWidth >= BAND_WITH_TEMPO_BUTTONS
     // the held button reads the tempo it changes, not the one it saw when the press began
@@ -177,11 +176,6 @@ fun PlaybackBand(
                 BeatDots(pulses, tick?.beat?.takeIf { playing }, counting = (tick?.bar ?: 0) < 0)
             }
             TextButton(onClick = onTap) { Text(stringResource(R.string.metronome_tap)) }
-        }
-        if (onClose != null) {
-            BandButton(stringResource(R.string.metronome_close), active = false, onClick = onClose) {
-                Text("✕", style = MaterialTheme.typography.labelLarge)
-            }
         }
     }
 }

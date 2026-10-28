@@ -19,7 +19,11 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,6 +99,11 @@ object SoundBank {
     // how often the progress of a preparation is told, in samples
     private const val PROGRESS_EVERY = 8
 
+    // the watch over the preparations: how often it looks, and how long a preparation may go
+    // without a sample done before it is started again (a stuck decoder gives up after 2 s)
+    private const val WATCH_MS = 10_000L
+    private const val STALL_MS = 60_000L
+
     // the banks the user added, with a text file holding the name shown for each
     private const val FOLDER = "soundbanks"
     private const val NAME_SUFFIX = ".name"
@@ -107,6 +116,10 @@ object SoundBank {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _preparing = MutableStateFlow<Map<String, Pair<Int, Int>>>(emptyMap())
+    // the preparations running, and when each last finished a sample
+    private val jobs = ConcurrentHashMap<String, Job>()
+    private val lastProgress = ConcurrentHashMap<String, Long>()
+    private var watching: Job? = null
 
     /** The banks being prepared, by id: the samples done and the samples in all. */
     val preparing: StateFlow<Map<String, Pair<Int, Int>>> = _preparing.asStateFlow()
@@ -150,10 +163,12 @@ object SoundBank {
      * closed) goes on where it was. Does nothing while the bank is being prepared already.
      */
     fun prepare(context: Context, id: String) {
-        if (id == BUILT_IN || _preparing.value.containsKey(id)) return
+        if (id == BUILT_IN || jobs[id]?.isActive == true) return
         val app = context.applicationContext
-        _preparing.update { it + (id to (0 to 0)) }
-        scope.launch {
+        _preparing.update { it + (id to (it[id] ?: (0 to 0))) }
+        lastProgress[id] = System.currentTimeMillis()
+        watch(app)
+        jobs[id] = scope.launch {
             try {
                 val font = load(app, id)
                 val wanted = font.samples.filter { it.compressed }
@@ -163,28 +178,68 @@ object SoundBank {
                 val started = System.nanoTime()
                 val workers = List(PREPARE_THREADS) {
                     launch {
-                        while (has(app, id)) {
+                        while (isActive && has(app, id)) {
                             val sample = queue.poll() ?: break
                             // decoded and kept on the device, not in memory: the piece reads it
                             // later. A sample decoded before (a preparation cut short) is skipped
                             if (!File(decoded, "${sample.index}.pcm").isFile) font.read(sample)
                             val n = done.incrementAndGet()
+                            lastProgress[id] = System.currentTimeMillis()
                             if (n % PROGRESS_EVERY == 0 || n == wanted.size) _preparing.update { it + (id to (n to wanted.size)) }
                         }
                     }
                 }
                 workers.forEach { it.join() }
-                // every sample gone through, the bank still there: it can be chosen
-                if (done.get() == wanted.size && has(app, id)) File(folder(app), id + READY_SUFFIX).writeText("")
+                // every sample decoded and kept, the bank still there: it can be chosen. A sample
+                // that failed is missing: the watch starts the preparation again for it
+                val missing = wanted.count { !File(decoded, "${it.index}.pcm").isFile }
+                if (missing == 0 && has(app, id)) File(folder(app), id + READY_SUFFIX).writeText("")
+                else if (missing > 0) Log.w(LOG_TAG, "bank $id: $missing samples not decoded yet")
                 Log.i(LOG_TAG, "bank $id prepared: ${wanted.size} samples in ${(System.nanoTime() - started) / 1_000_000_000} s")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                // the watch starts it again (a disk full, a file that could not be read...)
                 Log.e(LOG_TAG, "bank $id not prepared: ${e.message}", e)
             } finally {
                 releaseDecoders()
-                _preparing.update { it - id }
+                // a bank still being prepared keeps its progress shown: the watch goes on with it
+                if (isReady(app, id) || !has(app, id)) _preparing.update { it - id }
             }
         }
     }
+
+    /**
+     * Watches the banks not ready while the app runs: a preparation that stopped (an error) or
+     * stands still (nothing done for [STALL_MS]) is started again, from where it was, until every
+     * bank is ready. The user only waits. A preparation cut short by the app closing goes on when
+     * it starts again ([prepareAll]).
+     */
+    private fun watch(app: Context) {
+        if (watching?.isActive == true) return
+        watching = scope.launch {
+            while (isActive) {
+                delay(WATCH_MS)
+                val waiting = list(app).filter { !it.ready }
+                if (waiting.isEmpty()) break
+                val now = System.currentTimeMillis()
+                for (bank in waiting) {
+                    val job = jobs[bank.id]
+                    val stalled = now - (lastProgress[bank.id] ?: 0L) > STALL_MS
+                    if (job?.isActive == true && !stalled) continue
+                    if (job?.isActive == true) {
+                        Log.w(LOG_TAG, "bank ${bank.id} preparation stands still: started again")
+                        job.cancel()
+                        job.join()
+                    }
+                    prepare(app, bank.id)
+                }
+            }
+        }
+    }
+
+    // Whether every sample of bank [id] is decoded.
+    private fun isReady(context: Context, id: String) = File(folder(context), id + READY_SUFFIX).isFile
 
     /**
      * Prepares every bank in SF3 the user added that is not ready: a preparation cut short when the
@@ -307,8 +362,9 @@ object SoundBank {
         SoundFont.read(f.channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length()))
     }
 
+    // a sample that could not be decoded (nothing came out) is not kept: the next time tries again
     private fun decoderFor(cache: File): (Int, ByteBuffer) -> ShortArray =
-        { index, ogg -> cached(cache, index) ?: decode(ogg).also { keep(cache, index, it) } }
+        { index, ogg -> cached(cache, index) ?: decode(ogg).also { if (it.isNotEmpty()) keep(cache, index, it) } }
 
     private fun cached(dir: File, index: Int): ShortArray? = runCatching {
         val file = File(dir, "$index.pcm").takeIf { it.isFile } ?: return null

@@ -265,4 +265,6 @@
     <string name="part_sound_variants">Variantes (%1$d)</string>
     <string name="sound_bank_preparing">Preparando los sonidos… %1$d %% (disponible cuando esté listo)</string>
     <string name="sound_bank_waiting">Sus sonidos se van a preparar (disponible cuando esté listo)</string>
+    <string name="part_sound_bank_preparing">%1$s (preparando los sonidos… %2$d %%)</string>
+    <string name="part_sound_bank_waiting">%1$s (sonidos por preparar)</string>
 </resources>

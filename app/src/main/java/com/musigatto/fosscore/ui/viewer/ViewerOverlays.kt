@@ -154,10 +154,11 @@ internal fun ViewerOverlays(
                 // the sound banks and their instruments, for the sound of each part, read off the
                 // main thread each time the panel opens: banks added or deleted meanwhile show
                 val context = LocalContext.current
-                val banks by produceState(emptyList<SoundBankEntry>() to SoundBank.BUILT_IN) {
-                    // a bank still being prepared cannot be chosen yet
+                // read again when a preparation starts or ends: a bank becomes ready while it shows
+                val preparing by SoundBank.preparing.collectAsState()
+                val banks by produceState(emptyList<SoundBankEntry>() to SoundBank.BUILT_IN, preparing.keys) {
                     value = withContext(Dispatchers.IO) {
-                        SoundBank.list(context).filter { it.ready } to SoundBank.usable(context, Settings.soundBank(context))
+                        SoundBank.list(context) to SoundBank.usable(context, Settings.soundBank(context))
                     }
                 }
                 val soundChoices = remember(banks) {

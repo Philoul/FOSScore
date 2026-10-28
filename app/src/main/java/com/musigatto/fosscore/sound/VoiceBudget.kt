@@ -1,9 +1,10 @@
 package com.musigatto.fosscore.sound
 
 // the load (time to render a block / the block's own time) above which voices are given up,
-// and below which they come back
-private const val HIGH_LOAD = 0.85f
-private const val LOW_LOAD = 0.6f
+// and below which they come back: on a Galaxy Tab 3 a dense piece averaged 70 % with the limit
+// at 85 %, some blocks going past their time; 75 % keeps them in it
+private const val HIGH_LOAD = 0.75f
+private const val LOW_LOAD = 0.5f
 
 // the blocks in a row that must agree before the limit moves: one slow block is no trend
 private const val BLOCKS_TO_MOVE = 8

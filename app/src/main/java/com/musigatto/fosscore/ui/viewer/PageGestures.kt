@@ -93,6 +93,11 @@ internal fun Modifier.pageGestures(
     val currentPageStamps by rememberUpdatedState(stamps)
     val currentPageStrokes by rememberUpdatedState(strokes)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
+    // the page (and the score) the edit belongs to. Not a local copy: this one rests on the page the
+    // score opened at, so ink written on page 6 was stored under page 8 and showed up there after
+    // pressing Done.
+    val currentPage by rememberUpdatedState(page)
+    val currentHash by rememberUpdatedState(sheetHash)
     val currentPageFit by rememberUpdatedState(pageFit)
     // where the page is centred in the viewport, and the pure fit rect (origin 0,0):
     // content work and zoom anchoring live in these coordinates
@@ -281,7 +286,7 @@ internal fun Modifier.pageGestures(
                             val changed = pts != rz.ptsPx
                             if (changed) {
                                 editor.updateStrokes(
-                                    page,
+                                    currentPage,
                                     rz.strokes.mapIndexed { i, base ->
                                         base.copy(
                                             points = encodePoints(
@@ -301,22 +306,24 @@ internal fun Modifier.pageGestures(
                             // threshold is a screen distance, so it scales with the zoom
                             val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / zoom.transform.scale)
                             onInkPreview(emptyList())
-                            if (pts.size >= 2 && !onMatte && sheetHash != null && currentPageFit.width > 0f) {
+                            // local copy: a delegated var cannot be smart cast to String
+                            val hash = currentHash
+                            if (pts.size >= 2 && !onMatte && hash != null && currentPageFit.width > 0f) {
                                 val s = Stroke(
-                                    sheetHash = sheetHash,
-                                    page = page,
+                                    sheetHash = hash,
+                                    page = currentPage,
                                     points = encodePoints(
                                         pts.map { pxToNormalized(it, currentHitFit) }
                                     ),
                                     width = penWidthPxToFrac(currentPenWidth, currentHitFit),
                                     color = currentActiveColor
                                 )
-                                editor.addInk(page, s, PageEdit(currentPageStamps, currentPageStrokes))
+                                editor.addInk(currentPage, s, PageEdit(currentPageStamps, currentPageStrokes))
                             }
                         } else if (eraserActive) {
                             val path = eraserPath
                             onInkPreview(emptyList())
-                            if (path.isNotEmpty() && sheetHash != null && currentPageFit.width > 0f) {
+                            if (path.isNotEmpty() && currentHash != null && currentPageFit.width > 0f) {
                                 val radiusPx = currentEraserPx
                                 // the eraser always deletes what it grazes: to remove a whole
                                 // word, tap it (that selects it) and press the bin
@@ -343,7 +350,7 @@ internal fun Modifier.pageGestures(
                                     }
                                 }
                                 editor.erase(
-                                    page,
+                                    currentPage,
                                     goneStamps,
                                     goneStrokes,
                                     newRuns,
@@ -360,7 +367,7 @@ internal fun Modifier.pageGestures(
                                 // the overlay would draw the old one for a few ms
                                 editor.dragStrokes = done
                                 editor.updateStrokes(
-                                    page, done, PageEdit(currentPageStamps, currentPageStrokes)
+                                    currentPage, done, PageEdit(currentPageStamps, currentPageStrokes)
                                 )
                             }
                         } else if (movingStamp != null) {
@@ -371,7 +378,7 @@ internal fun Modifier.pageGestures(
                             // emits again (a glitch).
                             editor.dragStamp = done
                             editor.updateStamp(
-                                page, done, origin, PageEdit(currentPageStamps, currentPageStrokes)
+                                currentPage, done, origin, PageEdit(currentPageStamps, currentPageStrokes)
                             )
                         } else if (!isTransform) {
                             // double tap: toggles fit <-> 2.5x on the point touched. It is the
@@ -398,7 +405,7 @@ internal fun Modifier.pageGestures(
                                 if (!currentStampArmed) {
                                     // no tool: just deselect
                                     editor.clearSelection()
-                                } else if (sheetHash != null &&
+                                } else if (currentHash != null &&
                                     (aimed || totalPan.getDistance() <= touchSlopPx)
                                 ) {
                                     // a drag is a pan and must not drop a stamp; the loupe is

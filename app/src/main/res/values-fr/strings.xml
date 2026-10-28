@@ -219,7 +219,7 @@
     <string name="metronome_next_page">Page suivante</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Banques de sons de la lecture</string>
-    <string name="sound_banks_hint">Les banques SoundFont (SF2 ou SF3) donnent ses instruments à la lecture. La banque par défaut joue toutes les parties qui n’ont pas de son à elles. Une banque SF3 est préparée une fois, à l’ajout (quelques minutes sur une tablette ancienne) : ses sons se jouent ensuite tout de suite.</string>
+    <string name="sound_banks_hint">Les banques SoundFont (SF2 ou SF3) donnent ses instruments à la lecture. La banque par défaut joue toutes les parties qui n’ont pas de son à elles. Une banque SF3 est préparée une fois, à l’ajout, d’elle-même (quelques minutes sur une tablette ancienne) : elle est disponible une fois ses sons prêts, et ils se jouent alors tout de suite.</string>
     <string name="sound_bank_default">Banque par défaut</string>
     <string name="sound_bank_built_in">Fournie avec l’application</string>
     <string name="sound_bank_add">Ajouter une banque de sons…</string>
@@ -261,10 +261,8 @@
     <string name="sound_bank_folder_text">Android ne sait pas montrer uniquement les fichiers SF2 et SF3. À l’écran suivant, ouvrez le dossier qui contient vos banques (par exemple Download), sans toucher les fichiers, qui restent grisés, puis touchez le bouton en bas (« Sélectionner » ou « Utiliser ce dossier »). FOSScore liste alors les banques qu’il contient, et retient le dossier pour la prochaine fois.</string>
     <string name="sound_bank_folder_choose">Choisir le dossier</string>
     <string name="part_sound_variants">Variantes (%1$d)</string>
-    <string name="sound_bank_preparing">Préparation des sons… %1$d %%</string>
-    <string name="sound_bank_ready">Sons prêts</string>
-    <string name="sound_bank_to_prepare">Sons à préparer (%1$d sur %2$d prêts)</string>
-    <string name="sound_bank_prepare">Préparer</string>
     <string name="playback_clicks_on">Activer le métronome</string>
     <string name="playback_clicks_off">Couper le métronome</string>
+    <string name="sound_bank_preparing">Préparation des sons… %1$d %% (disponible une fois prête)</string>
+    <string name="sound_bank_waiting">Ses sons vont être préparés (disponible une fois prête)</string>
 </resources>

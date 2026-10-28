@@ -444,7 +444,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
 
     // the player, made once with the default bank of the preferences (read the first time)
     private suspend fun livePlayer(): LivePlayer = player ?: withContext(Dispatchers.Default) {
-        LivePlayer(SoundBank.load(context, Settings.soundBank(context)))
+        LivePlayer(SoundBank.load(context, SoundBank.usable(context, Settings.soundBank(context))))
     }.also { made ->
         made.onEnd = { viewModelScope.launch { onEnd() } }
         made.muted = _heard.value?.isEmpty() == true
@@ -459,8 +459,9 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         val sounds = if (tried == null) _partSounds.value
         else tried.second?.let { _partSounds.value + (tried.first to it) } ?: (_partSounds.value - tried.first)
         for ((part, sound) in sounds) {
-            // a bank deleted since: the same instrument from the default bank
-            val font = SoundBank.load(context, sound.bankId.takeIf { SoundBank.has(context, it) } ?: Settings.soundBank(context))
+            // a bank deleted since, or not ready yet: the same instrument from the default bank
+            val bankId = sound.bankId.takeIf { SoundBank.usable(context, it) == it } ?: SoundBank.usable(context, Settings.soundBank(context))
+            val font = SoundBank.load(context, bankId)
             for (track in pb.partTracks[part].orEmpty()) {
                 for (channel in music.trackChannels.getOrNull(track).orEmpty()) {
                     out[channel] = ChannelSound(font, sound.bank, sound.program)

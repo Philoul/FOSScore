@@ -1,8 +1,26 @@
 package com.musigatto.fosscore.ui.viewer
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import kotlin.math.abs
 import kotlin.math.ceil
+
+/**
+ * Where the page sits on screen at the current zoom: `scale`, and `offset` px from its centred
+ * base. Immutable, and every function here returns it already clamped (see [ZoomMath.pinch] and
+ * [ZoomMath.pan]), so a transform that escapes the screen cannot be built.
+ */
+@Immutable
+data class ZoomTransform(val scale: Float = 1f, val offset: Offset = Offset.Zero)
+
+/**
+ * The frame a zoom is clamped against: the content at scale 1 ([content]), the viewport it is
+ * shown in, and where the content is centred on screen ([base]). A single page scales its own
+ * content; the reading modes (two-up, half page) scale the whole viewport.
+ */
+@Immutable
+data class ZoomFrame(val content: Size, val viewport: Size, val base: Offset)
 
 /**
  * The maths behind the "1:1" zoom (see ZoomMathTest and plan 2026-09-30-zoom-render-1to1).
@@ -12,6 +30,36 @@ import kotlin.math.ceil
  * page sits centred in the viewport at scale 1 (pageFit.left/top). Everything is in px.
  */
 object ZoomMath {
+
+    /** [k] is the factor this frame applies to the scale. Anchored, then clamped. */
+    fun pinch(t: ZoomTransform, k: Float, anchor: Offset, frame: ZoomFrame): ZoomTransform =
+        clamped(ZoomTransform(t.scale * k, anchoredOffset(t.offset, k, anchor, frame.base)), frame)
+
+    fun pan(t: ZoomTransform, delta: Offset, frame: ZoomFrame): ZoomTransform =
+        clamped(t.copy(offset = t.offset + delta), frame)
+
+    fun clamped(t: ZoomTransform, frame: ZoomFrame): ZoomTransform =
+        t.copy(offset = clampOffset(t.offset, frame.content, frame.viewport, t.scale, frame.base))
+
+    /**
+     * Zoom after one pinch frame: how much the finger distance changed ([previous] -> [distance]),
+     * with a dead zone against touch noise and the cap. [previous] is 0 on the first frame of a
+     * pinch: no zoom yet, that frame only takes the reference.
+     */
+    fun nextScale(
+        scale: Float,
+        previous: Float,
+        distance: Float,
+        deadZone: Float,
+        max: Float,
+    ): Float {
+        // no ratio to take: the first frame of a pinch (no reference yet), or two fingers
+        // reported on top of each other. Written as negated comparisons so a NaN stays out too.
+        if (!(previous > 0f) || !(distance > 0f)) return scale
+        val ratio = distance / previous
+        if (abs(ratio - 1f) <= deadZone) return scale
+        return (scale * ratio).coerceIn(1f, max)
+    }
 
     /**
      * Pinch anchor: multiplying the zoom by [k] keeps the content under [anchor] (screen) still.

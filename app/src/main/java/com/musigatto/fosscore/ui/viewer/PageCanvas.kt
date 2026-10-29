@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -105,6 +107,85 @@ private inline fun DrawScope.inPage(
 }, block)
 
 /**
+ * One page's ink and stamps, drawn onto the [paper] rect it takes on screen and taken from the fit
+ * ([fit]) their paths were built for. It is the same overlay the single page draws with its own
+ * transform, and the only one a spread gets: a spread is read, not edited, so there is no live
+ * preview, no selection and no loupe. [clip] keeps the band of the page the reading mode shows.
+ */
+@Composable
+private fun PageOverlay(
+    paper: RectPx,
+    fit: RectPx,
+    ink: List<InkDraw>,
+    stamps: List<Stamp>,
+    invert: Boolean,
+    clip: RectPx? = null,
+) {
+    if (paper.width <= 0f || fit.width <= 0f || fit.height <= 0f) return
+    val density = LocalDensity.current
+    val sx = paper.width / fit.width
+    val sy = paper.height / fit.height
+    Box(
+        modifier = Modifier.fillMaxSize().then(
+            if (clip == null) Modifier else Modifier.drawWithContent {
+                clipRect(clip.left, clip.top, clip.right, clip.bottom) {
+                    this@drawWithContent.drawContent()
+                }
+            }
+        )
+    ) {
+        if (ink.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                withTransform({
+                    translate(paper.left, paper.top)
+                    scale(sx, sy, pivot = Offset.Zero)
+                }) {
+                    for (d in ink) {
+                        drawPath(
+                            d.path,
+                            d.color,
+                            style = DrawStroke(
+                                width = max(1f, d.width),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        if (stamps.isNotEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    translationX = paper.left
+                    translationY = paper.top
+                    scaleX = sx
+                    scaleY = sy
+                }
+            ) {
+                for (stamp in stamps) {
+                    val sym = runCatching { StampSymbol.valueOf(stamp.symbol) }.getOrNull()
+                        ?: continue
+                    val r = stampRect(stamp, fit)
+                    StampView(
+                        symbol = sym,
+                        sizePx = r.width,
+                        color = inkTint(stamp.color, invert),
+                        modifier = Modifier
+                            .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
+                            .requiredSize(
+                                with(density) { r.width.toDp() },
+                                with(density) { r.height.toDp() }
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * The page itself: paper, playback bar, half-page cut line, ink, stamps, selection and the loupe.
  * It only draws what it is given; the reading modes and the fit rect are decided by the viewer.
  *
@@ -149,6 +230,10 @@ internal fun PageCanvas(
     showSelection: Boolean,
     loupeAt: Offset?,
     placePx: Float,
+    // the other page of a spread (two-up, or a turned half page): read-only, so its ink is only
+    // drawn, and it has no live copy to merge in
+    nextInkDraws: List<InkDraw>,
+    nextStamps: List<Stamp>,
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -168,6 +253,20 @@ internal fun PageCanvas(
                         if (geo != null && playback != null) {
                             val path = remember(geo, playback) { BarPath(playback, geo) }
                             FitPlaybackBar(path, playQuarters, bmp.width, bmp.height, Modifier.fillMaxSize())
+                        }
+                        // ink and stamps of each page, only on the paper it takes in its half
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            PageOverlay(
+                                paper = fitRect(
+                                    constraints.maxWidth.toFloat(),
+                                    constraints.maxHeight.toFloat(),
+                                    bmp.width.toFloat() / bmp.height
+                                ),
+                                fit = hitFit,
+                                ink = if (index == currentPage) inkDraws else nextInkDraws,
+                                stamps = if (index == currentPage) pageStamps else nextStamps,
+                                invert = invert,
+                            )
                         }
                     }
                 }
@@ -226,6 +325,36 @@ internal fun PageCanvas(
                             pageHeight?.let { middle(s) >= it(geo) * split.lower } ?: true
                         })
                     }
+                }
+                // ink and stamps, each page clipped to the band the composite shows of it: the
+                // next page above the cut, this one below
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val paper = fitRect(
+                        constraints.maxWidth.toFloat(),
+                        constraints.maxHeight.toFloat(),
+                        w.toFloat() / h
+                    )
+                    PageOverlay(
+                        paper = paper,
+                        fit = hitFit,
+                        ink = nextInkDraws,
+                        stamps = nextStamps,
+                        invert = invert,
+                        clip = RectPx(paper.left, paper.top, paper.width, paper.height * split.upper),
+                    )
+                    PageOverlay(
+                        paper = paper,
+                        fit = hitFit,
+                        ink = inkDraws,
+                        stamps = pageStamps,
+                        invert = invert,
+                        clip = RectPx(
+                            paper.left,
+                            paper.top + paper.height * split.lower,
+                            paper.width,
+                            paper.height * (1f - split.lower)
+                        ),
+                    )
                 }
             }
         }

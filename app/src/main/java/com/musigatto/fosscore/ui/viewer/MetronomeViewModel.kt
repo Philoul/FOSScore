@@ -54,8 +54,6 @@ class MetronomeViewModel(app: Application, private val score: String) : AndroidV
     // the bar of the piece where the counting started: the first bar of the page on screen
     private var startBar = 0
 
-    /** ▶ / ⏸; [fromBar] is the bar of the piece where the music on screen starts. */
-    fun startStop(fromBar: Int) = if (_running.value) stop() else start(fromBar)
 
     fun start(fromBar: Int) {
         startBar = fromBar

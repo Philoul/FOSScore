@@ -47,9 +47,9 @@ private fun centroid(changes: List<PointerInputChange>): Offset =
  * Everything a finger does on the page: tap zones, page turns, pinch and pan, and the whole
  * annotation gesture (select, move, stretch, draw, erase, place a stamp).
  *
- * It reads the page state it hit-tests against, and reports back what it changed: the zoom and pan
- * it produced (through [onTransform], which stores and clamps them), the loupe, the ink trail, the
- * tools standing down. Annotations go straight to [editor], which is where they are written.
+ * It reads the page state it hit-tests against, and writes the zoom/pan it produces straight to
+ * [zoom] (which clamps), plus the loupe, the ink trail and the tools standing down. Annotations
+ * go to [editor], which is where they are written.
  */
 @Composable
 internal fun Modifier.pageGestures(
@@ -58,7 +58,6 @@ internal fun Modifier.pageGestures(
     page: Int,
     sheetHash: String?,
     pageFit: RectPx,
-    spread: Boolean,
     stamps: List<Stamp>,
     strokes: List<Stroke>,
     inkStrokes: List<Stroke>,
@@ -72,11 +71,9 @@ internal fun Modifier.pageGestures(
     eraserPx: Float,
     activeColor: Int?,
     loupeAt: Offset?,
-    scale: Float,
-    offsetX: Float,
-    offsetY: Float,
+    zoom: ZoomState,
+    zoomFrame: ZoomFrame,
     editor: AnnotationViewModel,
-    onTransform: (Float, Offset) -> Offset,
     onCancelZoom: () -> Unit,
     onDoubleTapZoom: (Float, Offset) -> Unit,
     onTurn: (PageTurn) -> Unit,
@@ -96,14 +93,19 @@ internal fun Modifier.pageGestures(
     val currentPageStamps by rememberUpdatedState(stamps)
     val currentPageStrokes by rememberUpdatedState(strokes)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
+    // the page (and the score) the edit belongs to. Not a local copy: this one rests on the page the
+    // score opened at, so ink written on page 6 was stored under page 8 and showed up there after
+    // pressing Done.
+    val currentPage by rememberUpdatedState(page)
+    val currentHash by rememberUpdatedState(sheetHash)
     val currentPageFit by rememberUpdatedState(pageFit)
     // where the page is centred in the viewport, and the pure fit rect (origin 0,0):
     // content work and zoom anchoring live in these coordinates
     val currentBase by rememberUpdatedState(Offset(pageFit.left, pageFit.top))
     val currentHitFit by rememberUpdatedState(RectPx(0f, 0f, pageFit.width, pageFit.height))
-    // the reading modes (two-up, half page) scale the whole viewport; a single page scales its
-    // content
-    val currentSpread by rememberUpdatedState(spread)
+    // the frame the zoom is clamped against (the reading modes scale the whole viewport, a
+    // single page scales its content)
+    val currentFrame by rememberUpdatedState(zoomFrame)
     val currentSelectionRect by rememberUpdatedState(selectionRect)
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
@@ -114,10 +116,6 @@ internal fun Modifier.pageGestures(
     val currentEraserPx by rememberUpdatedState(eraserPx)
     val currentPenWidth by rememberUpdatedState(penWidthPx)
     val currentActiveColor by rememberUpdatedState(activeColor)
-    // the zoom a new touch starts from: a gesture reads it once and then owns its own copy
-    val currentScale by rememberUpdatedState(scale)
-    val currentOffsetX by rememberUpdatedState(offsetX)
-    val currentOffsetY by rememberUpdatedState(offsetY)
 
     // touch noise, the double-tap window and the swipe that turns a page: they belong to the
     // gesture, so they are read here
@@ -134,17 +132,17 @@ internal fun Modifier.pageGestures(
             if (down.isConsumed) return@awaitEachGesture
             onPageTouched(true)   // the stamps palette steps aside while you touch the page
             onCancelZoom()    // any new touch cancels the double-tap animation
-            // the zoom and pan this touch starts from: the gesture owns them until it ends, and
-            // reports every change through onTransform (which clamps and hands back what stuck)
-            var scaleNow = currentScale
-            var offsetNow = Offset(currentOffsetX, currentOffsetY)
             // screen -> fit coordinates (0..fitW x 0..fitH): the content no longer
-            // lives in a scaled layer, so the gesture translates the finger point here
+            // lives in a scaled layer, so the gesture translates the finger point here.
+            // zoom.transform is read live: whatever resets it mid-touch (a turn, a mode
+            // change) is already in effect on the next event, instead of being overwritten
+            // by a copy this touch took at down.
             fun fitPoint(p: Offset): Offset {
+                val t = zoom.transform
                 val b = currentBase
                 return Offset(
-                    (p.x - b.x - offsetNow.x) / scaleNow,
-                    (p.y - b.y - offsetNow.y) / scaleNow
+                    (p.x - b.x - t.offset.x) / t.scale,
+                    (p.y - b.y - t.offset.y) / t.scale
                 )
             }
             // the page is the canvas: a stroke that runs onto the matte stops at the
@@ -162,9 +160,6 @@ internal fun Modifier.pageGestures(
             // drawing at the page edge (see the tap branch below)
             val onMatte = downF.x < 0f || downF.x > currentHitFit.width ||
                 downF.y < 0f || downF.y > currentHitFit.height
-            // anchor base: a single page scales its content (centred in
-            // pageFit.left/top); the reading modes scale the whole viewport (origin 0)
-            val anchorBase = if (currentSpread) Offset.Zero else currentBase
             var ids = setOf(down.id)
             var prevCount = 1
             var prevCentroid = down.position
@@ -265,362 +260,361 @@ internal fun Modifier.pageGestures(
                 onLoupeAnchor(down.position)
             }
 
-            while (true) {
-                val event = awaitPointerEvent()
-                val pressed = event.changes.filter { it.pressed }
-                if (pressed.isEmpty()) {
-                    onPageTouched(false)
-                    // did the loupe decide this placement? (cleared just below)
-                    val aimed = currentLoupeAt != null
-                    onLoupeAnchor(null)
-                    onLoupe(null)
-                    // local copy: a delegated var captured by this lambda gets no smart
-                    // cast, so the null check needs a stable local
-                    val rz = resizing
-                    // a touch on the matte around the page has nowhere to write: the
-                    // tool stands down and the selection goes, the same state three
-                    // taps on the tool pill leave behind. A drag or a pinch there is
-                    // a pan of the page, not a tap, and leaves the tools alone.
-                    val matteTap = onMatte && !isTransform &&
-                        totalPan.getDistance() <= touchSlopPx
-                    if (matteTap && currentEditing && currentCanEdit) {
-                        onToolsDown()
-                    } else if (rz != null) {
-                        val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
-                        val changed = pts != rz.ptsPx
-                        if (changed) {
-                            editor.updateStrokes(
-                                page,
-                                rz.strokes.mapIndexed { i, base ->
-                                    base.copy(
-                                        points = encodePoints(
-                                            pts[i].map {
-                                                pxToNormalized(it, currentHitFit)
-                                            }
-                                        ),
-                                        width = (base.width * scaleF)
-                                            .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
-                                    )
-                                },
-                                PageEdit(currentPageStamps, currentPageStrokes),
-                            )
-                        }
-                    } else if (inkActive) {
-                        // ink capture lives in fit coordinates (F): the sampling
-                        // threshold is a screen distance, so it scales with the zoom
-                        val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / scaleNow)
-                        onInkPreview(emptyList())
-                        if (pts.size >= 2 && !onMatte && sheetHash != null && currentPageFit.width > 0f) {
-                            val s = Stroke(
-                                sheetHash = sheetHash,
-                                page = page,
-                                points = encodePoints(
-                                    pts.map { pxToNormalized(it, currentHitFit) }
-                                ),
-                                width = penWidthPxToFrac(currentPenWidth, currentHitFit),
-                                color = currentActiveColor
-                            )
-                            editor.addInk(page, s, PageEdit(currentPageStamps, currentPageStrokes))
-                        }
-                    } else if (eraserActive) {
-                        val path = eraserPath
-                        onInkPreview(emptyList())
-                        if (path.isNotEmpty() && sheetHash != null && currentPageFit.width > 0f) {
-                            val radiusPx = currentEraserPx
-                            // the eraser always deletes what it grazes: to remove a whole
-                            // word, tap it (that selects it) and press the bin
-                            val goneStamps = stampsTouched(
-                                currentPageStamps, currentHitFit, path, radiusPx
-                            )
-                            val goneStrokes = mutableListOf<Stroke>()
-                            val newRuns = mutableListOf<Stroke>()
-                            for (st in currentPageStrokes) {
-                                val ptsPx = strokePointsPx(st, currentHitFit)
-                                val runs = eraseStrokePoints(ptsPx, path, radiusPx)
-                                if (runs.size == 1 && runs[0].size == ptsPx.size) {
-                                    // untouched
-                                } else {
-                                    goneStrokes.add(st)
-                                    runs.forEach { r ->
-                                        newRuns.add(
-                                            st.copy(
-                                                id = 0,
-                                                points = encodePoints(r.map { pxToNormalized(it, currentHitFit) })
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                            editor.erase(
-                                page,
-                                goneStamps,
-                                goneStrokes,
-                                newRuns,
-                                PageEdit(currentPageStamps, currentPageStrokes),
-                            )
-                        }
-                    } else if (movingStrokes != null) {
-                        val done = movingStrokes
-                        val base = movingStrokesBase
-                        val moved = base != null &&
-                            done.map { it.points } != base.map { it.points }
-                        if (moved) {
-                            // keep the final position until the DB confirms it, or
-                            // the overlay would draw the old one for a few ms
-                            editor.dragStrokes = done
-                            editor.updateStrokes(
-                                page, done, PageEdit(currentPageStamps, currentPageStrokes)
-                            )
-                        }
-                    } else if (movingStamp != null) {
-                        val done = movingStamp
-                        val origin = movingOrigin
-                        // keep the final position: clearing it here would make the
-                        // overlay draw the DB's old position for a few ms until the flow
-                        // emits again (a glitch).
-                        editor.dragStamp = done
-                        editor.updateStamp(
-                            page, done, origin, PageEdit(currentPageStamps, currentPageStrokes)
-                        )
-                    } else if (!isTransform) {
-                        // double tap: toggles fit <-> 2.5x on the point touched. It is the
-                        // shortcut back to the whole page (and into a detail) without
-                        // fighting with the buttons on the bar.
-                        val nowMs = System.currentTimeMillis()
-                        val isDoubleTap = nowMs - lastTapMs < 320L &&
-                            (down.position - lastTapPos).getDistance() < doubleTapSlopPx
-                        if (isDoubleTap && !currentEditing) {
-                            if (scaleNow > 1.05f) {
-                                onDoubleTapZoom(1f, down.position)
-                            } else {
-                                onDoubleTapZoom(DOUBLE_TAP_ZOOM, down.position)
-                            }
-                            lastTapMs = 0L
-                        } else {
-                            lastTapMs = nowMs
-                            lastTapPos = down.position
-                        }
-                        if (isDoubleTap) {
-                            // already handled above: neither places a stamp nor turns the page
-                        } else if (currentEditing && currentCanEdit) {
-                            // tap while editing: places the active stamp on the point touched
-                            if (!currentStampArmed) {
-                                // no tool: just deselect
-                                editor.clearSelection()
-                            } else if (sheetHash != null &&
-                                (aimed || totalPan.getDistance() <= touchSlopPx)
-                            ) {
-                                // a drag is a pan and must not drop a stamp; the loupe is
-                                // the way to aim a placement that is not a plain tap. One
-                                // stamp per arming: the viewer stands the tool down as soon
-                                // as it is used, so the next tap outside the new stamp
-                                // deselects instead of stamping again.
-                                onPlaceStamp(pxToNormalized(fitPoint(lastPlacePos), currentHitFit))
-                            }
-                        } else {
-                            val isSwipe = scaleNow <= 1f &&
-                                totalPan.getDistance() > swipeThresholdPx &&
-                                abs(totalPan.x) > abs(totalPan.y)
-                            if (isSwipe) {
-                                if (totalPan.x < 0f) onTurn(PageTurn.NEXT) else onTurn(PageTurn.PREV)
-                            } else {
-                                // tap zones: the top-left corner opens the menu, left third prev,
-                                // right third next, center toggles the bars
-                                onTapZone(down.position)
-                            }
-                        }
-                    }
-                    break
-                }
-
-                if (currentLoupeAt != null) {
-                    if (pressed.size > 1) {
-                        // a second finger is a pinch, not an aimed placement
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) {
+                        onPageTouched(false)
+                        // did the loupe decide this placement? (cleared just below)
+                        val aimed = currentLoupeAt != null
                         onLoupeAnchor(null)
                         onLoupe(null)
-                    } else {
-                        // the loupe owns the finger: it follows it and the page must not pan
-                        val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                        lastPlacePos = tracking.position
-                        onLoupe(tracking.position)
-                        event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
-                        prevCentroid = tracking.position
-                        continue
-                    }
-                }
-
-                resizing?.let { rz ->
-                    // stretching the selected word by a handle: one pointer, scaling
-                    // around the box center. the factor is worked out from the
-                    // starting position, never accumulated
-                    val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                    val f = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
-                    scaleF = f
-                    editor.dragStrokes = rz.strokes.mapIndexed { i, st ->
-                        st.copy(
-                            points = encodePoints(
-                                scalePoints(rz.ptsPx[i], rz.center, f)
-                                    .map { pxToNormalized(it, currentHitFit) }
-                            ),
-                            width = (st.width * f)
-                                .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
-                        )
-                    }
-                    prevCentroid = tracking.position
-                    event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
-                    continue
-                }
-
-                if (movingStrokes != null) {
-                    val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                    val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
-                        pxToNormalized(moveStrokeLastPos, currentHitFit)
-                    moveStrokeLastPos = fitPoint(tracking.position)
-                    val ns = movingStrokes.map { st ->
-                        st.copy(
-                            points = encodePoints(
-                                decodePoints(st.points).map {
-                                    Offset(
-                                        (it.x + m.x).coerceIn(0f, 1f),
-                                        (it.y + m.y).coerceIn(0f, 1f)
-                                    )
+                        // local copy: a delegated var captured by this lambda gets no smart
+                        // cast, so the null check needs a stable local
+                        val rz = resizing
+                        // a touch on the matte around the page has nowhere to write: the
+                        // tool stands down and the selection goes, the same state three
+                        // taps on the tool pill leave behind. A drag or a pinch there is
+                        // a pan of the page, not a tap, and leaves the tools alone.
+                        val matteTap = onMatte && !isTransform &&
+                            totalPan.getDistance() <= touchSlopPx
+                        if (matteTap && currentEditing && currentCanEdit) {
+                            onToolsDown()
+                        } else if (rz != null) {
+                            val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
+                            val changed = pts != rz.ptsPx
+                            if (changed) {
+                                editor.updateStrokes(
+                                    currentPage,
+                                    rz.strokes.mapIndexed { i, base ->
+                                        base.copy(
+                                            points = encodePoints(
+                                                pts[i].map {
+                                                    pxToNormalized(it, currentHitFit)
+                                                }
+                                            ),
+                                            width = (base.width * scaleF)
+                                                .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+                                        )
+                                    },
+                                    PageEdit(currentPageStamps, currentPageStrokes),
+                                )
+                            }
+                        } else if (inkActive) {
+                            // ink capture lives in fit coordinates (F): the sampling
+                            // threshold is a screen distance, so it scales with the zoom
+                            val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / zoom.transform.scale)
+                            onInkPreview(emptyList())
+                            // local copy: a delegated var cannot be smart cast to String
+                            val hash = currentHash
+                            if (pts.size >= 2 && !onMatte && hash != null && currentPageFit.width > 0f) {
+                                val s = Stroke(
+                                    sheetHash = hash,
+                                    page = currentPage,
+                                    points = encodePoints(
+                                        pts.map { pxToNormalized(it, currentHitFit) }
+                                    ),
+                                    width = penWidthPxToFrac(currentPenWidth, currentHitFit),
+                                    color = currentActiveColor
+                                )
+                                editor.addInk(currentPage, s, PageEdit(currentPageStamps, currentPageStrokes))
+                            }
+                        } else if (eraserActive) {
+                            val path = eraserPath
+                            onInkPreview(emptyList())
+                            if (path.isNotEmpty() && currentHash != null && currentPageFit.width > 0f) {
+                                val radiusPx = currentEraserPx
+                                // the eraser always deletes what it grazes: to remove a whole
+                                // word, tap it (that selects it) and press the bin
+                                val goneStamps = stampsTouched(
+                                    currentPageStamps, currentHitFit, path, radiusPx
+                                )
+                                val goneStrokes = mutableListOf<Stroke>()
+                                val newRuns = mutableListOf<Stroke>()
+                                for (st in currentPageStrokes) {
+                                    val ptsPx = strokePointsPx(st, currentHitFit)
+                                    val runs = eraseStrokePoints(ptsPx, path, radiusPx)
+                                    if (runs.size == 1 && runs[0].size == ptsPx.size) {
+                                        // untouched
+                                    } else {
+                                        goneStrokes.add(st)
+                                        runs.forEach { r ->
+                                            newRuns.add(
+                                                st.copy(
+                                                    id = 0,
+                                                    points = encodePoints(r.map { pxToNormalized(it, currentHitFit) })
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
+                                editor.erase(
+                                    currentPage,
+                                    goneStamps,
+                                    goneStrokes,
+                                    newRuns,
+                                    PageEdit(currentPageStamps, currentPageStrokes),
+                                )
+                            }
+                        } else if (movingStrokes != null) {
+                            val done = movingStrokes
+                            val base = movingStrokesBase
+                            val moved = base != null &&
+                                done.map { it.points } != base.map { it.points }
+                            if (moved) {
+                                // keep the final position until the DB confirms it, or
+                                // the overlay would draw the old one for a few ms
+                                editor.dragStrokes = done
+                                editor.updateStrokes(
+                                    currentPage, done, PageEdit(currentPageStamps, currentPageStrokes)
+                                )
+                            }
+                        } else if (movingStamp != null) {
+                            val done = movingStamp
+                            val origin = movingOrigin
+                            // keep the final position: clearing it here would make the
+                            // overlay draw the DB's old position for a few ms until the flow
+                            // emits again (a glitch).
+                            editor.dragStamp = done
+                            editor.updateStamp(
+                                currentPage, done, origin, PageEdit(currentPageStamps, currentPageStrokes)
                             )
-                        )
-                    }
-                    movingStrokes = ns
-                    editor.dragStrokes = ns
-                    prevCentroid = tracking.position
-                    event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
-                    continue
-                }
-
-                if (movingStamp != null) {
-                    // move with one finger (the initial pointer, no jump when a second
-                    // finger arrives); no pinch to resize — size is changed with the slider
-                    val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                    val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
-                        pxToNormalized(moveTrackingPos, currentHitFit)
-                    moveTrackingPos = fitPoint(tracking.position)
-                    val ns = movingStamp.copy(
-                        x = (movingStamp.x + m.x).coerceIn(0f, 1f),
-                        y = (movingStamp.y + m.y).coerceIn(0f, 1f)
-                    )
-                    movingStamp = ns
-                    editor.dragStamp = ns
-                    prevCentroid = centroid(pressed)
-                    event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
-                    continue
-                }
-
-                if (inkActive) {
-                    if (pressed.size > 1) {
-                        // a second finger arrived: drop the ink and let the pinch zoom
-                        inkActive = false
-                        inkPts = mutableListOf()
-                        onInkPreview(emptyList())
-                    } else {
-                        val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                        val last = inkPts.last()
-                        val p = pagePoint(tracking.position)
-                        // points captured in fit coordinates: the screen threshold scales
-                        // with the zoom
-                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / scaleNow) {
-                            inkPts.add(p)
-                            onInkPreview(inkPts.toList())
-                        }
-                        prevCentroid = tracking.position
-                        event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
-                        continue
-                    }
-                }
-
-                if (eraserActive) {
-                    if (pressed.size > 1) {
-                        eraserActive = false
-                        eraserPath = mutableListOf()
-                        onInkPreview(emptyList())
-                    } else {
-                        val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                        val last = eraserPath.last()
-                        val p = pagePoint(tracking.position)
-                        if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / scaleNow) {
-                            eraserPath.add(p)
-                            onInkPreview(eraserPath.toList())
-                            // stamps are only removed on release, like strokes: the
-                            // trail may graze one on the way to another
-                        }
-                        prevCentroid = tracking.position
-                        event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
-                        continue
-                    }
-                }
-
-                val nids = pressed.map { it.id }.toSet()
-                // Re-anchor if the SET of fingers changes OR their NUMBER. Comparing the
-                // set alone let 1 -> 2 -> 1 through: back on one finger, nids was ids
-                // again, no re-anchor happened and prevCentroid stayed at the midpoint of
-                // the two, so delta was half the separation and the page teleported
-                // ±215 px when a finger left the pinch.
-                if (nids != ids || nids.size != prevCount) {
-                    prevCount = nids.size
-                    ids = nids
-                    anchorDist = 0f      // re-anchor the ratio reference
-                    prevCentroid = centroid(pressed)
-                }
-
-                val c = centroid(pressed)
-                val delta = c - prevCentroid
-                totalPan += delta
-                // moving before the long press fired is a pan, not an aimed placement
-                if (currentLoupeAt == null && totalPan.getDistance() > touchSlopPx) {
-                    onLoupeAnchor(null)
-                }
-                // While a pinch is on, one-finger panning does NOT run and the anchor is
-                // taken again. That is what stops the two branches fighting over the
-                // offset.
-                scaling = pressed.size > 1
-
-                if (scaling) {
-                    isTransform = true
-                    val d = (pressed[0].position - pressed[1].position).getDistance()
-                    // ANCHOR: the live centroid (midpoint of the fingers). No follow
-                    // (no offset += delta): following added the midpoint's travel to the
-                    // offset and dragged the page ~30 px on asymmetric pinches. Anchoring
-                    // without follow keeps the content under the midpoint still; each
-                    // finger stays on its content when the pinch is symmetric (see
-                    // ZoomGestureSimTest symmetricPinchKeepsFingersPinned).
-                    val pinchAnchor = c
-                    if (anchorDist == 0f) {
-                        // first frame of the pinch applies no zoom (the reference is
-                        // taken against this distance)
-                        anchorDist = d
-                    } else if (d > 0f) {
-                        // INCREMENTAL: how much the distance changed in THIS frame.
-                        val ratio = d / anchorDist
-                        anchorDist = d   // the next frame measures against this distance
-                        // dead zone against touch noise (±1 px, still fingers)
-                        if (abs(ratio - 1f) > ZOOM_NOISE_RATIO) {
-                            val target = (scaleNow * ratio).coerceIn(1f, MAX_ZOOM)
-                            if (target != scaleNow) {
-                                // Anchor on the live midpoint: the content under the
-                                // centroid stays still. No centroid follow.
-                                val k = target / scaleNow
-                                val no = ZoomMath.anchoredOffset(offsetNow, k, pinchAnchor, anchorBase)
-                                scaleNow = target
-                                offsetNow = onTransform(scaleNow, no)
+                        } else if (!isTransform) {
+                            // double tap: toggles fit <-> 2.5x on the point touched. It is the
+                            // shortcut back to the whole page (and into a detail) without
+                            // fighting with the buttons on the bar.
+                            val nowMs = System.currentTimeMillis()
+                            val isDoubleTap = nowMs - lastTapMs < 320L &&
+                                (down.position - lastTapPos).getDistance() < doubleTapSlopPx
+                            if (isDoubleTap && !currentEditing) {
+                                if (zoom.transform.scale > 1.05f) {
+                                    onDoubleTapZoom(1f, down.position)
+                                } else {
+                                    onDoubleTapZoom(DOUBLE_TAP_ZOOM, down.position)
+                                }
+                                lastTapMs = 0L
+                            } else {
+                                lastTapMs = nowMs
+                                lastTapPos = down.position
+                            }
+                            if (isDoubleTap) {
+                                // already handled above: neither places a stamp nor turns the page
+                            } else if (currentEditing && currentCanEdit) {
+                                // tap while editing: places the active stamp on the point touched
+                                if (!currentStampArmed) {
+                                    // no tool: just deselect
+                                    editor.clearSelection()
+                                } else if (currentHash != null &&
+                                    (aimed || totalPan.getDistance() <= touchSlopPx)
+                                ) {
+                                    // a drag is a pan and must not drop a stamp; the loupe is
+                                    // the way to aim a placement that is not a plain tap. One
+                                    // stamp per arming: the viewer stands the tool down as soon
+                                    // as it is used, so the next tap outside the new stamp
+                                    // deselects instead of stamping again.
+                                    onPlaceStamp(pxToNormalized(fitPoint(lastPlacePos), currentHitFit))
+                                }
+                            } else {
+                                val isSwipe = zoom.transform.scale <= 1f &&
+                                    totalPan.getDistance() > swipeThresholdPx &&
+                                    abs(totalPan.x) > abs(totalPan.y)
+                                if (isSwipe) {
+                                    if (totalPan.x < 0f) onTurn(PageTurn.NEXT) else onTurn(PageTurn.PREV)
+                                } else {
+                                    // tap zones: the top-left corner opens the menu, left third prev,
+                                    // right third next, center toggles the bars
+                                    onTapZone(down.position)
+                                }
                             }
                         }
+                        break
                     }
-                } else if (scaleNow > 1f && delta.getDistance() > 0f) {
-                    // One finger and NO pinch in progress: pan. While there are 2+ fingers
-                    // this branch does not run, so the two branches never fight over the
+    
+                    if (currentLoupeAt != null) {
+                        if (pressed.size > 1) {
+                            // a second finger is a pinch, not an aimed placement
+                            onLoupeAnchor(null)
+                            onLoupe(null)
+                        } else {
+                            // the loupe owns the finger: it follows it and the page must not pan
+                            val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                            lastPlacePos = tracking.position
+                            onLoupe(tracking.position)
+                            event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                            prevCentroid = tracking.position
+                            continue
+                        }
+                    }
+    
+                    resizing?.let { rz ->
+                        // stretching the selected word by a handle: one pointer, scaling
+                        // around the box center. the factor is worked out from the
+                        // starting position, never accumulated
+                        val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                        val f = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
+                        scaleF = f
+                        editor.dragStrokes = rz.strokes.mapIndexed { i, st ->
+                            st.copy(
+                                points = encodePoints(
+                                    scalePoints(rz.ptsPx[i], rz.center, f)
+                                        .map { pxToNormalized(it, currentHitFit) }
+                                ),
+                                width = (st.width * f)
+                                    .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+                            )
+                        }
+                        prevCentroid = tracking.position
+                        event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                        continue
+                    }
+    
+                    if (movingStrokes != null) {
+                        val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                        val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
+                            pxToNormalized(moveStrokeLastPos, currentHitFit)
+                        moveStrokeLastPos = fitPoint(tracking.position)
+                        val ns = movingStrokes.map { st ->
+                            st.copy(
+                                points = encodePoints(
+                                    decodePoints(st.points).map {
+                                        Offset(
+                                            (it.x + m.x).coerceIn(0f, 1f),
+                                            (it.y + m.y).coerceIn(0f, 1f)
+                                        )
+                                    }
+                                )
+                            )
+                        }
+                        movingStrokes = ns
+                        editor.dragStrokes = ns
+                        prevCentroid = tracking.position
+                        event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                        continue
+                    }
+    
+                    if (movingStamp != null) {
+                        // move with one finger (the initial pointer, no jump when a second
+                        // finger arrives); no pinch to resize — size is changed with the slider
+                        val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                        val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
+                            pxToNormalized(moveTrackingPos, currentHitFit)
+                        moveTrackingPos = fitPoint(tracking.position)
+                        val ns = movingStamp.copy(
+                            x = (movingStamp.x + m.x).coerceIn(0f, 1f),
+                            y = (movingStamp.y + m.y).coerceIn(0f, 1f)
+                        )
+                        movingStamp = ns
+                        editor.dragStamp = ns
+                        prevCentroid = centroid(pressed)
+                        event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                        continue
+                    }
+    
+                    if (inkActive) {
+                        if (pressed.size > 1) {
+                            // a second finger arrived: drop the ink and let the pinch zoom
+                            inkActive = false
+                            inkPts = mutableListOf()
+                            onInkPreview(emptyList())
+                        } else {
+                            val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                            val last = inkPts.last()
+                            val p = pagePoint(tracking.position)
+                            // points captured in fit coordinates: the screen threshold scales
+                            // with the zoom
+                            if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / zoom.transform.scale) {
+                                inkPts.add(p)
+                                onInkPreview(inkPts.toList())
+                            }
+                            prevCentroid = tracking.position
+                            event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                            continue
+                        }
+                    }
+    
+                    if (eraserActive) {
+                        if (pressed.size > 1) {
+                            eraserActive = false
+                            eraserPath = mutableListOf()
+                            onInkPreview(emptyList())
+                        } else {
+                            val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                            val last = eraserPath.last()
+                            val p = pagePoint(tracking.position)
+                            if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / zoom.transform.scale) {
+                                eraserPath.add(p)
+                                onInkPreview(eraserPath.toList())
+                                // stamps are only removed on release, like strokes: the
+                                // trail may graze one on the way to another
+                            }
+                            prevCentroid = tracking.position
+                            event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                            continue
+                        }
+                    }
+    
+                    val nids = pressed.map { it.id }.toSet()
+                    // Re-anchor if the SET of fingers changes OR their NUMBER. Comparing the
+                    // set alone let 1 -> 2 -> 1 through: back on one finger, nids was ids
+                    // again, no re-anchor happened and prevCentroid stayed at the midpoint of
+                    // the two, so delta was half the separation and the page teleported
+                    // ±215 px when a finger left the pinch.
+                    if (nids != ids || nids.size != prevCount) {
+                        prevCount = nids.size
+                        ids = nids
+                        anchorDist = 0f      // re-anchor the ratio reference
+                        prevCentroid = centroid(pressed)
+                    }
+    
+                    val c = centroid(pressed)
+                    val delta = c - prevCentroid
+                    totalPan += delta
+                    // moving before the long press fired is a pan, not an aimed placement
+                    if (currentLoupeAt == null && totalPan.getDistance() > touchSlopPx) {
+                        onLoupeAnchor(null)
+                    }
+                    // While a pinch is on, one-finger panning does NOT run and the anchor is
+                    // taken again. That is what stops the two branches fighting over the
                     // offset.
-                    isTransform = true
-                    offsetNow = onTransform(scaleNow, offsetNow + delta)
+                    scaling = pressed.size > 1
+    
+                    if (scaling) {
+                        isTransform = true
+                        val d = (pressed[0].position - pressed[1].position).getDistance()
+                        // ANCHOR: the live centroid (midpoint of the fingers). No follow
+                        // (no offset += delta): following added the midpoint's travel to the
+                        // offset and dragged the page ~30 px on asymmetric pinches. Anchoring
+                        // without follow keeps the content under the midpoint still; each
+                        // finger stays on its content when the pinch is symmetric (see
+                        // ZoomGestureSimTest symmetricPinchKeepsFingersPinned).
+                        val pinchAnchor = c
+                        // INCREMENTAL: how much the distance changed in THIS frame. The reference
+                        // is always taken, even on a frame that does not zoom, or the next frame
+                        // would be measured against a distance two events old.
+                        val previous = anchorDist
+                        if (d > 0f) anchorDist = d
+                        val s = zoom.transform.scale
+                        val target = ZoomMath.nextScale(s, previous, d, ZOOM_NOISE_RATIO, MAX_ZOOM)
+                        if (target != s) zoom.pinch(currentFrame, target / s, pinchAnchor)
+                    } else if (zoom.transform.scale > 1f && delta.getDistance() > 0f) {
+                        // One finger and NO pinch in progress: pan. While there are 2+ fingers
+                        // this branch does not run, so the two branches never fight over the
+                        // offset.
+                        isTransform = true
+                        zoom.pan(currentFrame, delta)
+                    }
+                    prevCentroid = c
+                    event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                 }
-                prevCentroid = c
-                event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+            } finally {
+                // a gesture a parent takes over (or that is cancelled) never reaches its
+                // release branch: put the half state back, or the loupe, the ghost stroke and
+                // the "page is touched" flag stay on screen until the next touch
+                onPageTouched(false)
+                onLoupeAnchor(null)
+                onLoupe(null)
+                onInkPreview(emptyList())
             }
         }
     }

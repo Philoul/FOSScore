@@ -55,6 +55,22 @@ internal class AnnotationViewModel(
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
+    /**
+     * These rows are gone: the optimistic copy must stop drawing them. settle() cannot prune it,
+     * because the DB never hands back a row that no longer exists, so the stroke came back to the
+     * page a moment after being deleted or erased.
+     */
+    private fun forget(ids: Collection<Long>) {
+        if (ids.isNotEmpty()) pendingInk = pendingInk.filterNot { it.id in ids }
+    }
+
+    /** After a restore the page is exactly [strokes]: anything else in the optimistic layer is inked
+     * over a state that no longer exists (an undone stroke would stay on screen forever). */
+    private fun keepOnlyInkOf(strokes: List<Stroke>) {
+        val ids = strokes.map { it.id }.toSet()
+        pendingInk = pendingInk.filter { it.id in ids }
+    }
+
     /** Stacks [current] (the state before the change) for [page]. */
     fun pushUndo(current: PageEdit, page: Int) {
         undoStack = (undoStack + (page to current)).takeLast(UNDO_LEVELS)
@@ -112,6 +128,7 @@ internal class AnnotationViewModel(
         // the "looks deleted now" cache is stale after a restore: the
         // snapshots go back with their original ids
         clearHidden()
+        keepOnlyInkOf(edit.strokes)
         viewModelScope.launch {
             stamps.restorePage(hash, target, edit.stamps)
             strokes.restorePage(hash, target, edit.strokes)
@@ -125,6 +142,7 @@ internal class AnnotationViewModel(
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
         clearHidden()
+        keepOnlyInkOf(edit.strokes)
         viewModelScope.launch {
             stamps.restorePage(hash, target, edit.stamps)
             strokes.restorePage(hash, target, edit.strokes)
@@ -139,6 +157,7 @@ internal class AnnotationViewModel(
         selectedStrokeIds = emptySet()
         hiddenStampIds = hiddenStampIds + listOfNotNull(stamp?.id)
         hiddenStrokeIds = hiddenStrokeIds + selection.map { it.id }
+        forget(selection.map { it.id })
         viewModelScope.launch {
             stamp?.let { stamps.delete(it) }
             if (selection.isNotEmpty()) strokes.deleteAll(selection)
@@ -162,11 +181,16 @@ internal class AnnotationViewModel(
         newRuns: List<Stroke>,
         current: PageEdit,
     ) {
+        // a pass that grazed nothing is not an edit: it must not delete-and-reinsert rows (new ids
+        // leave the selection and the bin pointing at rows that no longer exist) nor push an undo
+        // level that restores the very state we are in
+        if (goneStamps.isEmpty() && goneStrokes.isEmpty()) return
         pushUndo(current, page)
         selectedId = null
         selectedStrokeIds = emptySet()
         hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
         hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
+        forget(goneStrokes.map { it.id })
         viewModelScope.launch {
             if (goneStamps.isNotEmpty()) stamps.deleteAll(goneStamps)
             if (goneStrokes.isNotEmpty()) {

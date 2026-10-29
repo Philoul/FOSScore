@@ -63,9 +63,6 @@ class MetronomeViewModel(app: Application, private val score: String) : AndroidV
         if (!shown) stop()
     }
 
-    /** ▶ / ⏸; [fromBar] is the bar of the piece where the music on screen starts. */
-    fun startStop(fromBar: Int) = if (_running.value) stop() else start(fromBar)
-
     fun start(fromBar: Int) {
         startBar = fromBar
         apply(_settings.value)

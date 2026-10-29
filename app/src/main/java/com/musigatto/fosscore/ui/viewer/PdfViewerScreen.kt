@@ -1,7 +1,6 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.res.Configuration
-import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -35,7 +34,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -78,33 +76,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
+import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
-import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.PageSource
-import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.IOException
-import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.time.Duration.Companion.milliseconds
@@ -136,11 +125,7 @@ internal const val DOUBLE_TAP_ZOOM = 2.5f
 // anchor on every frame.
 private const val DOUBLE_TAP_ANIM_MS = 250
 
-// Re-draw during a pinch: minimum gap between draws (150 ms) and a settling wait for the final
-// draw (250 ms with no zoom change). Reference viewers also draw during the gesture; kept to a
-// minimum, the bitmap follows the zoom and the GPU never rescales the texture.
-private const val RENDER_DURING_ZOOM_MS = 150L
-private const val RENDER_SETTLE_MS = 250L
+// Re-draw during a pinch and its settling wait live with the drawing, in PageRender.kt.
 
 // in half page, the cut of the next turn for [page] as laid out in [layout]: the turn makes
 // [split], the dotted line shows it at [mark] (a fraction of the page height)
@@ -152,6 +137,16 @@ internal enum class ToolPanel { Stamps, Pen, Eraser, Color }
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
 internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float)
+
+private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): List<InkDraw> =
+    strokes.map { st ->
+        InkDraw(
+            id = st.id,
+            path = inkPath(strokePointsPx(st, fit)),
+            color = inkTint(st.color, invert),
+            width = st.width * fit.height
+        )
+    }
 
 @Composable
 fun PdfViewerScreen(
@@ -217,6 +212,12 @@ fun PdfViewerScreen(
         key = "annotation:$pdfUri",
         factory = AnnotationViewModel.factory(context, sheetHash),
     )
+    // how the pages show (two-up, half page, dim, invert, keep the screen on): one ViewModel for
+    // every score, reading and writing the settings in one place
+    val viewer: ViewerViewModel = viewModel(
+        key = "viewer:$isLandscape",
+        factory = ViewerViewModel.factory(context, isLandscape),
+    )
     // a MusicXML score's bars and notes, for the page turns of the metronome
     var metronomeMusic by remember { mutableStateOf<Playback?>(null) }
     SideEffect { playbackVm.turnAhead = metronome.turnAhead }
@@ -226,39 +227,29 @@ fun PdfViewerScreen(
     val format = remember(pdfUri) { SheetFormat.of(pdfUri.path.orEmpty()) }
     // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
     var layoutVersion by remember { mutableIntStateOf(0) }
-    var pageCount by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
         mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
     }
-    // the same for every score, half page for each orientation (Settings)
-    var twoUp by remember { mutableStateOf(Settings.twoUp(context)) }
-    var halfEnabled by remember(isLandscape) { mutableStateOf(Settings.halfPage(context, isLandscape)) }
+    // the same for every score, half page for each orientation (ViewerViewModel)
+    val display by viewer.display.collectAsState()
+    val twoUp = display.twoUp
+    val halfEnabled = display.halfPage
     var halfTurned by rememberSaveable { mutableStateOf(false) }
     // the chrome starts hidden: the app is the page (spec §0)
     var navVisible by rememberSaveable { mutableStateOf(false) }
-    var error by remember { mutableStateOf<Int?>(null) }
-    // SnapshotStateMap: changing one bitmap only redraws whoever reads THAT key. With a plain
-    // Map, changing a bitmap invalidated the Image + the ink Canvas + all the stamps at once
-    // (that was the jolt felt when the sharpness changed mid-pinch).
-    val bitmaps = remember { mutableStateMapOf<Int, Bitmap>() }
-    // bitmap draw step: the bitmap is drawn at fit × renderScale (1:1 on screen, no GPU
-    // rescaling). The gesture feeds it through ZoomMath.renderBucket.
-    var renderScale by remember { mutableFloatStateOf(1f) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
-    var renderGeneration by remember { mutableIntStateOf(0) }
-    // last page that was actually drawn: while the next one renders (~300 ms, plus the display
-    // list parse) the old page stays on screen instead of a spinner flash. Cleared when the doc
-    // changes so a new score never shows the previous one's paper.
-    var lastShown by remember(pdfUri) { mutableStateOf<Bitmap?>(null) }
-    // in half page, the cut of the next turn: the dotted line shows it and the turn makes it, so
-    // both always agree
-    var halfCut by remember(pdfUri) { mutableStateOf<HalfCut?>(null) }
+    // the paper: the document, its bitmaps, the cut of a half page and the lock MuPDF needs
+    val paper = rememberPagePaper(pdfUri)
+    // the paper that is open: how many pages it has, and why it is not there if it is not.
+    // Plain reads: the paper holds them as Compose state, so a change recomposes the screen.
+    val pageCount = paper.pageCount
+    val error = paper.error
+    // zoom and pan: read in the gesture's pointer loop and in the canvas' draw lambdas, never
+    // in composition (a per-frame read here would recompose the screen on every pinch frame)
+    val zoom = rememberZoomState()
     var viewport by remember { mutableStateOf(IntSize.Zero) }
-    var dimPct by remember { mutableFloatStateOf(Settings.dimPct(context)) }
-    var invert by remember { mutableStateOf(Settings.invert(context)) }
-    var keepScreenOn by remember { mutableStateOf(Settings.keepScreenOn(context)) }
+    val dimPct = display.dimPct
+    val invert = display.invert
+    val keepScreenOn = display.keepScreenOn
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
     val view = LocalView.current
@@ -321,12 +312,6 @@ fun PdfViewerScreen(
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
 
-    // MuPDF is not thread-safe either (it shares a global Context): this serializes draw/close so
-    // a canceled draw (not cancellable mid-page) cannot clash with the next one or with close().
-    // ponytail: one mutex per document is enough; if there is ever more than one document at a
-    // time, move it to FOSScoreApp. The bitmap cache lives in MuPdfDoc.
-    val rendererLock = remember(pdfUri) { Mutex() }
-
     val branch = PageFlow(currentPage, halfTurned, halfEnabled, twoUp, isLandscape, pageCount)
     // two pages on screen at once: the reading modes scale the whole viewport, a single page
     // scales its own content instead
@@ -345,6 +330,22 @@ fun PdfViewerScreen(
             else -> stringResource(R.string.desc_page_range, r.first + 1, r.last + 1, pageCount)
         }
     }
+
+    // the second page of a spread. The viewer is reading, not editing, there, but its ink and its
+    // stamps are drawn too: half of a two-up (or the top of a turned half page) would come out bare.
+    val companion = if (spread && currentPage + 1 < pageCount) currentPage + 1 else null
+    val companionStampsFlow = remember(sheetHash, companion) {
+        if (sheetHash != null && companion != null) {
+            (context.applicationContext as FOSScoreApp).stampRepository.observe(sheetHash, companion)
+        } else flowOf(emptyList())
+    }
+    val companionStamps by companionStampsFlow.collectAsState(initial = emptyList())
+    val companionStrokesFlow = remember(sheetHash, companion) {
+        if (sheetHash != null && companion != null) {
+            (context.applicationContext as FOSScoreApp).strokeRepository.observe(sheetHash, companion)
+        } else flowOf(emptyList())
+    }
+    val companionStrokes by companionStrokesFlow.collectAsState(initial = emptyList())
 
     // ponytail: no annotations on MusicXML yet. They are stored per page, and a MusicXML page
     // changes with the screen and the music size; they need to be tied to measures first.
@@ -373,22 +374,15 @@ fun PdfViewerScreen(
     // written a second ago is not selectable and the word's box comes out short.
     val inkStrokes = (editor.pendingInk + pageStrokes).distinctBy { it.id }
     // the same ink, ready to draw: decode + Path once per change, not once per frame
-    val inkDraws = remember(inkStrokes, hitFit, invert) {
-        inkStrokes.map { st ->
-            InkDraw(
-                id = st.id,
-                path = inkPath(strokePointsPx(st, hitFit)),
-                color = inkTint(st.color, invert),
-                width = st.width * hitFit.height
-            )
-        }
+    val inkDraws = remember(inkStrokes, hitFit, invert) { inkDrawsOf(inkStrokes, hitFit, invert) }
+    // the next page's ink, same fit: its path only has to land on the paper that page takes, and
+    // PageOverlay stretches it there
+    val companionInkDraws = remember(companionStrokes, hitFit, invert) {
+        inkDrawsOf(companionStrokes, hitFit, invert)
     }
-    // the zoom helpers below read these through rememberUpdatedState: the gesture that calls
-    // them captured them when it started, and must see the live page
+    // the zoom frame reads these through rememberUpdatedState: the gesture that calls it captured
+    // it when it started, and must see the live page
     val currentPageFit by rememberUpdatedState(pageFit)
-    // where the page is centred in the viewport, and the pure fit rect (origin 0,0):
-    // content work and zoom anchoring live in these coordinates
-    val currentBase by rememberUpdatedState(Offset(pageFit.left, pageFit.top))
     // the reading modes (two-up, half page) scale the whole viewport; a single page scales its
     // content.
     val currentSpread by rememberUpdatedState(spread)
@@ -419,13 +413,11 @@ fun PdfViewerScreen(
         if (!editing && (sheetHash == null || format.isMusicXml)) return
         editing = !editing
         if (editing) {
-            twoUp = false
-            halfEnabled = false
+            viewer.singlePage()
             halfTurned = false
         } else {
             // back to the pages as the user set them
-            twoUp = Settings.twoUp(context)
-            halfEnabled = Settings.halfPage(context, isLandscape)
+            viewer.restoreReadingMode()
             editor.clearHistory()
             editor.clearSelection()
             drawingTool = false
@@ -489,27 +481,18 @@ fun PdfViewerScreen(
     val currentApplyNext by rememberUpdatedState(applyNext)
     val currentApplyPrev by rememberUpdatedState(applyPrev)
 
-    fun clampOffsets() {
-        if (viewport == IntSize.Zero) return
-        // Single page: the content is the page at its fit; the reading modes (two-up, half page)
-        // scale the whole viewport. `currentSpread`/`currentPageFit` are states updated on every
-        // composition, so the gesture — which captured this function when it started — always
-        // reads live values.
+    // The frame the zoom is clamped against: a single page scales its own content (centred on
+    // pageFit), the reading modes scale the whole viewport. It reads currentPageFit/currentSpread
+    // and viewport live, so the gesture and the double-tap animation get the frame on screen now.
+    fun zoomFrameNow(): ZoomFrame {
         val vps = Size(viewport.width.toFloat(), viewport.height.toFloat())
-        val (content, base) = if (currentSpread) {
-            Size(viewport.width.toFloat(), viewport.height.toFloat()) to Offset.Zero
+        val fit = currentPageFit
+        return if (currentSpread) {
+            ZoomFrame(vps, vps, Offset.Zero)
         } else {
-            Size(currentPageFit.width, currentPageFit.height) to
-                Offset(currentPageFit.left, currentPageFit.top)
+            ZoomFrame(Size(fit.width, fit.height), vps, Offset(fit.left, fit.top))
         }
-        val o = ZoomMath.clampOffset(Offset(offsetX, offsetY), content, vps, scale, base)
-        offsetX = o.x
-        offsetY = o.y
     }
-
-    // anchor base: a single page scales its content (centred in pageFit); the reading modes scale
-    // the whole viewport (origin 0). Same one the gesture uses.
-    fun anchorBaseOf(): Offset = if (currentSpread) Offset.Zero else currentBase
 
     // Animated zoom to a point (double tap): the scale is interpolated geometrically and anchored
     // on every frame with the pinch formula, so it lands exactly where it should, and you see it
@@ -517,24 +500,24 @@ fun PdfViewerScreen(
     fun animateZoomTo(targetScale: Float, anchor: Offset) {
         zoomAnimJob?.cancel()
         zoomAnimJob = editScope.launch {
-            val s0 = scale
-            val o0 = Offset(offsetX, offsetY)
-            val base = anchorBaseOf()
+            val frame = zoomFrameNow()
+            val s0 = zoom.transform.scale
+            val o0 = zoom.transform.offset
             if (s0 == targetScale) return@launch
             Animatable(0f).animateTo(1f, tween(DOUBLE_TAP_ANIM_MS, easing = FastOutSlowInEasing)) {
                 val e = value
-                if (targetScale <= 1f) {
-                    scale = s0 + (1f - s0) * e
-                    offsetX = o0.x * (1f - e)
-                    offsetY = o0.y * (1f - e)
-                } else {
-                    val k = (targetScale / s0).pow(e)
-                    val no = ZoomMath.anchoredOffset(o0, k, anchor, base)
-                    scale = (s0 * k).coerceIn(1f, DOUBLE_TAP_ZOOM)
-                    offsetX = no.x
-                    offsetY = no.y
-                }
-                clampOffsets()
+                zoom.set(
+                    frame,
+                    if (targetScale <= 1f) {
+                        ZoomTransform(s0 + (1f - s0) * e, o0 * (1f - e))
+                    } else {
+                        val k = (targetScale / s0).pow(e)
+                        ZoomTransform(
+                            (s0 * k).coerceIn(1f, DOUBLE_TAP_ZOOM),
+                            ZoomMath.anchoredOffset(o0, k, anchor, frame.base),
+                        )
+                    },
+                )
             }
         }
     }
@@ -617,32 +600,10 @@ fun PdfViewerScreen(
     // MuPDF (prebuilt AAR, AGPL-3.0: see LICENSE). Opens and works out sizes in the background:
     // opening parses the PDF index and must not touch the main thread.
     LaunchedEffect(pdfUri) {
-        try {
-            // NonCancellable: if the user leaves while we are opening, the document is created
-            // anyway, and we close it below. Cancelling here would leave the native doc hanging
-            // (and its memory too).
-            val doc: PageSource = withContext(NonCancellable + Dispatchers.IO) {
-                if (format.isMusicXml) MusicXmlPages.open(context, File(pdfUri.path.orEmpty()))
-                else MuPdfDoc.open(context, pdfUri)
-            }
-            if (!isActive) {
-                withContext(NonCancellable + Dispatchers.IO) { doc.close() }
-                return@LaunchedEffect
-            }
-            pageCount = doc.pageCount
-            if (pageCount > 0) currentPage = currentPage.coerceIn(0, pageCount - 1)
-            if (doc is MusicXmlPages) menu.onScoreRead(doc.parts)
-            pageSource = doc
-            ScorePrecompute.opened(context, pdfUri.toString())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            Log.e(LOG_TAG, "no se pudo abrir el archivo: ${e.message}", e)
-            error = R.string.err_open_file
-        } catch (e: Exception) {
-            Log.e(LOG_TAG, "no se pudo abrir: ${e::class.simpleName}: ${e.message}", e)
-            error = if (format.isMusicXml) R.string.err_open_file else R.string.err_invalid_pdf
-        }
+        val doc = paper.open(context, format) ?: return@LaunchedEffect
+        if (paper.pageCount > 0) currentPage = currentPage.coerceIn(0, paper.pageCount - 1)
+        if (doc is MusicXmlPages) menu.onScoreRead(doc.parts)
+        pageSource = doc
     }
 
     // MusicXML: break the music into pages of this screen's size, and again when the screen turns
@@ -683,15 +644,13 @@ fun PdfViewerScreen(
         withContext(Dispatchers.IO) { MusicXmlPages.rememberScreen(context, screen) }
         val before = pageCount
         try {
-            val changed = rendererLock.withLock {
-                withContext(Dispatchers.Default) { pages.layout(spec) }
-            }
+            val changed = paper.layoutPages(pages, spec)
             if (!changed) return@LaunchedEffect
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(LOG_TAG, "MusicXML layout failed: ${e::class.simpleName}: ${e.message}", e)
-            error = R.string.err_open_file
+            paper.error = R.string.err_open_file
             return@LaunchedEffect
         }
         val after = pages.pageCount
@@ -700,8 +659,7 @@ fun PdfViewerScreen(
                 .coerceIn(0, after - 1)
         }
         halfTurned = false
-        pageCount = after
-        bitmaps.clear()
+        paper.pagesRelaidOut(after)
         layoutVersion++
     }
 
@@ -720,13 +678,8 @@ fun PdfViewerScreen(
     val pageHeight = pageBox?.let { b -> { geo: PageGeometry -> geo.width * b.height / b.width } }
 
     // Where a turned half page cuts: between two systems, in the blank bands of the pages drawn
-    // (HalfSplit), read once per picture
-    val blankBands = remember { WeakHashMap<Bitmap, List<Band>>() }
-    fun halfSplit(): HalfSplit {
-        fun bands(index: Int) = bitmaps[index]?.let { bmp -> blankBands.getOrPut(bmp) { bmp.blankBands() } }.orEmpty()
-        return halfCut?.takeIf { it.page == currentPage && it.layout == layoutVersion }?.split
-            ?: HalfSplit.of(bands(currentPage), bands(currentPage + 1))
-    }
+    // (HalfSplit), worked out by the paper and read once per picture
+    fun halfSplit(): HalfSplit = paper.halfSplit(currentPage, layoutVersion)
 
     // Whether the notehead [id] is above [fraction] of its page's height (a hidden note counts as at the top).
     fun above(geo: PageGeometry, id: String, fraction: Float) =
@@ -813,8 +766,8 @@ fun PdfViewerScreen(
 
     // The pages turn with the metronome: a MusicXML score knows its bars, a PDF score has the
     // bars of each page counted by the user (BarPages). Only forward: a page turned back by hand
-    // stays until the metronome gets past it.
-    LaunchedEffect(metronomeTick) {
+    // stays until the metronome gets past it. pageCount: a score laid out again changes the bars.
+    LaunchedEffect(metronomeTick, pageCount) {
         val bar = metronomeVm.barHeard(metronomeTick) ?: return@LaunchedEffect
         if (!metronome.autoTurn) return@LaunchedEffect
         val ahead = bar + metronome.turnAhead
@@ -836,156 +789,25 @@ fun PdfViewerScreen(
         }
     }
 
-    // zoom back to zero when the page or the reading mode changes (the draw step too: otherwise
-    // paging would draw every page zoomed in)
-    LaunchedEffect(currentPage, branch.showTwoUp, branch.showHalf, halfTurned) {
-        scale = 1f
-        offsetX = 0f
-        offsetY = 0f
-        renderScale = 1f
-    }
-
-    // Redraw at the current zoom (steps of 10% of the fit, ZoomMath.renderBucket): like reference
-    // viewers, the bitmap follows the zoom so the GPU never rescales it. During a pinch it only
-    // goes UP a step, with a 150 ms minimum between draws; once it settles (no scale change for
-    // 250 ms) the final step is tuned in, which can also go DOWN after zooming out.
-    LaunchedEffect(pageSource, viewport) {
-        var lastUpgradeMs = 0L
-        snapshotFlow { scale }.collectLatest { s ->
-            val target = ZoomMath.renderBucket(s)
-            val now = System.currentTimeMillis()
-            if (target > renderScale && now - lastUpgradeMs >= RENDER_DURING_ZOOM_MS) {
-                lastUpgradeMs = now
-                renderScale = target
-                return@collectLatest
-            }
-            delay(RENDER_SETTLE_MS.milliseconds)
-            // if the scale kept changing while we waited, the next emission picks it up
-            if (target >= ZoomMath.renderBucket(scale)) renderScale = target
-        }
-    }
-
-    // viewport matters: on the first frame it is still IntSize.Zero, and with no size there is no draw
-    LaunchedEffect(
-        pageSource, currentPage, branch.showTwoUp, branch.showHalf, halfTurned, renderScale, viewport,
-        layoutVersion,
-    ) {
-        val r = pageSource ?: return@LaunchedEffect
-        // a MusicXML score has no pages until it is laid out (the effect above)
-        if (r is MusicXmlPages && r.pageCount == 0) return@LaunchedEffect
-        val gen = ++renderGeneration
-        val needed = when {
-            branch.showTwoUp -> listOf(currentPage, currentPage + 1).filter { it < pageCount }
-            branch.showHalf && halfTurned -> listOf(currentPage, currentPage + 1).filter { it < pageCount }
-            else -> listOf(currentPage)
-        }
-        // Single page: the draw slot is the fit × zoom step (the bitmap is shown 1:1 on screen, the
-        // GPU rescales nothing). Reading modes (two-up, half page): the slot is the viewport and
-        // the layer keeps scaling (they are for reading, not for zooming in).
-        val spreadSlot =
-            if (spread) Pair(if (branch.showTwoUp) viewport.width / 2 else viewport.width, viewport.height)
-            else null
-        // read Compose state BEFORE going into the draw dispatcher
-        val rs = renderScale
-        val vpW = viewport.width.toFloat()
-        val vpH = viewport.height.toFloat()
-        val fallback = needed.associateWith { bitmaps[it] }
-        try {
-            val session = rendererLock.withLock {
-                withContext(Dispatchers.Default) {
-                    // the real page size may not be loaded yet (pages past the ones loaded up
-                    // front): it is resolved inside the lock with loadSize (a cheap read of the
-                    // page dictionary), the same path the draw takes for its fit
-                    val slot = spreadSlot ?: run {
-                        val box = r.ensurePageSize(currentPage)
-                        if (box == null || box.height <= 0f) return@withContext emptyMap()
-                        val fit = fitRect(vpW, vpH, box.width / box.height)
-                        ZoomMath.renderSlot(fit, rs)
-                    }
-                    val out = mutableMapOf<Int, Bitmap>()
-                    for (idx in needed) {
-                        // if a draw fails we keep what is already on screen: faint beats a hole
-                        out[idx] = r.render(idx, slot.first, slot.second) ?: fallback[idx] ?: continue
-                    }
-                    out
-                }
-            }
-            // guard against an older, non-cancellable render landing after a newer one
-            if (gen == renderGeneration) {
-                for ((idx, bmp) in session) bitmaps[idx] = bmp
-                // keep the page on screen while the next one renders (see lastShown)
-                bitmaps[currentPage]?.let { lastShown = it }
-                // we do not pile up bitmaps of pages that are no longer on screen (16 MB each when sharp)
-                bitmaps.keys.filterNot { it in needed }.forEach { bitmaps.remove(it) }
-                // no bitmap for this page means nothing to show: say so instead of leaving the
-                // spinner turning forever (it happened with a blank page). Only for a render made
-                // for this page: a MusicXML score laid out again (two pages -> one) changes the
-                // page numbers while an older render finishes, and the newer one is on its way.
-                if (currentPage in needed && bitmaps[currentPage] == null) {
-                    Log.e(LOG_TAG, "la página $currentPage no se pudo renderizar")
-                    error = R.string.err_render_page
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(LOG_TAG, "render failed: ${e::class.simpleName}: ${e.message}", e)
-            if (gen == renderGeneration) error = R.string.err_render_page
-        }
-    }
-
-    // Prefetch both neighbours: a draw costs ~100-300 ms (measured on device), and drawing them
-    // ahead of time makes the turn a cache hit in MuPdfDoc (same page, same width key).
-    // Only at 1x: a turn resets the zoom, so a draw at a zoomed slot would never be reused.
-    // The delay gives a quick turn the lock: turning before it fires cancels this effect.
-    // It waits for this page's own picture, which the cut of a half page is worked out from.
-    LaunchedEffect(
-        pageSource, currentPage, viewport, renderScale, branch.showTwoUp, branch.showHalf, layoutVersion,
-        bitmaps[currentPage] != null,
-    ) {
-        val r = pageSource ?: return@LaunchedEffect
-        if (spread) return@LaunchedEffect
-        if (renderScale != 1f || viewport == IntSize.Zero) return@LaunchedEffect
-        delay(RENDER_SETTLE_MS.milliseconds)
-        val vpW = viewport.width.toFloat()
-        val vpH = viewport.height.toFloat()
-        val shown = bitmaps[currentPage]
-        halfCut = rendererLock.withLock {
-            withContext(Dispatchers.Default) {
-                fun draw(page: Int) = r.ensurePageSize(page)?.takeIf { it.height > 0f }?.let { box ->
-                    val slot = ZoomMath.renderSlot(fitRect(vpW, vpH, box.width / box.height), 1f)
-                    r.render(page, slot.first, slot.second)
-                }
-                for (page in listOf(currentPage + 1, currentPage - 1)) {
-                    if (page !in 0 until pageCount) continue
-                    // a turn supersedes this prefetch: drop the rest instead of holding the lock
-                    if (!isActive) return@withContext null
-                    draw(page)
-                }
-                // in half page, the cut of the next turn, from this page and the next one just drawn
-                shown?.takeIf { branch.showHalf && currentPage + 1 < pageCount }?.let { here ->
-                    draw(currentPage + 1)?.let { next ->
-                        val bands = here.blankBands()
-                        val split = HalfSplit.of(bands, next.blankBands())
-                        // the line goes through the middle of the blank band the cut is in, clear of
-                        // the staves above and below: anywhere in it, the turn hides only paper
-                        val mark = bands.firstOrNull { split.lower in it.start..it.end }?.let { (it.start + it.end) / 2 }
-                        HalfCut(currentPage, layoutVersion, split, mark ?: split.lower)
-                    }
-                }
-            }
-        }
-    }
-
+    // The paper's draws: the zoom step, the page on screen, the neighbours drawn ahead and the cut
+    // of a half page (PageRender.kt)
+    PageRenderEffects(
+        paper = paper,
+        doc = pageSource,
+        page = currentPage,
+        viewport = viewport,
+        layoutVersion = layoutVersion,
+        showTwoUp = branch.showTwoUp,
+        showHalf = branch.showHalf,
+        halfTurned = halfTurned,
+        spread = spread,
+        zoom = zoom,
+    )
+    // the document is freed off the main thread, after whatever draw is in flight
     DisposableEffect(pageSource) {
         val current = pageSource
         onDispose {
-            // never block the main thread waiting for a draw in flight (ANR): close() goes to
-            // applicationScope; the mutex's FIFO queue makes sure it runs after the draw.
-            val scope = (context.applicationContext as FOSScoreApp).applicationScope
-            scope.launch {
-                rendererLock.withLock { current?.close() }
-            }
+            current?.let { paper.close(it, (context.applicationContext as FOSScoreApp).applicationScope) }
         }
     }
 
@@ -1002,7 +824,7 @@ fun PdfViewerScreen(
     val bandTopInset = with(LocalDensity.current) { (if (bandShown) chromeTop else 0).toDp() }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
-    LaunchedEffect(viewport) { clampOffsets() }
+    LaunchedEffect(viewport) { zoom.set(zoomFrameNow(), zoom.transform) }
 
     Box(
         modifier = Modifier
@@ -1039,7 +861,7 @@ fun PdfViewerScreen(
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = onBack) { Text(stringResource(R.string.action_back)) }
                 }
-            } else if (bitmaps.isNotEmpty()) {
+            } else if (paper.bitmaps.isNotEmpty()) {
                 // Reading modes (two-up, half page): the layer scales the whole viewport as before
                 // (they are not meant for zooming into detail: offscreen drawing sweeps away the
                 // stretch at no real cost in sharpness). Single page (else branch): NO scaling layer —
@@ -1048,11 +870,13 @@ fun PdfViewerScreen(
                 val spreadMod = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        // read in the layout phase, not in composition: no recomposition per frame
+                        val t = zoom.transform
                         transformOrigin = TransformOrigin(0f, 0f)
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offsetX
-                        translationY = offsetY
+                        scaleX = t.scale
+                        scaleY = t.scale
+                        translationX = t.offset.x
+                        translationY = t.offset.y
                         compositingStrategy = CompositingStrategy.Offscreen
                     }
                 val gestureMod = Modifier.pageGestures(
@@ -1061,7 +885,6 @@ fun PdfViewerScreen(
                     page = currentPage,
                     sheetHash = sheetHash,
                     pageFit = pageFit,
-                    spread = spread,
                     stamps = pageStamps,
                     strokes = pageStrokes,
                     inkStrokes = inkStrokes,
@@ -1075,19 +898,9 @@ fun PdfViewerScreen(
                     eraserPx = eraserPx,
                     activeColor = activeColor,
                     loupeAt = loupeAt,
-                    scale = scale,
-                    offsetX = offsetX,
-                    offsetY = offsetY,
+                    zoom = zoom,
+                    zoomFrame = zoomFrameNow(),
                     editor = editor,
-                    // every zoom/pan frame goes through here: store, clamp, and hand back the
-                    // offset that stuck, so the next frame of the same touch starts from it
-                    onTransform = { s, o ->
-                        scale = s
-                        offsetX = o.x
-                        offsetY = o.y
-                        clampOffsets()
-                        Offset(offsetX, offsetY)
-                    },
                     onCancelZoom = { zoomAnimJob?.cancel() },
                     onDoubleTapZoom = { target, anchor -> animateZoomTo(target, anchor) },
                     onTurn = { turn ->
@@ -1144,24 +957,24 @@ fun PdfViewerScreen(
                 )
 
                 PageCanvas(
-                    bitmaps = bitmaps,
+                    bitmaps = paper.bitmaps,
                     currentPage = currentPage,
                     pageCount = pageCount,
-                    lastShown = lastShown,
+                    lastShown = paper.lastShown,
                     branch = branch,
                     halfTurned = halfTurned,
                     halfSplit = { halfSplit() },
                     pageHeight = pageHeight,
                     pageFit = pageFit,
                     hitFit = hitFit,
-                    scale = { scale },
-                    offsetX = { offsetX },
-                    offsetY = { offsetY },
+                    scale = { zoom.transform.scale },
+                    offsetX = { zoom.transform.offset.x },
+                    offsetY = { zoom.transform.offset.y },
                     invert = invert,
                     pageSource = pageSource,
                     playback = playbackVm.currentPlayback,
                     playQuarters = { playQuarters },
-                    halfCut = halfCut,
+                    halfCut = paper.halfCut,
                     layoutVersion = layoutVersion,
                     canEdit = canEdit,
                     inkDraws = inkDraws,
@@ -1178,6 +991,8 @@ fun PdfViewerScreen(
                     showSelection = showSelection,
                     loupeAt = loupeAt,
                     placePx = placePx,
+                    nextInkDraws = companionInkDraws,
+                    nextStamps = companionStamps,
                     // in the reading modes the whole viewport is scaled; a single page scales its
                     // own content, so the zoom layer is not used
                     modifier = if (spread) spreadMod.then(gestureMod) else gestureMod,
@@ -1329,19 +1144,18 @@ fun PdfViewerScreen(
             themeMode = themeMode,
             onToggleTheme = onToggleTheme,
             invert = invert,
-            onSetInvert = { invert = it; Settings.setInvert(context, it) },
+            onSetInvert = viewer::setInvert,
             keepScreenOn = keepScreenOn,
-            onSetKeepScreenOn = { keepScreenOn = it; Settings.setKeepScreenOn(context, it) },
+            onSetKeepScreenOn = viewer::setKeepScreenOn,
             dimPct = dimPct,
-            onSetDimPct = { dimPct = it },
-            onCommitDim = { Settings.setDimPct(context, dimPct) },
+            onSetDimPct = viewer::setDimPct,
+            onCommitDim = viewer::commitDimPct,
             twoUp = twoUp,
-            onSetTwoUp = { twoUp = it; Settings.setTwoUp(context, it) },
+            onSetTwoUp = viewer::setTwoUp,
             halfEnabled = halfEnabled,
             onSetHalf = {
-                halfEnabled = it
+                viewer.setHalfPage(it)
                 halfTurned = false
-                Settings.setHalfPage(context, isLandscape, it)
             },
             tempoFactor = tempoFactor,
             panelTop = panelTop,

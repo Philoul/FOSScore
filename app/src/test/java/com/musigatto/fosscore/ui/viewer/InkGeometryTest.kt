@@ -49,6 +49,15 @@ class InkGeometryTest {
     }
 
     @Test
+    fun eraserThatGrazeNothingLeavesTheStrokeAlone() {
+        // a fast stroke stores its points far apart: 40 px here, well over 2*radius. A pass 500 px
+        // away used to split it anyway, leaving a white gap between the two pieces.
+        val pts = listOf(0f, 40f, 80f, 120f).map { Offset(it, 0f) }
+        val far = listOf(Offset(0f, 500f), Offset(200f, 500f))
+        assertEquals(listOf(pts), eraseStrokePoints(pts, far, 16f))
+    }
+
+    @Test
     fun eraseWholeStrokeReturnsEmpty() {
         val pts = (0..4).map { Offset(it.toFloat(), 0f) }
         assertEquals(emptyList<List<Offset>>(), eraseStrokePoints(pts, listOf(Offset(2f, 0f)), 10f))

@@ -144,3 +144,19 @@ fun visiblePageRange(currentPage: Int, pageCount: Int, showSpread: Boolean): Int
     showSpread && currentPage + 1 < pageCount -> currentPage..currentPage + 1
     else -> currentPage..currentPage
 }
+
+/**
+ * The pages a draw has to produce: one, or the two of a spread (two-up, or the turned half page
+ * that shows the top of the next one). The last page of an odd score has no companion.
+ */
+fun pagesToDraw(
+    showTwoUp: Boolean,
+    showHalf: Boolean,
+    halfTurned: Boolean,
+    currentPage: Int,
+    pageCount: Int,
+): List<Int> = if (showTwoUp || (showHalf && halfTurned)) {
+    listOf(currentPage, currentPage + 1).filter { it < pageCount }
+} else {
+    listOf(currentPage)
+}

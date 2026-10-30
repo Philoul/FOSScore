@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -44,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -68,6 +71,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -96,6 +102,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 // The render (memory) cap now lives in MuPdfDoc.MAX_RENDER_PIXELS: MuPDF draws at whatever
@@ -280,13 +287,23 @@ fun PdfViewerScreen(
     }
     val strokes by strokesFlow.collectAsState(initial = emptyList())
 
-    // height of the title bar, measured: the annotation bar hangs from it. Hoisted out of the chrome
-    // block because the bar is removed while the loupe is up (and the height must survive that).
-    var titleBarHeight by remember { mutableIntStateOf(0) }
+    // height of the annotation bar, measured: while annotating it is the top bar, and the page keeps
+    // clear of it. Hoisted out of the chrome block because the bar is removed while the loupe is up
+    // (and the height must survive that).
     var annBarPx by remember { mutableIntStateOf(0) }
     // the height of the bottom chrome (a band, the page dots), kept while it is hidden
     var bottomChromePx by remember { mutableIntStateOf(0) }
     var editing by rememberSaveable { mutableStateOf(false) }
+    // ✕ asks before throwing away the session's marks, and only when there are some (issue #50)
+    var confirmDiscard by remember { mutableStateOf(false) }
+    // the page tag that flashes while annotating: the bar has no room for a page label, so the
+    // number shows for a moment after a turn and goes away on its own
+    var pageFlash by remember { mutableStateOf("") }
+    // how far down the annotation bar was dragged out of the way (px). ✓ and ✕ put it back.
+    var barDragY by remember { mutableFloatStateOf(0f) }
+    // true only while a finger is on the grip: the bar is see-through while it moves, opaque
+    // once it is parked
+    var barDragging by remember { mutableStateOf(false) }
     var activeSymbol by rememberSaveable { mutableStateOf<StampSymbol?>(null) }
     var lastSymbol by rememberSaveable { mutableStateOf(StampSymbol.FLAT) }  // glyph on the tool
     var openPanel by rememberSaveable { mutableStateOf<ToolPanel?>(null) }  // options of a tool
@@ -334,6 +351,18 @@ fun PdfViewerScreen(
             r.first == r.last -> stringResource(R.string.desc_page, r.first + 1, pageCount)
             else -> stringResource(R.string.desc_page_range, r.first + 1, r.last + 1, pageCount)
         }
+    }
+
+    // while annotating the page number is not in the bar: it flashes when the page changes and
+    // fades by itself. Keyed on the label so it also fires on entering annotation mode.
+    LaunchedEffect(pageLabel, editing) {
+        if (!editing || pageLabel.isEmpty()) {
+            pageFlash = ""
+            return@LaunchedEffect
+        }
+        pageFlash = pageLabel
+        delay(1400.milliseconds)
+        pageFlash = ""
     }
 
     // the second page of a spread. The viewer is reading, not editing, there, but its ink and its
@@ -420,10 +449,17 @@ fun PdfViewerScreen(
         if (editing) {
             viewer.singlePage()
             halfTurned = false
+            // a fresh session: ✕ only throws away what is drawn from now on (issue #50)
+            editor.beginSession()
+            // the bar always starts at the top
+            barDragY = 0f
         } else {
             // back to the pages as the user set them
             viewer.restoreReadingMode()
             editor.clearHistory()
+            // ✓ keeps everything: the session's start is no longer needed
+            editor.clearSession()
+            barDragY = 0f
             editor.clearSelection()
             drawingTool = false
             eraserTool = false
@@ -571,6 +607,22 @@ fun PdfViewerScreen(
         }
     }
 
+    // Select (issue #50): the neutral mode made visible. It only puts the tools down; the
+    // selection itself is left alone, as forScore's selection tool does.
+    val onSelect: () -> Unit = {
+        activeSymbol = null
+        drawingTool = false
+        eraserTool = false
+        openPanel = null
+        inkPreview = emptyList()
+    }
+
+    // ✕ leaves without what was drawn in this session, and asks first when there is something to
+    // lose; ✓ is the plain way out and keeps everything (issue #50)
+    val onCancelEditing: () -> Unit = {
+        if (editor.hasSessionChanges) confirmDiscard = true else toggleEditing()
+    }
+
     val onUndo: () -> Unit = { editor.undo(currentPage, PageEdit(pageStamps, pageStrokes)) }
 
     val onRedo: () -> Unit = { editor.redo(currentPage, PageEdit(pageStamps, pageStrokes)) }
@@ -647,7 +699,6 @@ fun PdfViewerScreen(
         val spec = screen.spec(scoreLayout, parts)
         // the other scores get laid out and drawn ahead for this screen too
         withContext(Dispatchers.IO) { MusicXmlPages.rememberScreen(context, screen) }
-        val before = pageCount
         try {
             val changed = paper.layoutPages(pages, spec)
             if (!changed) return@LaunchedEffect
@@ -660,7 +711,7 @@ fun PdfViewerScreen(
         }
         val after = pages.pageCount
         if (after > 0) {
-            currentPage = (if (before > 0) currentPage * after / before else currentPage)
+            currentPage = (if (pageCount > 0) currentPage * after / pageCount else currentPage)
                 .coerceIn(0, after - 1)
         }
         halfTurned = false
@@ -817,9 +868,10 @@ fun PdfViewerScreen(
     }
 
     // Room the top chrome takes from the page while annotating, and nothing at all while reading:
-    // the page is laid out next to the bars instead of under them (#19).
+    // the page is laid out next to the bars instead of under them (#19). While annotating there is
+    // one bar only (the annotation bar, which carries the status bar inset in its own height).
     val chromeInset = with(LocalDensity.current) {
-        (if (editing && canEdit) titleBarHeight + annBarPx else 0).toDp()
+        (if (editing && canEdit) annBarPx else 0).toDp()
     }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
@@ -856,7 +908,7 @@ fun PdfViewerScreen(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(stringResource(error!!), style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(error), style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = onBack) { Text(stringResource(R.string.action_back)) }
                 }
@@ -938,15 +990,18 @@ fun PdfViewerScreen(
                             // stamping again.
                             activeSymbol = null
                             openPanel = null
+                            // the whole square lands on the page, never half of it off the edge
+                            val size = stampSizePxToFrac(placePx, hitFit)
+                            val centre = stampCenterInside(pos.x, pos.y, size, hitFit)
                             editor.placeStamp(
                                 currentPage,
                                 Stamp(
                                     sheetHash = sheetHash,
                                     page = currentPage,
                                     symbol = sym.name,
-                                    x = pos.x.coerceIn(0f, 1f),
-                                    y = pos.y.coerceIn(0f, 1f),
-                                    size = stampSizePxToFrac(placePx, hitFit),
+                                    x = centre.x,
+                                    y = centre.y,
+                                    size = size,
                                     color = activeColor
                                 ),
                                 PageEdit(pageStamps, pageStrokes),
@@ -1021,31 +1076,34 @@ fun PdfViewerScreen(
         // page to read (it is drawn under them: they would cover the circle at the top).
         if ((navVisible || editing) && loupeAt == null) {
 
-            // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
-            ViewerTitleBar(
-                title = title,
-                composer = composer,
-                pageLabel = pageLabel,
-                editing = editing,
-                onOpenMenu = { menu.show(ViewerSurface.MENU) },
-                onToggleEditing = { toggleEditing() },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    // edge-to-edge: the pills were slipping under the status bar, and in landscape
-                    // under the side navigation bar. The measured height includes these insets, so
-                    // the annotation bar below still lands right.
-                    .onSizeChanged { titleBarHeight = it.height }
-                    .windowInsetsPadding(
-                        WindowInsets.systemBars.only(
-                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                        )
-                    ),
-            )
+            // while annotating there is ONE bar: the annotation bar takes the top of the screen
+            // and the title bar steps aside (spec §5: forScore replaces it). ✕ / ✓ are its ends.
+            if (!(editing && canEdit)) {
+                // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
+                ViewerTitleBar(
+                    title = title,
+                    composer = composer,
+                    pageLabel = pageLabel,
+                    editing = editing,
+                    onOpenMenu = { menu.show(ViewerSurface.MENU) },
+                    onToggleEditing = { toggleEditing() },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        // edge-to-edge: the pills were slipping under the status bar, and in landscape
+                        // under the side navigation bar.
+                        .windowInsetsPadding(
+                            WindowInsets.systemBars.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                            )
+                        ),
+                )
+            }
 
             if (editing && canEdit) {
                 AnnotationBar(
                     activeSymbol = activeSymbol,
                     lastSymbol = lastSymbol,
+                    selectTool = activeSymbol == null && !drawingTool && !eraserTool,
                     openPanel = openPanel,
                     drawingTool = drawingTool,
                     eraserTool = eraserTool,
@@ -1059,10 +1117,18 @@ fun PdfViewerScreen(
                     canUndo = editor.canUndo,
                     canRedo = editor.canRedo,
                     canDelete = selectedStamp != null || selectedStrokes.isNotEmpty(),
+                    onSelect = onSelect,
                     onToolTap = onToolTap,
                     onUndo = onUndo,
                     onRedo = onRedo,
                     onDelete = onDeleteSelection,
+                    onCancel = onCancelEditing,
+                    onDone = { toggleEditing() },
+                    // dragging the grip moves the bar over the page; the page keeps its layout
+                    onDragBar = { dy ->
+                        barDragY = (barDragY + dy).coerceIn(0f, viewport.height * 0.6f)
+                    },
+                    onDragState = { dragging -> barDragging = dragging },
                     onStampSymbol = { activeSymbol = it; lastSymbol = it },
                     onStampSize = { placePx = it },
                     onSaveDefault = {
@@ -1083,10 +1149,36 @@ fun PdfViewerScreen(
                         }
                     },
                     onHeight = { annBarPx = it },
+                    // the top of the screen: while annotating this bar IS the title bar, and the
+                    // grip moves it down out of the way, where it turns see-through so the page
+                    // underneath stays readable
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .offset { IntOffset(0, titleBarHeight) },
+                        .offset { IntOffset(0, barDragY.roundToInt()) }
+                        .alpha(if (barDragging) 0.75f else 1f),
                 )
+
+                // The page tag (spec §5: the bar stays lean). It is a live region, so TalkBack
+                // announces the new page as a status message (WCAG 4.1.3) and the tag is never
+                // the only way to know where you are. Empty and transparent the rest of the time:
+                // it changes in place instead of appearing, which is what screen readers hear.
+                Surface(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
+                        .alpha(if (pageFlash.isEmpty()) 0f else 1f),
+                ) {
+                    Text(
+                        pageFlash,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
             }
 
             if (!editing) {
@@ -1164,5 +1256,17 @@ fun PdfViewerScreen(
             tempoFactor = tempoFactor,
             panelTop = panelTop,
         )
+
+        // ✕ with something drawn: say what would be lost before losing it (issue #50)
+        if (confirmDiscard) {
+            DiscardAnnotationDialog(
+                onKeep = { confirmDiscard = false },
+                onDiscard = {
+                    confirmDiscard = false
+                    editor.cancelSession()
+                    toggleEditing()
+                },
+            )
+        }
     }
 }

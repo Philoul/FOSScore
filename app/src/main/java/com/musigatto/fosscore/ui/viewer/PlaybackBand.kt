@@ -2,6 +2,7 @@ package com.musigatto.fosscore.ui.viewer
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -72,8 +74,8 @@ private const val BAR_OVERHANG_SPACES = 1.5f
  * sets one where the music is, a second tap clears it) when there is music ([loop] not null), the
  * tempo with its − / + (repeating while held), the bar of the score ([barText]) and the options.
  * Over the music the metronome button switches the clicks on or off ([onMetronome]); while they
- * are on, the beats of the bar show next to it, the one heard lit, with TAP; the beats of the
- * count-in show with the clicks off too. The metronome alone
+ * are on, the beats of the bar show next to it, the one heard lit, with TAP; with them off, the
+ * beats show only while counting in, in a place kept for them. The metronome alone
  * (a PDF, [onMetronome] null) has no switch: its beats and TAP always show. On a narrow screen
  * − / + and the bar leave room, and a tap on the tempo opens the options. It shows with the bars
  * (centre tap); the music, or the metronome, goes on when they hide.
@@ -172,9 +174,12 @@ fun PlaybackBand(
             ) { ToolIcon(ICON_METRONOME) }
         }
         val counting = (tick?.bar ?: 0) < 0
-        if ((clicking || counting) && wide) {
+        if (wide && (clicking || onMetronome != null)) {
             Spacer(Modifier.width(4.dp))
-            BeatDots(pulses, tick?.beat?.takeIf { playing }, counting = counting)
+            // kept in place with the clicks off: the buttons must not move when the count-in shows
+            Box(Modifier.alpha(if (clicking || counting) 1f else 0f)) {
+                BeatDots(pulses, tick?.beat?.takeIf { playing }, counting = counting)
+            }
         }
         if (clicking) TextButton(onClick = onTap) { Text(stringResource(R.string.metronome_tap)) }
     }

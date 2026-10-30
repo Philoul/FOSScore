@@ -72,7 +72,8 @@ private const val BAR_OVERHANG_SPACES = 1.5f
  * sets one where the music is, a second tap clears it) when there is music ([loop] not null), the
  * tempo with its − / + (repeating while held), the bar of the score ([barText]) and the options.
  * Over the music the metronome button switches the clicks on or off ([onMetronome]); while they
- * are on, the beats of the bar show next to it, the one heard lit, with TAP. The metronome alone
+ * are on, the beats of the bar show next to it, the one heard lit, with TAP; the beats of the
+ * count-in show with the clicks off too. The metronome alone
  * (a PDF, [onMetronome] null) has no switch: its beats and TAP always show. On a narrow screen
  * − / + and the bar leave room, and a tap on the tempo opens the options. It shows with the bars
  * (centre tap); the music, or the metronome, goes on when they hide.
@@ -170,13 +171,12 @@ fun PlaybackBand(
                 onClick = onMetronome,
             ) { ToolIcon(ICON_METRONOME) }
         }
-        if (clicking) {
-            if (wide) {
-                Spacer(Modifier.width(4.dp))
-                BeatDots(pulses, tick?.beat?.takeIf { playing }, counting = (tick?.bar ?: 0) < 0)
-            }
-            TextButton(onClick = onTap) { Text(stringResource(R.string.metronome_tap)) }
+        val counting = (tick?.bar ?: 0) < 0
+        if ((clicking || counting) && wide) {
+            Spacer(Modifier.width(4.dp))
+            BeatDots(pulses, tick?.beat?.takeIf { playing }, counting = counting)
         }
+        if (clicking) TextButton(onClick = onTap) { Text(stringResource(R.string.metronome_tap)) }
     }
 }
 

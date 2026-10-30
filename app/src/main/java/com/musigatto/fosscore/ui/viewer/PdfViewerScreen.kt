@@ -1011,8 +1011,11 @@ fun PdfViewerScreen(
 
         // the visual metronome: the border of the page flashes on the beats
         if (metronomeOn && metronome.mode != MetronomeMode.SOUND) BeatFlash(metronomeTick)
-        // and over the music, while the metronome is switched on in the playback band
-        if (playClicking && playState == PlayState.PLAYING && metronome.mode != MetronomeMode.SOUND) BeatFlash(playTick)
+        // and over the music, while the metronome is switched on in the playback band; with it off,
+        // the count-in is still seen
+        val countingIn = (playTick?.bar ?: 0) < 0
+        val flashOverMusic = if (playClicking) metronome.mode != MetronomeMode.SOUND else countingIn
+        if (playState == PlayState.PLAYING && flashOverMusic) BeatFlash(playTick)
 
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).

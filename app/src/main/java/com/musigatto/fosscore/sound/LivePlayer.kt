@@ -96,6 +96,12 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
     private var clickSounds: Array<FloatArray> = emptyArray()
     private var clickGain = 0f
     private var nextClick = 0
+    // the count-in before the music: its clicks, the next one, and where the music starts (it
+    // waits until then; NEGATIVE_INFINITY: no count-in)
+    private var countInAt = DoubleArray(0)
+    private var countInSound = IntArray(0)
+    private var nextCountIn = 0
+    private var countInEnd = Double.NEGATIVE_INFINITY
     // the clicks sounding: which sound (-1: none) and how far into it
     private val voiceSound = IntArray(CLICK_VOICES) { -1 }
     private val voiceAt = IntArray(CLICK_VOICES)
@@ -213,8 +219,12 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
         loopEnd = end
     }
 
-    /** Plays from [from], quarter notes into the song. */
-    fun play(from: Double) {
+    /**
+     * Plays from [from], quarter notes into the song, after a count-in of [countIn] quarter notes:
+     * its clicks at [countInAt] (before [from], in time order) play [countInWhich] of the click
+     * sounds, heard while [clicking]. [position] runs through the count-in, below [from].
+     */
+    fun play(from: Double, countIn: Double = 0.0, countInAt: DoubleArray = DoubleArray(0), countInWhich: IntArray = IntArray(0)) {
         if (playing) return seek(from)
         // the song ended by itself: its thread is done, its track still to stop
         pause()
@@ -223,7 +233,14 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
         active = this
         val t = track ?: newTrack().also { track = it }
         jump(from)
-        pausedAt = from
+        this.countInAt = countInAt
+        countInSound = countInWhich
+        nextCountIn = 0
+        if (countIn > 0) {
+            at = from - countIn
+            countInEnd = from
+        }
+        pausedAt = at
         historyCount = 0
         written = 0L
         headBase = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
@@ -244,7 +261,9 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
             runCatching { it.pause() }
             runCatching { it.flush() }
         }
-        pausedAt = heard
+        // paused while counting in: ▶ goes on from where the music starts
+        pausedAt = max(heard, countInEnd)
+        countInEnd = Double.NEGATIVE_INFINITY
         synth.silence()
         sounding.clear()
     }
@@ -304,6 +323,8 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
         at = quarters
         next = song.firstEventAt(quarters)
         nextClick = firstClickAt(quarters)
+        nextCountIn = countInAt.size
+        countInEnd = Double.NEGATIVE_INFINITY
         // programs and controllers as the music has set them by then
         synth.reset()
         for (i in 0 until next) {
@@ -390,12 +411,17 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                 var done = 0
                 val started = System.nanoTime()
                 while (done < BLOCK_FRAMES) {
-                    val step = 1_000_000.0 / song.microsPerQuarter(at) * tempoFactor / sampleRate
+                    // the count-in at the tempo the music starts with
+                    val step = 1_000_000.0 / song.microsPerQuarter(max(at, countInEnd)) * tempoFactor / sampleRate
                     // the next thing that happens: an event, a tempo change, the loop's or the song's end
                     while (next < song.events.size && song.events[next].quarters <= at + 1e-9) send(song.events[next++])
                     while (nextClick < clickAt.size && clickAt[nextClick] <= at + 1e-9) {
                         if (clicking) startClick(clickSound[nextClick])
                         nextClick++
+                    }
+                    while (nextCountIn < countInAt.size && countInAt[nextCountIn] <= at + 1e-9) {
+                        if (clicking) startClick(countInSound[nextCountIn])
+                        nextCountIn++
                     }
                     val end = if (loopOn) loopEnd ?: song.length else song.length + TAIL_QUARTERS
                     if (at >= end - 1e-9) {
@@ -410,6 +436,8 @@ class LivePlayer(private val font: SoundFont, val sampleRate: Int = AudioTrack.g
                     var until = end
                     if (next < song.events.size) until = min(until, song.events[next].quarters)
                     if (nextClick < clickAt.size) until = min(until, clickAt[nextClick])
+                    if (nextCountIn < countInAt.size) until = min(until, countInAt[nextCountIn])
+                    if (at < countInEnd) until = min(until, countInEnd)
                     song.nextTempoChange(at)?.let { until = min(until, it) }
                     val frames = ceil((until - at) / step).toInt().coerceIn(1, BLOCK_FRAMES - done)
                     val slot = historyCount % HISTORY

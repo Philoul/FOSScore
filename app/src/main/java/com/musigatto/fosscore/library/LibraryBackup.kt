@@ -227,6 +227,19 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
     }
 
     companion object {
+        /**
+         * The name an export is offered under, for [day]. Not `.zip`, although it is one: the
+         * system file picker opens a .zip as a folder, so a tap on the backup showed its content
+         * instead of choosing it. The import still takes the .zip files exported before.
+         */
+        fun fileName(day: String): String = "fosscore-library-$day.$EXTENSION_NAME"
+
+        /** The extension of an export. */
+        const val EXTENSION_NAME = "fosscore"
+
+        /** What an export is to the system: plain data, so no app offers to open it as an archive. */
+        const val MIME = "application/octet-stream"
+
         /** Folder of the library's PDFs, inside `filesDir`. */
         const val SHEETS_DIR = "sheets"
 

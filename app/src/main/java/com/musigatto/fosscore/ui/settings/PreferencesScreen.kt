@@ -41,12 +41,12 @@ import com.musigatto.fosscore.ui.viewer.Settings
 private const val MAX_WIDTH_DP = 640
 
 /** The sections of the preferences, in their order. Each one opens under its title. */
-private enum class Section { LANGUAGE, LIBRARY }
+private enum class Section { LANGUAGE, KEYBOARD, LIBRARY }
 
 /**
  * The app's preferences, over the screen it was opened from: what applies to every score. A list
  * of sections, each opened under its title (one at a time), so new ones join without changing the
- * others: the language, and the library (export and import).
+ * others: the language, the keyboard and the pedals, and the library (export and import).
  */
 @Composable
 fun PreferencesScreen(onDone: () -> Unit) {
@@ -70,6 +70,7 @@ fun PreferencesScreen(onDone: () -> Unit) {
                     Column(modifier = Modifier.padding(start = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         when (section) {
                             Section.LANGUAGE -> LanguageSection()
+                            Section.KEYBOARD -> KeyboardSection()
                             Section.LIBRARY -> LibraryBackupSection()
                         }
                     }
@@ -85,6 +86,7 @@ fun PreferencesScreen(onDone: () -> Unit) {
 private fun Section.title(): String = stringResource(
     when (this) {
         Section.LANGUAGE -> R.string.language_label
+        Section.KEYBOARD -> R.string.prefs_keyboard
         Section.LIBRARY -> R.string.prefs_library
     }
 )
@@ -92,6 +94,7 @@ private fun Section.title(): String = stringResource(
 @Composable
 private fun Section.summary(): String = when (this) {
     Section.LANGUAGE -> Settings.language(LocalContext.current).displayName.ifEmpty { stringResource(R.string.language_system) }
+    Section.KEYBOARD -> stringResource(R.string.prefs_keyboard_summary)
     Section.LIBRARY -> stringResource(R.string.prefs_library_summary)
 }
 

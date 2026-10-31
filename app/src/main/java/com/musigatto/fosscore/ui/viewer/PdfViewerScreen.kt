@@ -136,8 +136,15 @@ private const val DOUBLE_TAP_ANIM_MS = 250
 // [split], the dotted line shows it at [mark] (a fraction of the page height)
 internal data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit, val mark: Float)
 
-// options panel hanging from the annotation bar (spec §5): tapping the selected tool again opens it
-internal enum class ToolPanel { Stamps, Pen, Eraser, Color }
+// The tools of the annotation bar (issue #56): exactly one is in hand at a time. The arrow is the
+// neutral one and the only one that selects and moves; every other tool acts on what it creates and
+// keeps itself in hand until another tool is chosen.
+internal enum class AnnotationTool {
+    SELECT, PEN, ERASER, STAMP;
+
+    /** The arrow has no settings: tapping it again does nothing. */
+    val hasPanel: Boolean get() = this != SELECT
+}
 
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
@@ -287,9 +294,10 @@ fun PdfViewerScreen(
     // true only while a finger is on the grip: the bar is see-through while it moves, opaque
     // once it is parked
     var barDragging by remember { mutableStateOf(false) }
-    var activeSymbol by rememberSaveable { mutableStateOf<StampSymbol?>(null) }
-    var lastSymbol by rememberSaveable { mutableStateOf(StampSymbol.FLAT) }  // glyph on the tool
-    var openPanel by rememberSaveable { mutableStateOf<ToolPanel?>(null) }  // options of a tool
+    var stampSymbol by rememberSaveable { mutableStateOf(StampSymbol.FLAT) }  // glyph of the stamp tool
+    // the tool in hand (issue #56): the last one used, the arrow the very first time
+    var tool by rememberSaveable { mutableStateOf(Settings.annotationTool(context)) }
+    var openPanel by rememberSaveable { mutableStateOf<AnnotationTool?>(null) }  // its options, if any
     var placePx by rememberSaveable { mutableFloatStateOf(Settings.stampPx(context)) }  // size of the next stamp
     // last size saved as default (persisted): the panel greys its save button while they match
     var defaultStampPx by remember { mutableFloatStateOf(Settings.stampPx(context)) }
@@ -308,9 +316,9 @@ fun PdfViewerScreen(
         if (loupeAnchor == anchor) loupeAt = anchor
     }
     // selected stamp (for the box with handles) or the selected word of ink
-    var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // tint ARGB; null = theme
-    var drawingTool by rememberSaveable { mutableStateOf(false) }      // pen mode: ink, not stamps
-    var eraserTool by rememberSaveable { mutableStateOf(false) }      // eraser mode: removes stamps and strokes
+    // one tint per tool (issue #56): the pen and the stamp keep their own colour
+    var penColor by rememberSaveable { mutableStateOf<Int?>(null) }   // ARGB; null = theme
+    var stampColor by rememberSaveable { mutableStateOf<Int?>(null) }
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
     var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
@@ -416,7 +424,7 @@ fun PdfViewerScreen(
 
     // while a drag or a stretch is in progress we draw the object at its live position, not the box
     val showSelection = selectionRect != null && editing && canEdit &&
-        !drawingTool && !eraserTool
+        tool == AnnotationTool.SELECT
     // corner handles belong to an INK selection: a stamp's size is the palette slider, and forScore
     // moves a placed stamp with the selection tool instead of resizing it by its corners (spec §5)
     val strokeSelection = selectedStamp == null && (selectedStrokes.isNotEmpty() || editor.dragStrokes != null)
@@ -444,10 +452,8 @@ fun PdfViewerScreen(
             editor.clearSession()
             barDragY = 0f
             editor.clearSelection()
-            drawingTool = false
-            eraserTool = false
-            // leaving edit mode must not leave a stamp tool armed for the next time we come back in
-            activeSymbol = null
+            // the tool stays for the next visit (issue #56: the one used last); only what it had
+            // open is put away
             openPanel = null
             inkPreview = emptyList()
             editor.clearHidden()
@@ -467,9 +473,7 @@ fun PdfViewerScreen(
         if (!canEdit) return@LaunchedEffect
         hoverArmed = true
         toggleEditing()
-        drawingTool = true
-        activeSymbol = null
-        eraserTool = false
+        tool = AnnotationTool.PEN
         openPanel = null
     }
     val stylusHoverMod = Modifier.pointerInput(Unit) {
@@ -546,58 +550,19 @@ fun PdfViewerScreen(
         }
     }
 
-    // What the annotation bar asks for (spec §5): the bar draws, these decide. One entry point per
-    // tool, so the "tap turns it on, tap again opens its options, tap again turns it off" cycle
-    // lives in one place instead of three copies inside the buttons.
-    val onToolTap: (ToolPanel) -> Unit = { tool ->
-        when (tool) {
-            ToolPanel.Stamps -> {
-                val wasOn = activeSymbol != null
-                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Stamps)
-                if (!wasOn && on) {
-                    activeSymbol = lastSymbol
-                    drawingTool = false
-                    eraserTool = false
-                } else if (!on) {
-                    activeSymbol = null   // neutral mode: select and move objects
-                }
-                openPanel = if (panel) ToolPanel.Stamps else null
-            }
-            ToolPanel.Pen -> {
-                val wasOn = drawingTool
-                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Pen)
-                drawingTool = on
-                if (!wasOn && on) {
-                    activeSymbol = null
-                    eraserTool = false
-                }
-                openPanel = if (panel) ToolPanel.Pen else null
-            }
-            ToolPanel.Eraser -> {
-                val wasOn = eraserTool
-                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Eraser)
-                eraserTool = on
-                if (!wasOn && on) {
-                    activeSymbol = null
-                    drawingTool = false
-                    editor.selectedId = null
-                    editor.selectedStrokeIds = emptySet()
-                }
-                inkPreview = emptyList()
-                openPanel = if (panel) ToolPanel.Eraser else null
-            }
-            ToolPanel.Color -> openPanel = if (openPanel == ToolPanel.Color) null else ToolPanel.Color
+    // What the annotation bar asks for (issue #56): one tool in hand at a time. Choosing a tool
+    // clears the selection (the arrow is what selects), a tool is never turned off, and tapping the
+    // one in hand opens and closes its options. The choice is remembered for the next session.
+    val chooseTool: (AnnotationTool) -> Unit = { picked ->
+        if (picked == tool) {
+            openPanel = if (picked.hasPanel && nextToolTap(true, openPanel == picked)) picked else null
+        } else {
+            tool = picked
+            openPanel = null
+            editor.clearSelection()
+            inkPreview = emptyList()
+            Settings.setAnnotationTool(context, picked)
         }
-    }
-
-    // Select (issue #50): the neutral mode made visible. It only puts the tools down; the
-    // selection itself is left alone, as forScore's selection tool does.
-    val onSelect: () -> Unit = {
-        activeSymbol = null
-        drawingTool = false
-        eraserTool = false
-        openPanel = null
-        inkPreview = emptyList()
     }
 
     // ✕ leaves without what was drawn in this session, and asks first when there is something to
@@ -931,12 +896,10 @@ fun PdfViewerScreen(
                     selectionRect = selectionRect,
                     selectedStamp = selectedStamp,
                     selectedStrokes = selectedStrokes,
-                    stampArmed = activeSymbol != null,
-                    drawingTool = drawingTool,
-                    eraserTool = eraserTool,
+                    tool = tool,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
-                    activeColor = activeColor,
+                    activeColor = penColor,
                     loupeAt = loupeAt,
                     zoom = zoom,
                     zoomFrame = zoomFrameNow(),
@@ -961,24 +924,16 @@ fun PdfViewerScreen(
                     onLoupeAnchor = { loupeAnchor = it },
                     onLoupe = { loupeAt = it },
                     onInkPreview = { inkPreview = it },
-                    // a touch on the matte has nowhere to write: the tools stand down and the
-                    // selection goes, the same state three taps on the tool pill leave behind
+                    // a tap on the matte closes the panel and drops the selection; it does not
+                    // change the tool (issue #56)
                     onToolsDown = {
                         inkPreview = emptyList()
-                        activeSymbol = null
-                        drawingTool = false
-                        eraserTool = false
                         openPanel = null
                         editor.clearSelection()
                     },
                     onPlaceStamp = { pos ->
-                        val sym = activeSymbol
-                        if (sym != null && sheetId != null) {
-                            // One stamp per arming: stand the tool down as soon as it is used,
-                            // so the next tap outside the new stamp deselects instead of
-                            // stamping again.
-                            activeSymbol = null
-                            openPanel = null
+                        if (tool == AnnotationTool.STAMP && sheetId != null) {
+                            // the stamp stays in hand: the next tap places another one
                             // the whole square lands on the page, never half of it off the edge
                             val size = stampSizePxToFrac(placePx, hitFit)
                             val centre = stampCenterInside(pos.x, pos.y, size, hitFit)
@@ -987,11 +942,11 @@ fun PdfViewerScreen(
                                 Stamp(
                                     sheetId = sheetId,
                                     page = currentPage,
-                                    symbol = sym.name,
+                                    symbol = stampSymbol.name,
                                     x = centre.x,
                                     y = centre.y,
                                     size = size,
-                                    color = activeColor
+                                    color = stampColor
                                 ),
                                 PageEdit(pageStamps, pageStrokes),
                             )
@@ -1022,8 +977,8 @@ fun PdfViewerScreen(
                     inkDraws = inkDraws,
                     dragStrokes = editor.dragStrokes,
                     inkPreview = inkPreview,
-                    eraserTool = eraserTool,
-                    activeColor = activeColor,
+                    eraserTool = tool == AnnotationTool.ERASER,
+                    activeColor = penColor,
                     eraserPx = eraserPx,
                     penWidthPx = penWidthPx,
                     pageStamps = pageStamps,
@@ -1084,14 +1039,12 @@ fun PdfViewerScreen(
 
             if (editing && canEdit) {
                 AnnotationBar(
-                    activeSymbol = activeSymbol,
-                    lastSymbol = lastSymbol,
-                    selectTool = activeSymbol == null && !drawingTool && !eraserTool,
+                    tool = tool,
+                    stampSymbol = stampSymbol,
                     openPanel = openPanel,
-                    drawingTool = drawingTool,
-                    eraserTool = eraserTool,
                     invert = invert,
-                    activeColor = activeColor,
+                    penColor = penColor,
+                    stampColor = stampColor,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
                     placePx = placePx,
@@ -1100,8 +1053,7 @@ fun PdfViewerScreen(
                     canUndo = editor.canUndo,
                     canRedo = editor.canRedo,
                     canDelete = selectedStamp != null || selectedStrokes.isNotEmpty(),
-                    onSelect = onSelect,
-                    onToolTap = onToolTap,
+                    onTool = chooseTool,
                     onUndo = onUndo,
                     onRedo = onRedo,
                     onDelete = onDeleteSelection,
@@ -1112,7 +1064,7 @@ fun PdfViewerScreen(
                         barDragY = (barDragY + dy).coerceIn(0f, viewport.height * 0.6f)
                     },
                     onDragState = { dragging -> barDragging = dragging },
-                    onStampSymbol = { activeSymbol = it; lastSymbol = it },
+                    onStampSymbol = { stampSymbol = it },
                     onStampSize = { placePx = it },
                     onSaveDefault = {
                         Settings.setStampPx(context, placePx)
@@ -1120,10 +1072,11 @@ fun PdfViewerScreen(
                     },
                     onPenWidth = { penWidthPx = it },
                     onEraserPx = { eraserPx = it },
-                    onColor = { argb ->
-                        activeColor = argb
-                        // the tint also recolours the selected stamp: forScore's
-                        // selection tool changes colour, it does not resize
+                    onPenColor = { penColor = it },
+                    onStampColor = { argb ->
+                        stampColor = argb
+                        // the tint also recolours the selected stamp: the arrow changes a
+                        // stamp's colour, it does not resize it
                         val current = selectedStamp
                         if (current != null) {
                             editor.recolorStamp(

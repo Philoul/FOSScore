@@ -64,9 +64,7 @@ internal fun Modifier.pageGestures(
     selectionRect: RectPx?,
     selectedStamp: Stamp?,
     selectedStrokes: List<Stroke>,
-    stampArmed: Boolean,
-    drawingTool: Boolean,
-    eraserTool: Boolean,
+    tool: AnnotationTool,
     penWidthPx: Float,
     eraserPx: Float,
     activeColor: Int?,
@@ -109,10 +107,8 @@ internal fun Modifier.pageGestures(
     val currentSelectionRect by rememberUpdatedState(selectionRect)
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
-    val currentStampArmed by rememberUpdatedState(stampArmed)
+    val currentTool by rememberUpdatedState(tool)
     val currentLoupeAt by rememberUpdatedState(loupeAt)
-    val currentDrawingTool by rememberUpdatedState(drawingTool)
-    val currentEraserTool by rememberUpdatedState(eraserTool)
     val currentEraserPx by rememberUpdatedState(eraserPx)
     val currentPenWidth by rememberUpdatedState(penWidthPx)
     val currentActiveColor by rememberUpdatedState(activeColor)
@@ -182,7 +178,7 @@ internal fun Modifier.pageGestures(
             var scaleF = 1f   // accumulated handle factor (always from startPos)
             // handle in use: (base object, grabbed corner) while scaling
             var resizing: Resizing? = null
-            if (currentEditing && currentCanEdit && !currentDrawingTool && !currentEraserTool) {
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SELECT) {
                 // 1) a handle on a STROKE's selection box wins over everything else:
                 //    entering by the corner stretches, entering inside moves. Stamps
                 //    have no handles (a corner drag sized them by accident); their size
@@ -241,14 +237,14 @@ internal fun Modifier.pageGestures(
                     }
                 }
             }
-            if (currentEditing && currentCanEdit && currentEraserTool && !onMatte) {
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.ERASER && !onMatte) {
                 eraserActive = true
                 eraserPath.add(downF)
                 onInkPreview(listOf(downF))
             }
             // a stroke that starts on the matte is no stroke at all: nothing is drawn, and the
             // release branch stands the pen down (it reads as a tap on the matte)
-            if (currentEditing && currentCanEdit && currentDrawingTool && !onMatte) {
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.PEN && !onMatte) {
                 inkActive = true
                 inkPts.add(downF)
                 onInkPreview(listOf(downF))
@@ -256,7 +252,7 @@ internal fun Modifier.pageGestures(
             // stamp armed on an empty spot: a long press starts the loupe, so the finger
             // does not hide the exact place the stamp lands
             var lastPlacePos = down.position
-            if (currentEditing && currentCanEdit && currentStampArmed &&
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.STAMP &&
                 movingStamp == null && movingStrokes == null
             ) {
                 onLoupeAnchor(down.position)
@@ -418,18 +414,17 @@ internal fun Modifier.pageGestures(
                                 // already handled above: neither places a stamp nor turns the page
                             } else if (currentEditing && currentCanEdit) {
                                 // Select mode: a horizontal swipe turns the page, the same one
-                                // that works while reading. forScore turns from row 1 (‹ ›); this
-                                // is our own addition, so it is only active with no tool armed and
-                                // only at fit, where a one-finger drag is not a pan.
-                                val isSwipe = !currentStampArmed &&
+                                // that works while reading. Turning happens only with the arrow,
+                                // at fit, where a one-finger drag is not a pan (issue #56).
+                                val isSwipe = currentTool == AnnotationTool.SELECT &&
                                     zoom.transform.scale <= 1f &&
                                     totalPan.getDistance() > swipeThresholdPx &&
                                     abs(totalPan.x) > abs(totalPan.y)
                                 // tap while editing: places the active stamp on the point touched
                                 if (isSwipe) {
                                     if (totalPan.x < 0f) onTurn(PageTurn.NEXT) else onTurn(PageTurn.PREV)
-                                } else if (!currentStampArmed) {
-                                    // no tool: just deselect
+                                } else if (currentTool != AnnotationTool.STAMP) {
+                                    // the arrow on an empty spot: deselect
                                     editor.clearSelection()
                                 } else if (currentSheetId != null &&
                                     (aimed || totalPan.getDistance() <= touchSlopPx)

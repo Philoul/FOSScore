@@ -523,14 +523,11 @@ private fun PillEntry(
 }
 
 /**
- * Tap cycle of a tool button (spec §5: tap a tool to select it, tap the selected one again for its
- * options): off -> on -> options -> off. Returns (tool on, panel open).
+ * Tap of a tool button (issue #56): a tool is chosen, never turned off. Tapping the one in hand
+ * opens its options, tapping it again closes them and leaves it in hand. Returns whether its panel
+ * should be open.
  */
-fun nextToolTap(active: Boolean, panelOpen: Boolean): Pair<Boolean, Boolean> = when {
-    !active -> true to false
-    panelOpen -> false to false
-    else -> true to true
-}
+fun nextToolTap(active: Boolean, panelOpen: Boolean): Boolean = active && !panelOpen
 
 /**
  * Compact block that drops from the annotation bar: the shape every tool panel shares (stamps, pen,
@@ -557,15 +554,20 @@ fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-/** Tool panel with one labelled slider: pen thickness, eraser size. */
+/**
+ * Tool panel with one labelled slider: pen thickness, eraser size. [lead] sits above it, for the
+ * settings a tool shares a panel with (the pen's colour, issue #56).
+ */
 @Composable
 fun ToolSizePanel(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     onValue: (Float) -> Unit,
+    lead: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     ToolBlock {
+        lead?.invoke(this)
         Text("$label · ${value.roundToInt()} px", style = MaterialTheme.typography.bodySmall)
         Slider(
             value = value,
@@ -577,22 +579,20 @@ fun ToolSizePanel(
 }
 
 /**
- * Colour selector in its own panel (spec §5): the tint for ink and stamps, and for the selected
- * stamp. The null entry is the default colour: shown as the ink it really draws, black (white in
- * negative mode).
+ * The tint swatches, the same grid wherever a tool has a colour (issue #56: the colour lives in the
+ * panel of the tool that uses it). The null entry is the default colour, shown as the ink it really
+ * draws: black, white in negative mode.
  */
 @Composable
-fun ColorPanel(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
-    ToolBlock {
-        (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(4).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { argb ->
-                    ColorSwatchButton(
-                        color = if (argb == null) inkTint(null, invert) else Color(argb),
-                        selected = active == argb,
-                        onClick = { onPick(argb) }
-                    )
-                }
+fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
+    (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(4).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            row.forEach { argb ->
+                ColorSwatchButton(
+                    color = if (argb == null) inkTint(null, invert) else Color(argb),
+                    selected = active == argb,
+                    onClick = { onPick(argb) }
+                )
             }
         }
     }

@@ -88,6 +88,7 @@ object Settings {
     // a score left longer ago than this opens at its first page again
     const val LAST_PAGE_KEPT_MS = 30 * 60 * 1000L
     private const val KEY_STAMP_PX = "stamp_px"
+    private const val KEY_ANNOTATION_TOOL = "annotation_tool"
     private const val KEY_MUSIC_SIZE = "music_size_"
     private const val KEY_TRANSPOSE = "transpose_"
     private const val KEY_PARTS = "parts_"
@@ -191,6 +192,14 @@ object Settings {
         context.prefs().edit { putFloat(KEY_STAMP_PX, px.coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) }
     }
 
+    /** The tool the annotation bar starts with: the last one used, the arrow the very first time. */
+    internal fun annotationTool(context: Context): AnnotationTool =
+        annotationToolOf(context.prefs().getString(KEY_ANNOTATION_TOOL, null))
+
+    internal fun setAnnotationTool(context: Context, tool: AnnotationTool) {
+        context.prefs().edit { putString(KEY_ANNOTATION_TOOL, tool.name) }
+    }
+
     /** MusicXML transposition in semitones. Per score. */
     fun transpose(context: Context, uri: String): Int =
         context.prefs().getInt(KEY_TRANSPOSE + uri, 0)
@@ -288,3 +297,10 @@ object Settings {
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
+
+/**
+ * The tool saved under [name], the arrow when there is nothing saved yet or the name is from a build
+ * that had another tool (a downgrade must not leave the bar with no tool in hand).
+ */
+internal fun annotationToolOf(name: String?): AnnotationTool =
+    AnnotationTool.entries.firstOrNull { it.name == name } ?: AnnotationTool.SELECT

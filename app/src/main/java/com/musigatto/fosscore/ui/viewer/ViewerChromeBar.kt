@@ -1,6 +1,8 @@
 package com.musigatto.fosscore.ui.viewer
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -10,7 +12,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -23,11 +27,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,13 +43,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -63,14 +75,12 @@ import kotlin.math.roundToInt
  */
 @Composable
 internal fun AnnotationBar(
-    activeSymbol: StampSymbol?,
-    lastSymbol: StampSymbol,
-    selectTool: Boolean,
-    openPanel: ToolPanel?,
-    drawingTool: Boolean,
-    eraserTool: Boolean,
+    tool: AnnotationTool,
+    stampSymbol: StampSymbol,
+    openPanel: AnnotationTool?,
     invert: Boolean,
-    activeColor: Int?,
+    penColor: Int?,
+    stampColor: Int?,
     penWidthPx: Float,
     eraserPx: Float,
     placePx: Float,
@@ -79,8 +89,7 @@ internal fun AnnotationBar(
     canUndo: Boolean,
     canRedo: Boolean,
     canDelete: Boolean,
-    onSelect: () -> Unit,
-    onToolTap: (ToolPanel) -> Unit,
+    onTool: (AnnotationTool) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onDelete: () -> Unit,
@@ -93,12 +102,13 @@ internal fun AnnotationBar(
     onSaveDefault: () -> Unit,
     onPenWidth: (Float) -> Unit,
     onEraserPx: (Float) -> Unit,
-    onColor: (Int?) -> Unit,
+    onPenColor: (Int?) -> Unit,
+    onStampColor: (Int?) -> Unit,
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // where each tool sits on screen, so its panel hangs from the tool and not from the bar's edge
-    val toolX = remember { mutableStateMapOf<ToolPanel, Float>() }
+    val toolX = remember { mutableStateMapOf<AnnotationTool, Float>() }
     var slotX by remember { mutableFloatStateOf(0f) }
     var slotWidth by remember { mutableIntStateOf(0) }
     var panelWidth by remember { mutableIntStateOf(0) }
@@ -118,6 +128,7 @@ internal fun AnnotationBar(
         val selectLabel = stringResource(R.string.tool_select)
         val penLabel = stringResource(R.string.tool_pen)
         val eraserLabel = stringResource(R.string.tool_eraser)
+        val stampLabel = stringResource(R.string.tool_stamp)
         val undoLabel = stringResource(R.string.action_undo)
         val redoLabel = stringResource(R.string.action_redo)
         val deleteLabel = stringResource(R.string.action_delete)
@@ -158,11 +169,9 @@ internal fun AnnotationBar(
                     .semantics { contentDescription = moveLabel },
                 contentAlignment = Alignment.Center,
             ) { GripIcon() }
-            // Cancel reads as a button, not as a ghost: it is one of the two ways out
-            OutlinedButton(
-                onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = cancelLabel },
-            ) { ToolIcon(ICON_CLOSE) }
+            // ✕ and ✓ are the two ways out, at the ends where they cannot be reached by accident.
+            // They read as actions, like undo and redo: no fill, never "selected" (issue #56).
+            ActionButton(icon = ICON_CLOSE, label = cancelLabel, enabled = true, onClick = onCancel)
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -170,77 +179,66 @@ internal fun AnnotationBar(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Select (issue #50): the neutral mode made visible. It is lit when no tool is
-                // armed, and a tap on it puts any tool down.
-                Button(
-                    onClick = onSelect,
-                    colors = if (selectTool) ButtonDefaults.buttonColors()
-                    else ButtonDefaults.outlinedButtonColors(),
-                    modifier = Modifier.semantics { contentDescription = selectLabel },
+                // The tools (issue #56): exactly one is in hand, so they read as radio buttons.
+                // The arrow selects, moves and resizes; the rest act on what they create.
+                ToolButton(
+                    active = tool == AnnotationTool.SELECT,
+                    panelOpen = false,
+                    label = selectLabel,
+                    onClick = { onTool(AnnotationTool.SELECT) },
                 ) { ToolIcon(ICON_SELECT) }
-                Spacer(Modifier.width(8.dp))
-                // stamps tool (spec §5): shows the last stamp used. Tap once to select it,
-                // again to open its panel (symbols + size). It never touches the selection.
-                Box(Modifier.onGloballyPositioned { toolX[ToolPanel.Stamps] = it.positionInWindow().x }) {
-                    StampPaletteButton(
-                        symbol = activeSymbol ?: lastSymbol,
-                        selected = activeSymbol != null,
-                        onClick = { onToolTap(ToolPanel.Stamps) }
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = { onToolTap(ToolPanel.Pen) },
-                    colors = if (drawingTool) ButtonDefaults.buttonColors()
-                    else ButtonDefaults.outlinedButtonColors(),
-                    modifier = Modifier
-                        .onGloballyPositioned { toolX[ToolPanel.Pen] = it.positionInWindow().x }
-                        .semantics { contentDescription = penLabel },
+                Spacer(Modifier.width(4.dp))
+                ToolButton(
+                    active = tool == AnnotationTool.PEN,
+                    panelOpen = openPanel == AnnotationTool.PEN,
+                    label = penLabel,
+                    onClick = { onTool(AnnotationTool.PEN) },
+                    modifier = Modifier.onGloballyPositioned {
+                        toolX[AnnotationTool.PEN] = it.positionInWindow().x
+                    },
                 ) { ToolIcon(ICON_PENCIL) }
                 Spacer(Modifier.width(4.dp))
-                Button(
-                    onClick = { onToolTap(ToolPanel.Eraser) },
-                    colors = if (eraserTool) ButtonDefaults.buttonColors()
-                    else ButtonDefaults.outlinedButtonColors(),
-                    modifier = Modifier
-                        .onGloballyPositioned { toolX[ToolPanel.Eraser] = it.positionInWindow().x }
-                        .semantics { contentDescription = eraserLabel },
+                ToolButton(
+                    active = tool == AnnotationTool.ERASER,
+                    panelOpen = openPanel == AnnotationTool.ERASER,
+                    label = eraserLabel,
+                    onClick = { onTool(AnnotationTool.ERASER) },
+                    modifier = Modifier.onGloballyPositioned {
+                        toolX[AnnotationTool.ERASER] = it.positionInWindow().x
+                    },
                 ) { EraserIcon() }
-                Spacer(Modifier.width(6.dp))
-                // the tint for ink and stamps, in its own little panel (it used to be a whole
-                // row of swatches eating the width of the bar)
-                Box(Modifier.onGloballyPositioned { toolX[ToolPanel.Color] = it.positionInWindow().x }) {
-                    ColorSwatchButton(
-                        // null is the default colour: draw the ink it really gives
-                        color = inkTint(activeColor, invert),
-                        selected = openPanel == ToolPanel.Color,
-                        onClick = { onToolTap(ToolPanel.Color) }
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = onUndo,
-                    enabled = canUndo,
-                    modifier = Modifier.semantics { contentDescription = undoLabel },
-                ) { ToolIcon(ICON_UNDO) }
                 Spacer(Modifier.width(4.dp))
-                Button(
-                    onClick = onRedo,
-                    enabled = canRedo,
-                    modifier = Modifier.semantics { contentDescription = redoLabel },
-                ) { ToolIcon(ICON_REDO) }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = onDelete,
-                    enabled = canDelete,
-                    modifier = Modifier.semantics { contentDescription = deleteLabel },
-                ) { ToolIcon(ICON_TRASH) }
+                // the stamp shows the symbol it will place, so the bar tells what is armed
+                ToolButton(
+                    active = tool == AnnotationTool.STAMP,
+                    panelOpen = openPanel == AnnotationTool.STAMP,
+                    label = stampLabel,
+                    onClick = { onTool(AnnotationTool.STAMP) },
+                    modifier = Modifier.onGloballyPositioned {
+                        toolX[AnnotationTool.STAMP] = it.positionInWindow().x
+                    },
+                ) {
+                    val px = with(LocalDensity.current) { 22.dp.toPx() }
+                    StampView(stampSymbol, sizePx = px, color = LocalContentColor.current)
+                }
+                ToolDivider()
+                // Actions (issue #56): never "selected", always the same plain look; greyed when
+                // the action is not available.
+                ActionButton(icon = ICON_UNDO, label = undoLabel, enabled = canUndo, onClick = onUndo)
+                Spacer(Modifier.width(4.dp))
+                ActionButton(icon = ICON_REDO, label = redoLabel, enabled = canRedo, onClick = onRedo)
+                Spacer(Modifier.width(4.dp))
+                ActionButton(icon = ICON_TRASH, label = deleteLabel, enabled = canDelete, onClick = onDelete)
             }
             Spacer(Modifier.width(8.dp))
-            Button(
+            // ✓ is the way to keep and leave: the one action in the accent colour
+            ActionButton(
+                icon = ICON_CHECK,
+                label = doneLabel,
+                enabled = true,
+                tint = MaterialTheme.colorScheme.primary,
                 onClick = onDone,
-                modifier = Modifier.semantics { contentDescription = doneLabel },
-            ) { ToolIcon(ICON_CHECK) }
+            )
         }
         // one tool panel at a time drops from the bar (spec §5). They all step aside
         // while a finger is on the page, like forScore's panels. The panel hangs from its own
@@ -262,39 +260,124 @@ internal fun AnnotationBar(
                         .onSizeChanged { panelWidth = it.width }
                 ) {
                     when (panel) {
-                        ToolPanel.Stamps -> StampPalettePanel(
-                            active = activeSymbol ?: lastSymbol,
+                        AnnotationTool.STAMP -> StampPalettePanel(
+                            active = stampSymbol,
                             sizePx = placePx,
+                            color = stampColor,
+                            invert = invert,
+                            onColor = onStampColor,
                             onSymbol = onStampSymbol,
                             onSize = onStampSize,
                             onSaveDefault = onSaveDefault,
                             isDefault = placePx.roundToInt() == defaultStampPx.roundToInt(),
                         )
 
-                        ToolPanel.Pen -> ToolSizePanel(
+                        // the pen and the stamp carry their own tint (issue #56): the colour is a
+                        // setting of each tool, not a tool of its own on the bar
+                        AnnotationTool.PEN -> ToolSizePanel(
                             label = stringResource(R.string.thickness_label),
                             value = penWidthPx,
                             range = MIN_PEN_PX..MAX_PEN_PX,
                             onValue = onPenWidth,
+                            lead = { ColorChoices(active = penColor, invert = invert, onPick = onPenColor) },
                         )
 
-                        ToolPanel.Eraser -> ToolSizePanel(
+                        AnnotationTool.ERASER -> ToolSizePanel(
                             label = stringResource(R.string.size_label),
                             value = eraserPx,
                             range = MIN_ERASER_PX..MAX_ERASER_PX,
                             onValue = onEraserPx,
                         )
 
-                        ToolPanel.Color -> ColorPanel(
-                            active = activeColor,
-                            invert = invert,
-                            onPick = onColor
-                        )
+                        else -> Unit
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * A tool of the annotation bar (issue #56). Three looks, and only three: plain when out of hand,
+ * inverse video when in hand, outline when in hand with its options open. It never turns itself
+ * off; picking another tool is how you leave it.
+ *
+ * It is announced as a selected radio button, not only shown by its colour (WCAG 1.4.1).
+ */
+@Composable
+private fun ToolButton(
+    active: Boolean,
+    panelOpen: Boolean,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val fill = if (active && !panelOpen) scheme.primary else Color.Transparent
+    val tint = when {
+        active && panelOpen -> scheme.primary
+        active -> scheme.onPrimary
+        else -> scheme.onSurfaceVariant
+    }
+    Surface(
+        color = fill,
+        shape = RoundedCornerShape(10.dp),
+        border = if (active && panelOpen) BorderStroke(1.5.dp, scheme.primary) else null,
+        modifier = modifier
+            .size(44.dp)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = label
+                role = Role.RadioButton
+                selected = active
+            },
+    ) {
+        CompositionLocalProvider(LocalContentColor provides tint) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+        }
+    }
+}
+
+/**
+ * An action of the annotation bar (issue #56): undo, redo, delete, ✕, ✓. Never "selected", always
+ * the same plain look; greyed when it cannot be done. [tint] is for the one action that leads out
+ * of the bar with the marks kept.
+ */
+@Composable
+private fun ActionButton(
+    icon: String,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    tint: Color? = null,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val color = tint ?: if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = 0.38f)
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides color) { ToolIcon(icon) }
+    }
+}
+
+/** Separates the tools from the actions, as the sketch in issue #56 draws them. */
+@Composable
+private fun ToolDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = 6.dp)
+            .width(1.dp)
+            .height(24.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+    )
 }
 
 /**

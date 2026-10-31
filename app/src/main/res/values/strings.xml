@@ -14,6 +14,7 @@
     <string name="tool_pen">Pen</string>
     <string name="tool_eraser">Eraser</string>
     <string name="tool_select">Select</string>
+    <string name="tool_stamp">Stamp</string>
     <string name="search_label">Search</string>
     <string name="library_title">Library</string>
     <string name="empty_library">No sheets yet. Import one with the Import button.</string>

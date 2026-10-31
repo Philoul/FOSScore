@@ -150,8 +150,9 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
     }
 }
 
+/** One symbol of the stamps panel: framed when it is the one the stamp tool will place. */
 @Composable
-fun StampPaletteButton(symbol: StampSymbol, selected: Boolean, onClick: () -> Unit) {
+private fun StampChoiceButton(symbol: StampSymbol, selected: Boolean, onClick: () -> Unit) {
     val color = MaterialTheme.colorScheme.primary
     val border = if (selected) 2.dp else 1.dp
     val borderColor = if (selected) color else MaterialTheme.colorScheme.outline
@@ -186,15 +187,19 @@ fun ColorSwatchButton(color: Color, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Stamps palette (spec §5): the symbols in a grid, the placement size at the bottom — forScore's
- * Stamps panel. The bar only carries the tool button; the panel drops from it, stays a compact
- * block (4 columns, see-through) instead of a band across the page, and steps aside while a finger
- * is on the page. The grid scrolls once there are more symbols than fit; the size controls stay.
+ * Stamps palette (spec §5): the symbols in a grid, the tint and the placement size below — the
+ * settings of the stamp tool (issue #56). The bar only carries the tool button; the panel drops
+ * from it, stays a compact block (4 columns, see-through) instead of a band across the page, and
+ * steps aside while a finger is on the page. The grid scrolls once there are more symbols than fit;
+ * the colour and size controls stay.
  */
 @Composable
 fun StampPalettePanel(
     active: StampSymbol,
     sizePx: Float,
+    color: Int?,
+    invert: Boolean,
+    onColor: (Int?) -> Unit,
     onSymbol: (StampSymbol) -> Unit,
     onSize: (Float) -> Unit,
     onSaveDefault: () -> Unit,
@@ -210,7 +215,7 @@ fun StampPalettePanel(
             StampSymbol.entries.chunked(4).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     row.forEach { sym ->
-                        StampPaletteButton(
+                        StampChoiceButton(
                             symbol = sym,
                             selected = sym == active,
                             onClick = { onSymbol(sym) }
@@ -219,6 +224,7 @@ fun StampPalettePanel(
                 }
             }
         }
+        ColorChoices(active = color, invert = invert, onPick = onColor)
         Text(
             "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
             style = MaterialTheme.typography.bodySmall

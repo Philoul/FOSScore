@@ -3,6 +3,7 @@ package com.musigatto.fosscore.ui.viewer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.musigatto.fosscore.library.Stamp
+import com.musigatto.fosscore.library.isTextStamp
 import kotlin.math.max
 import kotlin.math.min
 
@@ -57,6 +58,44 @@ fun stampSizePxToFrac(px: Float, fit: RectPx): Float =
     (px / max(1f, fit.height)).coerceIn(MIN_STAMP_SIZE, MAX_STAMP_SIZE)
 
 fun stampSizeFracToPx(frac: Float, fit: RectPx): Float = frac * fit.height
+
+// A text stamp (#35) sizes its font as a share of the PAGE height, like a stamp's side does. Typed
+// text reads smaller than a symbol: the caps sit tighter (0.3 of the height would be blackboard
+// size, not a note).
+const val DEFAULT_TEXT_PX = 24f
+const val MIN_TEXT_PX = 12f
+const val MAX_TEXT_PX = 96f
+const val MIN_TEXT_FRAC = 0.002f
+const val MAX_TEXT_FRAC = 0.08f
+// the text wraps at this share of the page's width (1f would touch the edge)
+const val TEXT_MAX_WRAP = 0.98f
+
+fun textSizePxToFrac(px: Float, fit: RectPx): Float =
+    (px / max(1f, fit.height)).coerceIn(MIN_TEXT_FRAC, MAX_TEXT_FRAC)
+
+fun textFontPx(sizeFrac: Float, fit: RectPx): Float =
+    max(1f, sizeFrac.coerceIn(MIN_TEXT_FRAC, MAX_TEXT_FRAC) * fit.height)
+
+/**
+ * The box of a text stamp: the MEASURED text laid out at [textFontPx], centred on the stamp's x/y
+ * (a text stamp keeps the stamps' centre convention) and clamped inside the sheet. Draw, hit test
+ * and selection all take the rect from here, so they agree. ponytail: anchor-at-centre; per-side
+ * anchoring (keep the first line in place) if placement ever feels off.
+ */
+fun textBoxRect(stamp: Stamp, textW: Float, textH: Float, fit: RectPx): RectPx {
+    val center = normalizedToPx(
+        Offset(stamp.x.coerceIn(0f, 1f), stamp.y.coerceIn(0f, 1f)),
+        fit
+    )
+    val width = textW.coerceIn(1f, fit.width.coerceAtLeast(1f))
+    val height = textH.coerceIn(1f, fit.height.coerceAtLeast(1f))
+    val left = (center.x - width / 2f).coerceIn(0f, (fit.width - width).coerceAtLeast(0f))
+    val top = (center.y - height / 2f).coerceIn(0f, (fit.height - height).coerceAtLeast(0f))
+    return RectPx(left, top, width, height)
+}
+
+fun hitTextStamp(pos: Offset, stamps: List<Stamp>, rects: Map<Long, RectPx>): Stamp? =
+    stamps.lastOrNull { it.isTextStamp() && rects[it.id]?.contains(pos) == true }
 
 /**
  * Stamps the eraser trail takes with it. The eraser is a circle of [radiusPx] around the trail, so a

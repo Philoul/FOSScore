@@ -94,6 +94,11 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
 // tint colors that read well on light and dark backgrounds. White stores as white; in negative
 // mode inkTint renders it BLACK, good for painting over the page's own (now white) notes. On a
 // plain white page with negative off it blends in — that is the nature of a white ink.
+// the stamps' panel: eight symbols a row (and the eight colours on one), so the 37 symbols take
+// five rows, not ten, and the panel fits above or below the bar on a phone upright
+private const val STAMP_COLUMNS = 8
+private const val STAMP_PANEL_DP = 320
+
 val SWATCH_COLORS = listOf(
     Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047),
     Color(0xFFFB8C00), Color(0xFF8E24AA), Color(0xFF757575),
@@ -234,14 +239,14 @@ fun StampPalettePanel(
     onSaveDefault: () -> Unit,
     isDefault: Boolean,
 ) {
-    ToolBlock {
+    ToolBlock(width = STAMP_PANEL_DP.dp) {
         Column(
             modifier = Modifier
                 .heightIn(max = 180.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            StampSymbol.entries.chunked(4).forEach { row ->
+            StampSymbol.entries.chunked(STAMP_COLUMNS).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     row.forEach { sym ->
                         StampChoiceButton(
@@ -253,7 +258,7 @@ fun StampPalettePanel(
                 }
             }
         }
-        ColorChoices(active = color, invert = invert, onPick = onColor)
+        ColorChoices(active = color, invert = invert, onPick = onColor, perRow = STAMP_COLUMNS)
         Text(
             "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
             style = MaterialTheme.typography.bodySmall

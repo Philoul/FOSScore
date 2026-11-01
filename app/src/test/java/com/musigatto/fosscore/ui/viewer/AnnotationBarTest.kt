@@ -27,4 +27,14 @@ class AnnotationBarTest {
     fun noRoomKeepsTheBarAtTheTop() {
         assertEquals(0f, annotationBarLowest(pageHeightPx = 0, bottomInsetPx = 48), 0f)
     }
+
+    @Test
+    fun aBarAtTheTopOpensItsPanelsBelowIt() {
+        assertFalse(toolPanelAbove(barTopPx = 0f, barHeightPx = 150, screenHeightPx = 2000))
+    }
+
+    @Test
+    fun aBarDraggedLowOpensItsPanelsAboveIt() {
+        assertTrue(toolPanelAbove(barTopPx = 1700f, barHeightPx = 150, screenHeightPx = 2000))
+    }
 }

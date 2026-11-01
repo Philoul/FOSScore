@@ -1194,6 +1194,7 @@ fun PdfViewerScreen(
                         }
                     },
                     onHeight = { annBarPx = it },
+                    panelAbove = toolPanelAbove(barDragY, annBarPx, viewport.height + annBarPx),
                     // the top of the screen: while annotating this bar IS the title bar, and the
                     // grip moves it down out of the way, where it turns see-through so the page
                     // underneath stays readable

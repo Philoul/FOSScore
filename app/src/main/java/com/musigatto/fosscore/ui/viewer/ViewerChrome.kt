@@ -539,10 +539,11 @@ fun nextToolTap(active: Boolean, panelOpen: Boolean): Boolean = active && !panel
 /**
  * Compact block that drops from the annotation bar: the shape every tool panel shares (stamps, pen,
  * eraser, colour). It floats over the page instead of painting a band across it (spec §5), and the
- * fixed 160 dp keeps all of them the same width so the bar never reshuffles.
+ * fixed 160 dp keeps all of them the same width so the bar never reshuffles. The stamps' panel
+ * alone is wider, so its many symbols take rows instead of half the height of a phone.
  */
 @Composable
-fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
+fun ToolBlock(width: Dp = 160.dp, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         // ponytail: fixed alpha; make it a setting if it hides the music you are working on
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
@@ -551,7 +552,7 @@ fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .padding(start = 12.dp, bottom = 8.dp)
-            .width(160.dp)
+            .width(width)
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
@@ -599,8 +600,8 @@ fun ToolSizePanel(
  * about the ink (issue #35).
  */
 @Composable
-fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
-    (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(4).forEach { row ->
+fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit, perRow: Int = 4) {
+    (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(perRow).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             row.forEach { argb ->
                 ColorSwatchButton(

@@ -76,6 +76,13 @@ import kotlin.math.roundToInt
 internal fun annotationBarLowest(pageHeightPx: Int, bottomInsetPx: Int): Float =
     (pageHeightPx - bottomInsetPx).coerceAtLeast(0).toFloat()
 
+/**
+ * Whether a tool's panel opens above the annotation bar: when the bar was dragged into the lower
+ * half of the screen, where a panel hanging below it would be cut by the bottom edge.
+ */
+internal fun toolPanelAbove(barTopPx: Float, barHeightPx: Int, screenHeightPx: Int): Boolean =
+    barTopPx + barHeightPx / 2f > screenHeightPx / 2f
+
 // the width the annotation bar takes on one row: ✕, the four tools, the actions, ✓ and the grip
 private const val ONE_ROW_MIN_DP = 520f
 
@@ -125,12 +132,15 @@ internal fun AnnotationBar(
     onTextColor: (Int?) -> Unit,
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    panelAbove: Boolean = false,
 ) {
     // where each tool sits on screen, so its panel hangs from the tool and not from the bar's edge
     val toolX = remember { mutableStateMapOf<AnnotationTool, Float>() }
     var slotX by remember { mutableFloatStateOf(0f) }
     var slotWidth by remember { mutableIntStateOf(0) }
     var panelWidth by remember { mutableIntStateOf(0) }
+    var panelHeight by remember { mutableIntStateOf(0) }
+    var rowHeight by remember { mutableIntStateOf(0) }
     // the strip the bar paints over the status bar, mirrored below it: without it the tools sit
     // low against the page and the bar looks top-heavy
     val statusBarDp = with(LocalDensity.current) { WindowInsets.systemBars.getTop(this).toDp() }
@@ -164,7 +174,10 @@ internal fun AnnotationBar(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .onSizeChanged { onHeight(it.height) }
+                .onSizeChanged {
+                    rowHeight = it.height
+                    onHeight(it.height)
+                }
                 .background(MaterialTheme.colorScheme.surface)
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
                 .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp + statusBarDp),
@@ -323,9 +336,15 @@ internal fun AnnotationBar(
                     modifier = Modifier
                         .offset {
                             val raw = ((toolX[panel] ?: slotX) - slotX).roundToInt()
-                            IntOffset(raw.coerceIn(0, (slotWidth - panelWidth).coerceAtLeast(0)), 0)
+                            // above the bar when the bar is low on the screen: below it, the
+                            // panel would be cut by the bottom edge
+                            val y = if (panelAbove) -(rowHeight + panelHeight) else 0
+                            IntOffset(raw.coerceIn(0, (slotWidth - panelWidth).coerceAtLeast(0)), y)
                         }
-                        .onSizeChanged { panelWidth = it.width }
+                        .onSizeChanged {
+                            panelWidth = it.width
+                            panelHeight = it.height
+                        }
                 ) {
                     when (panel) {
                         AnnotationTool.STAMP -> StampPalettePanel(

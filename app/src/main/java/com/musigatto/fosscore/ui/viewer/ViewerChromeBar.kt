@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,6 +75,12 @@ import kotlin.math.roundToInt
  */
 internal fun annotationBarLowest(pageHeightPx: Int, bottomInsetPx: Int): Float =
     (pageHeightPx - bottomInsetPx).coerceAtLeast(0).toFloat()
+
+// the width the annotation bar takes on one row: ✕, the four tools, the actions, ✓ and the grip
+private const val ONE_ROW_MIN_DP = 520f
+
+/** Whether the annotation bar holds on one row at [widthDp]; on two rows otherwise (a phone upright). */
+internal fun annotationBarFitsOneRow(widthDp: Float): Boolean = widthDp >= ONE_ROW_MIN_DP
 
 /**
  * The annotation bar: the title bar's own row while annotating (spec §5: forScore replaces it).
@@ -154,116 +161,152 @@ internal fun AnnotationBar(
         //
         // This row is the top bar while annotating (the title bar steps aside), so it carries the
         // status bar inset, and it is measured with it: the page starts below the whole row.
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .onSizeChanged { onHeight(it.height) }
                 .background(MaterialTheme.colorScheme.surface)
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
                 .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp + statusBarDp),
-            verticalAlignment = Alignment.CenterVertically
         ) {
+            val tools: @Composable () -> Unit = {
+                    // The tools (issue #56): exactly one is in hand, so they read as radio buttons.
+                    // The arrow selects, moves and resizes; the rest act on what they create.
+                    ToolButton(
+                        active = tool == AnnotationTool.SELECT,
+                        panelOpen = false,
+                        label = selectLabel,
+                        onClick = { onTool(AnnotationTool.SELECT) },
+                    ) { ToolIcon(ICON_SELECT) }
+                    Spacer(Modifier.width(4.dp))
+                    ToolButton(
+                        active = tool == AnnotationTool.PEN,
+                        panelOpen = openPanel == AnnotationTool.PEN,
+                        label = penLabel,
+                        onClick = { onTool(AnnotationTool.PEN) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.PEN] = it.positionInWindow().x
+                        },
+                    ) { ToolIcon(ICON_PENCIL) }
+                    Spacer(Modifier.width(4.dp))
+                    ToolButton(
+                        active = tool == AnnotationTool.ERASER,
+                        panelOpen = openPanel == AnnotationTool.ERASER,
+                        label = eraserLabel,
+                        onClick = { onTool(AnnotationTool.ERASER) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.ERASER] = it.positionInWindow().x
+                        },
+                    ) { EraserIcon() }
+                    Spacer(Modifier.width(4.dp))
+                    // the stamp shows the symbol it will place, so the bar tells what is armed
+                    ToolButton(
+                        active = tool == AnnotationTool.STAMP,
+                        panelOpen = openPanel == AnnotationTool.STAMP,
+                        label = stampLabel,
+                        onClick = { onTool(AnnotationTool.STAMP) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.STAMP] = it.positionInWindow().x
+                        },
+                    ) {
+                        val px = with(LocalDensity.current) { 22.dp.toPx() }
+                        StampView(stampSymbol, sizePx = px, color = LocalContentColor.current)
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    ToolButton(
+                        active = tool == AnnotationTool.TEXT,
+                        panelOpen = openPanel == AnnotationTool.TEXT,
+                        label = textLabel,
+                        onClick = { onTool(AnnotationTool.TEXT) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.TEXT] = it.positionInWindow().x
+                        },
+                    ) { ToolIcon(ICON_TEXT) }
+            }
+            val actions: @Composable () -> Unit = {
+                    // Actions (issue #56): never "selected", always the same plain look; greyed when
+                    // the action is not available.
+                    ActionButton(icon = ICON_UNDO, label = undoLabel, enabled = canUndo, onClick = onUndo)
+                    Spacer(Modifier.width(4.dp))
+                    ActionButton(icon = ICON_REDO, label = redoLabel, enabled = canRedo, onClick = onRedo)
+                    Spacer(Modifier.width(4.dp))
+                    ActionButton(icon = ICON_TRASH, label = deleteLabel, enabled = canDelete, onClick = onDelete)
+            }
+            val keepAndMove: @Composable () -> Unit = {
+                // ✓ is the way to keep and leave: the one action in the accent colour
+                ActionButton(
+                    icon = ICON_CHECK,
+                    label = doneLabel,
+                    enabled = true,
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = onDone,
+                )
+                // the grip: the bar can be dragged down out of the way (spec §5), and ✓ puts it back
+                // at the top. At the trailing edge, away from the menu's ☰ at the leading one, and
+                // drawn with two lines so it does not read as a menu. It only turns see-through while
+                // a finger is on it.
+                Box(
+                    modifier = Modifier
+                        // 48dp is the minimum touch target; the glyph stays small inside it
+                        .size(48.dp)
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { onDragState(true) },
+                                onDragEnd = { onDragState(false) },
+                                onDragCancel = { onDragState(false) },
+                            ) { change, drag ->
+                                change.consume()
+                                onDragBar(drag.y)
+                            }
+                        }
+                        .semantics { contentDescription = moveLabel },
+                    contentAlignment = Alignment.Center,
+                ) { GripIcon() }
+            }
             // ✕ and ✓ are the two ways out, at the ends where they cannot be reached by accident.
             // They read as actions, like undo and redo: no fill, never "selected" (issue #56).
-            ActionButton(icon = ICON_CLOSE, label = cancelLabel, enabled = true, onClick = onCancel)
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // The tools (issue #56): exactly one is in hand, so they read as radio buttons.
-                // The arrow selects, moves and resizes; the rest act on what they create.
-                ToolButton(
-                    active = tool == AnnotationTool.SELECT,
-                    panelOpen = false,
-                    label = selectLabel,
-                    onClick = { onTool(AnnotationTool.SELECT) },
-                ) { ToolIcon(ICON_SELECT) }
-                Spacer(Modifier.width(4.dp))
-                ToolButton(
-                    active = tool == AnnotationTool.PEN,
-                    panelOpen = openPanel == AnnotationTool.PEN,
-                    label = penLabel,
-                    onClick = { onTool(AnnotationTool.PEN) },
-                    modifier = Modifier.onGloballyPositioned {
-                        toolX[AnnotationTool.PEN] = it.positionInWindow().x
-                    },
-                ) { ToolIcon(ICON_PENCIL) }
-                Spacer(Modifier.width(4.dp))
-                ToolButton(
-                    active = tool == AnnotationTool.ERASER,
-                    panelOpen = openPanel == AnnotationTool.ERASER,
-                    label = eraserLabel,
-                    onClick = { onTool(AnnotationTool.ERASER) },
-                    modifier = Modifier.onGloballyPositioned {
-                        toolX[AnnotationTool.ERASER] = it.positionInWindow().x
-                    },
-                ) { EraserIcon() }
-                Spacer(Modifier.width(4.dp))
-                // the stamp shows the symbol it will place, so the bar tells what is armed
-                ToolButton(
-                    active = tool == AnnotationTool.STAMP,
-                    panelOpen = openPanel == AnnotationTool.STAMP,
-                    label = stampLabel,
-                    onClick = { onTool(AnnotationTool.STAMP) },
-                    modifier = Modifier.onGloballyPositioned {
-                        toolX[AnnotationTool.STAMP] = it.positionInWindow().x
-                    },
-                ) {
-                    val px = with(LocalDensity.current) { 22.dp.toPx() }
-                    StampView(stampSymbol, sizePx = px, color = LocalContentColor.current)
-                }
-                Spacer(Modifier.width(4.dp))
-                ToolButton(
-                    active = tool == AnnotationTool.TEXT,
-                    panelOpen = openPanel == AnnotationTool.TEXT,
-                    label = textLabel,
-                    onClick = { onTool(AnnotationTool.TEXT) },
-                    modifier = Modifier.onGloballyPositioned {
-                        toolX[AnnotationTool.TEXT] = it.positionInWindow().x
-                    },
-                ) { ToolIcon(ICON_TEXT) }
-                ToolDivider()
-                // Actions (issue #56): never "selected", always the same plain look; greyed when
-                // the action is not available.
-                ActionButton(icon = ICON_UNDO, label = undoLabel, enabled = canUndo, onClick = onUndo)
-                Spacer(Modifier.width(4.dp))
-                ActionButton(icon = ICON_REDO, label = redoLabel, enabled = canRedo, onClick = onRedo)
-                Spacer(Modifier.width(4.dp))
-                ActionButton(icon = ICON_TRASH, label = deleteLabel, enabled = canDelete, onClick = onDelete)
+            val cancel: @Composable () -> Unit = {
+                ActionButton(icon = ICON_CLOSE, label = cancelLabel, enabled = true, onClick = onCancel)
             }
-            Spacer(Modifier.width(8.dp))
-            // ✓ is the way to keep and leave: the one action in the accent colour
-            ActionButton(
-                icon = ICON_CHECK,
-                label = doneLabel,
-                enabled = true,
-                tint = MaterialTheme.colorScheme.primary,
-                onClick = onDone,
-            )
-            // the grip: the bar can be dragged down out of the way (spec §5), and ✓ puts it back
-            // at the top. At the trailing edge, away from the menu's ☰ at the leading one, and
-            // drawn with two lines so it does not read as a menu. It only turns see-through while
-            // a finger is on it.
-            Box(
-                modifier = Modifier
-                    // 48dp is the minimum touch target; the glyph stays small inside it
-                    .size(48.dp)
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { onDragState(true) },
-                            onDragEnd = { onDragState(false) },
-                            onDragCancel = { onDragState(false) },
-                        ) { change, drag ->
-                            change.consume()
-                            onDragBar(drag.y)
-                        }
+            if (annotationBarFitsOneRow(maxWidth.value)) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    cancel()
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tools()
+                        ToolDivider()
+                        actions()
                     }
-                    .semantics { contentDescription = moveLabel },
-                contentAlignment = Alignment.Center,
-            ) { GripIcon() }
+                    Spacer(Modifier.width(8.dp))
+                    keepAndMove()
+                }
+            } else {
+                // a narrow screen (a phone upright): the ways out, the actions and the grip on the
+                // first row, the tools on their own row under it, so none hides in a scroll
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        cancel()
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) { actions() }
+                        keepAndMove()
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) { tools() }
+                }
+            }
         }
         // one tool panel at a time drops from the bar (spec §5). They all step aside
         // while a finger is on the page, like forScore's panels. The panel hangs from its own

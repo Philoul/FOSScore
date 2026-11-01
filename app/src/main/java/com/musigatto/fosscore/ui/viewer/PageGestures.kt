@@ -97,6 +97,9 @@ internal fun Modifier.pageGestures(
     val currentPageStamps by rememberUpdatedState(stamps)
     val currentPageStrokes by rememberUpdatedState(strokes)
     val currentTextRects by rememberUpdatedState(textRects)
+    // the text tool's tap reads the page as it is now (its texts' boxes, the text being typed):
+    // the lambda of the first composition would keep the boxes of that moment
+    val currentOnTextBoxTap by rememberUpdatedState(onTextBoxTap)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
     // the page (and the score) the edit belongs to. Not a local copy: this one rests on the page the
     // score opened at, so ink written on page 6 was stored under page 8 and showed up there after
@@ -448,7 +451,7 @@ internal fun Modifier.pageGestures(
                                     if (!onMatte && currentSheetId != null &&
                                         (aimed || totalPan.getDistance() <= touchSlopPx)
                                     ) {
-                                        onTextBoxTap(
+                                        currentOnTextBoxTap(
                                             pxToNormalized(fitPoint(lastPlacePos), currentHitFit),
                                             pickedText,
                                             lastPlacePos,

@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,7 +37,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
 
@@ -97,6 +102,27 @@ val SWATCH_COLORS = listOf(
 
 // null = theme color; otherwise the ARGB that was saved
 fun stampColor(color: Int?, fallback: Color): Color = color?.let(::Color) ?: fallback
+
+/** Font size in sp for a text stamp (#35): the font px measured against the page's fit, converted by
+ * density. Draw (here) and measure (the shared textRects) both pass THROUGH this, or they diverge. */
+fun textFontSp(fontPx: Float, density: Density): TextUnit = (fontPx / density.density).sp
+
+/** The words of a text stamp, wrapped at the page's width and tinted like the other ink. */
+@Composable
+internal fun TextStampView(
+    text: String,
+    fontPx: Float,
+    maxWidthPx: Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    Text(
+        text = text,
+        style = LocalTextStyle.current.copy(fontSize = textFontSp(fontPx, density), color = color),
+        modifier = modifier.widthIn(max = with(density) { maxWidthPx.toDp() })
+    )
+}
 
 // Typeface.createFromAsset builds a fresh Typeface on every call and the palette asks for one per
 // symbol (29 of them), so one per process is what keeps the panel from taking a few ms to open.

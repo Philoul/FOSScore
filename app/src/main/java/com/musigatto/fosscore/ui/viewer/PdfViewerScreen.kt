@@ -66,6 +66,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
@@ -74,12 +75,16 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
+import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.Meter
@@ -403,7 +408,30 @@ fun PdfViewerScreen(
     val inkStrokes = (editor.pendingInk + pageStrokes).distinctBy { it.id }
     // the same ink, ready to draw: decode + Path once per change, not once per frame
     val inkDraws = remember(inkStrokes, hitFit, invert) { inkDrawsOf(inkStrokes, hitFit, invert) }
-    // the next page's ink, same fit: its path only has to land on the paper that page takes, and
+    // the MEASURED boxes of the visible TEXT stamps: one layout per change, the same box feeds the
+    // draw (PageCanvas), the gesture's hit test and the selection frame, so they cannot diverge.
+    // The style here must stay identical to the one TextStampView draws with, bar the color (the
+    // box is the text's size, not its shade).
+    val textMeasurer = rememberTextMeasurer()
+    val measureDensity = LocalDensity.current
+    val measureStyle = LocalTextStyle.current
+    val textRects = remember(pageStamps, companionStamps, hitFit, textMeasurer, measureDensity, measureStyle) {
+        buildMap {
+            for (st in pageStamps + companionStamps) {
+                if (!st.isTextStamp()) continue
+                val layout = textMeasurer.measure(
+                    st.text.orEmpty(),
+                    measureStyle.copy(
+                        fontSize = textFontSp(textFontPx(st.size, hitFit), measureDensity)
+                    ),
+                    overflow = TextOverflow.Clip,
+                    softWrap = true,
+                    constraints = Constraints(maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt()),
+                )
+                put(st.id, textBoxRect(st, layout.size.width.toFloat(), layout.size.height.toFloat(), hitFit))
+            }
+        }
+    }    // the next page's ink, same fit: its path only has to land on the paper that page takes, and
     // PageOverlay stretches it there
     val companionInkDraws = remember(companionStrokes, hitFit, invert) {
         inkDrawsOf(companionStrokes, hitFit, invert)
@@ -1002,6 +1030,7 @@ fun PdfViewerScreen(
                     placePx = placePx,
                     nextInkDraws = companionInkDraws,
                     nextStamps = companionStamps,
+                    textRects = textRects,
                     // in the reading modes the whole viewport is scaled; a single page scales its
                     // own content, so the zoom layer is not used
                     modifier = if (spread) spreadMod.then(gestureMod) else gestureMod,

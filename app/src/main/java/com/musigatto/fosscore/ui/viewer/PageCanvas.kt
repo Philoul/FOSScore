@@ -42,11 +42,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.PageSource
@@ -118,6 +120,7 @@ private fun PageOverlay(
     ink: List<InkDraw>,
     stamps: List<Stamp>,
     invert: Boolean,
+    textRects: Map<Long, RectPx>,
     clip: RectPx? = null,
 ) {
     if (paper.width <= 0f || fit.width <= 0f || fit.height <= 0f) return
@@ -164,6 +167,10 @@ private fun PageOverlay(
                 }
             ) {
                 for (stamp in stamps) {
+                    if (stamp.isTextStamp()) {
+                        TextStampDraw(stamp, textRects[stamp.id], fit, invert, density)
+                        continue
+                    }
                     val sym = runCatching { StampSymbol.valueOf(stamp.symbol) }.getOrNull()
                         ?: continue
                     val r = stampRect(stamp, fit)
@@ -230,6 +237,10 @@ internal fun PageCanvas(
     // drawn, and it has no live copy to merge in
     nextInkDraws: List<InkDraw>,
     nextStamps: List<Stamp>,
+    // measured boxes of the visible text stamps (id -> rect, Task: draw = hit = selection). Keyed by
+    // stamp id, global: both pages of a spread find theirs here. A text stamp without a rect (map
+    // not built yet) still draws, centred on its point.
+    textRects: Map<Long, RectPx>,
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -261,6 +272,7 @@ internal fun PageCanvas(
                                 ink = if (index == currentPage) inkDraws else nextInkDraws,
                                 stamps = if (index == currentPage) pageStamps else nextStamps,
                                 invert = invert,
+                                textRects = textRects,
                             )
                         }
                     }
@@ -327,6 +339,7 @@ internal fun PageCanvas(
                         ink = nextInkDraws,
                         stamps = nextStamps,
                         invert = invert,
+                        textRects = textRects,
                         clip = RectPx(paper.left, paper.top, paper.width, paper.height * split.upper),
                     )
                     PageOverlay(
@@ -335,6 +348,7 @@ internal fun PageCanvas(
                         ink = inkDraws,
                         stamps = pageStamps,
                         invert = invert,
+                        textRects = textRects,
                         clip = RectPx(
                             paper.left,
                             paper.top + paper.height * split.lower,
@@ -525,6 +539,10 @@ internal fun PageCanvas(
                         ) {
                             for (stamp in pageStamps) {
                                 val shown = dragStamp?.takeIf { it.id == stamp.id } ?: stamp
+                                if (shown.isTextStamp()) {
+                                    TextStampDraw(shown, textRects[shown.id], hitFit, invert, density)
+                                    continue
+                                }
                                 val sym = runCatching { StampSymbol.valueOf(shown.symbol) }.getOrNull()
                                     ?: continue
                                 val r = stampRect(shown, hitFit)
@@ -582,6 +600,51 @@ internal fun PageCanvas(
             } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
+        }
+    }
+}
+
+/**
+ * A typed-text stamp on the page. When the measured rect exists it is drawn EXACTLY there (same box
+ * the gesture hit-tests and the selection frames); without it (map not built yet) the text lays out
+ * centred on the stamp's point. Both paths clamp nothing themselves: [textBoxRect] did the clamping
+ * when the rect was built.
+ */
+@Composable
+private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: Boolean, density: Density) {
+    val fontPx = textFontPx(stamp.size, fit)
+    val color = inkTint(stamp.color, invert)
+    // the rect follows the LIVE stamp: while it is dragged x/y move, the measured SIZE stays,
+    // so textBoxRect re-clamps it at the edge instead of replaying a stale rect
+    val rect = measured?.let { textBoxRect(stamp, it.width, it.height, fit) }
+    if (rect != null) {
+        TextStampView(
+            text = stamp.text.orEmpty(),
+            fontPx = fontPx,
+            maxWidthPx = fit.width * TEXT_MAX_WRAP - 16f,
+            color = color,
+            modifier = Modifier
+                .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
+                .requiredSize(
+                    with(density) { rect.width.toDp() },
+                    with(density) { rect.height.toDp() }
+                )
+        )
+    } else {
+        val c = normalizedToPx(
+            Offset(stamp.x.coerceIn(0f, 1f), stamp.y.coerceIn(0f, 1f)),
+            fit
+        )
+        Box(
+            modifier = Modifier.offset { IntOffset(c.x.roundToInt(), c.y.roundToInt()) },
+            contentAlignment = Alignment.Center,
+        ) {
+            TextStampView(
+                text = stamp.text.orEmpty(),
+                fontPx = fontPx,
+                maxWidthPx = fit.width * TEXT_MAX_WRAP - 16f,
+                color = color,
+            )
         }
     }
 }

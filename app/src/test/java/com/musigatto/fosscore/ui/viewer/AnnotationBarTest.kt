@@ -28,13 +28,24 @@ class AnnotationBarTest {
         assertEquals(0f, annotationBarLowest(pageHeightPx = 0, bottomInsetPx = 48), 0f)
     }
 
+    // a phone upright: 2340 px high, the status bar 81 px, the navigation bar 144 px
+    private fun place(barTop: Float) =
+        toolPanelPlace(barTopPx = barTop, barHeightPx = 300, screenHeightPx = 2340, topInsetPx = 81, bottomInsetPx = 144)
+
     @Test
-    fun aBarAtTheTopOpensItsPanelsBelowIt() {
-        assertFalse(toolPanelAbove(barTopPx = 0f, barHeightPx = 150, screenHeightPx = 2000))
+    fun aBarAtTheTopOpensItsPanelsBelowItDownToTheNavigationBar() {
+        assertEquals(PanelPlace(above = false, maxHeightPx = 2340 - 144 - 300), place(0f))
     }
 
     @Test
-    fun aBarDraggedLowOpensItsPanelsAboveIt() {
-        assertTrue(toolPanelAbove(barTopPx = 1700f, barHeightPx = 150, screenHeightPx = 2000))
+    fun aBarDraggedLowOpensItsPanelsAboveItUpToTheStatusBar() {
+        assertEquals(PanelPlace(above = true, maxHeightPx = 1896 - 81), place(1896f))
+    }
+
+    @Test
+    fun aBarInTheMiddleOpensItsPanelsOnTheRoomierSideNoTallerThanThatSide() {
+        // 700 px above it (under the status bar), 1196 px below it: below, and never over a system bar
+        assertEquals(PanelPlace(above = false, maxHeightPx = 1196), place(700f))
+        assertEquals(PanelPlace(above = true, maxHeightPx = 1219), place(1300f))
     }
 }

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -77,11 +79,23 @@ internal fun annotationBarLowest(pageHeightPx: Int, bottomInsetPx: Int): Float =
     (pageHeightPx - bottomInsetPx).coerceAtLeast(0).toFloat()
 
 /**
- * Whether a tool's panel opens above the annotation bar: when the bar was dragged into the lower
- * half of the screen, where a panel hanging below it would be cut by the bottom edge.
+ * Where a tool's panel opens: on the side of the annotation bar with more room (below it at the
+ * top of the screen, above it once dragged low), and no taller than that side, so it never runs
+ * under the status bar or the navigation bar (px). A taller panel scrolls.
  */
-internal fun toolPanelAbove(barTopPx: Float, barHeightPx: Int, screenHeightPx: Int): Boolean =
-    barTopPx + barHeightPx / 2f > screenHeightPx / 2f
+internal data class PanelPlace(val above: Boolean, val maxHeightPx: Int)
+
+internal fun toolPanelPlace(
+    barTopPx: Float,
+    barHeightPx: Int,
+    screenHeightPx: Int,
+    topInsetPx: Int,
+    bottomInsetPx: Int,
+): PanelPlace {
+    val below = (screenHeightPx - bottomInsetPx - barTopPx - barHeightPx).toInt().coerceAtLeast(0)
+    val above = (barTopPx - topInsetPx).toInt().coerceAtLeast(0)
+    return if (above > below) PanelPlace(above = true, maxHeightPx = above) else PanelPlace(above = false, maxHeightPx = below)
+}
 
 // the width the annotation bar takes on one row: ✕, the four tools, the actions, ✓ and the grip
 private const val ONE_ROW_MIN_DP = 520f
@@ -132,7 +146,7 @@ internal fun AnnotationBar(
     onTextColor: (Int?) -> Unit,
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    panelAbove: Boolean = false,
+    panelPlace: PanelPlace = PanelPlace(above = false, maxHeightPx = Int.MAX_VALUE),
 ) {
     // where each tool sits on screen, so its panel hangs from the tool and not from the bar's edge
     val toolX = remember { mutableStateMapOf<AnnotationTool, Float>() }
@@ -336,15 +350,18 @@ internal fun AnnotationBar(
                     modifier = Modifier
                         .offset {
                             val raw = ((toolX[panel] ?: slotX) - slotX).roundToInt()
-                            // above the bar when the bar is low on the screen: below it, the
-                            // panel would be cut by the bottom edge
-                            val y = if (panelAbove) -(rowHeight + panelHeight) else 0
+                            // on the side of the bar with more room (above it when the bar was
+                            // dragged low), never over the status or the navigation bar
+                            val y = if (panelPlace.above) -(rowHeight + panelHeight) else 0
                             IntOffset(raw.coerceIn(0, (slotWidth - panelWidth).coerceAtLeast(0)), y)
                         }
                         .onSizeChanged {
                             panelWidth = it.width
                             panelHeight = it.height
                         }
+                        // a panel taller than that room scrolls
+                        .heightIn(max = with(LocalDensity.current) { panelPlace.maxHeightPx.coerceAtLeast(0).toDp() })
+                        .verticalScroll(rememberScrollState())
                 ) {
                     when (panel) {
                         AnnotationTool.STAMP -> StampPalettePanel(

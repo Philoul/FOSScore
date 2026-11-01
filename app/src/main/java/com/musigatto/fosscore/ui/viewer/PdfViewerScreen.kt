@@ -299,6 +299,8 @@ fun PdfViewerScreen(
     var barDragY by remember { mutableFloatStateOf(0f) }
     // the bar goes down to the bottom of the screen, above the navigation bar
     val navigationBottomPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+    // and its tool panels stay clear of the status bar and the navigation bar
+    val statusTopPx = WindowInsets.systemBars.getTop(LocalDensity.current)
     // true only while a finger is on the grip: the bar is see-through while it moves, opaque
     // once it is parked
     var barDragging by remember { mutableStateOf(false) }
@@ -1194,7 +1196,7 @@ fun PdfViewerScreen(
                         }
                     },
                     onHeight = { annBarPx = it },
-                    panelAbove = toolPanelAbove(barDragY, annBarPx, viewport.height + annBarPx),
+                    panelPlace = toolPanelPlace(barDragY, annBarPx, viewport.height + annBarPx, statusTopPx, navigationBottomPx),
                     // the top of the screen: while annotating this bar IS the title bar, and the
                     // grip moves it down out of the way, where it turns see-through so the page
                     // underneath stays readable

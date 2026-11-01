@@ -242,7 +242,9 @@ fun StampPalettePanel(
     ToolBlock(width = STAMP_PANEL_DP.dp) {
         Column(
             modifier = Modifier
-                .heightIn(max = 180.dp)
+                // three rows of eight (24 symbols), the rest a scroll away: the panel was half a
+                // phone's height
+                .heightIn(max = 112.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -259,10 +261,25 @@ fun StampPalettePanel(
             }
         }
         ColorChoices(active = color, invert = invert, onPick = onColor, perRow = STAMP_COLUMNS)
-        Text(
-            "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
-            style = MaterialTheme.typography.bodySmall
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            // persists in Settings: the next session starts with this size
+            TextButton(
+                onClick = onSaveDefault,
+                enabled = !isDefault,
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+            ) {
+                Text(
+                    stringResource(R.string.stamp_default_save),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1
+                )
+            }
+        }
         // the slider is the coarse control; the arrows step 1 px for the last few
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepArrow(label = "−", onClick = { onSize((sizePx - 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
@@ -274,18 +291,6 @@ fun StampPalettePanel(
                 modifier = Modifier.weight(1f),
             )
             StepArrow(label = "+", onClick = { onSize((sizePx + 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
-        }
-        // persists in Settings: the next session starts with this size
-        TextButton(
-            onClick = onSaveDefault,
-            enabled = !isDefault,
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-        ) {
-            Text(
-                stringResource(R.string.stamp_default_save),
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1
-            )
         }
     }
 }

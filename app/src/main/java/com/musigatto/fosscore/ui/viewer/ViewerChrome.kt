@@ -89,6 +89,12 @@ private val NUMBER_FIELD_WIDTH = 112.dp
  * The row deliberately has NO clickable full-width background: it would eat the page taps in the gaps
  * between pills, which are the navigation (spec §3).
  */
+/**
+ * Whether the title bar offers ✎: not while annotating (✓ ends it), and not on a score that cannot
+ * be annotated (a MusicXML score), where it would open nothing, as the menu's entry says.
+ */
+internal fun editEntryShown(editing: Boolean, annotatable: Boolean): Boolean = !editing && annotatable
+
 @Composable
 fun ViewerTitleBar(
     title: String,
@@ -98,6 +104,7 @@ fun ViewerTitleBar(
     onOpenMenu: () -> Unit,
     onToggleEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    annotatable: Boolean = true,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         // rule 7 of the spec: the extra room depends on the width, not on the device. On a phone the
@@ -139,7 +146,7 @@ fun ViewerTitleBar(
             // the pen is picked up here and put down with ✓ at the end of the annotation bar (spec
             // §5 row 1): while annotating the toggle steps aside instead of meaning something else
             // (issue #50). forScore does the same: its own row 1 replaces the title bar.
-            if (!editing) {
+            if (editEntryShown(editing, annotatable)) {
                 Spacer(Modifier.width(8.dp))
                 Pill {
                     PillEntry(

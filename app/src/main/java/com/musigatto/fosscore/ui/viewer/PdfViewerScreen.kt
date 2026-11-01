@@ -1129,6 +1129,7 @@ fun PdfViewerScreen(
                     editing = editing,
                     onOpenMenu = { menu.show(ViewerSurface.MENU) },
                     onToggleEditing = { toggleEditing() },
+                    annotatable = sheetId != null && !format.isMusicXml,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         // edge-to-edge: the pills were slipping under the status bar, and in landscape

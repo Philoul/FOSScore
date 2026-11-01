@@ -286,9 +286,8 @@ fun StampPalettePanel(
             StepArrow(label = "−", onClick = { onSize((sizePx - 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
             Slider(
                 value = sizePx,
-                onValueChange = onSize,
+                onValueChange = { onSize(wholePx(it)) },
                 valueRange = MIN_STAMP_PX..MAX_STAMP_PX,
-                steps = (MAX_STAMP_PX - MIN_STAMP_PX).toInt() - 1,
                 modifier = Modifier
                     .weight(1f)
                     .height(TOOL_SLIDER_DP.dp),

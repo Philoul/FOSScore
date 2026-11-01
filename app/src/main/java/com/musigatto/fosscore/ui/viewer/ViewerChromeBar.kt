@@ -105,8 +105,8 @@ internal fun toolPanelPlace(
     return if (above > below) PanelPlace(above = true, maxHeightPx = above) else PanelPlace(above = false, maxHeightPx = below)
 }
 
-// the width the annotation bar takes on one row: ✕, the four tools, the actions, ✓ and the grip
-private const val ONE_ROW_MIN_DP = 520f
+// the width the annotation bar takes on one row: ✕, the five tools, the actions, ✓ and the grip
+private const val ONE_ROW_MIN_DP = 570f
 
 /** Whether the annotation bar holds on one row at [widthDp]; on two rows otherwise (a phone upright). */
 internal fun annotationBarFitsOneRow(widthDp: Float): Boolean = widthDp >= ONE_ROW_MIN_DP

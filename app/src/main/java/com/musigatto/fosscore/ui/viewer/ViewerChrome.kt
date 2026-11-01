@@ -543,6 +543,13 @@ fun nextToolTap(active: Boolean, panelOpen: Boolean): Boolean = active && !panel
  * fixed width keeps all of them the same so the bar never reshuffles: wide enough for a row of
  * eight stamps or eight colours, so the panels take width rather than half a phone's height.
  */
+/**
+ * A size slider's value, to the pixel. The sliders used to step by 1 px through `steps`, which
+ * Material draws as one tick per step: 18 dots on the pen's 1-20 px, a dashed line on the stamps'
+ * 8-100 px. Rounded here instead, every size slider looks the same.
+ */
+internal fun wholePx(value: Float): Float = value.roundToInt().toFloat()
+
 // every tool panel: eight stamps or the eight colours a row, and a slider no taller than its thumb
 internal const val TOOL_PANEL_DP = 320
 internal const val SWATCHES_PER_ROW = 8
@@ -588,9 +595,8 @@ fun ToolSizePanel(
             StepArrow(label = "-") { onValue((value - 1f).coerceIn(range.start, range.endInclusive)) }
             Slider(
                 value = value,
-                onValueChange = onValue,
+                onValueChange = { onValue(wholePx(it)) },
                 valueRange = range,
-                steps = (range.endInclusive - range.start).toInt() - 1,
                 modifier = Modifier
                     .weight(1f)
                     .height(TOOL_SLIDER_DP.dp)

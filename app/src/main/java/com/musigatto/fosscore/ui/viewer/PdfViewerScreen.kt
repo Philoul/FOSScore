@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -296,6 +297,8 @@ fun PdfViewerScreen(
     var pageFlash by remember { mutableStateOf("") }
     // how far down the annotation bar was dragged out of the way (px). ✓ and ✕ put it back.
     var barDragY by remember { mutableFloatStateOf(0f) }
+    // the bar goes down to the bottom of the screen, above the navigation bar
+    val navigationBottomPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
     // true only while a finger is on the grip: the bar is see-through while it moves, opaque
     // once it is parked
     var barDragging by remember { mutableStateOf(false) }
@@ -1164,7 +1167,7 @@ fun PdfViewerScreen(
                     onDone = { toggleEditing() },
                     // dragging the grip moves the bar over the page; the page keeps its layout
                     onDragBar = { dy ->
-                        barDragY = (barDragY + dy).coerceIn(0f, viewport.height * 0.6f)
+                        barDragY = (barDragY + dy).coerceIn(0f, annotationBarLowest(viewport.height, navigationBottomPx))
                     },
                     onDragState = { dragging -> barDragging = dragging },
                     onStampSymbol = { stampSymbol = it },

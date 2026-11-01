@@ -68,8 +68,16 @@ import com.musigatto.fosscore.score.SheetFormat
 import kotlin.math.roundToInt
 
 /**
+ * How far down the annotation bar can be dragged (px): down to the bottom of the screen, above the
+ * navigation bar. A score that does not fill the height leaves room under it, and that is where
+ * the bar is out of the way. [pageHeightPx] is the room the page has below the bar at the top.
+ */
+internal fun annotationBarLowest(pageHeightPx: Int, bottomInsetPx: Int): Float =
+    (pageHeightPx - bottomInsetPx).coerceAtLeast(0).toFloat()
+
+/**
  * The annotation bar: the title bar's own row while annotating (spec §5: forScore replaces it).
- * ✕ leaves at the leading edge, ✓ at the trailing one, and the tools scroll between them when
+ * ✕ leaves at the leading edge, ✓ and the grip at the trailing one, and the tools scroll between them when
  * they do not fit. Each tool's options drop from the tool itself, not from the bar's edge.
  * It only draws and reports taps; the viewer decides what each tool does.
  */
@@ -155,25 +163,6 @@ internal fun AnnotationBar(
                 .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp + statusBarDp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // the grip: the bar can be dragged down out of the way (spec §5, forScore's ≡), and ✓
-            // puts it back at the top. It only turns see-through while a finger is on it.
-            Box(
-                modifier = Modifier
-                    // 48dp is the minimum touch target; the glyph stays small inside it
-                    .size(48.dp)
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { onDragState(true) },
-                            onDragEnd = { onDragState(false) },
-                            onDragCancel = { onDragState(false) },
-                        ) { change, drag ->
-                            change.consume()
-                            onDragBar(drag.y)
-                        }
-                    }
-                    .semantics { contentDescription = moveLabel },
-                contentAlignment = Alignment.Center,
-            ) { GripIcon() }
             // ✕ and ✓ are the two ways out, at the ends where they cannot be reached by accident.
             // They read as actions, like undo and redo: no fill, never "selected" (issue #56).
             ActionButton(icon = ICON_CLOSE, label = cancelLabel, enabled = true, onClick = onCancel)
@@ -254,6 +243,27 @@ internal fun AnnotationBar(
                 tint = MaterialTheme.colorScheme.primary,
                 onClick = onDone,
             )
+            // the grip: the bar can be dragged down out of the way (spec §5), and ✓ puts it back
+            // at the top. At the trailing edge, away from the menu's ☰ at the leading one, and
+            // drawn with two lines so it does not read as a menu. It only turns see-through while
+            // a finger is on it.
+            Box(
+                modifier = Modifier
+                    // 48dp is the minimum touch target; the glyph stays small inside it
+                    .size(48.dp)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { onDragState(true) },
+                            onDragEnd = { onDragState(false) },
+                            onDragCancel = { onDragState(false) },
+                        ) { change, drag ->
+                            change.consume()
+                            onDragBar(drag.y)
+                        }
+                    }
+                    .semantics { contentDescription = moveLabel },
+                contentAlignment = Alignment.Center,
+            ) { GripIcon() }
         }
         // one tool panel at a time drops from the bar (spec §5). They all step aside
         // while a finger is on the page, like forScore's panels. The panel hangs from its own

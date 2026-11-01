@@ -140,7 +140,7 @@ internal data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit
 // neutral one and the only one that selects and moves; every other tool acts on what it creates and
 // keeps itself in hand until another tool is chosen.
 internal enum class AnnotationTool {
-    SELECT, PEN, ERASER, STAMP;
+    SELECT, PEN, ERASER, STAMP, TEXT;
 
     /** The arrow has no settings: tapping it again does nothing. */
     val hasPanel: Boolean get() = this != SELECT

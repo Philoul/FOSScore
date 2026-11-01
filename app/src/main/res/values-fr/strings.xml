@@ -13,6 +13,8 @@
     <string name="tool_eraser">Gomme</string>
     <string name="tool_select">Sélection</string>
     <string name="tool_stamp">Tampon</string>
+  <string name="tool_text">Texte</string>
+  <string name="text_placeholder">Aa</string>
     <string name="search_label">Rechercher</string>
     <string name="library_title">Bibliothèque</string>
     <string name="empty_library">Aucune partition pour l’instant. Ajoutez-en une avec le bouton Importer.</string>

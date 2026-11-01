@@ -25,7 +25,7 @@ data class Stamp(
     val size: Float,
     // ARGB tint color (null = theme color), applied when the overlay is drawn
     val color: Int? = null,
-    // typed text (#35): symbol = "TEXT" and this is what it says. Null = a symbol.
+    // typed text (#35): symbol = TEXT and this is what it says. Null = a symbol.
     val text: String? = null,
     val font: String? = null,
     val bold: Boolean = false,
@@ -34,4 +34,11 @@ data class Stamp(
     // null = x/y are a place on the page, as on a PDF
     val measure: Int? = null,
     val staff: Int? = null,
-)
+) {
+    companion object {
+        /** symbol of a stamp row that is typed text (#35): its [text] carries the words. */
+        const val TEXT_SYMBOL = "TEXT"
+    }
+}
+
+fun Stamp.isTextStamp(): Boolean = symbol == Stamp.TEXT_SYMBOL

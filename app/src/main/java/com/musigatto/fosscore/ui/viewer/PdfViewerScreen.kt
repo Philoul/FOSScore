@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -63,7 +64,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -334,8 +337,6 @@ fun PdfViewerScreen(
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
     var textPx by rememberSaveable { mutableFloatStateOf(DEFAULT_TEXT_PX) }  // text font size (px at zoom 1)
     var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
-    // the floating text editor: when non-null the editor is open over the page
-    var textDraft by remember { mutableStateOf<TextBoxDraft?>(null) }
     val editScope = rememberCoroutineScope()
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
@@ -357,10 +358,6 @@ fun PdfViewerScreen(
             r.first == r.last -> stringResource(R.string.desc_page, r.first + 1, pageCount)
             else -> stringResource(R.string.desc_page_range, r.first + 1, r.last + 1, pageCount)
         }
-    }
-
-    LaunchedEffect(currentPage) {
-        if (textDraft?.page != null && textDraft?.page != currentPage) textDraft = null
     }
 
     // while annotating the page number is not in the bar: it flashes when the page changes and
@@ -452,7 +449,34 @@ fun PdfViewerScreen(
                 put(st.id, textBoxRect(st, layout.size.width.toFloat(), layout.size.height.toFloat(), hitFit))
             }
         }
-    }    // the next page's ink, same fit: its path only has to land on the paper that page takes, and
+    }
+    // a text's box as the page draws it ([TextStampView]): the same style and wrapping width as the
+    // measured boxes above
+    fun measureText(text: String, sizeFrac: Float): Pair<Float, Float> {
+        val layout = textMeasurer.measure(
+            text,
+            measureStyle.copy(fontSize = textFontSp(textFontPx(sizeFrac, hitFit), measureDensity)),
+            overflow = TextOverflow.Clip,
+            softWrap = true,
+            constraints = Constraints(maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)),
+        )
+        return layout.size.width.toFloat() to layout.size.height.toFloat()
+    }
+    // the text being typed (#35) is written once it is over: placed, edited or deleted as it stands
+    fun finishTyping() {
+        val draft = editor.typing ?: return
+        val sid = sheetId
+        if (sid == null || draft.page != currentPage || hitFit.width <= 0f) {
+            editor.dropTyping()
+            return
+        }
+        val (w, h) = measureText(draft.text, draft.size)
+        val typed = draftStamp(draft, sid, w, h, hitFit)
+        editor.endTyping(draft.page, typingOutcome(draft, typed), PageEdit(pageStamps, pageStrokes))
+    }
+    // while a text is typed in, the field draws it: its row steps aside
+    val shownStamps = editor.typing?.origin?.let { o -> pageStamps.filter { it.id != o.id } } ?: pageStamps
+    // the next page's ink, same fit: its path only has to land on the paper that page takes, and
     // PageOverlay stretches it there
     val companionInkDraws = remember(companionStrokes, hitFit, invert) {
         inkDrawsOf(companionStrokes, hitFit, invert)
@@ -500,6 +524,8 @@ fun PdfViewerScreen(
             // the bar always starts at the top
             barDragY = 0f
         } else {
+            // a text still being typed is kept as it stands, as ✓ keeps everything
+            finishTyping()
             // back to the pages as the user set them
             viewer.restoreReadingMode()
             editor.clearHistory()
@@ -554,12 +580,14 @@ fun PdfViewerScreen(
     val currentPageEdit by rememberUpdatedState(PageEdit(pageStamps, pageStrokes))
 
     val applyNext: () -> Unit = {
+        finishTyping()
         playbackVm.pageTurnedByHand()
         val f = branch.next()
         currentPage = f.page
         halfTurned = f.halfTurned
     }
     val applyPrev: () -> Unit = {
+        finishTyping()
         playbackVm.pageTurnedByHand()
         val f = branch.prev()
         currentPage = f.page
@@ -629,6 +657,7 @@ fun PdfViewerScreen(
     // ✕ leaves without what was drawn in this session, and asks first when there is something to
     // lose; ✓ is the plain way out and keeps everything (issue #50)
     val onCancelEditing: () -> Unit = {
+        editor.dropTyping()
         if (editor.hasSessionChanges) confirmDiscard = true else toggleEditing()
     }
 
@@ -641,12 +670,23 @@ fun PdfViewerScreen(
     }
 
     BackHandler(onBack = onBack)
+    // while a text is typed, back finishes it (the keyboard went with the first back)
+    BackHandler(enabled = editor.typing != null) { finishTyping() }
 
     // keyboard / pedal page turns: the viewer root holds the focus, otherwise key events reach
     // nothing and only the on-screen buttons turn pages. Preview so a focused button or slider
     // does not swallow the key first.
     val keyFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyFocus.requestFocus() }
+    // a text is typed with the text tool, while annotating: taking another tool or leaving
+    // finishes it. Once no text has the keys, they go back to the viewer (pedals, page turns).
+    LaunchedEffect(editing, tool) {
+        if (editor.typing != null && (!editing || tool != AnnotationTool.TEXT)) finishTyping()
+    }
+    LaunchedEffect(editor.typing == null) { if (editor.typing == null) keyFocus.requestFocus() }
+    // where the page's box starts in the window, and how far down the keyboard leaves it visible
+    var viewportTop by remember { mutableFloatStateOf(0f) }
+    val visibleBottom by rememberVisibleBottom()
 
     // the page reached and when, on every turn and when the score closes: back to it if the
     // score opens again a short while later (Settings.lastPage)
@@ -900,7 +940,8 @@ fun PdfViewerScreen(
             .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
             .then(stylusHoverMod)
             .onPreviewKeyEvent { e ->
-                val turn = pageTurnFor(e.key, e.isShiftPressed) ?: return@onPreviewKeyEvent false
+                val turn = pageTurnFor(e.key, e.isShiftPressed, typing = editor.typing != null)
+                    ?: return@onPreviewKeyEvent false
                 // a held key repeats: turn one page per press, not a burst
                 if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
                     if (turn == PageTurn.NEXT) applyNext() else applyPrev()
@@ -910,6 +951,18 @@ fun PdfViewerScreen(
             .focusRequester(keyFocus)
             .focusable()
     ) {
+        // A text typed low on the page would be under the keyboard: the page goes up while it is
+        // typed, just enough for the text and a line more to show above the keyboard.
+        val typingNow = editor.typing
+        val lift = if (typingNow == null || hitFit.height <= 0f) 0f else {
+            val k = zoom.transform.scale
+            val (_, h) = measureText(typingNow.text.ifEmpty { " " }, typingNow.size)
+            val line = textFontPx(typingNow.size, hitFit) * 1.3f
+            val textBottom = viewportTop + pageFit.top + zoom.transform.offset.y +
+                (typingNow.top * hitFit.height + h + line) * k
+            (textBottom - visibleBottom).coerceAtLeast(0f)
+        }
+        val pageLift by animateFloatAsState(lift, label = "pageLift")
         // The page lives in its own box: in edit mode it starts below the chrome instead of under
         // it (#19), and `viewport` is that box, so fit, zoom, tap zones and the loupe all follow.
         Box(
@@ -917,6 +970,9 @@ fun PdfViewerScreen(
                 .fillMaxSize()
                 .padding(top = chromeInset + bandTopInset, bottom = bandInset)
                 .onSizeChanged { viewport = it }
+                .onGloballyPositioned { viewportTop = it.positionInWindow().y }
+                // the touches follow the page up: the layer moves them with it
+                .graphicsLayer { translationY = -pageLift }
         ) {
             if (error != null) {
                 Column(
@@ -1019,26 +1075,44 @@ fun PdfViewerScreen(
                     // TEXT tool (#35): the measured rects (draw = hit = selection) go straight
                     // from the shared map, so the gesture never diverges from the draw.
                     textRects = textRects,
-                    onTextBoxTap = { norm, stamp, screenPos ->
-                        if (tool == AnnotationTool.TEXT && sheetId != null) {
-                            val fit = RectPx(0f, 0f, currentPageFit.width, currentPageFit.height)
-                            val centre = stampCenterInside(norm.x, norm.y, textSizePxToFrac(textPx, fit), fit)
-                            if (stamp == null) {
-                                // NEW box: open the editor there; it commits on IME Done.
-                                textDraft = TextBoxDraft(
-                                    page = currentPage,
-                                    replacing = null,
-                                    position = norm,
-                                    screenPos = screenPos,
-                                )
-                            } else {
-                                // EDIT existing: hide the row while editing; cancel unhides it.
-                                textDraft = TextBoxDraft(
-                                    page = currentPage,
-                                    replacing = stamp,
-                                    position = norm,
-                                    screenPos = screenPos,
-                                )
+                    // the text tool types on the page (#35): a tap on a text types in it, a tap
+                    // elsewhere finishes the text being typed, or starts a new one there
+                    onTextBoxTap = { norm, stamp, _ ->
+                        if (tool == AnnotationTool.TEXT && sheetId != null && hitFit.width > 0f) {
+                            val typing = editor.typing
+                            when {
+                                stamp != null && stamp.id != typing?.origin?.id -> {
+                                    finishTyping()
+                                    val box = textRects[stamp.id] ?: stampRect(stamp, hitFit)
+                                    editor.startTyping(
+                                        TextDraft(
+                                            page = currentPage,
+                                            origin = stamp,
+                                            text = stamp.text.orEmpty(),
+                                            size = stamp.size,
+                                            color = stamp.color,
+                                            left = box.left / hitFit.width,
+                                            top = box.top / hitFit.height,
+                                        )
+                                    )
+                                }
+                                typing != null -> finishTyping()
+                                else -> {
+                                    val size = textSizePxToFrac(textPx, hitFit)
+                                    val (_, lineH) = measureText(" ", size)
+                                    val corner = newTextCorner(norm, lineH, hitFit)
+                                    editor.startTyping(
+                                        TextDraft(
+                                            page = currentPage,
+                                            origin = null,
+                                            text = "",
+                                            size = size,
+                                            color = textColor,
+                                            left = corner.x,
+                                            top = corner.y,
+                                        )
+                                    )
+                                }
                             }
                         }
                     },
@@ -1071,7 +1145,7 @@ fun PdfViewerScreen(
                     activeColor = penColor,
                     eraserPx = eraserPx,
                     penWidthPx = penWidthPx,
-                    pageStamps = pageStamps,
+                    pageStamps = shownStamps,
                     dragStamp = editor.dragStamp,
                     selectionRect = selectionRect,
                     strokeSelection = strokeSelection,
@@ -1085,21 +1159,35 @@ fun PdfViewerScreen(
                     // own content, so the zoom layer is not used
                     modifier = if (spread) spreadMod.then(gestureMod) else gestureMod,
                 )
-                // TEXT tool (#35): the floating editor over the page.
-                TextBoxEditorIfOpen(
-                    textDraft = textDraft,
-                    currentPage = currentPage,
-                    hitFit = hitFit,
-                    textPx = textPx,
-                    textColor = textColor,
-                    textMeasurer = textMeasurer,
-                    sheetId = sheetId,
-                    currentPageFit = currentPageFit,
-                    editor = editor,
-                    currentPageEdit = currentPageEdit,
-                    invert = invert,
-                    onDismiss = { textDraft = null },
-                )
+                // the text being typed (#35): the keyboard's field, where the text is and as the
+                // page draws it, in the same transform as the stamps (so at any zoom too)
+                val draft = editor.typing
+                if (draft != null && draft.page == currentPage && !spread && sheetId != null) {
+                    val (w, h) = measureText(draft.text.ifEmpty { " " }, draft.size)
+                    val box = textBoxRect(draftStamp(draft, sheetId, w, h, hitFit), w, h, hitFit)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                transformOrigin = TransformOrigin(0f, 0f)
+                                translationX = pageFit.left + zoom.transform.offset.x
+                                translationY = pageFit.top + zoom.transform.offset.y
+                                scaleX = zoom.transform.scale
+                                scaleY = zoom.transform.scale
+                            }
+                    ) {
+                        TypingField(
+                            key = editor.typingKey,
+                            initial = draft.text,
+                            topLeft = Offset(box.left, box.top),
+                            fontPx = textFontPx(draft.size, hitFit),
+                            maxWidthPx = hitFit.width * TEXT_MAX_WRAP - 16f,
+                            color = pageInkTint(draft.color, invert),
+                            onText = { typed -> editor.retype { it.copy(text = typed) } },
+                            onDone = { finishTyping() },
+                        )
+                    }
+                }
             } else {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
@@ -1182,8 +1270,14 @@ fun PdfViewerScreen(
                     onPenWidth = { penWidthPx = it },
                     onEraserPx = { eraserPx = it },
                     onPenColor = { penColor = it },
-                    onTextPx = { textPx = it },
-                    onTextColor = { textColor = it },
+                    onTextPx = { px ->
+                        textPx = px
+                        editor.retype { it.copy(size = textSizePxToFrac(px, hitFit)) }
+                    },
+                    onTextColor = { argb ->
+                        textColor = argb
+                        editor.retype { it.copy(color = argb) }
+                    },
                     onStampColor = { argb ->
                         stampColor = argb
                         // the tint also recolours the selected stamp: the arrow changes a
@@ -1315,112 +1409,6 @@ fun PdfViewerScreen(
                     editor.cancelSession()
                     toggleEditing()
                 },
-            )
-        }
-    }
-}
-
-/**
- * Floating editor for a text box (#35): renders only when [textDraft] is non-null.
- * Extracted to keep the main composable clean and avoid parser issues with nested lambdas.
- */
-@Composable
-private fun TextBoxEditorIfOpen(
-    textDraft: TextBoxDraft?,
-    currentPage: Int,
-    hitFit: RectPx,
-    textPx: Float,
-    textColor: Int?,
-    textMeasurer: androidx.compose.ui.text.TextMeasurer,
-    sheetId: Long?,
-    currentPageFit: RectPx,
-    editor: AnnotationViewModel,
-    currentPageEdit: PageEdit,
-    invert: Boolean,
-    onDismiss: () -> Unit,
-) {
-    textDraft?.let { draft ->
-        if (draft.page == currentPage) {
-            val st = draft.replacing
-            val sizeFrac = st?.size ?: textSizePxToFrac(textPx, hitFit)
-            val fontPx = textFontPx(sizeFrac, hitFit)
-            val initialText = st?.text.orEmpty()
-            val editorColor = st?.color ?: textColor
-            val commitStyle = LocalTextStyle.current.copy(
-                fontSize = textFontSp(fontPx, LocalDensity.current)
-            )
-            TextBoxEditor(
-                draft = draft,
-                initialText = initialText,
-                fontPx = fontPx,
-                color = editorColor,
-                invert = invert,
-                onDismiss = onDismiss,
-                onCommit = { newText ->
-                    if (draft.replacing == null) {
-                        // NEW box: only insert if text is non-empty
-                        if (newText.isNotBlank() && sheetId != null &&
-                            currentPageFit.width > 0f && currentPageFit.height > 0f
-                        ) {
-                            val fit = RectPx(0f, 0f, currentPageFit.width, currentPageFit.height)
-                            val centre = stampCenterInside(draft.position.x, draft.position.y, sizeFrac, fit)
-                            // re-measure to get the exact box size for the new row
-                            val layout = textMeasurer.measure(
-                                newText,
-                                commitStyle,
-                                overflow = TextOverflow.Clip,
-                                softWrap = true,
-                                constraints = Constraints(
-                                    maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)
-                                ),
-                            )
-                            val box = textBoxRect(
-                                Stamp(
-                                    sheetId = sheetId,
-                                    page = currentPage,
-                                    symbol = Stamp.TEXT_SYMBOL,
-                                    x = centre.x,
-                                    y = centre.y,
-                                    size = sizeFrac,
-                                    text = newText,
-                                ),
-                                layout.size.width.toFloat(), layout.size.height.toFloat(), hitFit
-                            )
-                            editor.placeStamp(
-                                currentPage,
-                                Stamp(
-                                    sheetId = sheetId,
-                                    page = currentPage,
-                                    symbol = Stamp.TEXT_SYMBOL,
-                                    x = box.center().x / fit.width,
-                                    y = box.center().y / fit.height,
-                                    size = sizeFrac,
-                                    text = newText,
-                                    color = textColor
-                                ),
-                                currentPageEdit,
-                            )
-                        }
-                    } else {
-                        // EDIT existing: empty text = delete the row
-                        if (newText.isBlank()) {
-                            editor.deleteSelection(
-                                currentPage, draft.replacing, emptyList(), currentPageEdit
-                            )
-                        } else {
-                            editor.editTextBox(
-                                currentPage, draft.replacing,
-                                draft.replacing.copy(
-                                    text = newText,
-                                    color = textColor ?: draft.replacing.color,
-                                ),
-                                currentPageEdit
-                            )
-                        }
-                    }
-                    onDismiss()
-                },
-                modifier = Modifier.fillMaxSize(),
             )
         }
     }

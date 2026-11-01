@@ -381,8 +381,11 @@ fun PdfViewerScreen(
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
     // the first frame and the overlay does not wait for a draw to land.
     val pageBox = pageSource?.pageSize(currentPage)
-    // the DAO already returns only this page's rows; this drops the ones deleted a second ago
-    val pageStamps = remember(stamps, editor.hiddenStampIds) { stamps.filter { it.id !in editor.hiddenStampIds } }
+    // the DAO already returns only this page's rows; pendingStamps are the ones it has not handed
+    // back yet (distinctBy drops the copy once the flow shows them), and this drops the ones
+    // deleted a second ago
+    val pageStamps =
+        (stamps + editor.pendingStamps).distinctBy { it.id }.filter { it.id !in editor.hiddenStampIds }
     val pageStrokes = remember(strokes, editor.hiddenStrokeIds) { strokes.filter { it.id !in editor.hiddenStrokeIds } }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
@@ -491,6 +494,12 @@ fun PdfViewerScreen(
             }
         }
     }
+
+    // The frame each annotation snapshot is taken against. The gesture's pointerInput(Unit) never
+    // restarts, so the callbacks captured there must read through a state holder: a plain val
+    // (pageStamps, pageFit) would stay the first composition's forever, and every undo would put
+    // the page of the screen's first frame back — the "undo undoes everything at once" bug.
+    val currentPageEdit by rememberUpdatedState(PageEdit(pageStamps, pageStrokes))
 
     val applyNext: () -> Unit = {
         playbackVm.pageTurnedByHand()
@@ -935,8 +944,11 @@ fun PdfViewerScreen(
                         if (tool == AnnotationTool.STAMP && sheetId != null) {
                             // the stamp stays in hand: the next tap places another one
                             // the whole square lands on the page, never half of it off the edge
-                            val size = stampSizePxToFrac(placePx, hitFit)
-                            val centre = stampCenterInside(pos.x, pos.y, size, hitFit)
+                            // (placePx and tool are State, so a stale capture still reads fresh;
+                            // the page state and the fit go through the holders declared above)
+                            val fit = RectPx(0f, 0f, currentPageFit.width, currentPageFit.height)
+                            val size = stampSizePxToFrac(placePx, fit)
+                            val centre = stampCenterInside(pos.x, pos.y, size, fit)
                             editor.placeStamp(
                                 currentPage,
                                 Stamp(
@@ -948,7 +960,7 @@ fun PdfViewerScreen(
                                     size = size,
                                     color = stampColor
                                 ),
-                                PageEdit(pageStamps, pageStrokes),
+                                currentPageEdit,  // fresh: the delegates above the gesture
                             )
                         }
                     },

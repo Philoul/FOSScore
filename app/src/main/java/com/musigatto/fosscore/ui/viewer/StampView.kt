@@ -86,10 +86,13 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
     FINGERING_9(0xED27, null)
 }
 
-// tint colors that read well on light and dark backgrounds
+// tint colors that read well on light and dark backgrounds. White stores as white; in negative
+// mode inkTint renders it BLACK, good for painting over the page's own (now white) notes. On a
+// plain white page with negative off it blends in — that is the nature of a white ink.
 val SWATCH_COLORS = listOf(
     Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047),
-    Color(0xFFFB8C00), Color(0xFF8E24AA), Color(0xFF757575)
+    Color(0xFFFB8C00), Color(0xFF8E24AA), Color(0xFF757575),
+    Color(0xFFFFFFFF),
 )
 
 // null = theme color; otherwise the ARGB that was saved
@@ -256,9 +259,10 @@ fun StampPalettePanel(
     }
 }
 
-/** 1 px step button beside the slider: 32 dp of chrome, no ripple ring stealing the tap. */
+/** 1 px step button beside the slider: 32 dp of chrome, no ripple ring stealing the tap.
+ * Shared with the other size panels (pen, eraser; issue #59: every size control is − slider +). */
 @Composable
-private fun StepArrow(label: String, onClick: () -> Unit) {
+internal fun StepArrow(label: String, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(0.dp),

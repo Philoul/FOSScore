@@ -179,6 +179,11 @@ internal fun Modifier.pageGestures(
             // handle in use: (base object, grabbed corner) while scaling
             var resizing: Resizing? = null
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SELECT) {
+                // a tap re-selects from scratch: the drag box (dragStamp/dragStrokes) still holds
+                // the PREVIOUS selection's position, and the handles would hang there while the
+                // resize acts on the newly picked object
+                editor.dragStamp = null
+                editor.dragStrokes = null
                 // 1) a handle on a STROKE's selection box wins over everything else:
                 //    entering by the corner stretches, entering inside moves. Stamps
                 //    have no handles (a corner drag sized them by accident); their size

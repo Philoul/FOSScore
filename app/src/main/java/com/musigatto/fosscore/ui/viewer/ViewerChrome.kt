@@ -555,8 +555,9 @@ fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
 }
 
 /**
- * Tool panel with one labelled slider: pen thickness, eraser size. [lead] sits above it, for the
- * settings a tool shares a panel with (the pen's colour, issue #56).
+ * Tool panel with one labelled slider: pen thickness, eraser size (issue #59: every size control
+ * is − slider +, the pattern the stamp's size follows). [lead] sits above it, for the settings a
+ * tool shares a panel with (the pen's colour, issue #56).
  */
 @Composable
 fun ToolSizePanel(
@@ -569,19 +570,26 @@ fun ToolSizePanel(
     ToolBlock {
         lead?.invoke(this)
         Text("$label · ${value.roundToInt()} px", style = MaterialTheme.typography.bodySmall)
-        Slider(
-            value = value,
-            onValueChange = onValue,
-            valueRange = range,
-            steps = (range.endInclusive - range.start).toInt() - 1,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StepArrow(label = "-") { onValue((value - 1f).coerceIn(range.start, range.endInclusive)) }
+            Slider(
+                value = value,
+                onValueChange = onValue,
+                valueRange = range,
+                steps = (range.endInclusive - range.start).toInt() - 1,
+                modifier = Modifier.weight(1f)
+            )
+            StepArrow(label = "+") { onValue((value + 1f).coerceIn(range.start, range.endInclusive)) }
+        }
     }
 }
 
 /**
  * The tint swatches, the same grid wherever a tool has a colour (issue #56: the colour lives in the
- * panel of the tool that uses it). The null entry is the default colour, shown as the ink it really
- * draws: black, white in negative mode.
+ * panel of the tool that uses it). The null entry is the default colour. Every swatch shows what
+ * really lands on the page: the same inkTint the ink takes, so in negative mode the swatches are
+ * shown inverted (the white swatch shows black, the default shows white) — the square never lies
+ * about the ink (issue #35).
  */
 @Composable
 fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
@@ -589,7 +597,7 @@ fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             row.forEach { argb ->
                 ColorSwatchButton(
-                    color = if (argb == null) inkTint(null, invert) else Color(argb),
+                    color = inkTint(argb, invert),
                     selected = active == argb,
                     onClick = { onPick(argb) }
                 )

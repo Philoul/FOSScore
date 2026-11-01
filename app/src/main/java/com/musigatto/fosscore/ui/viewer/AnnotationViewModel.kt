@@ -54,6 +54,10 @@ internal class AnnotationViewModel(
     // --- the edits, on screen before the DB confirms them ---
     // ink already lifted that the DB has not handed back yet: without this the stroke blinks ~20 ms
     var pendingInk by mutableStateOf<List<Stroke>>(emptyList())
+    // the same optimistic layer for stamps: a placed stamp is offered at once, so the undo snapshot
+    // that the NEXT edit takes includes it even if Room's flow has not come back yet ( Undo would
+    // otherwise eat both stamps at once, since the snapshot was read without them)
+    var pendingStamps by mutableStateOf<List<Stamp>>(emptyList())
     // optimistic delete: the view hides what is gone at once and the DB confirms afterward.
     // ponytail: a Set of ids pruned by settle(); enough, because deleting never brings ids back.
     var hiddenStampIds by mutableStateOf<Set<Long>>(emptySet())
@@ -90,14 +94,19 @@ internal class AnnotationViewModel(
      * page a moment after being deleted or erased.
      */
     private fun forget(ids: Collection<Long>) {
-        if (ids.isNotEmpty()) pendingInk = pendingInk.filterNot { it.id in ids }
+        if (ids.isNotEmpty()) {
+            pendingInk = pendingInk.filterNot { it.id in ids }
+            pendingStamps = pendingStamps.filterNot { it.id in ids }
+        }
     }
 
     /** After a restore the page is exactly [strokes]: anything else in the optimistic layer is inked
      * over a state that no longer exists (an undone stroke would stay on screen forever). */
-    private fun keepOnlyInkOf(strokes: List<Stroke>) {
-        val ids = strokes.map { it.id }.toSet()
-        pendingInk = pendingInk.filter { it.id in ids }
+    private fun keepOnly(edit: PageEdit) {
+        val stampIds = edit.stamps.map { it.id }.toSet()
+        pendingStamps = pendingStamps.filter { it.id in stampIds }
+        val strokeIds = edit.strokes.map { it.id }.toSet()
+        pendingInk = pendingInk.filter { it.id in strokeIds }
     }
 
     /** Stacks [current] (the state before the change) for [page]. */
@@ -132,6 +141,7 @@ internal class AnnotationViewModel(
         clearHidden()
         // the pages are about to be replaced: nothing of the optimistic layer can stay on top
         pendingInk = emptyList()
+        pendingStamps = emptyList()
         viewModelScope.launch {
             pages.forEach { (page, edit) ->
                 stamps.restorePage(id, page, edit.stamps)
@@ -174,6 +184,9 @@ internal class AnnotationViewModel(
         }
         // the DB has this ink already: drop it from the optimistic layer
         pendingInk = pendingInk.filter { p -> dbStrokes.none { it.id == p.id && it.points == p.points } }
+        pendingStamps = pendingStamps.filter { p ->
+            dbStamps.none { it.id == p.id && it.x == p.x && it.y == p.y && it.size == p.size }
+        }
     }
 
     fun undo(page: Int, current: PageEdit) {
@@ -186,7 +199,7 @@ internal class AnnotationViewModel(
         // the "looks deleted now" cache is stale after a restore: the
         // snapshots go back with their original ids
         clearHidden()
-        keepOnlyInkOf(edit.strokes)
+        keepOnly(edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
             strokes.restorePage(id, target, edit.strokes)
@@ -200,7 +213,7 @@ internal class AnnotationViewModel(
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
         clearHidden()
-        keepOnlyInkOf(edit.strokes)
+        keepOnly(edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
             strokes.restorePage(id, target, edit.strokes)
@@ -215,7 +228,7 @@ internal class AnnotationViewModel(
         selectedStrokeIds = emptySet()
         hiddenStampIds = hiddenStampIds + listOfNotNull(stamp?.id)
         hiddenStrokeIds = hiddenStrokeIds + selection.map { it.id }
-        forget(selection.map { it.id })
+        forget(selection.map { it.id } + listOfNotNull(stamp?.id))
         viewModelScope.launch {
             stamp?.let { stamps.delete(it) }
             if (selection.isNotEmpty()) strokes.deleteAll(selection)
@@ -249,7 +262,7 @@ internal class AnnotationViewModel(
         selectedStrokeIds = emptySet()
         hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
         hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
-        forget(goneStrokes.map { it.id })
+        forget(goneStamps.map { it.id } + goneStrokes.map { it.id })
         viewModelScope.launch {
             if (goneStamps.isNotEmpty()) stamps.deleteAll(goneStamps)
             if (goneStrokes.isNotEmpty()) {
@@ -274,7 +287,11 @@ internal class AnnotationViewModel(
     /** A placed stamp: it stays selected so its box shows where it landed. */
     fun placeStamp(page: Int, stamp: Stamp, current: PageEdit) {
         pushUndo(current, page)
-        viewModelScope.launch { selectedId = stamps.insert(stamp) }
+        viewModelScope.launch {
+            val stored = stamp.copy(id = stamps.insert(stamp))
+            pendingStamps = pendingStamps + stored
+            selectedId = stored.id
+        }
     }
 
     /** The colour panel recolours the selected stamp too, as forScore's selection tool does. */

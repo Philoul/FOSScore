@@ -21,8 +21,9 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -721,9 +722,11 @@ fun PdfViewerScreen(
     // A MusicXML page fills the viewport, while the system bars, and the title bar and page
     // selector when the centre tap shows them, are drawn over it (a PDF has a paper margin there).
     // The music keeps their room free: the sidebars on both sides, the top and bottom chrome as
-    // page margins. Fixed, so showing the bars never lays the music out again.
+    // page margins. Fixed, so showing the bars never lays the music out again; the keyboard is not
+    // one of them (safeDrawing counts it): a text typed on the page laid the score out again as the
+    // keyboard came up, and the text being typed went with the old pages
     val density = LocalDensity.current
-    val bars = WindowInsets.safeDrawing
+    val bars = WindowInsets.systemBars.union(WindowInsets.displayCutout)
     val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
     val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
     val chromeBottom = bars.getBottom(density) +

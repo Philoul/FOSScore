@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.musicxml
 
 import kotlin.math.abs
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -84,6 +85,8 @@ internal object VerovioOptions {
         put("pageMarginRight", MARGIN)
         put("pageMarginTop", MARGIN + spec.marginTop * 100 / spec.scale)
         put("pageMarginBottom", MARGIN + spec.marginBottom * 100 / spec.scale)
+        // the number of each measure and staff in the SVG (data-n): what annotations hang on
+        put("svgAdditionalAttribute", JSONArray(listOf("measure@n", "staff@n")))
         put("breaks", "auto")
         put("footer", "none")
         put("header", "auto")

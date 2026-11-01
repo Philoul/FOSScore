@@ -1,8 +1,9 @@
 package com.musigatto.fosscore.musicxml
 
 /**
- * Where the notes and systems of one page are, read from Verovio's SVG. Lets the viewer draw a
- * playback cursor over the page bitmap without rendering the page again.
+ * Where the notes, systems and measures of one page are, read from Verovio's SVG. Lets the viewer
+ * draw a playback cursor over the page bitmap without rendering the page again, and hang
+ * annotations on a measure rather than on a place of the page.
  *
  * Positions are in SVG units: multiply by `bitmapWidth / width` to get bitmap pixels.
  */
@@ -11,10 +12,33 @@ class PageGeometry private constructor(
     val noteIds: Set<String>,
     private val heads: Map<String, Head>,
     /** Page width in SVG units. */
-    val width: Float
+    val width: Float,
+    /** Page height in SVG units. */
+    val height: Float = 0f,
+    /** The measures of the page, in reading order. */
+    val measures: List<Measure> = emptyList(),
 ) {
     /** Notehead centre ([x], [y]), the vertical extent of its system and the staff [space]. */
     class Head(val x: Float, val y: Float, val top: Float, val bottom: Float, val space: Float)
+
+    /** A measure: its number as the file writes it ([n], "" without one) and its [staves]. */
+    class Measure(val n: String, val staves: List<StaffBox>)
+
+    /**
+     * One staff of a measure: staff number [n] (1 = top staff of the score), from the [left] to
+     * the [right] end of its lines, [top] and [bottom] line, and the [space] between two lines.
+     * Its music starts at [start], the left of the measure's first notehead: after the clef, key
+     * and time signature when the measure begins a line ([left] when it has no note).
+     */
+    class StaffBox(
+        val n: Int,
+        val left: Float,
+        val right: Float,
+        val top: Float,
+        val bottom: Float,
+        val space: Float,
+        val start: Float = left,
+    )
 
     /** The visible notehead with this id, or null (hidden note, or not on this page). */
     fun head(id: String): Head? = heads[id]
@@ -23,7 +47,10 @@ class PageGeometry private constructor(
         private val INNER = Regex("""class="definition-scale"[^>]*viewBox="0 0 ([\d.]+) ([\d.]+)"""")
         private val MARGIN = Regex("""class="page-margin" transform="translate\((-?[\d.]+), (-?[\d.]+)\)"""")
         private val SYSTEM = Regex("""class="system"""")
-        private val STAFF_LINES = Regex("""class="staff">((?:<path d="M-?\d+ -?\d+ L-?\d+ -?\d+" stroke-width="\d+"/>)+)""")
+        // a staff's lines; the staff may carry its number (data-n, see VerovioOptions)
+        private val STAFF_LINES = Regex("""class="staff"(?: data-n="(\d+)")?>((?:<path d="M-?\d+ -?\d+ L-?\d+ -?\d+" stroke-width="\d+"/>)+)""")
+        private val MEASURE = Regex("""class="measure"(?: data-n="([^"]*)")?>""")
+        private val LINE = Regex("""<path d="M(-?\d+) (-?\d+) L(-?\d+) """)
         private val LINE_Y = Regex("""<path d="M-?\d+ (-?\d+) L""")
         private val NOTE = Regex("""<g id="([^"]+)" class="note"""")
         private val HEAD = Regex(
@@ -37,7 +64,9 @@ class PageGeometry private constructor(
          * Parses the SVG as Verovio wrote it, with `svgFormatRaw` (one line, before the MuPDF fixes).
          */
         fun parse(svg: String): PageGeometry {
-            val innerWidth = INNER.find(svg)?.groupValues?.get(1)?.toFloat() ?: 1f
+            val inner = INNER.find(svg)
+            val innerWidth = inner?.groupValues?.get(1)?.toFloat() ?: 1f
+            val innerHeight = inner?.groupValues?.get(2)?.toFloat() ?: 0f
             val margin = MARGIN.find(svg)
             val mx = margin?.groupValues?.get(1)?.toFloat() ?: 0f
             val my = margin?.groupValues?.get(2)?.toFloat() ?: 0f
@@ -48,7 +77,7 @@ class PageGeometry private constructor(
             val systems = starts.mapIndexed { i, start ->
                 val end = starts.getOrElse(i + 1) { svg.length }
                 val ys = STAFF_LINES.findAll(svg.substring(start, end))
-                    .flatMap { m -> LINE_Y.findAll(m.groupValues[1]).map { it.groupValues[1].toFloat() } }.toList()
+                    .flatMap { m -> LINE_Y.findAll(m.groupValues[2]).map { it.groupValues[1].toFloat() } }.toList()
                 val space = if (ys.size >= 2) ys[1] - ys[0] else DEFAULT_SPACE
                 System(start, (ys.minOrNull() ?: 0f) + my, (ys.maxOrNull() ?: 0f) + my, space)
             }
@@ -66,7 +95,34 @@ class PageGeometry private constructor(
                     space
                 )
             }
-            return PageGeometry(NOTE.findAll(svg).map { it.groupValues[1] }.toSet(), heads, innerWidth)
+            // Verovio draws the staff lines measure by measure: their ends are the measure's ends
+            val measureStarts = MEASURE.findAll(svg).toList()
+            val measures = measureStarts.mapIndexed { i, m ->
+                val end = measureStarts.getOrNull(i + 1)?.range?.first ?: svg.length
+                val body = svg.substring(m.range.last, end)
+                // the first notehead drawn in the measure, on any staff: the staves start together
+                val firstHead = HEAD.findAll(body).filterNot { "visibility=\"hidden\"" in it.value }
+                    .minOfOrNull { it.groupValues[2].toFloat() + mx }
+                val staves = STAFF_LINES.findAll(body).mapIndexedNotNull { k, staff ->
+                    val lines = LINE.findAll(staff.groupValues[2]).toList()
+                    val ys = lines.map { it.groupValues[2].toFloat() }
+                    lines.firstOrNull()?.let { first ->
+                        val left = first.groupValues[1].toFloat() + mx
+                        val right = first.groupValues[3].toFloat() + mx
+                        StaffBox(
+                            n = staff.groupValues[1].toIntOrNull() ?: (k + 1),
+                            left = left,
+                            right = right,
+                            top = ys.min() + my,
+                            bottom = ys.max() + my,
+                            space = if (ys.size >= 2) (ys.max() - ys.min()) / (ys.size - 1) else DEFAULT_SPACE,
+                            start = firstHead?.takeIf { it > left && it < right } ?: left,
+                        )
+                    }
+                }.toList()
+                Measure(m.groupValues[1], staves)
+            }.filter { it.staves.isNotEmpty() }
+            return PageGeometry(NOTE.findAll(svg).map { it.groupValues[1] }.toSet(), heads, innerWidth, innerHeight, measures)
         }
     }
 }

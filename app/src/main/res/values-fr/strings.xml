@@ -242,6 +242,15 @@
     <string name="prefs_shortcuts_was">Cette touche faisait : %1$s</string>
     <string name="key_action_prev_page">Page précédente</string>
     <string name="key_action_next_page">Page suivante</string>
+    <string name="key_action_first_page">Première page</string>
+    <string name="key_action_last_page">Dernière page</string>
+    <string name="key_action_play_pause">Lecture / pause de la musique</string>
+    <string name="key_action_restart">Musique depuis le début</string>
+    <string name="key_action_loop">Boucle activée / désactivée</string>
+    <string name="key_action_metronome">Métronome marche / arrêt</string>
+    <string name="key_action_tap_tempo">Taper le tempo</string>
+    <string name="key_action_show_bar">Afficher / masquer la barre</string>
+    <string name="key_action_annotate">Annoter / terminer</string>
     <string name="key_space">Espace</string>
     <string name="key_enter">Entrée</string>
     <string name="key_numpad_enter">Entrée (pavé numérique)</string>

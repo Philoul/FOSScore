@@ -248,6 +248,15 @@ private fun actionLabel(action: KeyAction): String = stringResource(
     when (action) {
         KeyAction.PREV_PAGE -> R.string.key_action_prev_page
         KeyAction.NEXT_PAGE -> R.string.key_action_next_page
+        KeyAction.FIRST_PAGE -> R.string.key_action_first_page
+        KeyAction.LAST_PAGE -> R.string.key_action_last_page
+        KeyAction.PLAY_PAUSE -> R.string.key_action_play_pause
+        KeyAction.RESTART -> R.string.key_action_restart
+        KeyAction.LOOP -> R.string.key_action_loop
+        KeyAction.METRONOME -> R.string.key_action_metronome
+        KeyAction.TAP_TEMPO -> R.string.key_action_tap_tempo
+        KeyAction.SHOW_BAR -> R.string.key_action_show_bar
+        KeyAction.ANNOTATE -> R.string.key_action_annotate
     }
 )
 

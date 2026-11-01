@@ -240,6 +240,15 @@
     <string name="prefs_shortcuts_was">Esta tecla hacía: %1$s</string>
     <string name="key_action_prev_page">Página anterior</string>
     <string name="key_action_next_page">Página siguiente</string>
+    <string name="key_action_first_page">Primera página</string>
+    <string name="key_action_last_page">Última página</string>
+    <string name="key_action_play_pause">Reproducir / pausar la música</string>
+    <string name="key_action_restart">Música desde el principio</string>
+    <string name="key_action_loop">Bucle activado / desactivado</string>
+    <string name="key_action_metronome">Metrónomo en marcha / parado</string>
+    <string name="key_action_tap_tempo">Marcar el tempo</string>
+    <string name="key_action_show_bar">Mostrar / ocultar la barra</string>
+    <string name="key_action_annotate">Anotar / terminar</string>
     <string name="key_space">Espacio</string>
     <string name="key_enter">Intro</string>
     <string name="key_numpad_enter">Intro (teclado numérico)</string>

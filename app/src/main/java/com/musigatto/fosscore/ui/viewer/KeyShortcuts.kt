@@ -5,10 +5,18 @@ import android.view.KeyEvent
 enum class PageTurn { NEXT, PREV }
 
 /**
- * What a key of a keyboard or a page-turner pedal can do, in the order the preferences offer them.
- * A new action is one entry here and one branch where the viewer runs it.
+ * What a key of a keyboard or a page-turner pedal can do, in the order the preferences offer them:
+ * the actions the viewer already has a button for. A new action is one entry here and one branch
+ * where the viewer runs it.
  */
-enum class KeyAction { PREV_PAGE, NEXT_PAGE }
+enum class KeyAction {
+    // the pages
+    PREV_PAGE, NEXT_PAGE, FIRST_PAGE, LAST_PAGE,
+    // the music (MusicXML) and the metronome
+    PLAY_PAUSE, RESTART, LOOP, METRONOME, TAP_TEMPO,
+    // the screen
+    SHOW_BAR, ANNOTATE,
+}
 
 /** A key, by Android's number for it (the KEYCODE_ of [KeyEvent]), with Shift held or not. */
 data class Shortcut(val keyCode: Int, val shift: Boolean = false)

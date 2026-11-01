@@ -84,6 +84,12 @@ class KeyShortcutsTest {
     }
 
     @Test
+    fun everyActionIsReadBack() {
+        val all = KeyShortcuts(KeyAction.entries.mapIndexed { i, action -> KeyBinding(Shortcut(KeyEvent.KEYCODE_F1 + i), action) })
+        assertEquals(all, KeyShortcuts.parse(all.format()))
+    }
+
+    @Test
     fun nothingSavedMeansTheDefaultsAndAnEmptyListStaysEmpty() {
         assertEquals(defaults, KeyShortcuts.parse(null))
         val none = KeyShortcuts(emptyList())

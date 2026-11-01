@@ -893,6 +893,38 @@ fun PdfViewerScreen(
         }
     }
 
+    // What a key of the keyboard or the pedal does (Settings › Keyboard and pedals): the same as the
+    // button of the bar or the band. An action that has no meaning here (playback on a PDF score)
+    // does nothing.
+    fun runKeyAction(action: KeyAction) {
+        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+        when (action) {
+            KeyAction.PREV_PAGE -> applyPrev()
+            KeyAction.NEXT_PAGE -> applyNext()
+            KeyAction.FIRST_PAGE -> {
+                currentPage = 0
+                halfTurned = false
+            }
+            KeyAction.LAST_PAGE -> {
+                currentPage = (pageCount - 1).coerceAtLeast(0)
+                halfTurned = false
+            }
+            KeyAction.PLAY_PAUSE -> if (format.isMusicXml) {
+                metronomeVm.stop()
+                playbackVm.playPause(notesOnScreen())
+            }
+            KeyAction.RESTART -> if (format.isMusicXml) playbackVm.restart()
+            KeyAction.LOOP -> if (format.isMusicXml) playbackVm.toggleLoop()
+            KeyAction.METRONOME -> startStopMetronome()
+            KeyAction.TAP_TEMPO -> metronomeVm.tap()?.let { bpm ->
+                if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
+            }
+            KeyAction.SHOW_BAR -> if (!editing) navVisible = !navVisible
+            // in, or out keeping what was drawn, as ✓
+            KeyAction.ANNOTATE -> if (canEdit) toggleEditing()
+        }
+    }
+
     // The pages turn with the metronome: a MusicXML score knows its bars, a PDF score has the
     // bars of each page counted by the user (BarPages). Only forward: a page turned back by hand
     // stays until the metronome gets past it. pageCount: a score laid out again changes the bars.
@@ -970,10 +1002,7 @@ fun PdfViewerScreen(
                     ?: return@onPreviewKeyEvent false
                 // a held key repeats: one action per press, not a burst
                 if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
-                    when (action) {
-                        KeyAction.NEXT_PAGE -> applyNext()
-                        KeyAction.PREV_PAGE -> applyPrev()
-                    }
+                    runKeyAction(action)
                 }
                 true
             }

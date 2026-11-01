@@ -238,6 +238,15 @@
     <string name="prefs_shortcuts_was">This key did: %1$s</string>
     <string name="key_action_prev_page">Previous page</string>
     <string name="key_action_next_page">Next page</string>
+    <string name="key_action_first_page">First page</string>
+    <string name="key_action_last_page">Last page</string>
+    <string name="key_action_play_pause">Play / pause the music</string>
+    <string name="key_action_restart">Music from the start</string>
+    <string name="key_action_loop">Loop on / off</string>
+    <string name="key_action_metronome">Metronome start / stop</string>
+    <string name="key_action_tap_tempo">Tap the tempo</string>
+    <string name="key_action_show_bar">Show / hide the bar</string>
+    <string name="key_action_annotate">Annotate / done</string>
     <string name="key_space">Space</string>
     <string name="key_enter">Enter</string>
     <string name="key_numpad_enter">Enter (keypad)</string>

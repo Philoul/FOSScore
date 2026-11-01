@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.library.isTextStamp
+import com.musigatto.fosscore.ui.viewer.hitTextStamp
 import kotlin.math.abs
 
 // Zoom cap. Reference viewers do NOT scale the page with a transform: they redraw it at the
@@ -82,6 +84,10 @@ internal fun Modifier.pageGestures(
     onInkPreview: (List<Offset>) -> Unit,
     onToolsDown: () -> Unit,
     onPlaceStamp: (Offset) -> Unit,
+    // TEXT tool (issue #35): a tap on empty page creates a box; a tap on a box edits it.
+    // The measured rects (draw = hit = selection) come from the shared map.
+    textRects: Map<Long, RectPx> = emptyMap(),
+    onTextBoxTap: (Offset, Stamp?, Offset) -> Unit = { _, _, _ -> },
 ): Modifier {
     // The gesture's pointerInput(Unit) never restarts, so everything it reads from outside its own
     // loop goes through rememberUpdatedState: a captured value would keep the first composition's
@@ -90,6 +96,7 @@ internal fun Modifier.pageGestures(
     val currentCanEdit by rememberUpdatedState(canEdit)
     val currentPageStamps by rememberUpdatedState(stamps)
     val currentPageStrokes by rememberUpdatedState(strokes)
+    val currentTextRects by rememberUpdatedState(textRects)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
     // the page (and the score) the edit belongs to. Not a local copy: this one rests on the page the
     // score opened at, so ink written on page 6 was stored under page 8 and showed up there after
@@ -171,6 +178,9 @@ internal fun Modifier.pageGestures(
             var movingStrokes: List<Stroke>? = null
             var movingStrokesBase: List<Stroke>? = null
             var moveStrokeLastPos = downF
+            // TEXT tool (#35): which text stamp the tap hit (if any), captured on down so the
+            // release branch does not re-hit against a stale map or moved fingers
+            var pickedText: Stamp? = null
             var inkActive = false
             var inkPts = mutableListOf<Offset>()
             var eraserActive = false
@@ -207,7 +217,7 @@ internal fun Modifier.pageGestures(
                     }
                 }
                 if (resizing == null) {
-                    val hitS = hitStamp(downF, currentPageStamps, currentHitFit)
+                    val hitS = hitStamp(downF, currentPageStamps, currentHitFit, currentTextRects)
                     // A tap selects the WORD, not the single stroke. The grouping is
                     // only needed here, on the tap: doing it on every change made it
                     // O(n²) over the page after every stroke.
@@ -261,6 +271,11 @@ internal fun Modifier.pageGestures(
                 movingStamp == null && movingStrokes == null
             ) {
                 onLoupeAnchor(down.position)
+            }
+            // TEXT tool (#35): pick a text stamp by its MEASURED rect (textRects), not the
+            // square stampRect. A tap on empty page → new box; a tap on a box → edit it.
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.TEXT) {
+                pickedText = hitTextStamp(downF, currentPageStamps, currentTextRects)
             }
 
             try {
@@ -428,6 +443,17 @@ internal fun Modifier.pageGestures(
                                 // tap while editing: places the active stamp on the point touched
                                 if (isSwipe) {
                                     if (totalPan.x < 0f) onTurn(PageTurn.NEXT) else onTurn(PageTurn.PREV)
+                                } else if (currentTool == AnnotationTool.TEXT) {
+                                    // TEXT tool: tap creates/edits; swipe is disabled (no page turn)
+                                    if (!onMatte && currentSheetId != null &&
+                                        (aimed || totalPan.getDistance() <= touchSlopPx)
+                                    ) {
+                                        onTextBoxTap(
+                                            pxToNormalized(fitPoint(lastPlacePos), currentHitFit),
+                                            pickedText,
+                                            lastPlacePos,
+                                        )
+                                    }
                                 } else if (currentTool != AnnotationTool.STAMP) {
                                     // the arrow on an empty spot: deselect
                                     editor.clearSelection()

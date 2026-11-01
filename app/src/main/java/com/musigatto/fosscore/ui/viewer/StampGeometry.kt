@@ -154,8 +154,15 @@ fun stampRect(stamp: Stamp, fit: RectPx): RectPx {
     return RectPx(center.x - side / 2f, center.y - side / 2f, side, side)
 }
 
-fun hitStamp(pos: Offset, stamps: List<Stamp>, fit: RectPx): Stamp? =
-    stamps.lastOrNull { stampRect(it, fit).contains(pos) }
+fun hitStamp(
+    pos: Offset,
+    stamps: List<Stamp>,
+    fit: RectPx,
+    textRects: Map<Long, RectPx> = emptyMap(),
+): Stamp? = stamps.lastOrNull { stamp ->
+    (if (stamp.isTextStamp()) textRects[stamp.id] else null)
+        ?.contains(pos) ?: stampRect(stamp, fit).contains(pos)
+}
 
 /**
  * The centre a stamp needs so its WHOLE square stays on the sheet (placement and drag). Placing

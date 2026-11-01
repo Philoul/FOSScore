@@ -1,7 +1,9 @@
 package com.musigatto.fosscore.ui.viewer
 
+import androidx.compose.ui.geometry.Offset
 import com.musigatto.fosscore.library.Stamp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,6 +42,16 @@ class TextStampTest {
         val r = textBoxRect(st, 900f, 40f, fit)
         assertTrue("right ${r.right} over the page", r.right <= fit.width && r.left >= 0f)
         assertTrue("top ${r.top} over the page", r.top >= 0f && r.bottom <= fit.height)
+    }
+
+    @Test
+    fun textStampHitUsesMeasuredTextRect() {
+        val fit = RectPx(0f, 0f, 1000f, 2000f)
+        val stamp = textStamp()
+        val rect = RectPx(100f, 300f, 300f, 40f)
+
+        assertEquals(stamp.id, hitStamp(Offset(110f, 320f), listOf(stamp), fit, mapOf(stamp.id to rect))?.id)
+        assertNull(hitStamp(Offset(490f, 1000f), listOf(stamp), fit, mapOf(stamp.id to rect)))
     }
 
     @Test

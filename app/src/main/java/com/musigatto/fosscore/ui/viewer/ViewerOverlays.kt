@@ -1,8 +1,51 @@
 package com.musigatto.fosscore.ui.viewer
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
+import com.musigatto.fosscore.R
+import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.MAX_BPM
 import com.musigatto.fosscore.metronome.MIN_BPM
@@ -164,4 +207,123 @@ internal fun ViewerOverlays(
             )
         }
     }
+}
+
+/**
+ * What is being edited: the page, the stamp it replaces (if any), and the screen pos
+ * to anchor the editor. When [replacing] is null it is a NEW box; when non-null it
+ * is an edit of an existing row (which is hidden behind the editor).
+ */
+internal data class TextBoxDraft(
+    val page: Int,
+    val replacing: Stamp?,
+    val position: Offset,
+    val screenPos: Offset,
+)
+
+/**
+ * Floating editor for a text box (#35): a single-line BasicTextField that commits on
+ * IME Done or Enter, and cancels on back/outside tap. The box is the same measured
+ * size as the draw/hit rect; the editor just renders the text with the same style.
+ */
+@Composable
+internal fun TextBoxEditor(
+    draft: TextBoxDraft,
+    initialText: String,
+    fontPx: Float,
+    color: Int?,
+    invert: Boolean,
+    onCommit: (String) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember(draft) { FocusRequester() }
+    var text by remember(draft) {
+        mutableStateOf(TextFieldValue(initialText, selection = TextRange(initialText.length)))
+    }
+    var committed by remember(draft) { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose { keyboardController?.hide() }
+    }
+    LaunchedEffect(draft) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+    BackHandler(onBack = onDismiss)
+
+    // IME action "Done" or hardware Enter commits; back/outside cancels
+    val keyboardActions = KeyboardActions(
+        onDone = {
+            if (!committed) {
+                committed = true
+                onCommit(text.text)
+            }
+        }
+    )
+    val keyboardOptions = KeyboardOptions(
+        imeAction = ImeAction.Done,
+        keyboardType = KeyboardType.Text,
+    )
+
+    // the same style the measured rect was built with: fontPx -> sp, color via inkTint
+    val style = LocalTextStyle.current.copy(
+        fontSize = (fontPx / density.density).sp,
+        color = color?.let { inkTint(it, invert) } ?: inkTint(null, invert),
+    )
+    val textLabel = stringResource(R.string.tool_text)
+
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val maxX = with(density) { (maxWidth - 320.dp).toPx().coerceAtLeast(0f) }
+        val maxY = with(density) { (maxHeight - 80.dp).toPx().coerceAtLeast(0f) }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(onClick = onDismiss)
+        )
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        draft.screenPos.x.coerceIn(0f, maxX).roundToInt(),
+                        draft.screenPos.y.coerceIn(0f, maxY).roundToInt(),
+                    )
+                }
+                .widthIn(min = 120.dp, max = 320.dp)
+                .clickable(onClick = {}),
+        ) {
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier
+                    .widthIn(min = 96.dp, max = 296.dp)
+                    .focusRequester(focusRequester)
+                    .semantics { contentDescription = textLabel },
+                textStyle = style,
+                keyboardOptions = keyboardOptions,
+                keyboardActions = keyboardActions,
+                singleLine = true,
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (text.text.isEmpty()) {
+                            Text(
+                                stringResource(R.string.text_placeholder),
+                                style = style.copy(color = style.color.copy(alpha = 0.5f)),
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+        }
+    }
+}
+
+internal fun inkTint(color: Int?, invert: Boolean): Color {
+    val c = color?.let { com.musigatto.fosscore.ui.viewer.stampColor(it, Color.Black) } ?: Color.Black
+    return if (invert) c.copy(red = 1f - c.red, green = 1f - c.green, blue = 1f - c.blue) else c
 }

@@ -81,8 +81,10 @@ internal fun AnnotationBar(
     invert: Boolean,
     penColor: Int?,
     stampColor: Int?,
+    textColor: Int?,
     penWidthPx: Float,
     eraserPx: Float,
+    textPx: Float,
     placePx: Float,
     defaultStampPx: Float,
     pageTouched: Boolean,
@@ -102,8 +104,10 @@ internal fun AnnotationBar(
     onSaveDefault: () -> Unit,
     onPenWidth: (Float) -> Unit,
     onEraserPx: (Float) -> Unit,
+    onTextPx: (Float) -> Unit,
     onPenColor: (Int?) -> Unit,
     onStampColor: (Int?) -> Unit,
+    onTextColor: (Int?) -> Unit,
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -129,6 +133,7 @@ internal fun AnnotationBar(
         val penLabel = stringResource(R.string.tool_pen)
         val eraserLabel = stringResource(R.string.tool_eraser)
         val stampLabel = stringResource(R.string.tool_stamp)
+        val textLabel = stringResource(R.string.tool_text)
         val undoLabel = stringResource(R.string.action_undo)
         val redoLabel = stringResource(R.string.action_redo)
         val deleteLabel = stringResource(R.string.action_delete)
@@ -221,6 +226,16 @@ internal fun AnnotationBar(
                     val px = with(LocalDensity.current) { 22.dp.toPx() }
                     StampView(stampSymbol, sizePx = px, color = LocalContentColor.current)
                 }
+                Spacer(Modifier.width(4.dp))
+                ToolButton(
+                    active = tool == AnnotationTool.TEXT,
+                    panelOpen = openPanel == AnnotationTool.TEXT,
+                    label = textLabel,
+                    onClick = { onTool(AnnotationTool.TEXT) },
+                    modifier = Modifier.onGloballyPositioned {
+                        toolX[AnnotationTool.TEXT] = it.positionInWindow().x
+                    },
+                ) { ToolIcon(ICON_TEXT) }
                 ToolDivider()
                 // Actions (issue #56): never "selected", always the same plain look; greyed when
                 // the action is not available.
@@ -287,6 +302,14 @@ internal fun AnnotationBar(
                             value = eraserPx,
                             range = MIN_ERASER_PX..MAX_ERASER_PX,
                             onValue = onEraserPx,
+                        )
+
+                        AnnotationTool.TEXT -> ToolSizePanel(
+                            label = stringResource(R.string.size_label),
+                            value = textPx,
+                            range = MIN_TEXT_PX..MAX_TEXT_PX,
+                            onValue = onTextPx,
+                            lead = { ColorChoices(active = textColor, invert = invert, onPick = onTextColor) },
                         )
 
                         else -> Unit

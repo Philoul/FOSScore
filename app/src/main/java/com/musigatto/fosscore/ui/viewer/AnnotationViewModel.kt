@@ -172,7 +172,7 @@ internal class AnnotationViewModel(
         if (hiddenStampIds.any { it !in liveStamps }) hiddenStampIds = hiddenStampIds intersect liveStamps
         if (hiddenStrokeIds.any { it !in liveStrokes }) hiddenStrokeIds = hiddenStrokeIds intersect liveStrokes
         dragStamp?.let { d ->
-            if (dbStamps.any { it.id == d.id && it.x == d.x && it.y == d.y && it.size == d.size }) dragStamp = null
+            if (d in dbStamps) dragStamp = null
         }
         dragStrokes?.let { list ->
             // all or nothing: dropping strokes one by one shrank the box to the rows that had not
@@ -311,6 +311,7 @@ internal class AnnotationViewModel(
             origin.size == updated.size
         ) return
         pushUndo(current, page)
+        dragStamp = updated
         viewModelScope.launch { stamps.update(updated) }
     }
 

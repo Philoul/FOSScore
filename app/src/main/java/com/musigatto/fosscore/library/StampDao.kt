@@ -13,6 +13,13 @@ interface StampDao {
     @Query("SELECT * FROM stamps WHERE sheetId = :sheetId AND page = :page ORDER BY id")
     fun observePage(sheetId: Long, page: Int): Flow<List<Stamp>>
 
+    // the stamps of a MusicXML score: they hang on measures, not on pages (score.MeasureAnchors)
+    @Query("SELECT * FROM stamps WHERE sheetId = :sheetId AND measure IS NOT NULL ORDER BY id")
+    fun observeAnchored(sheetId: Long): Flow<List<Stamp>>
+
+    @Query("DELETE FROM stamps WHERE sheetId = :sheetId AND measure IN (:measures)")
+    suspend fun deleteMeasures(sheetId: Long, measures: List<Int>)
+
     @Insert
     suspend fun insert(stamp: Stamp): Long
 

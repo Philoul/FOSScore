@@ -92,7 +92,7 @@ private val NUMBER_FIELD_WIDTH = 112.dp
  */
 /**
  * Whether the title bar offers ✎: not while annotating (✓ ends it), and not on a score that cannot
- * be annotated (a MusicXML score), where it would open nothing, as the menu's entry says.
+ * be annotated (no sheet in the library), where it would open nothing.
  */
 internal fun editEntryShown(editing: Boolean, annotatable: Boolean): Boolean = !editing && annotatable
 

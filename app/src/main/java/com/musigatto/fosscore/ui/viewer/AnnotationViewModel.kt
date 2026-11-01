@@ -10,9 +10,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.library.Stamp
-import com.musigatto.fosscore.library.StampRepository
+import com.musigatto.fosscore.library.StampStore
 import com.musigatto.fosscore.library.Stroke
-import com.musigatto.fosscore.library.StrokeRepository
+import com.musigatto.fosscore.library.StrokeStore
 import kotlinx.coroutines.launch
 
 /** Undo levels kept per score (a new change throws the redo branch away, like any editor). */
@@ -47,9 +47,18 @@ internal class AnnotationSession {
  */
 internal class AnnotationViewModel(
     private val sheetId: Long?,
-    private val stamps: StampRepository,
-    private val strokes: StrokeRepository,
+    private var stamps: StampStore,
+    private var strokes: StrokeStore,
 ) : ViewModel() {
+
+    /**
+     * Where the marks are kept: a PDF's pages (the repositories), or a MusicXML score's measures
+     * (score.MusicXmlMarks), known once the score is open. The editing is the same.
+     */
+    fun useStores(stamps: StampStore, strokes: StrokeStore) {
+        this.stamps = stamps
+        this.strokes = strokes
+    }
 
     // --- the edits, on screen before the DB confirms them ---
     // ink already lifted that the DB has not handed back yet: without this the stroke blinks ~20 ms
@@ -246,8 +255,9 @@ internal class AnnotationViewModel(
         pushUndo(current, page)
         lastInkAt = System.currentTimeMillis()
         viewModelScope.launch {
-            val stored = stroke.copy(id = strokes.insert(stroke))
-            pendingInk = pendingInk + stored
+            val id = strokes.insert(stroke)
+            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
+            if (id > 0) pendingInk = pendingInk + stroke.copy(id = id)
         }
     }
 
@@ -294,9 +304,12 @@ internal class AnnotationViewModel(
     fun placeStamp(page: Int, stamp: Stamp, current: PageEdit) {
         pushUndo(current, page)
         viewModelScope.launch {
-            val stored = stamp.copy(id = stamps.insert(stamp))
-            pendingStamps = pendingStamps + stored
-            selectedId = stored.id
+            val id = stamps.insert(stamp)
+            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
+            if (id > 0) {
+                pendingStamps = pendingStamps + stamp.copy(id = id)
+                selectedId = id
+            }
         }
     }
 

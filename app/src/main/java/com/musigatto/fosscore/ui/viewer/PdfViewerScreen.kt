@@ -1,5 +1,8 @@
 package com.musigatto.fosscore.ui.viewer
 
+import com.musigatto.fosscore.score.MusicXmlMarks
+import com.musigatto.fosscore.library.StrokeStore
+import com.musigatto.fosscore.library.StampStore
 import android.content.res.Configuration
 import android.net.Uri
 import android.util.Log
@@ -271,19 +274,25 @@ fun PdfViewerScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // where the marks are kept: a PDF's pages, or a MusicXML score's measures, so they follow the
+    // music when it is laid out again. The editing is the same for both.
+    val marks = remember(pageSource) {
+        (pageSource as? MusicXmlPages)?.let { MusicXmlMarks(context.applicationContext, it) }
+    }
+    val app = context.applicationContext as FOSScoreApp
+    val stampStore: StampStore = marks?.stamps ?: app.stampRepository
+    val strokeStore: StrokeStore = marks?.strokes ?: app.strokeRepository
+    LaunchedEffect(stampStore, strokeStore) { editor.useStores(stampStore, strokeStore) }
+
     // one page's rows: the viewer draws one page, and re-reading the whole score on every stroke
     // made each stroke cost grow with the score
-    val stampsFlow = remember(sheetId, currentPage) {
-        sheetId?.let {
-            (context.applicationContext as FOSScoreApp).stampRepository.observe(it, currentPage)
-        } ?: flowOf(emptyList())
+    val stampsFlow = remember(sheetId, currentPage, stampStore) {
+        sheetId?.let { stampStore.observe(it, currentPage) } ?: flowOf(emptyList())
     }
     val stamps by stampsFlow.collectAsState(initial = emptyList())
 
-    val strokesFlow = remember(sheetId, currentPage) {
-        sheetId?.let {
-            (context.applicationContext as FOSScoreApp).strokeRepository.observe(it, currentPage)
-        } ?: flowOf(emptyList())
+    val strokesFlow = remember(sheetId, currentPage, strokeStore) {
+        sheetId?.let { strokeStore.observe(it, currentPage) } ?: flowOf(emptyList())
     }
     val strokes by strokesFlow.collectAsState(initial = emptyList())
 
@@ -377,22 +386,21 @@ fun PdfViewerScreen(
     // the second page of a spread. The viewer is reading, not editing, there, but its ink and its
     // stamps are drawn too: half of a two-up (or the top of a turned half page) would come out bare.
     val companion = if (spread && currentPage + 1 < pageCount) currentPage + 1 else null
-    val companionStampsFlow = remember(sheetId, companion) {
+    val companionStampsFlow = remember(sheetId, companion, stampStore) {
         if (sheetId != null && companion != null) {
-            (context.applicationContext as FOSScoreApp).stampRepository.observe(sheetId, companion)
+            stampStore.observe(sheetId, companion)
         } else flowOf(emptyList())
     }
     val companionStamps by companionStampsFlow.collectAsState(initial = emptyList())
-    val companionStrokesFlow = remember(sheetId, companion) {
+    val companionStrokesFlow = remember(sheetId, companion, strokeStore) {
         if (sheetId != null && companion != null) {
-            (context.applicationContext as FOSScoreApp).strokeRepository.observe(sheetId, companion)
+            strokeStore.observe(sheetId, companion)
         } else flowOf(emptyList())
     }
     val companionStrokes by companionStrokesFlow.collectAsState(initial = emptyList())
 
-    // ponytail: no annotations on MusicXML yet. They are stored per page, and a MusicXML page
-    // changes with the screen and the music size; they need to be tied to measures first.
-    val canEdit = sheetId != null && !format.isMusicXml && !branch.showTwoUp &&
+    // a MusicXML score is annotated too: its marks hang on its measures (MusicXmlMarks)
+    val canEdit = sheetId != null && !branch.showTwoUp &&
         !(branch.showHalf && halfTurned)
 
     // marks and stamps of the current page, shared between the overlay and the gestures.
@@ -514,7 +522,7 @@ fun PdfViewerScreen(
         // the gate lives here, so it also covers the entry paths that are coming (Apple Pencil, long
         // press). Two-up or a turned half page is no reason to refuse: annotating goes back to one
         // page, below.
-        if (!editing && (sheetId == null || format.isMusicXml)) return
+        if (!editing && sheetId == null) return
         editing = !editing
         if (editing) {
             viewer.singlePage()
@@ -1229,7 +1237,7 @@ fun PdfViewerScreen(
                     editing = editing,
                     onOpenMenu = { menu.show(ViewerSurface.MENU) },
                     onToggleEditing = { toggleEditing() },
-                    annotatable = sheetId != null && !format.isMusicXml,
+                    annotatable = sheetId != null,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         // edge-to-edge: the pills were slipping under the status bar, and in landscape

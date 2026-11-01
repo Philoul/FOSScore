@@ -16,7 +16,7 @@ class EditEntryTest {
     }
 
     @Test
-    fun aMusicXmlScoreDoesNotOfferAPenThatOpensNothing() {
+    fun aScoreThatCannotBeAnnotatedDoesNotOfferAPenThatOpensNothing() {
         assertFalse(editEntryShown(editing = false, annotatable = false))
     }
 }

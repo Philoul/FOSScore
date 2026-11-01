@@ -25,6 +25,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -75,6 +79,10 @@ class MusicXmlPages private constructor(
     private var kept: String? = null
     // where the notes are on each page drawn since the last layout, for the playback cursor
     private val geometries = ConcurrentHashMap<Int, PageGeometry>()
+    // counts the changes of [geometries]: the marks hung on measures are drawn again on a page once
+    // its geometry is known (a page from the cache shows before it), and go with the old layout
+    private val _geometryVersion = MutableStateFlow(0)
+    val geometryVersion: StateFlow<Int> = _geometryVersion.asStateFlow()
     private val bitmaps = object : LinkedHashMap<Long, Bitmap>(MAX_CACHED_BITMAPS + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Bitmap>?) =
             size > MAX_CACHED_BITMAPS
@@ -94,6 +102,7 @@ class MusicXmlPages private constructor(
         // are dropped, not recycled
         bitmaps.clear()
         geometries.clear()
+        _geometryVersion.update { it + 1 }
         box = PageBox(0f, 0f, spec.width.toFloat(), spec.height.toFloat())
         laidOut = spec
         kept = name
@@ -143,14 +152,23 @@ class MusicXmlPages private constructor(
             // the notes' positions, for the cursor, once the music is laid out again
             scope.launch {
                 runCatching { PageGeometry.parse(engine.pageSvg(index + 1)) }
-                    .onSuccess { if (kept == name) geometries[index] = it }
+                    .onSuccess {
+                        if (kept == name) {
+                            geometries[index] = it
+                            _geometryVersion.update { v -> v + 1 }
+                        }
+                    }
             }
             return bitmap
         }
         return try {
             // the engine runs Verovio on its own thread; the viewer already calls us off the main one
             val page = runBlocking { viewerWork { engine.renderPage(index + 1, w, h) } }
-            geometries[index] = page.geometry
+            // a page of the layout before, finished after a new one began, has the old geometry
+            if (kept == name) {
+                geometries[index] = page.geometry
+                _geometryVersion.update { it + 1 }
+            }
             bitmaps[key] = page.bitmap
             file?.let { keep(it, page.bitmap) }
             page.bitmap
@@ -160,7 +178,7 @@ class MusicXmlPages private constructor(
         }
     }
 
-    /** Where the notes of page [index] are, once the page has been drawn. Positions in SVG units. */
+    /** Where the notes and the measures of page [index] are, once the page has been drawn. Positions in SVG units. */
     fun geometry(index: Int): PageGeometry? = geometries[index]
 
     /** Page (0-based) of the note [id] in the current layout, or -1. */

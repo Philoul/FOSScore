@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -97,7 +98,6 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
 // the stamps' panel: eight symbols a row (and the eight colours on one), so the 37 symbols take
 // five rows, not ten, and the panel fits above or below the bar on a phone upright
 private const val STAMP_COLUMNS = 8
-private const val STAMP_PANEL_DP = 320
 
 val SWATCH_COLORS = listOf(
     Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047),
@@ -239,7 +239,7 @@ fun StampPalettePanel(
     onSaveDefault: () -> Unit,
     isDefault: Boolean,
 ) {
-    ToolBlock(width = STAMP_PANEL_DP.dp) {
+    ToolBlock {
         Column(
             modifier = Modifier
                 // three rows of eight (24 symbols), the rest a scroll away: the panel was half a
@@ -260,7 +260,7 @@ fun StampPalettePanel(
                 }
             }
         }
-        ColorChoices(active = color, invert = invert, onPick = onColor, perRow = STAMP_COLUMNS)
+        ColorChoices(active = color, invert = invert, onPick = onColor)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
@@ -271,7 +271,8 @@ fun StampPalettePanel(
             TextButton(
                 onClick = onSaveDefault,
                 enabled = !isDefault,
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                modifier = Modifier.height(TOOL_SLIDER_DP.dp),
             ) {
                 Text(
                     stringResource(R.string.stamp_default_save),
@@ -288,7 +289,9 @@ fun StampPalettePanel(
                 onValueChange = onSize,
                 valueRange = MIN_STAMP_PX..MAX_STAMP_PX,
                 steps = (MAX_STAMP_PX - MIN_STAMP_PX).toInt() - 1,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(TOOL_SLIDER_DP.dp),
             )
             StepArrow(label = "+", onClick = { onSize((sizePx + 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
         }

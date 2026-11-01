@@ -85,6 +85,14 @@ internal fun annotationBarLowest(pageHeightPx: Int, bottomInsetPx: Int): Float =
  */
 internal data class PanelPlace(val above: Boolean, val maxHeightPx: Int)
 
+/**
+ * Where the annotation bar is drawn (px from the top). At the top it paints over the status bar;
+ * dragged down it leaves that strip behind, so the bar is only its buttons there: its buttons stay
+ * under the finger, they do not jump up by the status bar's height.
+ */
+internal fun annotationBarOffsetPx(barDragY: Float, statusBarPx: Int): Int =
+    if (barDragY > 0f) (barDragY + statusBarPx).roundToInt() else 0
+
 internal fun toolPanelPlace(
     barTopPx: Float,
     barHeightPx: Int,
@@ -147,6 +155,7 @@ internal fun AnnotationBar(
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
     panelPlace: PanelPlace = PanelPlace(above = false, maxHeightPx = Int.MAX_VALUE),
+    atTop: Boolean = true,
 ) {
     // where each tool sits on screen, so its panel hangs from the tool and not from the bar's edge
     val toolX = remember { mutableStateMapOf<AnnotationTool, Float>() }
@@ -155,9 +164,9 @@ internal fun AnnotationBar(
     var panelWidth by remember { mutableIntStateOf(0) }
     var panelHeight by remember { mutableIntStateOf(0) }
     var rowHeight by remember { mutableIntStateOf(0) }
-    // the strip the bar paints over the status bar, mirrored below it: without it the tools sit
-    // low against the page and the bar looks top-heavy
-    val statusBarDp = with(LocalDensity.current) { WindowInsets.systemBars.getTop(this).toDp() }
+    // the status bar's height: the bar paints over it at the top of the screen, and leaves it
+    // once dragged down
+    val statusBarPx = WindowInsets.systemBars.getTop(LocalDensity.current)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -190,11 +199,12 @@ internal fun AnnotationBar(
                 .fillMaxWidth()
                 .onSizeChanged {
                     rowHeight = it.height
-                    onHeight(it.height)
+                    // the page keeps the same room whether the bar is at the top or dragged
+                    onHeight(it.height + if (atTop) 0 else statusBarPx)
                 }
                 .background(MaterialTheme.colorScheme.surface)
-                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
-                .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp + statusBarDp),
+                .then(if (atTop) Modifier.windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top)) else Modifier)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
             val tools: @Composable () -> Unit = {
                     // The tools (issue #56): exactly one is in hand, so they read as radio buttons.

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -539,11 +540,16 @@ fun nextToolTap(active: Boolean, panelOpen: Boolean): Boolean = active && !panel
 /**
  * Compact block that drops from the annotation bar: the shape every tool panel shares (stamps, pen,
  * eraser, colour). It floats over the page instead of painting a band across it (spec §5), and the
- * fixed 160 dp keeps all of them the same width so the bar never reshuffles. The stamps' panel
- * alone is wider, so its many symbols take rows instead of half the height of a phone.
+ * fixed width keeps all of them the same so the bar never reshuffles: wide enough for a row of
+ * eight stamps or eight colours, so the panels take width rather than half a phone's height.
  */
+// every tool panel: eight stamps or the eight colours a row, and a slider no taller than its thumb
+internal const val TOOL_PANEL_DP = 320
+internal const val SWATCHES_PER_ROW = 8
+internal const val TOOL_SLIDER_DP = 32
+
 @Composable
-fun ToolBlock(width: Dp = 160.dp, content: @Composable ColumnScope.() -> Unit) {
+fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         // ponytail: fixed alpha; make it a setting if it hides the music you are working on
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
@@ -551,12 +557,12 @@ fun ToolBlock(width: Dp = 160.dp, content: @Composable ColumnScope.() -> Unit) {
         shadowElevation = 4.dp,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
-            .padding(start = 12.dp, bottom = 8.dp)
-            .width(width)
+            .padding(start = 12.dp, bottom = 4.dp)
+            .width(TOOL_PANEL_DP.dp)
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
             content = content
         )
     }
@@ -585,7 +591,9 @@ fun ToolSizePanel(
                 onValueChange = onValue,
                 valueRange = range,
                 steps = (range.endInclusive - range.start).toInt() - 1,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(TOOL_SLIDER_DP.dp)
             )
             StepArrow(label = "+") { onValue((value + 1f).coerceIn(range.start, range.endInclusive)) }
         }
@@ -600,7 +608,7 @@ fun ToolSizePanel(
  * about the ink (issue #35).
  */
 @Composable
-fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit, perRow: Int = 4) {
+fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit, perRow: Int = SWATCHES_PER_ROW) {
     (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(perRow).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             row.forEach { argb ->

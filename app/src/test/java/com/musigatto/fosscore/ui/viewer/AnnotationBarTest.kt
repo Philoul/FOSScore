@@ -48,4 +48,15 @@ class AnnotationBarTest {
         assertEquals(PanelPlace(above = false, maxHeightPx = 1196), place(700f))
         assertEquals(PanelPlace(above = true, maxHeightPx = 1219), place(1300f))
     }
+
+    @Test
+    fun aBarAtTheTopIsDrawnAtTheTopOverTheStatusBar() {
+        assertEquals(0, annotationBarOffsetPx(barDragY = 0f, statusBarPx = 81))
+    }
+
+    @Test
+    fun aDraggedBarLeavesTheStatusBarStripBehindWithoutJumping() {
+        // its buttons were 81 px down (under the status bar strip); dragged by 500 they are 581 px down
+        assertEquals(581, annotationBarOffsetPx(barDragY = 500f, statusBarPx = 81))
+    }
 }

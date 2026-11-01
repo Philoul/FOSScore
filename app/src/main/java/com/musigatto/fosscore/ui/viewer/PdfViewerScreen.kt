@@ -1196,13 +1196,14 @@ fun PdfViewerScreen(
                         }
                     },
                     onHeight = { annBarPx = it },
+                    atTop = barDragY == 0f,
                     panelPlace = toolPanelPlace(barDragY, annBarPx, viewport.height + annBarPx, statusTopPx, navigationBottomPx),
                     // the top of the screen: while annotating this bar IS the title bar, and the
                     // grip moves it down out of the way, where it turns see-through so the page
                     // underneath stays readable
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .offset { IntOffset(0, barDragY.roundToInt()) }
+                        .offset { IntOffset(0, annotationBarOffsetPx(barDragY, statusTopPx)) }
                         .alpha(if (barDragging) 0.75f else 1f),
                 )
 

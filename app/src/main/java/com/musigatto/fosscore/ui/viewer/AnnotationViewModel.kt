@@ -301,6 +301,19 @@ internal class AnnotationViewModel(
         viewModelScope.launch { stamps.update(stamp.copy(color = color)) }
     }
 
+    /**
+     * A typed text or its colour/size changed on a text stamp (#35): the same undo a move gets,
+     * only when something actually changed. Inserting or deleting a box goes through placeStamp /
+     * deleteSelection; moving through updateStamp — this is only for what the EDITOR produces.
+     */
+    fun editTextBox(page: Int, origin: Stamp?, updated: Stamp, current: PageEdit) {
+        if (origin != null && origin.text == updated.text && origin.color == updated.color &&
+            origin.size == updated.size
+        ) return
+        pushUndo(current, page)
+        viewModelScope.launch { stamps.update(updated) }
+    }
+
     companion object {
         /** One editor per score: undo, ink and stamps belong to the score being read. */
         fun factory(context: Context, sheetId: Long?) = viewModelFactory {

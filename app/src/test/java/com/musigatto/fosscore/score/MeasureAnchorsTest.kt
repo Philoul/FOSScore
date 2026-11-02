@@ -159,14 +159,18 @@ class MeasureAnchorsTest {
     }
 
     @Test
-    fun aMeasureWithoutAWholeNumberHasNoMark() {
+    fun everyMeasureTakesMarksWhateverItsNumber() {
+        // a measure is kept by its place in the file: "X1" (left out of the count by MuseScore)
+        // and "12a" take marks as "13" does
+        val id = com.musigatto.fosscore.musicxml.PageGeometry::measureId
         val geometry = com.musigatto.fosscore.musicxml.PageGeometry.parse(
             """<svg viewBox="0 0 2100 2970"><svg class="definition-scale" color="black" viewBox="0 0 21000 29700">""" +
                 """<g class="page-margin" transform="translate(400, 400)"><g class="system">""" +
-                """<g id="m1" class="measure" data-n="12a"><g id="s1" class="staff" data-n="1"><path d="M1000 500 L3000 500" stroke-width="13"/><path d="M1000 680 L3000 680" stroke-width="13"/></g></g>""" +
-                """<g id="m2" class="measure" data-n="13"><g id="s2" class="staff" data-n="1"><path d="M3000 500 L5000 500" stroke-width="13"/><path d="M3000 680 L5000 680" stroke-width="13"/></g></g>""" +
+                """<g id="${id(14)}" class="measure" data-n="X1"><g id="s1" class="staff" data-n="1"><path d="M1000 500 L3000 500" stroke-width="13"/><path d="M1000 680 L3000 680" stroke-width="13"/></g></g>""" +
+                """<g id="${id(15)}" class="measure" data-n="12a"><g id="s2" class="staff" data-n="1"><path d="M3000 500 L5000 500" stroke-width="13"/><path d="M3000 680 L5000 680" stroke-width="13"/></g></g>""" +
+                """<g id="${id(16)}" class="measure" data-n="13"><g id="s3" class="staff" data-n="1"><path d="M5000 500 L7000 500" stroke-width="13"/><path d="M5000 680 L7000 680" stroke-width="13"/></g></g>""" +
                 """</g></g></svg></svg>"""
         )
-        assertEquals(listOf(13), MeasureAnchors.slotsOf(geometry).map { it.measure })
+        assertEquals(listOf(14, 15, 16), MeasureAnchors.slotsOf(geometry).map { it.measure })
     }
 }

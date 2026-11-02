@@ -21,8 +21,12 @@ class PageGeometry private constructor(
     /** Notehead centre ([x], [y]), the vertical extent of its system and the staff [space]. */
     class Head(val x: Float, val y: Float, val top: Float, val bottom: Float, val space: Float)
 
-    /** A measure: its number as the file writes it ([n], "" without one) and its [staves]. */
-    class Measure(val n: String, val staves: List<StaffBox>)
+    /**
+     * A measure: its number as the file writes it ([n], "" without one, free text such as "12a"
+     * or "X1"), its [staves], and its [rank]: its place in the file (1 = first `<measure>` of a
+     * part), from the id [MusicXmlScore] gives it ([measureId]); null without that id.
+     */
+    class Measure(val n: String, val staves: List<StaffBox>, val rank: Int? = null)
 
     /**
      * One staff of a measure: staff number [n] (1 = top staff of the score), from the [left] to
@@ -49,7 +53,7 @@ class PageGeometry private constructor(
         private val SYSTEM = Regex("""class="system"""")
         // a staff's lines; the staff may carry its number (data-n, see VerovioOptions)
         private val STAFF_LINES = Regex("""class="staff"(?: data-n="(\d+)")?>((?:<path d="M-?\d+ -?\d+ L-?\d+ -?\d+" stroke-width="\d+"/>)+)""")
-        private val MEASURE = Regex("""class="measure"(?: data-n="([^"]*)")?>""")
+        private val MEASURE = Regex("""<g id="([^"]*)" class="measure"(?: data-n="([^"]*)")?>""")
         private val LINE = Regex("""<path d="M(-?\d+) (-?\d+) L(-?\d+) """)
         private val LINE_Y = Regex("""<path d="M-?\d+ (-?\d+) L""")
         private val NOTE = Regex("""<g id="([^"]+)" class="note"""")
@@ -59,6 +63,11 @@ class PageGeometry private constructor(
 
         // Verovio's default staff space at scale 100 (1/10 mm units), used when a system has no lines.
         private const val DEFAULT_SPACE = 180f
+
+        private const val MEASURE_ID = "fosscore-measure-"
+
+        /** The id of the measure at [rank] in the file (1 = first), which Verovio keeps in its SVG. */
+        fun measureId(rank: Int): String = "$MEASURE_ID$rank"
 
         /**
          * Parses the SVG as Verovio wrote it, with `svgFormatRaw` (one line, before the MuPDF fixes).
@@ -120,7 +129,8 @@ class PageGeometry private constructor(
                         )
                     }
                 }.toList()
-                Measure(m.groupValues[1], staves)
+                val rank = m.groupValues[1].takeIf { it.startsWith(MEASURE_ID) }?.removePrefix(MEASURE_ID)?.toIntOrNull()
+                Measure(m.groupValues[2], staves, rank)
             }.filter { it.staves.isNotEmpty() }
             return PageGeometry(NOTE.findAll(svg).map { it.groupValues[1] }.toSet(), heads, innerWidth, innerHeight, measures)
         }

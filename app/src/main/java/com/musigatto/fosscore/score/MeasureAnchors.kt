@@ -19,8 +19,9 @@ const val ANCHORED_PAGE = -1
 /**
  * One staff of one measure on a page, in page coordinates (0..1 of the page's width and height,
  * as stamps and strokes are), with its staff space across ([spaceX]) and down ([spaceY]). Its
- * music runs from [start] (the first note) to [right]. [measure] is the measure's number in the
- * file, [staff] the staff's (1 = the top staff of the score).
+ * music runs from [start] (the first note) to [right]. [measure] is the measure's place in the
+ * file (1 = the first `<measure>` of a part, [PageGeometry.Measure.rank]), not the number the
+ * score prints, which is free text; [staff] is the staff's number (1 = the top staff of the score).
  */
 data class StaffSlot(
     val measure: Int,
@@ -57,13 +58,14 @@ data class LineMargin(val top: Float, val bottom: Float, val right: Float)
 object MeasureAnchors {
 
     /**
-     * The staves of [page]'s measures in page coordinates; empty without a page height. A measure
-     * without a number the file gives as a whole number has no mark (rare: "12a", "X1").
+     * The staves of [page]'s measures in page coordinates; empty without a page height. Every
+     * measure laid out from [com.musigatto.fosscore.musicxml.MusicXmlScore] has its place in the
+     * file, whatever its number ("12a", "X1").
      */
     fun slotsOf(page: PageGeometry): List<StaffSlot> {
         if (page.width <= 0f || page.height <= 0f) return emptyList()
         return page.measures.flatMap { m ->
-            val number = m.n.toIntOrNull() ?: return@flatMap emptyList()
+            val number = m.rank ?: return@flatMap emptyList()
             m.staves.map { s ->
                 StaffSlot(
                     number, s.n, s.left / page.width, s.right / page.width, s.top / page.height,

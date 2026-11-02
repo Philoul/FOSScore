@@ -134,6 +134,10 @@ class RenderingTextTest {
         val page = PageGeometry.parse(svg)
         assertEquals(29700f, page.height)
         assertEquals(listOf("12", "13"), page.measures.map { it.n })
+        // the ids of this test are not those MusicXmlScore gives: no place in the file
+        assertEquals(listOf(null, null), page.measures.map { it.rank })
+        val ranked = PageGeometry.parse(svg.replace("""id="m2"""", """id="${PageGeometry.measureId(7)}""""))
+        assertEquals(listOf(null, 7), ranked.measures.map { it.rank })
         val (top, bottom) = page.measures[0].staves
         assertEquals(1, top.n)
         assertEquals(2, bottom.n)

@@ -405,6 +405,6 @@ class ScoreEngine(
         const val MAX_SOUND_WAIT_MS = 15_000L
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
-        const val CACHE_VERSION = 1
+        const val CACHE_VERSION = 2
     }
 }

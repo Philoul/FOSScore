@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -37,9 +38,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
@@ -94,6 +97,10 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
 // tint colors that read well on light and dark backgrounds. White stores as white; in negative
 // mode inkTint renders it BLACK, good for painting over the page's own (now white) notes. On a
 // plain white page with negative off it blends in — that is the nature of a white ink.
+// the stamps' panel: eight symbols a row (and the eight colours on one), so the 37 symbols take
+// five rows, not ten, and the panel fits above or below the bar on a phone upright
+private const val STAMP_COLUMNS = 8
+
 val SWATCH_COLORS = listOf(
     Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047),
     Color(0xFFFB8C00), Color(0xFF8E24AA), Color(0xFF757575),
@@ -107,6 +114,14 @@ fun stampColor(color: Int?, fallback: Color): Color = color?.let(::Color) ?: fal
  * density. Draw (here) and measure (the shared textRects) both pass THROUGH this, or they diverge. */
 fun textFontSp(fontPx: Float, density: Density): TextUnit = (fontPx / density.density).sp
 
+/**
+ * The style of a text stamp's words, from [base] (the theme's): its font at [fontPx], each line
+ * [TEXT_LINE_EM] of that font high. The theme's line height is a fixed 24 sp: a big text's lines
+ * ran into each other and a small one's were far apart. Draw, measure and typing all take it.
+ */
+fun textStampStyle(base: TextStyle, fontPx: Float, density: Density, color: Color = Color.Unspecified): TextStyle =
+    base.copy(fontSize = textFontSp(fontPx, density), lineHeight = TEXT_LINE_EM.em, color = color)
+
 /** The words of a text stamp, wrapped at the page's width and tinted like the other ink. */
 @Composable
 internal fun TextStampView(
@@ -119,7 +134,7 @@ internal fun TextStampView(
     val density = LocalDensity.current
     Text(
         text = text,
-        style = LocalTextStyle.current.copy(fontSize = textFontSp(fontPx, density), color = color),
+        style = textStampStyle(LocalTextStyle.current, fontPx, density, color),
         modifier = modifier.widthIn(max = with(density) { maxWidthPx.toDp() })
     )
 }
@@ -237,11 +252,13 @@ fun StampPalettePanel(
     ToolBlock {
         Column(
             modifier = Modifier
-                .heightIn(max = 180.dp)
+                // three rows of eight (24 symbols), the rest a scroll away: the panel was half a
+                // phone's height
+                .heightIn(max = 112.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            StampSymbol.entries.chunked(4).forEach { row ->
+            StampSymbol.entries.chunked(STAMP_COLUMNS).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     row.forEach { sym ->
                         StampChoiceButton(
@@ -254,33 +271,38 @@ fun StampPalettePanel(
             }
         }
         ColorChoices(active = color, invert = invert, onPick = onColor)
-        Text(
-            "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
-            style = MaterialTheme.typography.bodySmall
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${stringResource(R.string.size_label)} · ${sizePx.roundToInt()} px",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            // persists in Settings: the next session starts with this size
+            TextButton(
+                onClick = onSaveDefault,
+                enabled = !isDefault,
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                modifier = Modifier.height(TOOL_SLIDER_DP.dp),
+            ) {
+                Text(
+                    stringResource(R.string.stamp_default_save),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1
+                )
+            }
+        }
         // the slider is the coarse control; the arrows step 1 px for the last few
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepArrow(label = "−", onClick = { onSize((sizePx - 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
             Slider(
                 value = sizePx,
-                onValueChange = onSize,
+                onValueChange = { onSize(wholePx(it)) },
                 valueRange = MIN_STAMP_PX..MAX_STAMP_PX,
-                steps = (MAX_STAMP_PX - MIN_STAMP_PX).toInt() - 1,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(TOOL_SLIDER_DP.dp),
             )
             StepArrow(label = "+", onClick = { onSize((sizePx + 1f).coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) })
-        }
-        // persists in Settings: the next session starts with this size
-        TextButton(
-            onClick = onSaveDefault,
-            enabled = !isDefault,
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-        ) {
-            Text(
-                stringResource(R.string.stamp_default_save),
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1
-            )
         }
     }
 }

@@ -134,6 +134,8 @@ internal class AnnotationViewModel(
     fun cancelSession() {
         val id = sheetId ?: return
         if (!session.hasChanges) return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         val pages = session.pages()
         session.clear()
         clearHistory()
@@ -192,6 +194,8 @@ internal class AnnotationViewModel(
     fun undo(page: Int, current: PageEdit) {
         val id = sheetId ?: return
         val (target, edit) = undoStack.lastOrNull() ?: return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         undoStack = undoStack.dropLast(1)
         // what redo puts back is the state we are leaving behind
         if (target == page) redoStack = (redoStack + (target to current)).takeLast(UNDO_LEVELS)
@@ -209,6 +213,8 @@ internal class AnnotationViewModel(
     fun redo(page: Int, current: PageEdit) {
         val id = sheetId ?: return
         val (target, edit) = redoStack.lastOrNull() ?: return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         redoStack = redoStack.dropLast(1)
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
@@ -313,6 +319,46 @@ internal class AnnotationViewModel(
         pushUndo(current, page)
         dragStamp = updated
         viewModelScope.launch { stamps.update(updated) }
+    }
+
+    // --- the text being typed on the page (#35): nothing is written until the typing is over ---
+    var typing by mutableStateOf<TextDraft?>(null)
+        private set
+    // a new text, or another one typed in: the field starts again with its own words
+    var typingKey by mutableStateOf(0)
+        private set
+
+    /** Typing starts on [draft]: a new text, or one already on the page. */
+    fun startTyping(draft: TextDraft) {
+        clearSelection()
+        typing = draft
+        typingKey++
+    }
+
+    /** The text being typed changed (its words, its size or its colour). */
+    fun retype(change: (TextDraft) -> TextDraft) {
+        typing = typing?.let(change)
+    }
+
+    /** The typing is dropped: nothing of it is written (✕, undo, redo). */
+    fun dropTyping() {
+        typing = null
+    }
+
+    /**
+     * The typing is over: [outcome] is written as an edit of [page] would be, one step of undo,
+     * through the same doors as the rest (a new text is placed, a changed one edited, an emptied
+     * one deleted).
+     */
+    fun endTyping(page: Int, outcome: TypingOutcome, current: PageEdit) {
+        typing = null
+        when (outcome) {
+            is TypingOutcome.Insert -> placeStamp(page, outcome.stamp, current)
+            // its place too: the first line stayed put while the box grew or shrank around it
+            is TypingOutcome.Update -> editTextBox(page, outcome.origin, outcome.stamp, current)
+            is TypingOutcome.Delete -> deleteSelection(page, outcome.origin, emptyList(), current)
+            TypingOutcome.Nothing -> Unit
+        }
     }
 
     companion object {

@@ -1212,7 +1212,7 @@ fun PdfViewerScreen(
                             topLeft = Offset(box.left, box.top),
                             fontPx = textFontPx(draft.size, hitFit),
                             maxWidthPx = hitFit.width * TEXT_MAX_WRAP - 16f,
-                            color = pageInkTint(draft.color, invert),
+                            color = inkTint(draft.color, invert),
                             onText = { typed -> editor.retype { it.copy(text = typed) } },
                             onDone = { finishTyping() },
                         )

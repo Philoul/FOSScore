@@ -209,7 +209,4 @@ internal fun ViewerOverlays(
     }
 }
 
-internal fun inkTint(color: Int?, invert: Boolean): Color {
-    val c = color?.let { com.musigatto.fosscore.ui.viewer.stampColor(it, Color.Black) } ?: Color.Black
-    return if (invert) c.copy(red = 1f - c.red, green = 1f - c.green, blue = 1f - c.blue) else c
-}
+

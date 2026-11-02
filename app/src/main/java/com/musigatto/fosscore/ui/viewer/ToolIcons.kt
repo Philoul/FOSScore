@@ -52,13 +52,20 @@ internal const val ICON_CLOSE =
 internal const val ICON_SELECT =
     "M6,2 L6,20.5 L10.4,16.3 L13.2,22 L16.2,20.5 L13.4,15 L19.5,15 Z"
 
-/** The grip of the annotation bar: three lines, the familiar "drag me" mark (spec §5, as forScore's ≡). */
+// the text tool (issue #35): Material's text_fields glyph, a big T with a small f
+internal const val ICON_TEXT =
+    "M2.5,4v3h5v12h3V7h5V4h-13zm21,7h-8v3h2v7h3v-7h3v-3z"
+
+/**
+ * The grip of the annotation bar: two lines, Material's drag_handle. Three lines would be the ☰ of
+ * a menu, which the viewer has at the same height.
+ */
 @Composable
 fun GripIcon(modifier: Modifier = Modifier) {
     val color = LocalContentColor.current
     Canvas(modifier.size(ICON_DP.dp)) {
         val u = size.minDimension / ICON_UNITS
-        listOf(8f, 12f, 16f).forEach { y ->
+        listOf(9f, 15f).forEach { y ->
             drawLine(
                 color = color,
                 start = Offset(5f * u, y * u),

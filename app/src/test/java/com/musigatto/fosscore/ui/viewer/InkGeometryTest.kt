@@ -99,16 +99,76 @@ class InkGeometryTest {
     }
 
     // letter at x..x+40, y..y+40 in px at a 1000 px fit (the entity stores normalized points)
-    private fun letter(id: Long, x: Float, y: Float = 0f) = Stroke(
+    private fun letter(id: Long, x: Float, y: Float = 0f, groupId: Long = 0L) = Stroke(
         id = id,
-        sheetHash = "h",
+        sheetId = 1,
         page = 0,
         points = encodePoints(
             listOf(Offset(x, y), Offset(x, y + 40f), Offset(x + 40f, y))
                 .map { Offset(it.x / 1000f, it.y / 1000f) }
         ),
-        width = 0.002f
+        width = 0.002f,
+        groupId = groupId
     )
+
+    /** Writes letters at [xs], [gapMs] apart, grouping each one as the gesture does. */
+    private fun write(
+        fit: RectPx,
+        vararg xs: Float,
+        gapMs: Long = 300,
+        pauseAfter: Int = -1,
+        pauseMs: Long = 3_000,
+    ): List<Stroke> {
+        val strokes = mutableListOf<Stroke>()
+        var at = 1_000L
+        var prevAt = at
+        xs.forEachIndexed { i, x ->
+            if (i > 0) at += if (i == pauseAfter + 1) pauseMs else gapMs
+            val stroke = letter(i + 1L, x)
+            val group = groupForStroke(
+                previous = strokes.lastOrNull(),
+                writtenAt = prevAt,
+                now = at,
+                nextGroup = (strokes.maxOfOrNull { it.groupId } ?: 0L) + 1L,
+                stroke = stroke,
+                fit = fit
+            )
+            strokes += stroke.copy(groupId = group)
+            prevAt = at
+        }
+        return strokes
+    }
+
+    @Test
+    fun aWordWrittenInOneGoIsOneGroup() {
+        val fit = RectPx(0f, 0f, 1000f, 1000f)
+        val strokes = write(fit, 0f, 50f, 100f, 150f)
+        assertEquals(setOf(1L), strokes.map { it.groupId }.toSet())
+        assertEquals(1, groupInk(strokes, fit).size)
+    }
+
+    @Test
+    fun aLetterWrittenMuchLaterStartsANewGroup() {
+        val fit = RectPx(0f, 0f, 1000f, 1000f)
+        // "ho" then a 3 s pause before the next letter, right next to it: a pause means a new word
+        val strokes = write(fit, 0f, 50f, 100f, pauseAfter = 1)
+        assertEquals(listOf(1L, 1L, 2L), strokes.map { it.groupId })
+        assertEquals(2, groupInk(strokes, fit).size)
+    }
+
+    @Test
+    fun movingAWordNextToAnotherKeepsThemApart() {
+        val fit = RectPx(0f, 0f, 1000f, 1000f)
+        // written in two places, then one dragged right next to the other: close enough to merge
+        // by distance, but each word keeps the group it was written with
+        val strokes = listOf(
+            letter(1, 0f, groupId = 1L), letter(2, 50f, groupId = 1L),
+            letter(3, 100f, groupId = 2L), letter(4, 150f, groupId = 2L)
+        )
+        val groups = groupInk(strokes, fit)
+        assertEquals(2, groups.size)
+        assertEquals(listOf(setOf(1L, 2L), setOf(3L, 4L)), groups.map { g -> g.strokes.map { it.id }.toSet() })
+    }
 
     @Test
     fun strokesOfAWordEndUpInOneGroup() {

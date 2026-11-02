@@ -77,6 +77,15 @@ class PlaybackAndOptionsTest {
         assertFalse(o.getBoolean("adjustPageHeight"))
     }
 
+    @Test
+    fun annotatingSpacesTheLinesOfMusicOut() {
+        val spec = LayoutSpec(width = 1200, height = 1800)
+        // Verovio's own spacing for reading
+        assertFalse(VerovioOptions.layout(spec).has("spacingSystem"))
+        // room to write between two lines of music while annotating
+        assertEquals(16, VerovioOptions.layout(spec.copy(annotating = true)).getInt("spacingSystem"))
+    }
+
     // a header and three tracks: the tempo (500000 µs per quarter), then a note on each staff,
     // the second one in running status
     private fun midi(): ByteArray {

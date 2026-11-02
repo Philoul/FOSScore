@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.musicxml
 
 import kotlin.math.abs
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -8,7 +9,8 @@ import org.json.JSONObject
  * [scale] percent of Verovio's default size, transposed by [semitones], showing [parts] (empty
  * shows them all) with lyrics placed as [lyrics], keeping the lyrics of the parts left out when
  * [hiddenLyrics]. [marginTop] and [marginBottom] pixels of every page stay free of music, for
- * bars the viewer draws over the page.
+ * bars the viewer draws over the page. [annotating] spaces the lines of music out, to leave room
+ * for annotations between them.
  */
 data class LayoutSpec(
     val width: Int,
@@ -19,7 +21,8 @@ data class LayoutSpec(
     val lyrics: LyricsPlacement = LyricsPlacement.FILE,
     val hiddenLyrics: Boolean = false,
     val marginTop: Int = 0,
-    val marginBottom: Int = 0
+    val marginBottom: Int = 0,
+    val annotating: Boolean = false
 ) {
     init {
         require(width > 0 && height > 0) { "empty viewport" }
@@ -71,6 +74,11 @@ internal object VerovioOptions {
     // Verovio's default (1.2) let words touch in narrow measures of real songs.
     private const val LYRIC_WORD_SPACE = 2.5
 
+    // Room between two lines of music while annotating, in half staff spaces: Verovio's 4 leaves
+    // about 8 staff spaces from one staff to the next, 16 leaves about 14, room to write above
+    // and below a staff.
+    private const val ANNOTATION_SYSTEM_SPACING = 16
+
     // Tempo factors outside this range make no musical sense and stress the MIDI player.
     const val MIN_TEMPO = 0.2
     const val MAX_TEMPO = 4.0
@@ -84,6 +92,8 @@ internal object VerovioOptions {
         put("pageMarginRight", MARGIN)
         put("pageMarginTop", MARGIN + spec.marginTop * 100 / spec.scale)
         put("pageMarginBottom", MARGIN + spec.marginBottom * 100 / spec.scale)
+        // the number of each measure and staff in the SVG (data-n): what annotations hang on
+        put("svgAdditionalAttribute", JSONArray(listOf("measure@n", "staff@n")))
         put("breaks", "auto")
         put("footer", "none")
         put("header", "auto")
@@ -93,6 +103,7 @@ internal object VerovioOptions {
         put("svgFormatRaw", true)
         put("transpose", interval(spec.semitones))
         put("lyricWordSpace", LYRIC_WORD_SPACE)
+        if (spec.annotating) put("spacingSystem", ANNOTATION_SYSTEM_SPACING)
     }
 
     /** The cheapest layout (one endless system), for a toolkit that is never drawn. */

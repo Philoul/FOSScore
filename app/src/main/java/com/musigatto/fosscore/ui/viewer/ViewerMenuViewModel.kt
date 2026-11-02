@@ -45,8 +45,8 @@ fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
         ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.METRONOME -> MenuItemState.READY
         ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK ->
             if (isMusicXml) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
-        // annotations are stored per page, and a MusicXML page changes with the screen
-        ViewerMenuItem.ANNOTATE -> if (isMusicXml) MenuItemState.NOT_ON_MUSICXML else MenuItemState.READY
+        // a MusicXML score's marks hang on its measures, so they follow the music (MusicXmlMarks)
+        ViewerMenuItem.ANNOTATE -> MenuItemState.READY
         else -> MenuItemState.SOON
     }
 

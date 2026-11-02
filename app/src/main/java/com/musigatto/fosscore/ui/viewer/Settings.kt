@@ -88,6 +88,7 @@ object Settings {
     // a score left longer ago than this opens at its first page again
     const val LAST_PAGE_KEPT_MS = 30 * 60 * 1000L
     private const val KEY_STAMP_PX = "stamp_px"
+    private const val KEY_TEXT_PX = "text_px"
     private const val KEY_ANNOTATION_TOOL = "annotation_tool"
     private const val KEY_MUSIC_SIZE = "music_size_"
     private const val KEY_TRANSPOSE = "transpose_"
@@ -190,6 +191,14 @@ object Settings {
 
     fun setStampPx(context: Context, px: Float) {
         context.prefs().edit { putFloat(KEY_STAMP_PX, px.coerceIn(MIN_STAMP_PX, MAX_STAMP_PX)) }
+    }
+
+    // size a new text starts with, saved from the text panel
+    fun textPx(context: Context): Float =
+        context.prefs().getFloat(KEY_TEXT_PX, DEFAULT_TEXT_PX)
+
+    fun setTextPx(context: Context, px: Float) {
+        context.prefs().edit { putFloat(KEY_TEXT_PX, px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
     }
 
     /** The tool the annotation bar starts with: the last one used, the arrow the very first time. */

@@ -67,6 +67,8 @@ const val MIN_TEXT_PX = 12f
 const val MAX_TEXT_PX = 96f
 const val MIN_TEXT_FRAC = 0.002f
 const val MAX_TEXT_FRAC = 0.08f
+// a line of text is this many times its font size high
+const val TEXT_LINE_EM = 1.2f
 // the text wraps at this share of the page's width (1f would touch the edge)
 const val TEXT_MAX_WRAP = 0.98f
 

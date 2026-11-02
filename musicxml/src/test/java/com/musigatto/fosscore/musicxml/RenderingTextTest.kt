@@ -120,4 +120,33 @@ class RenderingTextTest {
         assertEquals(180f, head.space, 0.01f)
         assertNull(page.head("n2"))
     }
+
+    @Test
+    fun pageGeometryFindsMeasuresAndTheirStaves() {
+        // as Verovio draws them with svgAdditionalAttribute measure@n and staff@n: the staff lines
+        // of each measure run from its left to its right end
+        val svg = """<svg viewBox="0 0 2100 2970"><svg class="definition-scale" color="black" viewBox="0 0 21000 29700">""" +
+            """<g class="page-margin" transform="translate(400, 400)"><g class="system">""" +
+            """<g id="m1" class="measure" data-n="12"><g id="s1" class="staff" data-n="1"><path d="M1000 500 L3000 500" stroke-width="13"/><path d="M1000 680 L3000 680" stroke-width="13"/><path d="M1000 860 L3000 860" stroke-width="13"/><path d="M1000 1040 L3000 1040" stroke-width="13"/><path d="M1000 1220 L3000 1220" stroke-width="13"/></g>""" +
+            """<g id="s2" class="staff" data-n="2"><path d="M1000 2000 L3000 2000" stroke-width="13"/><path d="M1000 2180 L3000 2180" stroke-width="13"/><path d="M1000 2360 L3000 2360" stroke-width="13"/><path d="M1000 2540 L3000 2540" stroke-width="13"/><path d="M1000 2720 L3000 2720" stroke-width="13"/></g></g>""" +
+            """<g id="m2" class="measure" data-n="13"><g id="s3" class="staff" data-n="1"><path d="M3000 500 L5000 500" stroke-width="13"/><path d="M3000 680 L5000 680" stroke-width="13"/><path d="M3000 860 L5000 860" stroke-width="13"/><path d="M3000 1040 L5000 1040" stroke-width="13"/><path d="M3000 1220 L5000 1220" stroke-width="13"/></g></g>""" +
+            """</g></g></svg></svg>"""
+        val page = PageGeometry.parse(svg)
+        assertEquals(29700f, page.height)
+        assertEquals(listOf("12", "13"), page.measures.map { it.n })
+        // the ids of this test are not those MusicXmlScore gives: no place in the file
+        assertEquals(listOf(null, null), page.measures.map { it.rank })
+        val ranked = PageGeometry.parse(svg.replace("""id="m2"""", """id="${PageGeometry.measureId(7)}""""))
+        assertEquals(listOf(null, 7), ranked.measures.map { it.rank })
+        val (top, bottom) = page.measures[0].staves
+        assertEquals(1, top.n)
+        assertEquals(2, bottom.n)
+        assertEquals(1000f + 400f, top.left, 0.01f)
+        assertEquals(3000f + 400f, top.right, 0.01f)
+        assertEquals(500f + 400f, top.top, 0.01f)
+        assertEquals(500f + 4 * 180f + 400f, top.bottom, 0.01f)
+        assertEquals(180f, top.space, 0.01f)
+        assertEquals(2000f + 400f, bottom.top, 0.01f)
+        assertEquals(3000f + 400f, page.measures[1].staves.single().left, 0.01f)
+    }
 }

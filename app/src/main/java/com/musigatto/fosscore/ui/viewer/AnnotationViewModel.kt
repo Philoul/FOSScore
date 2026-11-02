@@ -10,9 +10,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.library.Stamp
-import com.musigatto.fosscore.library.StampRepository
+import com.musigatto.fosscore.library.StampStore
 import com.musigatto.fosscore.library.Stroke
-import com.musigatto.fosscore.library.StrokeRepository
+import com.musigatto.fosscore.library.StrokeStore
 import kotlinx.coroutines.launch
 
 /** Undo levels kept per score (a new change throws the redo branch away, like any editor). */
@@ -47,9 +47,18 @@ internal class AnnotationSession {
  */
 internal class AnnotationViewModel(
     private val sheetId: Long?,
-    private val stamps: StampRepository,
-    private val strokes: StrokeRepository,
+    private var stamps: StampStore,
+    private var strokes: StrokeStore,
 ) : ViewModel() {
+
+    /**
+     * Where the marks are kept: a PDF's pages (the repositories), or a MusicXML score's measures
+     * (score.MusicXmlMarks), known once the score is open. The editing is the same.
+     */
+    fun useStores(stamps: StampStore, strokes: StrokeStore) {
+        this.stamps = stamps
+        this.strokes = strokes
+    }
 
     // --- the edits, on screen before the DB confirms them ---
     // ink already lifted that the DB has not handed back yet: without this the stroke blinks ~20 ms
@@ -134,6 +143,8 @@ internal class AnnotationViewModel(
     fun cancelSession() {
         val id = sheetId ?: return
         if (!session.hasChanges) return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         val pages = session.pages()
         session.clear()
         clearHistory()
@@ -192,6 +203,8 @@ internal class AnnotationViewModel(
     fun undo(page: Int, current: PageEdit) {
         val id = sheetId ?: return
         val (target, edit) = undoStack.lastOrNull() ?: return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         undoStack = undoStack.dropLast(1)
         // what redo puts back is the state we are leaving behind
         if (target == page) redoStack = (redoStack + (target to current)).takeLast(UNDO_LEVELS)
@@ -211,6 +224,8 @@ internal class AnnotationViewModel(
     fun redo(page: Int, current: PageEdit) {
         val id = sheetId ?: return
         val (target, edit) = redoStack.lastOrNull() ?: return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         redoStack = redoStack.dropLast(1)
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
@@ -243,8 +258,9 @@ internal class AnnotationViewModel(
         pushUndo(current, page)
         lastInkAt = System.currentTimeMillis()
         viewModelScope.launch {
-            val stored = stroke.copy(id = strokes.insert(stroke))
-            pendingInk = pendingInk + stored
+            val id = strokes.insert(stroke)
+            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
+            if (id > 0) pendingInk = pendingInk + stroke.copy(id = id)
         }
     }
 
@@ -291,9 +307,12 @@ internal class AnnotationViewModel(
     fun placeStamp(page: Int, stamp: Stamp, current: PageEdit) {
         pushUndo(current, page)
         viewModelScope.launch {
-            val stored = stamp.copy(id = stamps.insert(stamp))
-            pendingStamps = pendingStamps + stored
-            selectedId = stored.id
+            val id = stamps.insert(stamp)
+            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
+            if (id > 0) {
+                pendingStamps = pendingStamps + stamp.copy(id = id)
+                selectedId = id
+            }
         }
     }
 
@@ -316,6 +335,46 @@ internal class AnnotationViewModel(
         pushUndo(current, page)
         dragStamp = updated
         viewModelScope.launch { stamps.update(updated) }
+    }
+
+    // --- the text being typed on the page (#35): nothing is written until the typing is over ---
+    var typing by mutableStateOf<TextDraft?>(null)
+        private set
+    // a new text, or another one typed in: the field starts again with its own words
+    var typingKey by mutableStateOf(0)
+        private set
+
+    /** Typing starts on [draft]: a new text, or one already on the page. */
+    fun startTyping(draft: TextDraft) {
+        clearSelection()
+        typing = draft
+        typingKey++
+    }
+
+    /** The text being typed changed (its words, its size or its colour). */
+    fun retype(change: (TextDraft) -> TextDraft) {
+        typing = typing?.let(change)
+    }
+
+    /** The typing is dropped: nothing of it is written (✕, undo, redo). */
+    fun dropTyping() {
+        typing = null
+    }
+
+    /**
+     * The typing is over: [outcome] is written as an edit of [page] would be, one step of undo,
+     * through the same doors as the rest (a new text is placed, a changed one edited, an emptied
+     * one deleted).
+     */
+    fun endTyping(page: Int, outcome: TypingOutcome, current: PageEdit) {
+        typing = null
+        when (outcome) {
+            is TypingOutcome.Insert -> placeStamp(page, outcome.stamp, current)
+            // its place too: the first line stayed put while the box grew or shrank around it
+            is TypingOutcome.Update -> editTextBox(page, outcome.origin, outcome.stamp, current)
+            is TypingOutcome.Delete -> deleteSelection(page, outcome.origin, emptyList(), current)
+            TypingOutcome.Nothing -> Unit
+        }
     }
 
     companion object {

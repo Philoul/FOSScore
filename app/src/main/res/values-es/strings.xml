@@ -13,6 +13,9 @@
     <string name="tool_pen">Lápiz</string>
     <string name="tool_eraser">Goma</string>
     <string name="tool_select">Seleccionar</string>
+    <string name="tool_stamp">Sello</string>
+  <string name="tool_text">Texto</string>
+  <string name="text_placeholder">Aa</string>
     <string name="search_label">Buscar</string>
     <string name="library_title">Biblioteca</string>
     <string name="empty_library">Aún no hay partituras. Usa el botón Importar.</string>

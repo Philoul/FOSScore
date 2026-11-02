@@ -103,6 +103,24 @@ class MusicXmlScoreTest {
     }
 
     @Test
+    fun everyMeasureIsKnownByItsPlaceInTheFile() {
+        // the number of a measure is free text ("X1" for a measure MuseScore leaves out of the
+        // count, "12a"): the measure's place in the file is its key, and the number stays as written
+        val xml = String(song).replace("""<measure number="1">""", """<measure number="X1">""")
+            .replace("</part>", """<measure number="12a"/></part>""")
+        val measures = Regex("<measure [^>]*>").findAll(MusicXmlScore.parse(xml.toByteArray()).prepare())
+            .map { it.value }.toList()
+        assertEquals(
+            List(2) { listOf(PageGeometry.measureId(1), PageGeometry.measureId(2)) }.flatten(),
+            measures.map { Regex("""id="([^"]*)"""").find(it)?.groupValues?.get(1) },
+        )
+        assertEquals(
+            listOf("X1", "12a", "X1", "12a"),
+            measures.map { Regex("""number="([^"]*)"""").find(it)?.groupValues?.get(1) },
+        )
+    }
+
+    @Test
     fun headlessNotesBecomeInvisibleWithoutBeamsOrSlurs() {
         val xml = MusicXmlScore.parse(song).prepare()
         val first = xml.substringAfter("<note").substringBefore("</note>")

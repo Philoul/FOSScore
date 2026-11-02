@@ -42,11 +42,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.score.MusicXmlPages
@@ -68,7 +70,7 @@ private val INVERT_FILTER = ColorFilter.colorMatrix(ColorMatrix(INVERT_MATRIX))
 
 // ink and stamps default to black (not the theme's bluish primary); with "Neg" they are inverted
 // like the page, or black ink would disappear on the now-black background
-internal fun inkTint(color: Int?, invert: Boolean): Color {
+internal fun pageInkTint(color: Int?, invert: Boolean): Color {
     val c = stampColor(color, Color.Black)
     return if (invert) c.inverted() else c
 }
@@ -119,6 +121,7 @@ private fun PageOverlay(
     ink: List<InkDraw>,
     stamps: List<Stamp>,
     invert: Boolean,
+    textRects: Map<Long, RectPx>,
     clip: RectPx? = null,
 ) {
     if (paper.width <= 0f || fit.width <= 0f || fit.height <= 0f) return
@@ -165,13 +168,17 @@ private fun PageOverlay(
                 }
             ) {
                 for (stamp in stamps) {
+                    if (stamp.isTextStamp()) {
+                        TextStampDraw(stamp, textRects[stamp.id], fit, invert, density)
+                        continue
+                    }
                     val sym = runCatching { StampSymbol.valueOf(stamp.symbol) }.getOrNull()
                         ?: continue
                     val r = stampRect(stamp, fit)
                     StampView(
                         symbol = sym,
                         sizePx = r.width,
-                        color = inkTint(stamp.color, invert),
+                        color = pageInkTint(stamp.color, invert),
                         modifier = Modifier
                             .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                             .requiredSize(
@@ -185,6 +192,18 @@ private fun PageOverlay(
     }
 }
 
+// the dashed line between two lines of music of a MusicXML page while annotating
+private val LINE_BOUNDARY_COLOR = Color.Gray.copy(alpha = 0.6f)
+private val LINE_BOUNDARY_WIDTH = 1.dp
+private val LINE_BOUNDARY_DASH = 6.dp
+
+/** The dashes of a dashed line [length] long: [dash] drawn, [dash] left blank, from its start. */
+internal fun dashes(length: Float, dash: Float): List<Pair<Float, Float>> {
+    if (length <= 0f || dash <= 0f) return emptyList()
+    return generateSequence(0f) { it + 2 * dash }.takeWhile { it < length }
+        .map { it to minOf(it + dash, length) }.toList()
+}
+
 /**
  * The page itself: paper, playback bar, half-page cut line, ink, stamps, selection and the loupe.
  * It only draws what it is given; the reading modes and the fit rect are decided by the viewer.
@@ -194,6 +213,7 @@ private fun PageOverlay(
  * [playQuarters], where the music is heard, is one too: it changes at every frame while the music
  * plays, and only the playback bar is drawn again.
  */
+
 @Composable
 internal fun PageCanvas(
     bitmaps: SnapshotStateMap<Int, Bitmap>,
@@ -217,6 +237,8 @@ internal fun PageCanvas(
     layoutVersion: Int,
     canEdit: Boolean,
     inkDraws: List<InkDraw>,
+    // the boundaries between the lines of music of a MusicXML page while annotating (0..1)
+    lineBoundaries: List<Float>,
     dragStrokes: List<Stroke>?,
     inkPreview: List<Offset>,
     eraserTool: Boolean,
@@ -234,6 +256,10 @@ internal fun PageCanvas(
     // drawn, and it has no live copy to merge in
     nextInkDraws: List<InkDraw>,
     nextStamps: List<Stamp>,
+    // measured boxes of the visible text stamps (id -> rect, Task: draw = hit = selection). Keyed by
+    // stamp id, global: both pages of a spread find theirs here. A text stamp without a rect (map
+    // not built yet) still draws, centred on its point.
+    textRects: Map<Long, RectPx>,
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -266,6 +292,7 @@ internal fun PageCanvas(
                                 ink = if (index == currentPage) inkDraws else nextInkDraws,
                                 stamps = if (index == currentPage) pageStamps else nextStamps,
                                 invert = invert,
+                                textRects = textRects,
                             )
                         }
                     }
@@ -340,6 +367,7 @@ internal fun PageCanvas(
                         ink = nextInkDraws,
                         stamps = nextStamps,
                         invert = invert,
+                        textRects = textRects,
                         clip = RectPx(paper.left, paper.top, paper.width, paper.height * split.upper),
                     )
                     PageOverlay(
@@ -348,6 +376,7 @@ internal fun PageCanvas(
                         ink = inkDraws,
                         stamps = pageStamps,
                         invert = invert,
+                        textRects = textRects,
                         clip = RectPx(
                             paper.left,
                             paper.top + paper.height * split.lower,
@@ -475,6 +504,22 @@ internal fun PageCanvas(
                         // only re-issues them when something redraws the page
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             inPage(pageFit, offsetX(), offsetY(), scale()) {
+                                // dashed, thin at any zoom: where a mark goes with the line
+                                // above or the line below. Dash by dash: Android 7 draws a
+                                // line with a dash effect as a full line.
+                                val k = scale()
+                                val dash = LINE_BOUNDARY_DASH.toPx() / k
+                                for (b in lineBoundaries) {
+                                    val y = b * hitFit.height
+                                    for ((from, to) in dashes(hitFit.width, dash)) {
+                                        drawLine(
+                                            LINE_BOUNDARY_COLOR,
+                                            Offset(from, y),
+                                            Offset(to, y),
+                                            strokeWidth = LINE_BOUNDARY_WIDTH.toPx() / k,
+                                        )
+                                    }
+                                }
                                 for (d in inkDraws) {
                                     // the ink being moved/stretched is drawn only at its
                                     // live position (otherwise two copies = a ghost)
@@ -498,7 +543,7 @@ internal fun PageCanvas(
                                 dragStrokes?.forEach { ds ->
                                     drawInkPath(
                                         strokePointsPx(ds, hitFit),
-                                        inkTint(ds.color, invert),
+                                        pageInkTint(ds.color, invert),
                                         ds.width * hitFit.height
                                     )
                                 }
@@ -506,7 +551,7 @@ internal fun PageCanvas(
                                     drawInkPath(
                                         inkPreview,
                                         if (eraserTool) Color.Red.copy(alpha = 0.4f)
-                                        else inkTint(activeColor, invert),
+                                        else pageInkTint(activeColor, invert),
                                         if (eraserTool) eraserPx * 2f
                                         else penWidthPx
                                     )
@@ -537,6 +582,10 @@ internal fun PageCanvas(
                         ) {
                             for (stamp in pageStamps) {
                                 val shown = dragStamp?.takeIf { it.id == stamp.id } ?: stamp
+                                if (shown.isTextStamp()) {
+                                    TextStampDraw(shown, textRects[shown.id], hitFit, invert, density)
+                                    continue
+                                }
                                 val sym = runCatching { StampSymbol.valueOf(shown.symbol) }.getOrNull()
                                     ?: continue
                                 val r = stampRect(shown, hitFit)
@@ -545,7 +594,7 @@ internal fun PageCanvas(
                                     // in fit units: the layer applies the scale, not the
                                     // stamp size (otherwise it is applied twice)
                                     sizePx = r.width,
-                                    color = inkTint(shown.color, invert),
+                                    color = pageInkTint(shown.color, invert),
                                     modifier = Modifier
                                         .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                                         .requiredSize(
@@ -594,6 +643,51 @@ internal fun PageCanvas(
             } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
+        }
+    }
+}
+
+/**
+ * A typed-text stamp on the page. When the measured rect exists it is drawn EXACTLY there (same box
+ * the gesture hit-tests and the selection frames); without it (map not built yet) the text lays out
+ * centred on the stamp's point. Both paths clamp nothing themselves: [textBoxRect] did the clamping
+ * when the rect was built.
+ */
+@Composable
+private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: Boolean, density: Density) {
+    val fontPx = textFontPx(stamp.size, fit)
+    val color = pageInkTint(stamp.color, invert)
+    // the rect follows the LIVE stamp: while it is dragged x/y move, the measured SIZE stays,
+    // so textBoxRect re-clamps it at the edge instead of replaying a stale rect
+    val rect = measured?.let { textBoxRect(stamp, it.width, it.height, fit) }
+    if (rect != null) {
+        TextStampView(
+            text = stamp.text.orEmpty(),
+            fontPx = fontPx,
+            maxWidthPx = fit.width * TEXT_MAX_WRAP - 16f,
+            color = color,
+            modifier = Modifier
+                .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
+                .requiredSize(
+                    with(density) { rect.width.toDp() },
+                    with(density) { rect.height.toDp() }
+                )
+        )
+    } else {
+        val c = normalizedToPx(
+            Offset(stamp.x.coerceIn(0f, 1f), stamp.y.coerceIn(0f, 1f)),
+            fit
+        )
+        Box(
+            modifier = Modifier.offset { IntOffset(c.x.roundToInt(), c.y.roundToInt()) },
+            contentAlignment = Alignment.Center,
+        ) {
+            TextStampView(
+                text = stamp.text.orEmpty(),
+                fontPx = fontPx,
+                maxWidthPx = fit.width * TEXT_MAX_WRAP - 16f,
+                color = color,
+            )
         }
     }
 }

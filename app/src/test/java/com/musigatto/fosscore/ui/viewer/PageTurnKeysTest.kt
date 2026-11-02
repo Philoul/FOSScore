@@ -20,6 +20,13 @@ class PageTurnKeysTest {
     }
 
     @Test
+    fun keysAreTheTextsWhileTyping() {
+        listOf(Key.Enter, Key.NumPadEnter, Key.Spacebar, Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown)
+            .forEach { assertNull(it.toString(), pageTurnFor(it, typing = true)) }
+        assertNull(pageTurnFor(Key.Spacebar, shift = true, typing = true))
+    }
+
+    @Test
     fun otherKeysAreIgnored() {
         assertNull(pageTurnFor(Key.A))
         assertNull(pageTurnFor(Key.Escape))

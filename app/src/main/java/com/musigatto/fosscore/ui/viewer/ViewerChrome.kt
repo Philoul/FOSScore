@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -89,6 +90,12 @@ private val NUMBER_FIELD_WIDTH = 112.dp
  * The row deliberately has NO clickable full-width background: it would eat the page taps in the gaps
  * between pills, which are the navigation (spec §3).
  */
+/**
+ * Whether the title bar offers ✎: not while annotating (✓ ends it), and not on a score that cannot
+ * be annotated (no sheet in the library), where it would open nothing.
+ */
+internal fun editEntryShown(editing: Boolean, annotatable: Boolean): Boolean = !editing && annotatable
+
 @Composable
 fun ViewerTitleBar(
     title: String,
@@ -98,6 +105,7 @@ fun ViewerTitleBar(
     onOpenMenu: () -> Unit,
     onToggleEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    annotatable: Boolean = true,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         // rule 7 of the spec: the extra room depends on the width, not on the device. On a phone the
@@ -139,7 +147,7 @@ fun ViewerTitleBar(
             // the pen is picked up here and put down with ✓ at the end of the annotation bar (spec
             // §5 row 1): while annotating the toggle steps aside instead of meaning something else
             // (issue #50). forScore does the same: its own row 1 replaces the title bar.
-            if (!editing) {
+            if (editEntryShown(editing, annotatable)) {
                 Spacer(Modifier.width(8.dp))
                 Pill {
                     PillEntry(
@@ -523,20 +531,30 @@ private fun PillEntry(
 }
 
 /**
- * Tap cycle of a tool button (spec §5: tap a tool to select it, tap the selected one again for its
- * options): off -> on -> options -> off. Returns (tool on, panel open).
+ * Tap of a tool button (issue #56): a tool is chosen, never turned off. Tapping the one in hand
+ * opens its options, tapping it again closes them and leaves it in hand. Returns whether its panel
+ * should be open.
  */
-fun nextToolTap(active: Boolean, panelOpen: Boolean): Pair<Boolean, Boolean> = when {
-    !active -> true to false
-    panelOpen -> false to false
-    else -> true to true
-}
+fun nextToolTap(active: Boolean, panelOpen: Boolean): Boolean = active && !panelOpen
 
 /**
  * Compact block that drops from the annotation bar: the shape every tool panel shares (stamps, pen,
  * eraser, colour). It floats over the page instead of painting a band across it (spec §5), and the
- * fixed 160 dp keeps all of them the same width so the bar never reshuffles.
+ * fixed width keeps all of them the same so the bar never reshuffles: wide enough for a row of
+ * eight stamps or eight colours, so the panels take width rather than half a phone's height.
  */
+/**
+ * A size slider's value, to the pixel. The sliders used to step by 1 px through `steps`, which
+ * Material draws as one tick per step: 18 dots on the pen's 1-20 px, a dashed line on the stamps'
+ * 8-100 px. Rounded here instead, every size slider looks the same.
+ */
+internal fun wholePx(value: Float): Float = value.roundToInt().toFloat()
+
+// every tool panel: eight stamps or the eight colours a row, and a slider no taller than its thumb
+internal const val TOOL_PANEL_DP = 320
+internal const val SWATCHES_PER_ROW = 8
+internal const val TOOL_SLIDER_DP = 32
+
 @Composable
 fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
     Surface(
@@ -546,53 +564,88 @@ fun ToolBlock(content: @Composable ColumnScope.() -> Unit) {
         shadowElevation = 4.dp,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
-            .padding(start = 12.dp, bottom = 8.dp)
-            .width(160.dp)
+            .padding(start = 12.dp, bottom = 4.dp)
+            .width(TOOL_PANEL_DP.dp)
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
             content = content
         )
     }
 }
 
-/** Tool panel with one labelled slider: pen thickness, eraser size. */
+/**
+ * Tool panel with one labelled slider: pen thickness, eraser size (issue #59: every size control
+ * is − slider +, the pattern the stamp's size follows). [lead] sits above it, for the settings a
+ * tool shares a panel with (the pen's colour, issue #56).
+ */
 @Composable
 fun ToolSizePanel(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     onValue: (Float) -> Unit,
+    lead: (@Composable ColumnScope.() -> Unit)? = null,
+    // the size the tool starts with next time: saved by the button beside the label
+    onSaveDefault: (() -> Unit)? = null,
+    isDefault: Boolean = true,
 ) {
     ToolBlock {
-        Text("$label · ${value.roundToInt()} px", style = MaterialTheme.typography.bodySmall)
-        Slider(
-            value = value,
-            onValueChange = onValue,
-            valueRange = range,
-            steps = (range.endInclusive - range.start).toInt() - 1,
-        )
+        lead?.invoke(this)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "$label · ${value.roundToInt()} px",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            if (onSaveDefault != null) {
+                TextButton(
+                    onClick = onSaveDefault,
+                    enabled = !isDefault,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier.height(TOOL_SLIDER_DP.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.stamp_default_save),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StepArrow(label = "-") { onValue((value - 1f).coerceIn(range.start, range.endInclusive)) }
+            Slider(
+                value = value,
+                onValueChange = { onValue(wholePx(it)) },
+                valueRange = range,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(TOOL_SLIDER_DP.dp)
+            )
+            StepArrow(label = "+") { onValue((value + 1f).coerceIn(range.start, range.endInclusive)) }
+        }
     }
 }
 
 /**
- * Colour selector in its own panel (spec §5): the tint for ink and stamps, and for the selected
- * stamp. The null entry is the default colour: shown as the ink it really draws, black (white in
- * negative mode).
+ * The tint swatches, the same grid wherever a tool has a colour (issue #56: the colour lives in the
+ * panel of the tool that uses it). The null entry is the default colour. Every swatch shows what
+ * really lands on the page: the same inkTint the ink takes, so in negative mode the swatches are
+ * shown inverted (the white swatch shows black, the default shows white) — the square never lies
+ * about the ink (issue #35).
  */
 @Composable
-fun ColorPanel(active: Int?, invert: Boolean, onPick: (Int?) -> Unit) {
-    ToolBlock {
-        (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(4).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { argb ->
-                    ColorSwatchButton(
-                        color = if (argb == null) inkTint(null, invert) else Color(argb),
-                        selected = active == argb,
-                        onClick = { onPick(argb) }
-                    )
-                }
+fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit, perRow: Int = SWATCHES_PER_ROW) {
+    (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(perRow).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            row.forEach { argb ->
+                ColorSwatchButton(
+                    color = inkTint(argb, invert),
+                    selected = active == argb,
+                    onClick = { onPick(argb) }
+                )
             }
         }
     }

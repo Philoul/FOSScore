@@ -26,4 +26,15 @@ class MusicXmlScreenTest {
         // two-up: a page is half the screen, drawn in half the viewport
         assertEquals(Pair(400, 1280), tablet.copy(pageWidth = 400, twoUp = true).slot())
     }
+
+    @Test
+    fun annotatingIsALayoutOfItsOwn() {
+        val parts = listOf(Part("P1", "Voix"))
+        val reading = tablet.spec(ScoreLayout(), parts)
+        val annotating = tablet.spec(ScoreLayout(), parts, annotating = true)
+        assertEquals(false, reading.annotating)
+        assertEquals(true, annotating.annotating)
+        // its own pages in the cache: the name of a layout is made from all of it
+        assertEquals(false, reading.toString() == annotating.toString())
+    }
 }

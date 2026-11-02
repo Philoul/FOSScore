@@ -14,7 +14,9 @@ import com.musigatto.fosscore.musicxml.ScoreSummary
 import com.musigatto.fosscore.musicxml.SoundSpec
 import com.musigatto.fosscore.pdf.MAX_RENDER_PIXELS
 import com.musigatto.fosscore.pdf.PageBox
+import com.musigatto.fosscore.ui.viewer.Band
 import com.musigatto.fosscore.ui.viewer.ScoreLayout
+import com.musigatto.fosscore.ui.viewer.blankBands
 import java.io.File
 import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
@@ -25,6 +27,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -34,10 +40,10 @@ private const val LOG_TAG = "FOSScore-MusicXML"
 private const val MAX_CACHED_BITMAPS = 4
 
 // bumped when what is kept in the cache is drawn or read differently, so old files are not used
-private const val CACHE_VERSION = 1
+private const val CACHE_VERSION = 2
 
-// the layouts whose pages are kept: portrait, landscape, two-up
-private const val KEPT_LAYOUTS = 3
+// the layouts whose pages are kept: portrait, landscape, two-up, and annotating in both orientations
+private const val KEPT_LAYOUTS = 5
 
 /**
  * A MusicXML score as pages for the viewer. Unlike a PDF, the pages do not exist before the score
@@ -75,6 +81,13 @@ class MusicXmlPages private constructor(
     private var kept: String? = null
     // where the notes are on each page drawn since the last layout, for the playback cursor
     private val geometries = ConcurrentHashMap<Int, PageGeometry>()
+    // counts the changes of [geometries]: the marks hung on measures are drawn again on a page once
+    // its geometry is known (a page from the cache shows before it), and go with the old layout
+    private val _geometryVersion = MutableStateFlow(0)
+    val geometryVersion: StateFlow<Int> = _geometryVersion.asStateFlow()
+    // the blank bands of each page drawn while annotating: where its lines of music hand over
+    // to the next (MeasureAnchors.boundaries)
+    private val blanks = ConcurrentHashMap<Int, List<Band>>()
     private val bitmaps = object : LinkedHashMap<Long, Bitmap>(MAX_CACHED_BITMAPS + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Bitmap>?) =
             size > MAX_CACHED_BITMAPS
@@ -94,6 +107,8 @@ class MusicXmlPages private constructor(
         // are dropped, not recycled
         bitmaps.clear()
         geometries.clear()
+        blanks.clear()
+        _geometryVersion.update { it + 1 }
         box = PageBox(0f, 0f, spec.width.toFloat(), spec.height.toFloat())
         laidOut = spec
         kept = name
@@ -138,21 +153,36 @@ class MusicXmlPages private constructor(
         bitmaps[key]?.let { return it }
         val name = kept
         val file = name?.let { File(pagesDir, "$it-$index-$w.png") }
+        // one SVG for every width: where the notes and the measures are
+        val svgFile = name?.let { File(pagesDir, "$it-$index.svg") }
         file?.takeIf { it.isFile }?.let { BitmapFactory.decodeFile(it.path) }?.let { bitmap ->
             bitmaps[key] = bitmap
-            // the notes' positions, for the cursor, once the music is laid out again
+            // the notes' and measures' positions, for the cursor and the marks: from the SVG kept
+            // beside the page, else once the music is laid out again (seconds on a slow tablet)
             scope.launch {
-                runCatching { PageGeometry.parse(engine.pageSvg(index + 1)) }
-                    .onSuccess { if (kept == name) geometries[index] = it }
+                runCatching { PageGeometry.parse(svgFile?.takeIf { it.isFile }?.readText() ?: engine.pageSvg(index + 1)) }
+                    .onSuccess {
+                        if (kept == name) {
+                            geometries[index] = it
+                            _geometryVersion.update { v -> v + 1 }
+                        }
+                    }
             }
+            readBlanks(index, bitmap, name)
             return bitmap
         }
         return try {
             // the engine runs Verovio on its own thread; the viewer already calls us off the main one
             val page = runBlocking { viewerWork { engine.renderPage(index + 1, w, h) } }
-            geometries[index] = page.geometry
+            // a page of the layout before, finished after a new one began, has the old geometry
+            if (kept == name) {
+                geometries[index] = page.geometry
+                _geometryVersion.update { it + 1 }
+            }
             bitmaps[key] = page.bitmap
             file?.let { keep(it, page.bitmap) }
+            svgFile?.let { keepSvg(it, page.svg) }
+            scope.launch { readBlanks(index, page.bitmap, name) }
             page.bitmap
         } catch (e: Exception) {
             Log.e(LOG_TAG, "page $index could not be drawn: ${e.message}", e)
@@ -160,7 +190,20 @@ class MusicXmlPages private constructor(
         }
     }
 
-    /** Where the notes of page [index] are, once the page has been drawn. Positions in SVG units. */
+    // annotating: the blank bands of a page, read from its picture once
+    private fun readBlanks(index: Int, bitmap: Bitmap, name: String?) {
+        if (laidOut?.annotating != true || blanks.containsKey(index)) return
+        val bands = bitmap.blankBands()
+        if (kept == name) {
+            blanks[index] = bands
+            _geometryVersion.update { it + 1 }
+        }
+    }
+
+    /** The blank bands of page [index] (fractions of its height), once drawn in an annotating layout. */
+    fun blankBands(index: Int): List<Band> = blanks[index].orEmpty()
+
+    /** Where the notes and the measures of page [index] are, once the page has been drawn. Positions in SVG units. */
     fun geometry(index: Int): PageGeometry? = geometries[index]
 
     /** Page (0-based) of the note [id] in the current layout, or -1. */
@@ -176,6 +219,7 @@ class MusicXmlPages private constructor(
         scope.cancel()
         bitmaps.clear()
         geometries.clear()
+        blanks.clear()
         engine.close()
     }
 
@@ -190,6 +234,18 @@ class MusicXmlPages private constructor(
     }
 
     // a page drawn, kept for the next opening; written aside first, so a half-written file is never read
+    private fun keepSvg(file: File, svg: String) {
+        if (file.isFile) return
+        scope.launch {
+            runCatching {
+                file.parentFile?.mkdirs()
+                val part = File(file.path + ".part")
+                part.writeText(svg)
+                part.renameTo(file)
+            }
+        }
+    }
+
     private fun keep(file: File, bitmap: Bitmap) {
         scope.launch {
             runCatching {

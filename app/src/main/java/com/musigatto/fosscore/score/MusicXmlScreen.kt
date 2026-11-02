@@ -23,8 +23,8 @@ data class MusicXmlScreen(
     val marginBottom: Int,
     val twoUp: Boolean,
 ) {
-    /** The layout of a score with [layout] and [parts] on this screen. */
-    fun spec(layout: ScoreLayout, parts: List<Part>) = LayoutSpec(
+    /** The layout of a score with [layout] and [parts] on this screen, spaced out when [annotating]. */
+    fun spec(layout: ScoreLayout, parts: List<Part>, annotating: Boolean = false) = LayoutSpec(
         width = pageWidth,
         height = viewportHeight,
         // the music size follows the whole screen, so two-up does not shrink the notes
@@ -35,6 +35,7 @@ data class MusicXmlScreen(
         parts = layout.layoutParts(parts),
         lyrics = layout.lyrics,
         hiddenLyrics = layout.keepHiddenLyrics,
+        annotating = annotating,
     )
 
     /** The size, in px, the viewer draws a page in at rest (no zoom), as its render loop does. */

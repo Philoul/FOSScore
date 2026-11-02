@@ -398,8 +398,9 @@ fun PdfViewerScreen(
     // the DAO already returns only this page's rows; pendingStamps are the ones it has not handed
     // back yet (distinctBy drops the copy once the flow shows them), and this drops the ones
     // deleted a second ago
-    val pageStamps =
+    val pageStamps = remember(stamps, editor.pendingStamps, editor.hiddenStampIds) {
         (stamps + editor.pendingStamps).distinctBy { it.id }.filter { it.id !in editor.hiddenStampIds }
+    }
     val pageStrokes = remember(strokes, editor.hiddenStrokeIds) { strokes.filter { it.id !in editor.hiddenStrokeIds } }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
@@ -657,6 +658,16 @@ fun PdfViewerScreen(
 
     // a fresh page (or leaving edit mode) must not keep the ink the DB has not handed back
     LaunchedEffect(currentPage, editing) { editor.pendingInk = emptyList() }
+
+    // a text draft is a piggy-back on the TEXT tool in hand: leaving the tool (or annotation
+    // mode, or the page) closes it and brings the hidden row back
+    val currentDraft = textDraft
+    LaunchedEffect(tool, editing, currentPage) {
+        if (currentDraft != null && (tool != AnnotationTool.TEXT || !editing || currentDraft.page != currentPage)) {
+            currentDraft.replacing?.let { st0 -> editor.hiddenStampIds = editor.hiddenStampIds - st0.id }
+            textDraft = null
+        }
+    }
 
     // MuPDF (prebuilt AAR, AGPL-3.0: see LICENSE). Opens and works out sizes in the background:
     // opening parses the PDF index and must not touch the main thread.
@@ -1016,8 +1027,6 @@ fun PdfViewerScreen(
                     textRects = textRects,
                     onTextBoxTap = { norm, stamp, screenPos ->
                         if (tool == AnnotationTool.TEXT && sheetId != null) {
-                            val fit = RectPx(0f, 0f, currentPageFit.width, currentPageFit.height)
-                            val centre = stampCenterInside(norm.x, norm.y, textSizePxToFrac(textPx, fit), fit)
                             if (stamp == null) {
                                 // NEW box: open the editor there; it commits on IME Done.
                                 textDraft = TextBoxDraft(
@@ -1028,6 +1037,7 @@ fun PdfViewerScreen(
                                 )
                             } else {
                                 // EDIT existing: hide the row while editing; cancel unhides it.
+                                editor.hiddenStampIds = editor.hiddenStampIds + stamp.id
                                 textDraft = TextBoxDraft(
                                     page = currentPage,
                                     replacing = stamp,
@@ -1177,7 +1187,15 @@ fun PdfViewerScreen(
                     onEraserPx = { eraserPx = it },
                     onPenColor = { penColor = it },
                     onTextPx = { textPx = it },
-                    onTextColor = { textColor = it },
+                    onTextColor = { argb ->
+                        textColor = argb
+                        // the tint also recolours the selected text box: the arrow changes a
+                        // box's colour, it does not rewrite it (same as the stamp's tint)
+                        val current = selectedStamp
+                        if (current != null && current.isTextStamp()) {
+                            editor.recolorStamp(currentPage, current, argb, PageEdit(pageStamps, pageStrokes))
+                        }
+                    },
                     onStampColor = { argb ->
                         stampColor = argb
                         // the tint also recolours the selected stamp: the arrow changes a
@@ -1334,6 +1352,13 @@ private fun TextBoxEditorIfOpen(
     textDraft?.let { draft ->
         if (draft.page == currentPage) {
             val st = draft.replacing
+            // any path out of the editor (IME Done, Back, tool change) brings the hidden
+            // row back: a commit re-shows it fresh (settle() matches it), a cancel shows it
+            // as it was
+            val close: () -> Unit = {
+                draft.replacing?.let { st0 -> editor.hiddenStampIds = editor.hiddenStampIds - st0.id }
+                onDismiss()
+            }
             val sizeFrac = st?.size ?: textSizePxToFrac(textPx, hitFit)
             val fontPx = textFontPx(sizeFrac, hitFit)
             val initialText = st?.text.orEmpty()
@@ -1347,7 +1372,7 @@ private fun TextBoxEditorIfOpen(
                 fontPx = fontPx,
                 color = editorColor,
                 invert = invert,
-                onDismiss = onDismiss,
+                onDismiss = close,
                 onCommit = { newText ->
                     if (draft.replacing == null) {
                         // NEW box: only insert if text is non-empty
@@ -1402,15 +1427,12 @@ private fun TextBoxEditorIfOpen(
                         } else {
                             editor.editTextBox(
                                 currentPage, draft.replacing,
-                                draft.replacing.copy(
-                                    text = newText,
-                                    color = textColor ?: draft.replacing.color,
-                                ),
+                                draft.replacing.copy(text = newText),
                                 currentPageEdit
                             )
                         }
                     }
-                    onDismiss()
+                    close()
                 },
                 modifier = Modifier.fillMaxSize(),
             )

@@ -199,6 +199,8 @@ internal class AnnotationViewModel(
         // the "looks deleted now" cache is stale after a restore: the
         // snapshots go back with their original ids
         clearHidden()
+        // a drag preview in flight shows the PRE-undo content: the restored rows win
+        dragStamp = null
         keepOnly(edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
@@ -213,6 +215,7 @@ internal class AnnotationViewModel(
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
         clearHidden()
+        dragStamp = null
         keepOnly(edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)

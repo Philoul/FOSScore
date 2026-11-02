@@ -198,6 +198,11 @@ private fun PageOverlay(
  * [scale], [offsetX] and [offsetY] are lambdas on purpose: they change on every pinch or pan frame
  * and are read ONLY inside draw/layout lambdas, so a zoom never recomposes or re-measures this.
  */
+// the dashed line between two lines of music of a MusicXML page while annotating
+private val LINE_BOUNDARY_COLOR = Color.Gray.copy(alpha = 0.6f)
+private val LINE_BOUNDARY_WIDTH = 1.dp
+private val LINE_BOUNDARY_DASH = 6.dp
+
 @Composable
 internal fun PageCanvas(
     bitmaps: SnapshotStateMap<Int, Bitmap>,
@@ -220,6 +225,8 @@ internal fun PageCanvas(
     layoutVersion: Int,
     canEdit: Boolean,
     inkDraws: List<InkDraw>,
+    // the boundaries between the lines of music of a MusicXML page while annotating (0..1)
+    lineBoundaries: List<Float>,
     dragStrokes: List<Stroke>?,
     inkPreview: List<Offset>,
     eraserTool: Boolean,
@@ -477,6 +484,21 @@ internal fun PageCanvas(
                         // only re-issues them when something redraws the page
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             inPage(pageFit, offsetX(), offsetY(), scale()) {
+                                // dashed, thin at any zoom: where a mark goes with the line
+                                // above or the line below
+                                val k = scale()
+                                for (b in lineBoundaries) {
+                                    val y = b * hitFit.height
+                                    drawLine(
+                                        LINE_BOUNDARY_COLOR,
+                                        Offset(0f, y),
+                                        Offset(hitFit.width, y),
+                                        strokeWidth = LINE_BOUNDARY_WIDTH.toPx() / k,
+                                        pathEffect = PathEffect.dashPathEffect(
+                                            floatArrayOf(LINE_BOUNDARY_DASH.toPx() / k, LINE_BOUNDARY_DASH.toPx() / k)
+                                        ),
+                                    )
+                                }
                                 for (d in inkDraws) {
                                     // the ink being moved/stretched is drawn only at its
                                     // live position (otherwise two copies = a ghost)

@@ -100,6 +100,7 @@ import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
+import com.musigatto.fosscore.score.MeasureAnchors
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.PageSource
@@ -402,6 +403,13 @@ fun PdfViewerScreen(
     // a MusicXML score is annotated too: its marks hang on its measures (MusicXmlMarks)
     val canEdit = sheetId != null && !branch.showTwoUp &&
         !(branch.showHalf && halfTurned)
+    // the boundaries between the lines of music of a MusicXML page (0..1 down the page), drawn
+    // while annotating: a mark belongs to the line on its side (MeasureAnchors)
+    val musicXmlPages = pageSource as? MusicXmlPages
+    val geometryVersion = musicXmlPages?.geometryVersion?.collectAsState()?.value
+    val lineBoundaries = remember(musicXmlPages, currentPage, geometryVersion) {
+        musicXmlPages?.geometry(currentPage)?.let { MeasureAnchors.boundaries(MeasureAnchors.slotsOf(it)) }.orEmpty()
+    }
 
     // marks and stamps of the current page, shared between the overlay and the gestures.
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
@@ -739,7 +747,7 @@ fun PdfViewerScreen(
     val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
     val chromeBottom = bars.getBottom(density) +
         with(density) { (SELECTOR_ROOM - SELECTOR_AIR + PLAYBACK_BAND_ROOM).roundToPx() }
-    LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom) {
+    LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom, editing) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
         // the system bars settle over the first frames, restarting this effect each time: a
@@ -757,7 +765,8 @@ fun PdfViewerScreen(
             marginBottom = chromeBottom.coerceAtMost(viewport.height / 4),
             twoUp = twoUpSlots,
         )
-        val spec = screen.spec(scoreLayout, parts)
+        // annotating spaces the lines of music out: room to write, and a clear line between them
+        val spec = screen.spec(scoreLayout, parts, annotating = editing)
         // the other scores get laid out and drawn ahead for this screen too
         withContext(Dispatchers.IO) { MusicXmlPages.rememberScreen(context, screen) }
         try {
@@ -1157,6 +1166,7 @@ fun PdfViewerScreen(
                     layoutVersion = layoutVersion,
                     canEdit = canEdit,
                     inkDraws = inkDraws,
+                    lineBoundaries = if (editing) lineBoundaries else emptyList(),
                     dragStrokes = editor.dragStrokes,
                     inkPreview = inkPreview,
                     eraserTool = tool == AnnotationTool.ERASER,

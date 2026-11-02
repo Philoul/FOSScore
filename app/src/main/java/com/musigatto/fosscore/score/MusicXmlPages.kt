@@ -40,8 +40,8 @@ private const val MAX_CACHED_BITMAPS = 4
 // bumped when what is kept in the cache is drawn or read differently, so old files are not used
 private const val CACHE_VERSION = 1
 
-// the layouts whose pages are kept: portrait, landscape, two-up
-private const val KEPT_LAYOUTS = 3
+// the layouts whose pages are kept: portrait, landscape, two-up, and annotating in both orientations
+private const val KEPT_LAYOUTS = 5
 
 /**
  * A MusicXML score as pages for the viewer. Unlike a PDF, the pages do not exist before the score
@@ -147,11 +147,14 @@ class MusicXmlPages private constructor(
         bitmaps[key]?.let { return it }
         val name = kept
         val file = name?.let { File(pagesDir, "$it-$index-$w.png") }
+        // one SVG for every width: where the notes and the measures are
+        val svgFile = name?.let { File(pagesDir, "$it-$index.svg") }
         file?.takeIf { it.isFile }?.let { BitmapFactory.decodeFile(it.path) }?.let { bitmap ->
             bitmaps[key] = bitmap
-            // the notes' positions, for the cursor, once the music is laid out again
+            // the notes' and measures' positions, for the cursor and the marks: from the SVG kept
+            // beside the page, else once the music is laid out again (seconds on a slow tablet)
             scope.launch {
-                runCatching { PageGeometry.parse(engine.pageSvg(index + 1)) }
+                runCatching { PageGeometry.parse(svgFile?.takeIf { it.isFile }?.readText() ?: engine.pageSvg(index + 1)) }
                     .onSuccess {
                         if (kept == name) {
                             geometries[index] = it
@@ -171,6 +174,7 @@ class MusicXmlPages private constructor(
             }
             bitmaps[key] = page.bitmap
             file?.let { keep(it, page.bitmap) }
+            svgFile?.let { keepSvg(it, page.svg) }
             page.bitmap
         } catch (e: Exception) {
             Log.e(LOG_TAG, "page $index could not be drawn: ${e.message}", e)
@@ -208,6 +212,18 @@ class MusicXmlPages private constructor(
     }
 
     // a page drawn, kept for the next opening; written aside first, so a half-written file is never read
+    private fun keepSvg(file: File, svg: String) {
+        if (file.isFile) return
+        scope.launch {
+            runCatching {
+                file.parentFile?.mkdirs()
+                val part = File(file.path + ".part")
+                part.writeText(svg)
+                part.renameTo(file)
+            }
+        }
+    }
+
     private fun keep(file: File, bitmap: Bitmap) {
         scope.launch {
             runCatching {

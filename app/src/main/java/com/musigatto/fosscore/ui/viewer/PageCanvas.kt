@@ -69,7 +69,7 @@ private val INVERT_FILTER = ColorFilter.colorMatrix(ColorMatrix(INVERT_MATRIX))
 
 // ink and stamps default to black (not the theme's bluish primary); with "Neg" they are inverted
 // like the page, or black ink would disappear on the now-black background
-internal fun pageInkTint(color: Int?, invert: Boolean): Color {
+internal fun inkTint(color: Int?, invert: Boolean): Color {
     val c = stampColor(color, Color.Black)
     return if (invert) c.inverted() else c
 }
@@ -177,7 +177,7 @@ private fun PageOverlay(
                     StampView(
                         symbol = sym,
                         sizePx = r.width,
-                        color = pageInkTint(stamp.color, invert),
+                        color = inkTint(stamp.color, invert),
                         modifier = Modifier
                             .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                             .requiredSize(
@@ -500,7 +500,7 @@ internal fun PageCanvas(
                                 dragStrokes?.forEach { ds ->
                                     drawInkPath(
                                         strokePointsPx(ds, hitFit),
-                                        pageInkTint(ds.color, invert),
+                                        inkTint(ds.color, invert),
                                         ds.width * hitFit.height
                                     )
                                 }
@@ -508,7 +508,7 @@ internal fun PageCanvas(
                                     drawInkPath(
                                         inkPreview,
                                         if (eraserTool) Color.Red.copy(alpha = 0.4f)
-                                        else pageInkTint(activeColor, invert),
+                                        else inkTint(activeColor, invert),
                                         if (eraserTool) eraserPx * 2f
                                         else penWidthPx
                                     )
@@ -551,7 +551,7 @@ internal fun PageCanvas(
                                     // in fit units: the layer applies the scale, not the
                                     // stamp size (otherwise it is applied twice)
                                     sizePx = r.width,
-                                    color = pageInkTint(shown.color, invert),
+                                    color = inkTint(shown.color, invert),
                                     modifier = Modifier
                                         .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                                         .requiredSize(
@@ -613,7 +613,7 @@ internal fun PageCanvas(
 @Composable
 private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: Boolean, density: Density) {
     val fontPx = textFontPx(stamp.size, fit)
-    val color = pageInkTint(stamp.color, invert)
+    val color = inkTint(stamp.color, invert)
     // the rect follows the LIVE stamp: while it is dragged x/y move, the measured SIZE stays,
     // so textBoxRect re-clamps it at the edge instead of replaying a stale rect
     val rect = measured?.let { textBoxRect(stamp, it.width, it.height, fit) }

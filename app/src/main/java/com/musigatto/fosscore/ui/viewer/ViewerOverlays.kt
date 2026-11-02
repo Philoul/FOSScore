@@ -268,10 +268,10 @@ internal fun TextBoxEditor(
         keyboardType = KeyboardType.Text,
     )
 
-    // the same style the measured rect was built with: fontPx -> sp, color via inkTint
+    // the same style the measured rect was built with: fontPx -> sp, color via pageInkTint
     val style = LocalTextStyle.current.copy(
         fontSize = (fontPx / density.density).sp,
-        color = color?.let { inkTint(it, invert) } ?: inkTint(null, invert),
+        color = inkTint(color, invert),
     )
     val textLabel = stringResource(R.string.tool_text)
 
@@ -321,9 +321,4 @@ internal fun TextBoxEditor(
             )
         }
     }
-}
-
-internal fun inkTint(color: Int?, invert: Boolean): Color {
-    val c = color?.let { com.musigatto.fosscore.ui.viewer.stampColor(it, Color.Black) } ?: Color.Black
-    return if (invert) c.copy(red = 1f - c.red, green = 1f - c.green, blue = 1f - c.blue) else c
 }

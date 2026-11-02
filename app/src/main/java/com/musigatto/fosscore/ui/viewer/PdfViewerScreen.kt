@@ -1,10 +1,14 @@
 package com.musigatto.fosscore.ui.viewer
 
+import com.musigatto.fosscore.score.MusicXmlMarks
+import com.musigatto.fosscore.library.StrokeStore
+import com.musigatto.fosscore.library.StampStore
 import android.content.res.Configuration
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -16,11 +20,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -64,10 +70,13 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
@@ -76,12 +85,16 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
+import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.Meter
@@ -89,6 +102,7 @@ import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
+import com.musigatto.fosscore.score.MeasureAnchors
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.PageSource
@@ -138,8 +152,15 @@ private const val DOUBLE_TAP_ANIM_MS = 250
 // [split], the dotted line shows it at [mark] (a fraction of the page height)
 internal data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit, val mark: Float)
 
-// options panel hanging from the annotation bar (spec §5): tapping the selected tool again opens it
-internal enum class ToolPanel { Stamps, Pen, Eraser, Color }
+// The tools of the annotation bar (issue #56): exactly one is in hand at a time. The arrow is the
+// neutral one and the only one that selects and moves; every other tool acts on what it creates and
+// keeps itself in hand until another tool is chosen.
+internal enum class AnnotationTool {
+    SELECT, PEN, ERASER, STAMP, TEXT;
+
+    /** The arrow has no settings: tapping it again does nothing. */
+    val hasPanel: Boolean get() = this != SELECT
+}
 
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
@@ -165,7 +186,7 @@ fun PdfViewerScreen(
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     onOpenPreferences: () -> Unit = {},
-    sheetHash: String? = null
+    sheetId: Long? = null
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -222,7 +243,7 @@ fun PdfViewerScreen(
     // (AnnotationViewModel). One per score, like the menu and the playback.
     val editor: AnnotationViewModel = viewModel(
         key = "annotation:$pdfUri",
-        factory = AnnotationViewModel.factory(context, sheetHash),
+        factory = AnnotationViewModel.factory(context, sheetId),
     )
     // how the pages show (two-up, half page, dim, invert, keep the screen on): one ViewModel for
     // every score, reading and writing the settings in one place
@@ -271,19 +292,25 @@ fun PdfViewerScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // where the marks are kept: a PDF's pages, or a MusicXML score's measures, so they follow the
+    // music when it is laid out again. The editing is the same for both.
+    val marks = remember(pageSource) {
+        (pageSource as? MusicXmlPages)?.let { MusicXmlMarks(context.applicationContext, it) }
+    }
+    val app = context.applicationContext as FOSScoreApp
+    val stampStore: StampStore = marks?.stamps ?: app.stampRepository
+    val strokeStore: StrokeStore = marks?.strokes ?: app.strokeRepository
+    LaunchedEffect(stampStore, strokeStore) { editor.useStores(stampStore, strokeStore) }
+
     // one page's rows: the viewer draws one page, and re-reading the whole score on every stroke
     // made each stroke cost grow with the score
-    val stampsFlow = remember(sheetHash, currentPage) {
-        sheetHash?.let {
-            (context.applicationContext as FOSScoreApp).stampRepository.observe(it, currentPage)
-        } ?: flowOf(emptyList())
+    val stampsFlow = remember(sheetId, currentPage, stampStore) {
+        sheetId?.let { stampStore.observe(it, currentPage) } ?: flowOf(emptyList())
     }
     val stamps by stampsFlow.collectAsState(initial = emptyList())
 
-    val strokesFlow = remember(sheetHash, currentPage) {
-        sheetHash?.let {
-            (context.applicationContext as FOSScoreApp).strokeRepository.observe(it, currentPage)
-        } ?: flowOf(emptyList())
+    val strokesFlow = remember(sheetId, currentPage, strokeStore) {
+        sheetId?.let { strokeStore.observe(it, currentPage) } ?: flowOf(emptyList())
     }
     val strokes by strokesFlow.collectAsState(initial = emptyList())
 
@@ -301,12 +328,17 @@ fun PdfViewerScreen(
     var pageFlash by remember { mutableStateOf("") }
     // how far down the annotation bar was dragged out of the way (px). ✓ and ✕ put it back.
     var barDragY by remember { mutableFloatStateOf(0f) }
+    // the bar goes down to the bottom of the screen, above the navigation bar
+    val navigationBottomPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+    // and its tool panels stay clear of the status bar and the navigation bar
+    val statusTopPx = WindowInsets.systemBars.getTop(LocalDensity.current)
     // true only while a finger is on the grip: the bar is see-through while it moves, opaque
     // once it is parked
     var barDragging by remember { mutableStateOf(false) }
-    var activeSymbol by rememberSaveable { mutableStateOf<StampSymbol?>(null) }
-    var lastSymbol by rememberSaveable { mutableStateOf(StampSymbol.FLAT) }  // glyph on the tool
-    var openPanel by rememberSaveable { mutableStateOf<ToolPanel?>(null) }  // options of a tool
+    var stampSymbol by rememberSaveable { mutableStateOf(StampSymbol.FLAT) }  // glyph of the stamp tool
+    // the tool in hand (issue #56): the last one used, the arrow the very first time
+    var tool by rememberSaveable { mutableStateOf(Settings.annotationTool(context)) }
+    var openPanel by rememberSaveable { mutableStateOf<AnnotationTool?>(null) }  // its options, if any
     var placePx by rememberSaveable { mutableFloatStateOf(Settings.stampPx(context)) }  // size of the next stamp
     // last size saved as default (persisted): the panel greys its save button while they match
     var defaultStampPx by remember { mutableFloatStateOf(Settings.stampPx(context)) }
@@ -325,10 +357,14 @@ fun PdfViewerScreen(
         if (loupeAnchor == anchor) loupeAt = anchor
     }
     // selected stamp (for the box with handles) or the selected word of ink
-    var activeColor by rememberSaveable { mutableStateOf<Int?>(null) }  // tint ARGB; null = theme
-    var drawingTool by rememberSaveable { mutableStateOf(false) }      // pen mode: ink, not stamps
-    var eraserTool by rememberSaveable { mutableStateOf(false) }      // eraser mode: removes stamps and strokes
+    // one tint per tool (issue #56): the pen, the stamp and the TEXT tool keep their own colour
+    var penColor by rememberSaveable { mutableStateOf<Int?>(null) }   // ARGB; null = theme
+    var stampColor by rememberSaveable { mutableStateOf<Int?>(null) }
+    var textColor by rememberSaveable { mutableStateOf<Int?>(null) }  // text tool color
+    // sizes per tool: pen width, eraser radius, stamp size, text size (all px at zoom 1)
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
+    var textPx by rememberSaveable { mutableFloatStateOf(Settings.textPx(context)) }  // next new text's font size (px at zoom 1)
+    var defaultTextPx by remember { mutableFloatStateOf(Settings.textPx(context)) }
     var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
     // double-tap animation in flight: any new touch cancels it
@@ -368,30 +404,41 @@ fun PdfViewerScreen(
     // the second page of a spread. The viewer is reading, not editing, there, but its ink and its
     // stamps are drawn too: half of a two-up (or the top of a turned half page) would come out bare.
     val companion = if (spread && currentPage + 1 < pageCount) currentPage + 1 else null
-    val companionStampsFlow = remember(sheetHash, companion) {
-        if (sheetHash != null && companion != null) {
-            (context.applicationContext as FOSScoreApp).stampRepository.observe(sheetHash, companion)
+    val companionStampsFlow = remember(sheetId, companion, stampStore) {
+        if (sheetId != null && companion != null) {
+            stampStore.observe(sheetId, companion)
         } else flowOf(emptyList())
     }
     val companionStamps by companionStampsFlow.collectAsState(initial = emptyList())
-    val companionStrokesFlow = remember(sheetHash, companion) {
-        if (sheetHash != null && companion != null) {
-            (context.applicationContext as FOSScoreApp).strokeRepository.observe(sheetHash, companion)
+    val companionStrokesFlow = remember(sheetId, companion, strokeStore) {
+        if (sheetId != null && companion != null) {
+            strokeStore.observe(sheetId, companion)
         } else flowOf(emptyList())
     }
     val companionStrokes by companionStrokesFlow.collectAsState(initial = emptyList())
 
-    // ponytail: no annotations on MusicXML yet. They are stored per page, and a MusicXML page
-    // changes with the screen and the music size; they need to be tied to measures first.
-    val canEdit = sheetHash != null && !format.isMusicXml && !branch.showTwoUp &&
+    // a MusicXML score is annotated too: its marks hang on its measures (MusicXmlMarks)
+    val canEdit = sheetId != null && !branch.showTwoUp &&
         !(branch.showHalf && halfTurned)
+    // the boundaries between the lines of music of a MusicXML page (0..1 down the page), drawn
+    // while annotating: a mark belongs to the line on its side (MeasureAnchors)
+    val musicXmlPages = pageSource as? MusicXmlPages
+    val geometryVersion = musicXmlPages?.geometryVersion?.collectAsState()?.value
+    val lineBoundaries = remember(musicXmlPages, currentPage, geometryVersion) {
+        musicXmlPages?.let { pages ->
+            pages.geometry(currentPage)?.let { MeasureAnchors.boundaries(MeasureAnchors.slotsOf(it), pages.blankBands(currentPage)) }
+        }.orEmpty()
+    }
 
     // marks and stamps of the current page, shared between the overlay and the gestures.
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
     // the first frame and the overlay does not wait for a draw to land.
     val pageBox = pageSource?.pageSize(currentPage)
-    // the DAO already returns only this page's rows; this drops the ones deleted a second ago
-    val pageStamps = remember(stamps, editor.hiddenStampIds) { stamps.filter { it.id !in editor.hiddenStampIds } }
+    // the DAO already returns only this page's rows; pendingStamps are the ones it has not handed
+    // back yet (distinctBy drops the copy once the flow shows them), and this drops the ones
+    // deleted a second ago
+    val pageStamps =
+        (stamps + editor.pendingStamps).distinctBy { it.id }.filter { it.id !in editor.hiddenStampIds }
     val pageStrokes = remember(strokes, editor.hiddenStrokeIds) { strokes.filter { it.id !in editor.hiddenStrokeIds } }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
@@ -409,6 +456,61 @@ fun PdfViewerScreen(
     val inkStrokes = (editor.pendingInk + pageStrokes).distinctBy { it.id }
     // the same ink, ready to draw: decode + Path once per change, not once per frame
     val inkDraws = remember(inkStrokes, hitFit, invert) { inkDrawsOf(inkStrokes, hitFit, invert) }
+    // the MEASURED boxes of the visible TEXT stamps: one layout per change, the same box feeds the
+    // draw (PageCanvas), the gesture's hit test and the selection frame, so they cannot diverge.
+    // The style here must stay identical to the one TextStampView draws with, bar the color (the
+    // box is the text's size, not its shade).
+    val textMeasurer = rememberTextMeasurer()
+    val measureDensity = LocalDensity.current
+    val measureStyle = LocalTextStyle.current
+    val textRects = remember(
+        pageStamps, companionStamps, editor.dragStamp, hitFit, textMeasurer, measureDensity, measureStyle
+    ) {
+        buildMap {
+            val measuredStamps = pageStamps.map { st ->
+                editor.dragStamp?.takeIf { it.id == st.id } ?: st
+            }
+            for (st in measuredStamps + companionStamps) {
+                if (!st.isTextStamp()) continue
+                val layout = textMeasurer.measure(
+                    st.text.orEmpty(),
+                    textStampStyle(measureStyle, textFontPx(st.size, hitFit), measureDensity),
+                    overflow = TextOverflow.Clip,
+                    softWrap = true,
+                    constraints = Constraints(
+                        maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)
+                    ),
+                )
+                put(st.id, textBoxRect(st, layout.size.width.toFloat(), layout.size.height.toFloat(), hitFit))
+            }
+        }
+    }
+    // a text's box as the page draws it ([TextStampView]): the same style and wrapping width as the
+    // measured boxes above
+    fun measureText(text: String, sizeFrac: Float): Pair<Float, Float> {
+        val layout = textMeasurer.measure(
+            text,
+            textStampStyle(measureStyle, textFontPx(sizeFrac, hitFit), measureDensity),
+            overflow = TextOverflow.Clip,
+            softWrap = true,
+            constraints = Constraints(maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)),
+        )
+        return layout.size.width.toFloat() to layout.size.height.toFloat()
+    }
+    // the text being typed (#35) is written once it is over: placed, edited or deleted as it stands
+    fun finishTyping() {
+        val draft = editor.typing ?: return
+        val sid = sheetId
+        if (sid == null || draft.page != currentPage || hitFit.width <= 0f) {
+            editor.dropTyping()
+            return
+        }
+        val (w, h) = measureText(draft.text, draft.size)
+        val typed = draftStamp(draft, sid, w, h, hitFit)
+        editor.endTyping(draft.page, typingOutcome(draft, typed), PageEdit(pageStamps, pageStrokes))
+    }
+    // while a text is typed in, the field draws it: its row steps aside
+    val shownStamps = editor.typing?.origin?.let { o -> pageStamps.filter { it.id != o.id } } ?: pageStamps
     // the next page's ink, same fit: its path only has to land on the paper that page takes, and
     // PageOverlay stretches it there
     val companionInkDraws = remember(companionStrokes, hitFit, invert) {
@@ -426,14 +528,17 @@ fun PdfViewerScreen(
 
     // selection box in px: the stamp's or the ink's. While dragging or stretching we use the
     // live position (editor.dragStamp/editor.dragStrokes) so the box follows the object.
-    val selectionRect: RectPx? = editor.dragStamp?.let { stampRect(it, hitFit) }
+    fun stampSelectionRect(stamp: Stamp): RectPx =
+        if (stamp.isTextStamp()) textRects[stamp.id] ?: stampRect(stamp, hitFit)
+        else stampRect(stamp, hitFit)
+    val selectionRect: RectPx? = editor.dragStamp?.let(::stampSelectionRect)
         ?: editor.dragStrokes?.let { inkBounds(it, hitFit) }
-        ?: selectedStamp?.let { stampRect(it, hitFit) }
+        ?: selectedStamp?.let(::stampSelectionRect)
         ?: inkBounds(selectedStrokes, hitFit)
 
     // while a drag or a stretch is in progress we draw the object at its live position, not the box
     val showSelection = selectionRect != null && editing && canEdit &&
-        !drawingTool && !eraserTool
+        tool == AnnotationTool.SELECT
     // corner handles belong to an INK selection: a stamp's size is the palette slider, and forScore
     // moves a placed stamp with the selection tool instead of resizing it by its corners (spec §5)
     val strokeSelection = selectedStamp == null && (selectedStrokes.isNotEmpty() || editor.dragStrokes != null)
@@ -444,7 +549,7 @@ fun PdfViewerScreen(
         // the gate lives here, so it also covers the entry paths that are coming (Apple Pencil, long
         // press). Two-up or a turned half page is no reason to refuse: annotating goes back to one
         // page, below.
-        if (!editing && (sheetHash == null || format.isMusicXml)) return
+        if (!editing && sheetId == null) return
         editing = !editing
         if (editing) {
             viewer.singlePage()
@@ -454,6 +559,8 @@ fun PdfViewerScreen(
             // the bar always starts at the top
             barDragY = 0f
         } else {
+            // a text still being typed is kept as it stands, as ✓ keeps everything
+            finishTyping()
             // back to the pages as the user set them
             viewer.restoreReadingMode()
             editor.clearHistory()
@@ -461,10 +568,8 @@ fun PdfViewerScreen(
             editor.clearSession()
             barDragY = 0f
             editor.clearSelection()
-            drawingTool = false
-            eraserTool = false
-            // leaving edit mode must not leave a stamp tool armed for the next time we come back in
-            activeSymbol = null
+            // the tool stays for the next visit (issue #56: the one used last); only what it had
+            // open is put away
             openPanel = null
             inkPreview = emptyList()
             editor.clearHidden()
@@ -484,9 +589,7 @@ fun PdfViewerScreen(
         if (!canEdit) return@LaunchedEffect
         hoverArmed = true
         toggleEditing()
-        drawingTool = true
-        activeSymbol = null
-        eraserTool = false
+        tool = AnnotationTool.PEN
         openPanel = null
     }
     val stylusHoverMod = Modifier.pointerInput(Unit) {
@@ -505,13 +608,21 @@ fun PdfViewerScreen(
         }
     }
 
+    // The frame each annotation snapshot is taken against. The gesture's pointerInput(Unit) never
+    // restarts, so the callbacks captured there must read through a state holder: a plain val
+    // (pageStamps, pageFit) would stay the first composition's forever, and every undo would put
+    // the page of the screen's first frame back — the "undo undoes everything at once" bug.
+    val currentPageEdit by rememberUpdatedState(PageEdit(pageStamps, pageStrokes))
+
     val applyNext: () -> Unit = {
+        finishTyping()
         playbackVm.pageTurnedByHand()
         val f = branch.next()
         currentPage = f.page
         halfTurned = f.halfTurned
     }
     val applyPrev: () -> Unit = {
+        finishTyping()
         playbackVm.pageTurnedByHand()
         val f = branch.prev()
         currentPage = f.page
@@ -563,63 +674,25 @@ fun PdfViewerScreen(
         }
     }
 
-    // What the annotation bar asks for (spec §5): the bar draws, these decide. One entry point per
-    // tool, so the "tap turns it on, tap again opens its options, tap again turns it off" cycle
-    // lives in one place instead of three copies inside the buttons.
-    val onToolTap: (ToolPanel) -> Unit = { tool ->
-        when (tool) {
-            ToolPanel.Stamps -> {
-                val wasOn = activeSymbol != null
-                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Stamps)
-                if (!wasOn && on) {
-                    activeSymbol = lastSymbol
-                    drawingTool = false
-                    eraserTool = false
-                } else if (!on) {
-                    activeSymbol = null   // neutral mode: select and move objects
-                }
-                openPanel = if (panel) ToolPanel.Stamps else null
-            }
-            ToolPanel.Pen -> {
-                val wasOn = drawingTool
-                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Pen)
-                drawingTool = on
-                if (!wasOn && on) {
-                    activeSymbol = null
-                    eraserTool = false
-                }
-                openPanel = if (panel) ToolPanel.Pen else null
-            }
-            ToolPanel.Eraser -> {
-                val wasOn = eraserTool
-                val (on, panel) = nextToolTap(wasOn, openPanel == ToolPanel.Eraser)
-                eraserTool = on
-                if (!wasOn && on) {
-                    activeSymbol = null
-                    drawingTool = false
-                    editor.selectedId = null
-                    editor.selectedStrokeIds = emptySet()
-                }
-                inkPreview = emptyList()
-                openPanel = if (panel) ToolPanel.Eraser else null
-            }
-            ToolPanel.Color -> openPanel = if (openPanel == ToolPanel.Color) null else ToolPanel.Color
+    // What the annotation bar asks for (issue #56): one tool in hand at a time. Choosing a tool
+    // clears the selection (the arrow is what selects), a tool is never turned off, and tapping the
+    // one in hand opens and closes its options. The choice is remembered for the next session.
+    val chooseTool: (AnnotationTool) -> Unit = { picked ->
+        if (picked == tool) {
+            openPanel = if (picked.hasPanel && nextToolTap(true, openPanel == picked)) picked else null
+        } else {
+            tool = picked
+            openPanel = null
+            editor.clearSelection()
+            inkPreview = emptyList()
+            Settings.setAnnotationTool(context, picked)
         }
-    }
-
-    // Select (issue #50): the neutral mode made visible. It only puts the tools down; the
-    // selection itself is left alone, as forScore's selection tool does.
-    val onSelect: () -> Unit = {
-        activeSymbol = null
-        drawingTool = false
-        eraserTool = false
-        openPanel = null
-        inkPreview = emptyList()
     }
 
     // ✕ leaves without what was drawn in this session, and asks first when there is something to
     // lose; ✓ is the plain way out and keeps everything (issue #50)
     val onCancelEditing: () -> Unit = {
+        editor.dropTyping()
         if (editor.hasSessionChanges) confirmDiscard = true else toggleEditing()
     }
 
@@ -632,12 +705,25 @@ fun PdfViewerScreen(
     }
 
     BackHandler(onBack = onBack)
+    // while a text is typed, back finishes it (the keyboard went with the first back)
+    BackHandler(enabled = editor.typing != null) { finishTyping() }
 
     // keyboard / pedal page turns: the viewer root holds the focus, otherwise key events reach
     // nothing and only the on-screen buttons turn pages. Preview so a focused button or slider
     // does not swallow the key first.
     val keyFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyFocus.requestFocus() }
+    // a text is typed with the text tool, while annotating: taking another tool or leaving
+    // finishes it. Once no text has the keys, they go back to the viewer (pedals, page turns).
+    LaunchedEffect(editing, tool) {
+        if (editor.typing != null && (!editing || tool != AnnotationTool.TEXT)) finishTyping()
+    }
+    LaunchedEffect(editor.typing == null) { if (editor.typing == null) keyFocus.requestFocus() }
+    // where the page's box starts in the window, and how far down the keyboard leaves it visible
+    var viewportTop by remember { mutableFloatStateOf(0f) }
+    // and where the viewer's own box starts (the annotation bar's place is counted from there)
+    var screenTop by remember { mutableFloatStateOf(0f) }
+    val visibleBottom by rememberVisibleBottom()
 
     // the page reached and when, on every turn and when the score closes: back to it if the
     // score opens again a short while later (Settings.lastPage)
@@ -671,14 +757,16 @@ fun PdfViewerScreen(
     // A MusicXML page fills the viewport, while the system bars, and the title bar and page
     // selector when the centre tap shows them, are drawn over it (a PDF has a paper margin there).
     // The music keeps their room free: the sidebars on both sides, the top and bottom chrome as
-    // page margins. Fixed, so showing the bars never lays the music out again.
+    // page margins. Fixed, so showing the bars never lays the music out again; the keyboard is not
+    // one of them (safeDrawing counts it): a text typed on the page laid the score out again as the
+    // keyboard came up, and the text being typed went with the old pages
     val density = LocalDensity.current
-    val bars = WindowInsets.safeDrawing
+    val bars = WindowInsets.systemBars.union(WindowInsets.displayCutout)
     val barsX = max(bars.getLeft(density, LayoutDirection.Ltr), bars.getRight(density, LayoutDirection.Ltr))
     val chromeTop = bars.getTop(density) + with(density) { TITLE_BAR_ROOM.roundToPx() }
     val chromeBottom = bars.getBottom(density) +
         with(density) { (SELECTOR_ROOM - SELECTOR_AIR + PLAYBACK_BAND_ROOM).roundToPx() }
-    LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom) {
+    LaunchedEffect(pageSource, viewport, twoUpSlots, scoreLayout, parts, barsX, chromeTop, chromeBottom, editing) {
         val pages = pageSource as? MusicXmlPages ?: return@LaunchedEffect
         if (viewport == IntSize.Zero) return@LaunchedEffect
         // the system bars settle over the first frames, restarting this effect each time: a
@@ -696,7 +784,8 @@ fun PdfViewerScreen(
             marginBottom = chromeBottom.coerceAtMost(viewport.height / 4),
             twoUp = twoUpSlots,
         )
-        val spec = screen.spec(scoreLayout, parts)
+        // annotating spaces the lines of music out: room to write, and a clear line between them
+        val spec = screen.spec(scoreLayout, parts, annotating = editing)
         // the other scores get laid out and drawn ahead for this screen too
         withContext(Dispatchers.IO) { MusicXmlPages.rememberScreen(context, screen) }
         try {
@@ -880,12 +969,14 @@ fun PdfViewerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { screenTop = it.positionInWindow().y }
             // the matte around the page: the theme background, and black when "Neg" is on (the page
             // turns black and the bands were left white)
             .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
             .then(stylusHoverMod)
             .onPreviewKeyEvent { e ->
-                val turn = pageTurnFor(e.key, e.isShiftPressed) ?: return@onPreviewKeyEvent false
+                val turn = pageTurnFor(e.key, e.isShiftPressed, typing = editor.typing != null)
+                    ?: return@onPreviewKeyEvent false
                 // a held key repeats: turn one page per press, not a burst
                 if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
                     if (turn == PageTurn.NEXT) applyNext() else applyPrev()
@@ -895,6 +986,23 @@ fun PdfViewerScreen(
             .focusRequester(keyFocus)
             .focusable()
     ) {
+        // A text typed low on the page would be under the keyboard: the page goes up while it is
+        // typed, just enough for the text and a line more to show above the keyboard.
+        val typingNow = editor.typing
+        // a bar parked at the bottom would be under the keyboard: it goes up above it while a
+        // text is typed, and then the text has to show above the bar
+        val keyboardTop = if (typingNow == null || visibleBottom == Int.MAX_VALUE) null else visibleBottom - screenTop
+        val barY = annotationBarDragOverKeyboard(barDragY, annBarPx, statusTopPx, keyboardTop)
+        val textRoomBottom = if (barY < barDragY) screenTop + annotationBarOffsetPx(barY, statusTopPx) else visibleBottom.toFloat()
+        val lift = if (typingNow == null || hitFit.height <= 0f) 0f else {
+            val k = zoom.transform.scale
+            val (_, h) = measureText(typingNow.text.ifEmpty { " " }, typingNow.size)
+            val line = textFontPx(typingNow.size, hitFit) * 1.3f
+            val textBottom = viewportTop + pageFit.top + zoom.transform.offset.y +
+                (typingNow.top * hitFit.height + h + line) * k
+            (textBottom - textRoomBottom).coerceAtLeast(0f)
+        }
+        val pageLift by animateFloatAsState(lift, label = "pageLift")
         // The page lives in its own box: in edit mode it starts below the chrome instead of under
         // it (#19), and `viewport` is that box, so fit, zoom, tap zones and the loupe all follow.
         Box(
@@ -902,6 +1010,9 @@ fun PdfViewerScreen(
                 .fillMaxSize()
                 .padding(top = chromeInset)
                 .onSizeChanged { viewport = it }
+                .onGloballyPositioned { viewportTop = it.positionInWindow().y }
+                // the touches follow the page up: the layer moves them with it
+                .graphicsLayer { translationY = -pageLift }
         ) {
             if (error != null) {
                 Column(
@@ -934,7 +1045,7 @@ fun PdfViewerScreen(
                     editing = editing,
                     canEdit = canEdit,
                     page = currentPage,
-                    sheetHash = sheetHash,
+                    sheetId = sheetId,
                     pageFit = pageFit,
                     stamps = pageStamps,
                     strokes = pageStrokes,
@@ -942,12 +1053,10 @@ fun PdfViewerScreen(
                     selectionRect = selectionRect,
                     selectedStamp = selectedStamp,
                     selectedStrokes = selectedStrokes,
-                    stampArmed = activeSymbol != null,
-                    drawingTool = drawingTool,
-                    eraserTool = eraserTool,
+                    tool = tool,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
-                    activeColor = activeColor,
+                    activeColor = penColor,
                     loupeAt = loupeAt,
                     zoom = zoom,
                     zoomFrame = zoomFrameNow(),
@@ -972,40 +1081,79 @@ fun PdfViewerScreen(
                     onLoupeAnchor = { loupeAnchor = it },
                     onLoupe = { loupeAt = it },
                     onInkPreview = { inkPreview = it },
-                    // a touch on the matte has nowhere to write: the tools stand down and the
-                    // selection goes, the same state three taps on the tool pill leave behind
+                    // a tap on the matte closes the panel and drops the selection; it does not
+                    // change the tool (issue #56)
                     onToolsDown = {
                         inkPreview = emptyList()
-                        activeSymbol = null
-                        drawingTool = false
-                        eraserTool = false
                         openPanel = null
                         editor.clearSelection()
                     },
                     onPlaceStamp = { pos ->
-                        val sym = activeSymbol
-                        if (sym != null && sheetHash != null) {
-                            // One stamp per arming: stand the tool down as soon as it is used,
-                            // so the next tap outside the new stamp deselects instead of
-                            // stamping again.
-                            activeSymbol = null
-                            openPanel = null
+                        if (tool == AnnotationTool.STAMP && sheetId != null) {
+                            // the stamp stays in hand: the next tap places another one
                             // the whole square lands on the page, never half of it off the edge
-                            val size = stampSizePxToFrac(placePx, hitFit)
-                            val centre = stampCenterInside(pos.x, pos.y, size, hitFit)
+                            // (placePx and tool are State, so a stale capture still reads fresh;
+                            // the page state and the fit go through the holders declared above)
+                            val fit = RectPx(0f, 0f, currentPageFit.width, currentPageFit.height)
+                            val size = stampSizePxToFrac(placePx, fit)
+                            val centre = stampCenterInside(pos.x, pos.y, size, fit)
                             editor.placeStamp(
                                 currentPage,
                                 Stamp(
-                                    sheetHash = sheetHash,
+                                    sheetId = sheetId,
                                     page = currentPage,
-                                    symbol = sym.name,
+                                    symbol = stampSymbol.name,
                                     x = centre.x,
                                     y = centre.y,
                                     size = size,
-                                    color = activeColor
+                                    color = stampColor
                                 ),
-                                PageEdit(pageStamps, pageStrokes),
+                                currentPageEdit,  // fresh: the delegates above the gesture
                             )
+                        }
+                    },
+                    // TEXT tool (#35): the measured rects (draw = hit = selection) go straight
+                    // from the shared map, so the gesture never diverges from the draw.
+                    textRects = textRects,
+                    // the text tool types on the page (#35): a tap on a text types in it, a tap
+                    // elsewhere finishes the text being typed, or starts a new one there
+                    onTextBoxTap = { norm, stamp, _ ->
+                        if (tool == AnnotationTool.TEXT && sheetId != null && hitFit.width > 0f) {
+                            val typing = editor.typing
+                            when {
+                                stamp != null && stamp.id != typing?.origin?.id -> {
+                                    finishTyping()
+                                    val box = textRects[stamp.id] ?: stampRect(stamp, hitFit)
+                                    editor.startTyping(
+                                        TextDraft(
+                                            page = currentPage,
+                                            origin = stamp,
+                                            text = stamp.text.orEmpty(),
+                                            size = stamp.size,
+                                            color = stamp.color,
+                                            left = box.left / hitFit.width,
+                                            top = box.top / hitFit.height,
+                                        )
+                                    )
+                                }
+                                typing != null -> finishTyping()
+                                else -> {
+                                    val size = textSizePxToFrac(textPx, hitFit)
+                                    val (_, lineH) = measureText(" ", size)
+                                    val corner = newTextCorner(norm, lineH, hitFit)
+                                    editor.startTyping(
+                                        TextDraft(
+                                            page = currentPage,
+                                            origin = null,
+                                            text = "",
+                                            size = size,
+                                            color = textColor,
+                                            left = corner.x,
+                                            top = corner.y,
+                                        )
+                                    )
+                                }
+                            }
                         }
                     },
                 )
@@ -1032,13 +1180,14 @@ fun PdfViewerScreen(
                     layoutVersion = layoutVersion,
                     canEdit = canEdit,
                     inkDraws = inkDraws,
+                    lineBoundaries = if (editing) lineBoundaries else emptyList(),
                     dragStrokes = editor.dragStrokes,
                     inkPreview = inkPreview,
-                    eraserTool = eraserTool,
-                    activeColor = activeColor,
+                    eraserTool = tool == AnnotationTool.ERASER,
+                    activeColor = penColor,
                     eraserPx = eraserPx,
                     penWidthPx = penWidthPx,
-                    pageStamps = pageStamps,
+                    pageStamps = shownStamps,
                     dragStamp = editor.dragStamp,
                     selectionRect = selectionRect,
                     strokeSelection = strokeSelection,
@@ -1047,10 +1196,40 @@ fun PdfViewerScreen(
                     placePx = placePx,
                     nextInkDraws = companionInkDraws,
                     nextStamps = companionStamps,
+                    textRects = textRects,
                     // in the reading modes the whole viewport is scaled; a single page scales its
                     // own content, so the zoom layer is not used
                     modifier = if (spread) spreadMod.then(gestureMod) else gestureMod,
                 )
+                // the text being typed (#35): the keyboard's field, where the text is and as the
+                // page draws it, in the same transform as the stamps (so at any zoom too)
+                val draft = editor.typing
+                if (draft != null && draft.page == currentPage && !spread && sheetId != null) {
+                    val (w, h) = measureText(draft.text.ifEmpty { " " }, draft.size)
+                    val box = textBoxRect(draftStamp(draft, sheetId, w, h, hitFit), w, h, hitFit)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                transformOrigin = TransformOrigin(0f, 0f)
+                                translationX = pageFit.left + zoom.transform.offset.x
+                                translationY = pageFit.top + zoom.transform.offset.y
+                                scaleX = zoom.transform.scale
+                                scaleY = zoom.transform.scale
+                            }
+                    ) {
+                        TypingField(
+                            key = editor.typingKey,
+                            initial = draft.text,
+                            topLeft = Offset(box.left, box.top),
+                            fontPx = textFontPx(draft.size, hitFit),
+                            maxWidthPx = hitFit.width * TEXT_MAX_WRAP - 16f,
+                            color = pageInkTint(draft.color, invert),
+                            onText = { typed -> editor.retype { it.copy(text = typed) } },
+                            onDone = { finishTyping() },
+                        )
+                    }
+                }
             } else {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
@@ -1087,6 +1266,7 @@ fun PdfViewerScreen(
                     editing = editing,
                     onOpenMenu = { menu.show(ViewerSurface.MENU) },
                     onToggleEditing = { toggleEditing() },
+                    annotatable = sheetId != null,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         // edge-to-edge: the pills were slipping under the status bar, and in landscape
@@ -1100,25 +1280,27 @@ fun PdfViewerScreen(
             }
 
             if (editing && canEdit) {
+                val textPanel = textPanelValues(editor.typing, textPx, textColor, hitFit)
+                    .let { it.copy(px = it.px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
                 AnnotationBar(
-                    activeSymbol = activeSymbol,
-                    lastSymbol = lastSymbol,
-                    selectTool = activeSymbol == null && !drawingTool && !eraserTool,
+                    tool = tool,
+                    stampSymbol = stampSymbol,
                     openPanel = openPanel,
-                    drawingTool = drawingTool,
-                    eraserTool = eraserTool,
                     invert = invert,
-                    activeColor = activeColor,
+                    penColor = penColor,
+                    stampColor = stampColor,
+                    textColor = textPanel.color,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
+                    textPx = textPanel.px,
+                    defaultTextPx = defaultTextPx,
                     placePx = placePx,
                     defaultStampPx = defaultStampPx,
                     pageTouched = pageTouched,
                     canUndo = editor.canUndo,
                     canRedo = editor.canRedo,
                     canDelete = selectedStamp != null || selectedStrokes.isNotEmpty(),
-                    onSelect = onSelect,
-                    onToolTap = onToolTap,
+                    onTool = chooseTool,
                     onUndo = onUndo,
                     onRedo = onRedo,
                     onDelete = onDeleteSelection,
@@ -1126,10 +1308,10 @@ fun PdfViewerScreen(
                     onDone = { toggleEditing() },
                     // dragging the grip moves the bar over the page; the page keeps its layout
                     onDragBar = { dy ->
-                        barDragY = (barDragY + dy).coerceIn(0f, viewport.height * 0.6f)
+                        barDragY = (barDragY + dy).coerceIn(0f, annotationBarLowest(viewport.height, navigationBottomPx))
                     },
                     onDragState = { dragging -> barDragging = dragging },
-                    onStampSymbol = { activeSymbol = it; lastSymbol = it },
+                    onStampSymbol = { stampSymbol = it },
                     onStampSize = { placePx = it },
                     onSaveDefault = {
                         Settings.setStampPx(context, placePx)
@@ -1137,10 +1319,25 @@ fun PdfViewerScreen(
                     },
                     onPenWidth = { penWidthPx = it },
                     onEraserPx = { eraserPx = it },
-                    onColor = { argb ->
-                        activeColor = argb
-                        // the tint also recolours the selected stamp: forScore's
-                        // selection tool changes colour, it does not resize
+                    onPenColor = { penColor = it },
+                    // a text being edited takes the size and the colour; the next new one keeps its own
+                    onTextPx = { px ->
+                        if (editor.typing?.origin == null) textPx = px
+                        editor.retype { it.copy(size = textSizePxToFrac(px, hitFit)) }
+                    },
+                    onSaveTextDefault = {
+                        Settings.setTextPx(context, textPanel.px)
+                        defaultTextPx = textPanel.px
+                        textPx = textPanel.px
+                    },
+                    onTextColor = { argb ->
+                        if (editor.typing?.origin == null) textColor = argb
+                        editor.retype { it.copy(color = argb) }
+                    },
+                    onStampColor = { argb ->
+                        stampColor = argb
+                        // the tint also recolours the selected stamp: the arrow changes a
+                        // stamp's colour, it does not resize it
                         val current = selectedStamp
                         if (current != null) {
                             editor.recolorStamp(
@@ -1149,12 +1346,14 @@ fun PdfViewerScreen(
                         }
                     },
                     onHeight = { annBarPx = it },
+                    atTop = barY == 0f,
+                    panelPlace = toolPanelPlace(barY, annBarPx, viewport.height + annBarPx, statusTopPx, navigationBottomPx),
                     // the top of the screen: while annotating this bar IS the title bar, and the
                     // grip moves it down out of the way, where it turns see-through so the page
                     // underneath stays readable
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .offset { IntOffset(0, barDragY.roundToInt()) }
+                        .offset { IntOffset(0, annotationBarOffsetPx(barY, statusTopPx)) }
                         .alpha(if (barDragging) 0.75f else 1f),
                 )
 

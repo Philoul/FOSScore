@@ -112,7 +112,7 @@ class ViewerMenuViewModelTest {
         assertEquals(
             listOf(
                 ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT, ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK,
-                ViewerMenuItem.SETTINGS,
+                ViewerMenuItem.ANNOTATE, ViewerMenuItem.SETTINGS,
             ),
             ready,
         )
@@ -122,11 +122,11 @@ class ViewerMenuViewModelTest {
     }
 
     @Test
-    fun theLayoutPanelIsForMusicXmlAndAnnotationsForPdf() {
+    fun theLayoutPanelIsForMusicXmlAndAnnotationsForBoth() {
         assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false))
         // a PDF plays once it has a MIDI file attached (roadmap 3.2)
         assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.PLAYBACK, isMusicXml = false))
-        assertEquals(MenuItemState.NOT_ON_MUSICXML, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = true))
+        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = true))
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false))
     }
 

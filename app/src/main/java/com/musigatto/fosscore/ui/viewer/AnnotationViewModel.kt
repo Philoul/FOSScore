@@ -10,9 +10,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.library.Stamp
-import com.musigatto.fosscore.library.StampRepository
+import com.musigatto.fosscore.library.StampStore
 import com.musigatto.fosscore.library.Stroke
-import com.musigatto.fosscore.library.StrokeRepository
+import com.musigatto.fosscore.library.StrokeStore
 import kotlinx.coroutines.launch
 
 /** Undo levels kept per score (a new change throws the redo branch away, like any editor). */
@@ -46,14 +46,27 @@ internal class AnnotationSession {
  * optimistic delete) and a flow round trip would only add a hop.
  */
 internal class AnnotationViewModel(
-    private val sheetHash: String?,
-    private val stamps: StampRepository,
-    private val strokes: StrokeRepository,
+    private val sheetId: Long?,
+    private var stamps: StampStore,
+    private var strokes: StrokeStore,
 ) : ViewModel() {
+
+    /**
+     * Where the marks are kept: a PDF's pages (the repositories), or a MusicXML score's measures
+     * (score.MusicXmlMarks), known once the score is open. The editing is the same.
+     */
+    fun useStores(stamps: StampStore, strokes: StrokeStore) {
+        this.stamps = stamps
+        this.strokes = strokes
+    }
 
     // --- the edits, on screen before the DB confirms them ---
     // ink already lifted that the DB has not handed back yet: without this the stroke blinks ~20 ms
     var pendingInk by mutableStateOf<List<Stroke>>(emptyList())
+    // the same optimistic layer for stamps: a placed stamp is offered at once, so the undo snapshot
+    // that the NEXT edit takes includes it even if Room's flow has not come back yet ( Undo would
+    // otherwise eat both stamps at once, since the snapshot was read without them)
+    var pendingStamps by mutableStateOf<List<Stamp>>(emptyList())
     // optimistic delete: the view hides what is gone at once and the DB confirms afterward.
     // ponytail: a Set of ids pruned by settle(); enough, because deleting never brings ids back.
     var hiddenStampIds by mutableStateOf<Set<Long>>(emptySet())
@@ -74,6 +87,13 @@ internal class AnnotationViewModel(
     // --- the pen-picked-up state of every page touched, for ✕ (issue #50) ---
     private val session = AnnotationSession()
 
+    /**
+     * When the last stroke was finished. The next one, written a moment later and next to it, is
+     * the next letter of the same word (see [groupForStroke]); the gesture reads it and [addInk]
+     * sets it.
+     */
+    var lastInkAt = 0L
+
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
@@ -83,14 +103,19 @@ internal class AnnotationViewModel(
      * page a moment after being deleted or erased.
      */
     private fun forget(ids: Collection<Long>) {
-        if (ids.isNotEmpty()) pendingInk = pendingInk.filterNot { it.id in ids }
+        if (ids.isNotEmpty()) {
+            pendingInk = pendingInk.filterNot { it.id in ids }
+            pendingStamps = pendingStamps.filterNot { it.id in ids }
+        }
     }
 
     /** After a restore the page is exactly [strokes]: anything else in the optimistic layer is inked
      * over a state that no longer exists (an undone stroke would stay on screen forever). */
-    private fun keepOnlyInkOf(strokes: List<Stroke>) {
-        val ids = strokes.map { it.id }.toSet()
-        pendingInk = pendingInk.filter { it.id in ids }
+    private fun keepOnly(edit: PageEdit) {
+        val stampIds = edit.stamps.map { it.id }.toSet()
+        pendingStamps = pendingStamps.filter { it.id in stampIds }
+        val strokeIds = edit.strokes.map { it.id }.toSet()
+        pendingInk = pendingInk.filter { it.id in strokeIds }
     }
 
     /** Stacks [current] (the state before the change) for [page]. */
@@ -116,8 +141,10 @@ internal class AnnotationViewModel(
 
     /** ✕: every page touched since the pen was picked up goes back to its state then. */
     fun cancelSession() {
-        val hash = sheetHash ?: return
+        val id = sheetId ?: return
         if (!session.hasChanges) return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         val pages = session.pages()
         session.clear()
         clearHistory()
@@ -125,10 +152,11 @@ internal class AnnotationViewModel(
         clearHidden()
         // the pages are about to be replaced: nothing of the optimistic layer can stay on top
         pendingInk = emptyList()
+        pendingStamps = emptyList()
         viewModelScope.launch {
             pages.forEach { (page, edit) ->
-                stamps.restorePage(hash, page, edit.stamps)
-                strokes.restorePage(hash, page, edit.strokes)
+                stamps.restorePage(id, page, edit.stamps)
+                strokes.restorePage(id, page, edit.strokes)
             }
         }
     }
@@ -155,7 +183,7 @@ internal class AnnotationViewModel(
         if (hiddenStampIds.any { it !in liveStamps }) hiddenStampIds = hiddenStampIds intersect liveStamps
         if (hiddenStrokeIds.any { it !in liveStrokes }) hiddenStrokeIds = hiddenStrokeIds intersect liveStrokes
         dragStamp?.let { d ->
-            if (dbStamps.any { it.id == d.id && it.x == d.x && it.y == d.y && it.size == d.size }) dragStamp = null
+            if (d in dbStamps) dragStamp = null
         }
         dragStrokes?.let { list ->
             // all or nothing: dropping strokes one by one shrank the box to the rows that had not
@@ -167,11 +195,16 @@ internal class AnnotationViewModel(
         }
         // the DB has this ink already: drop it from the optimistic layer
         pendingInk = pendingInk.filter { p -> dbStrokes.none { it.id == p.id && it.points == p.points } }
+        pendingStamps = pendingStamps.filter { p ->
+            dbStamps.none { it.id == p.id && it.x == p.x && it.y == p.y && it.size == p.size }
+        }
     }
 
     fun undo(page: Int, current: PageEdit) {
-        val hash = sheetHash ?: return
+        val id = sheetId ?: return
         val (target, edit) = undoStack.lastOrNull() ?: return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         undoStack = undoStack.dropLast(1)
         // what redo puts back is the state we are leaving behind
         if (target == page) redoStack = (redoStack + (target to current)).takeLast(UNDO_LEVELS)
@@ -179,24 +212,26 @@ internal class AnnotationViewModel(
         // the "looks deleted now" cache is stale after a restore: the
         // snapshots go back with their original ids
         clearHidden()
-        keepOnlyInkOf(edit.strokes)
+        keepOnly(edit)
         viewModelScope.launch {
-            stamps.restorePage(hash, target, edit.stamps)
-            strokes.restorePage(hash, target, edit.strokes)
+            stamps.restorePage(id, target, edit.stamps)
+            strokes.restorePage(id, target, edit.strokes)
         }
     }
 
     fun redo(page: Int, current: PageEdit) {
-        val hash = sheetHash ?: return
+        val id = sheetId ?: return
         val (target, edit) = redoStack.lastOrNull() ?: return
+        // a text being typed is not written yet: it goes with what is undone
+        typing = null
         redoStack = redoStack.dropLast(1)
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
         clearHidden()
-        keepOnlyInkOf(edit.strokes)
+        keepOnly(edit)
         viewModelScope.launch {
-            stamps.restorePage(hash, target, edit.stamps)
-            strokes.restorePage(hash, target, edit.strokes)
+            stamps.restorePage(id, target, edit.stamps)
+            strokes.restorePage(id, target, edit.strokes)
         }
     }
 
@@ -208,7 +243,7 @@ internal class AnnotationViewModel(
         selectedStrokeIds = emptySet()
         hiddenStampIds = hiddenStampIds + listOfNotNull(stamp?.id)
         hiddenStrokeIds = hiddenStrokeIds + selection.map { it.id }
-        forget(selection.map { it.id })
+        forget(selection.map { it.id } + listOfNotNull(stamp?.id))
         viewModelScope.launch {
             stamp?.let { stamps.delete(it) }
             if (selection.isNotEmpty()) strokes.deleteAll(selection)
@@ -218,9 +253,11 @@ internal class AnnotationViewModel(
     /** A finished stroke: kept on screen until the DB hands it back with its id. */
     fun addInk(page: Int, stroke: Stroke, current: PageEdit) {
         pushUndo(current, page)
+        lastInkAt = System.currentTimeMillis()
         viewModelScope.launch {
-            val stored = stroke.copy(id = strokes.insert(stroke))
-            pendingInk = pendingInk + stored
+            val id = strokes.insert(stroke)
+            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
+            if (id > 0) pendingInk = pendingInk + stroke.copy(id = id)
         }
     }
 
@@ -241,7 +278,7 @@ internal class AnnotationViewModel(
         selectedStrokeIds = emptySet()
         hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
         hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
-        forget(goneStrokes.map { it.id })
+        forget(goneStamps.map { it.id } + goneStrokes.map { it.id })
         viewModelScope.launch {
             if (goneStamps.isNotEmpty()) stamps.deleteAll(goneStamps)
             if (goneStrokes.isNotEmpty()) {
@@ -266,7 +303,14 @@ internal class AnnotationViewModel(
     /** A placed stamp: it stays selected so its box shows where it landed. */
     fun placeStamp(page: Int, stamp: Stamp, current: PageEdit) {
         pushUndo(current, page)
-        viewModelScope.launch { selectedId = stamps.insert(stamp) }
+        viewModelScope.launch {
+            val id = stamps.insert(stamp)
+            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
+            if (id > 0) {
+                pendingStamps = pendingStamps + stamp.copy(id = id)
+                selectedId = id
+            }
+        }
     }
 
     /** The colour panel recolours the selected stamp too, as forScore's selection tool does. */
@@ -276,12 +320,66 @@ internal class AnnotationViewModel(
         viewModelScope.launch { stamps.update(stamp.copy(color = color)) }
     }
 
+    /**
+     * A typed text or its colour/size changed on a text stamp (#35): the same undo a move gets,
+     * only when something actually changed. Inserting or deleting a box goes through placeStamp /
+     * deleteSelection; moving through updateStamp — this is only for what the EDITOR produces.
+     */
+    fun editTextBox(page: Int, origin: Stamp?, updated: Stamp, current: PageEdit) {
+        if (origin != null && origin.text == updated.text && origin.color == updated.color &&
+            origin.size == updated.size
+        ) return
+        pushUndo(current, page)
+        dragStamp = updated
+        viewModelScope.launch { stamps.update(updated) }
+    }
+
+    // --- the text being typed on the page (#35): nothing is written until the typing is over ---
+    var typing by mutableStateOf<TextDraft?>(null)
+        private set
+    // a new text, or another one typed in: the field starts again with its own words
+    var typingKey by mutableStateOf(0)
+        private set
+
+    /** Typing starts on [draft]: a new text, or one already on the page. */
+    fun startTyping(draft: TextDraft) {
+        clearSelection()
+        typing = draft
+        typingKey++
+    }
+
+    /** The text being typed changed (its words, its size or its colour). */
+    fun retype(change: (TextDraft) -> TextDraft) {
+        typing = typing?.let(change)
+    }
+
+    /** The typing is dropped: nothing of it is written (✕, undo, redo). */
+    fun dropTyping() {
+        typing = null
+    }
+
+    /**
+     * The typing is over: [outcome] is written as an edit of [page] would be, one step of undo,
+     * through the same doors as the rest (a new text is placed, a changed one edited, an emptied
+     * one deleted).
+     */
+    fun endTyping(page: Int, outcome: TypingOutcome, current: PageEdit) {
+        typing = null
+        when (outcome) {
+            is TypingOutcome.Insert -> placeStamp(page, outcome.stamp, current)
+            // its place too: the first line stayed put while the box grew or shrank around it
+            is TypingOutcome.Update -> editTextBox(page, outcome.origin, outcome.stamp, current)
+            is TypingOutcome.Delete -> deleteSelection(page, outcome.origin, emptyList(), current)
+            TypingOutcome.Nothing -> Unit
+        }
+    }
+
     companion object {
         /** One editor per score: undo, ink and stamps belong to the score being read. */
-        fun factory(context: Context, sheetHash: String?) = viewModelFactory {
+        fun factory(context: Context, sheetId: Long?) = viewModelFactory {
             initializer {
                 val app = context.applicationContext as FOSScoreApp
-                AnnotationViewModel(sheetHash, app.stampRepository, app.strokeRepository)
+                AnnotationViewModel(sheetId, app.stampRepository, app.strokeRepository)
             }
         }
     }

@@ -424,7 +424,22 @@ class MusicXmlScore private constructor(private val doc: Document) {
             val doc = builder.parse(ByteArrayInputStream(MusicXmlFiles.scoreBytes(bytes)))
             require(doc.documentElement.tagName.startsWith("score-")) { "not a MusicXML score" }
             hideInvisibleNotes(doc)
+            rankMeasures(doc)
             return MusicXmlScore(doc)
+        }
+
+        /**
+         * Gives every measure its place in its part as id ([PageGeometry.measureId]), which Verovio
+         * keeps on the measure it draws: the key of a measure, as its `number` is free text ("12a",
+         * "X1") and may repeat. The same place in every part is the same measure. The number shown
+         * does not change.
+         */
+        private fun rankMeasures(doc: Document) {
+            doc.documentElement.children("part").forEach { part ->
+                part.children("measure").forEachIndexed { i, measure ->
+                    measure.setAttribute("id", PageGeometry.measureId(i + 1))
+                }
+            }
         }
 
         /**

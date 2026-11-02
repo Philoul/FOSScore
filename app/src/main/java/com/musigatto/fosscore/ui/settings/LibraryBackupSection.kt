@@ -63,7 +63,7 @@ internal fun LibraryBackupSection() {
     @Suppress("LocalContextResourcesRead")
     val resources = context.resources
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(LibraryBackup.MIME)) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
         scope.launch {
@@ -95,14 +95,15 @@ internal fun LibraryBackupSection() {
             message = null
             val day = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
             // No file picker on some stripped-down devices.
-            runCatching { exportLauncher.launch("fosscore-library-$day.zip") }.onFailure { message = failed }
+            runCatching { exportLauncher.launch(LibraryBackup.fileName(day)) }.onFailure { message = failed }
         },
     ) { Text(stringResource(R.string.backup_export)) }
     OutlinedButton(
         enabled = !busy,
         onClick = {
             message = null
-            // Some file managers report .zip files as generic binary data.
+            // An export is plain data (LibraryBackup.MIME); the older ones are .zip,
+            // and some file managers report those as generic binary data too.
             runCatching {
                 importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
             }.onFailure { message = failed }

@@ -12,6 +12,9 @@
     <string name="tool_pen">Stylo</string>
     <string name="tool_eraser">Gomme</string>
     <string name="tool_select">Sélection</string>
+    <string name="tool_stamp">Tampon</string>
+  <string name="tool_text">Texte</string>
+  <string name="text_placeholder">Aa</string>
     <string name="search_label">Rechercher</string>
     <string name="library_title">Bibliothèque</string>
     <string name="empty_library">Aucune partition pour l’instant. Ajoutez-en une avec le bouton Importer.</string>
@@ -274,4 +277,11 @@
     <string name="part_sound_bank_waiting">%1$s (sons à préparer)</string>
     <string name="playback_bar">Mesure %1$d</string>
     <string name="playback_music_off">Couper la musique (métronome seul)</string>
+    <string name="prefs_keyboard">Clavier et pédales</string>
+    <string name="prefs_keyboard_summary">Taper du texte sur la page avec une pédale connectée</string>
+    <string name="prefs_screen_keyboard">Clavier à l’écran avec une pédale</string>
+    <string name="prefs_screen_keyboard_on">Activé : le clavier s’affiche pour taper un texte, pédale connectée ou non</string>
+    <string name="prefs_screen_keyboard_off">Désactivé : tant qu’une pédale est connectée, le clavier ne s’affiche pas</string>
+    <string name="prefs_screen_keyboard_why">La plupart des pédales se présentent à Android comme un clavier, et Android cache alors le clavier à l’écran. Le réglage qui le fait revenir appartient à Android et vaut pour toutes les applications : ouvrez ses paramètres et activez « Afficher le clavier virtuel ». Une fois activé, il le reste.</string>
+    <string name="prefs_screen_keyboard_open">Ouvrir les paramètres Android</string>
 </resources>

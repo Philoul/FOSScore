@@ -72,8 +72,11 @@ data class ScoreSummary(val parts: List<Part>, val info: ScoreInfo) {
     }
 }
 
-/** One rendered page: the bitmap and where its notes are, for a playback cursor. */
-class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry)
+/**
+ * One rendered page: the bitmap, where its notes and measures are (playback cursor, annotations),
+ * and the SVG they were read from, to keep beside the bitmap.
+ */
+class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry, val svg: String)
 
 /**
  * Lays out, draws and plays one MusicXML score.
@@ -231,7 +234,7 @@ class ScoreEngine(
         val ready = glyphs().inline(SvgForMuPdf.fix(svg))
         val bitmap = synchronized(rasterLock) { SvgRasterizer.render(ready, maxWidth, maxHeight) }
         drawn = true
-        RenderedPage(bitmap, PageGeometry.parse(svg))
+        RenderedPage(bitmap, PageGeometry.parse(svg), svg)
     }
 
     /** The page (1-based) that shows the element [id] (a note id from [Playback.onsets]), or 0. */
@@ -404,6 +407,6 @@ class ScoreEngine(
         const val MAX_SOUND_WAIT_MS = 15_000L
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
-        const val CACHE_VERSION = 1
+        const val CACHE_VERSION = 2
     }
 }

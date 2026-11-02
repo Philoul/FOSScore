@@ -14,6 +14,9 @@
     <string name="tool_pen">Pen</string>
     <string name="tool_eraser">Eraser</string>
     <string name="tool_select">Select</string>
+    <string name="tool_stamp">Stamp</string>
+  <string name="tool_text">Text</string>
+  <string name="text_placeholder">Aa</string>
     <string name="search_label">Search</string>
     <string name="library_title">Library</string>
     <string name="empty_library">No sheets yet. Import one with the Import button.</string>
@@ -270,4 +273,11 @@
     <string name="part_sound_bank_waiting">%1$s (its sounds will be prepared)</string>
     <string name="playback_bar">Bar %1$d</string>
     <string name="playback_music_off">Mute the music (the metronome alone)</string>
+    <string name="prefs_keyboard">Keyboard and pedals</string>
+    <string name="prefs_keyboard_summary">Typing text on the page while a pedal is connected</string>
+    <string name="prefs_screen_keyboard">On-screen keyboard with a pedal</string>
+    <string name="prefs_screen_keyboard_on">On: the keyboard shows to type a text, pedal connected or not</string>
+    <string name="prefs_screen_keyboard_off">Off: while a pedal is connected, the keyboard does not show</string>
+    <string name="prefs_screen_keyboard_why">Most pedals present themselves to Android as a keyboard, and Android then hides the on-screen keyboard. The switch that brings it back belongs to Android and applies to every app: open its settings and turn on “Show virtual keyboard”. Once on, it stays on.</string>
+    <string name="prefs_screen_keyboard_open">Open Android settings</string>
 </resources>

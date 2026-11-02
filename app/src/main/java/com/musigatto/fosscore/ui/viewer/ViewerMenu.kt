@@ -32,36 +32,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.LyricsPlacement
 import com.musigatto.fosscore.musicxml.Part
 
-// a glyph, not an icon font: the rest of the viewer chrome does the same (♪, ⊞, ✎), and these
-// all exist in the fonts of Android 6; none for the metronome, drawn as on its band button
-private val ViewerMenuItem.glyph: String?
+// the app's line icons (LineIcons.kt), the same on every device
+internal val ViewerMenuItem.icon: String
     get() = when (this) {
-        ViewerMenuItem.LIBRARY -> "♪"
-        ViewerMenuItem.SETLIST -> "≡"
-        ViewerMenuItem.BOOKMARKS -> "⚑"
-        ViewerMenuItem.DISPLAY -> "⊞"
-        ViewerMenuItem.LAYOUT -> "♫"
-        ViewerMenuItem.METRONOME -> null
-        // a tuning fork
-        ViewerMenuItem.TUNER -> "Ψ"
-        // keys
-        ViewerMenuItem.PIANO -> "▥"
-        ViewerMenuItem.PLAYBACK -> "▶"
-        ViewerMenuItem.LINKS -> "↪"
-        ViewerMenuItem.ANNOTATE -> "✎"
-        ViewerMenuItem.PAGES -> "▤"
-        ViewerMenuItem.EXPORT -> "↓"
-        ViewerMenuItem.SHARE -> "↗"
-        ViewerMenuItem.SETTINGS -> "⚙"
+        ViewerMenuItem.LIBRARY -> LINE_LIBRARY
+        ViewerMenuItem.SETLIST -> LINE_SETLIST
+        ViewerMenuItem.BOOKMARKS -> LINE_BOOKMARK
+        ViewerMenuItem.DISPLAY -> LINE_DISPLAY
+        ViewerMenuItem.LAYOUT -> LINE_LAYOUT
+        ViewerMenuItem.METRONOME -> LINE_METRONOME
+        ViewerMenuItem.TUNER -> LINE_TUNER
+        ViewerMenuItem.PIANO -> LINE_PIANO
+        ViewerMenuItem.PLAYBACK -> LINE_PLAY
+        ViewerMenuItem.LINKS -> LINE_LINKS
+        ViewerMenuItem.ANNOTATE -> LINE_EDIT
+        ViewerMenuItem.PAGES -> LINE_PAGES
+        ViewerMenuItem.EXPORT -> LINE_EXPORT
+        ViewerMenuItem.SHARE -> LINE_SHARE
+        ViewerMenuItem.SETTINGS -> LINE_SETTINGS
     }
 
 @Composable
-private fun ViewerMenuItem.label(): String = stringResource(
+internal fun ViewerMenuItem.label(): String = stringResource(
     when (this) {
         ViewerMenuItem.LIBRARY -> R.string.library_title
         ViewerMenuItem.SETLIST -> R.string.menu_setlist
@@ -91,8 +90,8 @@ private fun MenuItemState.hint(): String? = when (this) {
 
 /**
  * The viewer menu: one vertical list under the ☰ button, every entry always in the same place.
- * What does not work yet is greyed out with the reason under its name, so the menu shows where the
- * app is going and never moves when an entry arrives. Closes on tap outside, with back, or when an
+ * What does not work yet is greyed out, so the menu shows where the app is going and never moves
+ * when an entry arrives; one line per entry keeps the whole menu in sight on a phone. Closes on tap outside, with back, or when an
  * entry is chosen.
  */
 @Composable
@@ -133,7 +132,7 @@ fun ViewerMenuPanel(
                         group = item.group
                     }
                     val state = menuItemState(item, isMusicXml)
-                    MenuRow(item.glyph, item.label(), state.hint(), state == MenuItemState.READY) {
+                    MenuRow(item.icon, item.label(), state.hint(), state == MenuItemState.READY) {
                         onSelect(item)
                     }
                 }
@@ -143,42 +142,32 @@ fun ViewerMenuPanel(
 }
 
 /**
- * Glyph (or, without one, the metronome icon), name, and under the name why the entry is greyed
- * out. 48 dp high at least: a touch target.
+ * Icon and name, on one line. Why the entry is greyed out is not written (the grey says it) but
+ * read out by a screen reader.
  */
 @Composable
-private fun MenuRow(glyph: String?, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
+private fun MenuRow(icon: String, label: String, hint: String?, enabled: Boolean, onClick: () -> Unit) {
     val content = if (enabled) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = MENU_ROW_HEIGHT)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .semantics { if (hint != null) stateDescription = hint }
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val glyphColor = if (enabled) MaterialTheme.colorScheme.primary else content
-        if (glyph != null) {
-            Text(
-                glyph,
-                style = MaterialTheme.typography.titleMedium,
-                color = glyphColor,
-                modifier = Modifier.width(32.dp),
-            )
-        } else {
-            Box(Modifier.width(32.dp)) {
-                CompositionLocalProvider(LocalContentColor provides glyphColor) { ToolIcon(ICON_METRONOME) }
-            }
+        val iconColor = if (enabled) MaterialTheme.colorScheme.primary else content
+        Box(Modifier.width(36.dp)) {
+            CompositionLocalProvider(LocalContentColor provides iconColor) { LineIcon(icon) }
         }
-        Column {
-            Text(label, style = MaterialTheme.typography.bodyLarge, color = content)
-            if (hint != null) {
-                Text(hint, style = MaterialTheme.typography.bodySmall, color = content)
-            }
-        }
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = content)
     }
 }
+
+// a row of the menu: the whole list fits on a phone, and a finger still finds its row
+private val MENU_ROW_HEIGHT = 40.dp
 
 /**
  * The MusicXML layout panel: what changes how the music is laid out on the page, saved per score.

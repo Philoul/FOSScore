@@ -10,12 +10,19 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface StrokeDao {
     // one page only: the viewer draws one page, and re-reading the whole score on every stroke
-    // made the cost of a stroke grow with the score (index: sheetHash, page)
-    @Query("SELECT * FROM strokes WHERE sheetHash = :hash AND page = :page ORDER BY id")
-    fun observePage(hash: String, page: Int): Flow<List<Stroke>>
+    // made the cost of a stroke grow with the score (index: sheetId, page)
+    @Query("SELECT * FROM strokes WHERE sheetId = :sheetId AND page = :page ORDER BY id")
+    fun observePage(sheetId: Long, page: Int): Flow<List<Stroke>>
 
-    @Query("SELECT * FROM strokes WHERE sheetHash = :hash ORDER BY page, id")
-    suspend fun listBySheet(hash: String): List<Stroke>
+    @Query("SELECT * FROM strokes WHERE sheetId = :sheetId ORDER BY page, id")
+    suspend fun listBySheet(sheetId: Long): List<Stroke>
+
+    // the ink of a MusicXML score: it hangs on measures, not on pages (score.MeasureAnchors)
+    @Query("SELECT * FROM strokes WHERE sheetId = :sheetId AND measure IS NOT NULL ORDER BY id")
+    fun observeAnchored(sheetId: Long): Flow<List<Stroke>>
+
+    @Query("DELETE FROM strokes WHERE sheetId = :sheetId AND measure IN (:measures)")
+    suspend fun deleteMeasures(sheetId: Long, measures: List<Int>)
 
     @Insert
     suspend fun insert(stroke: Stroke): Long
@@ -32,9 +39,9 @@ interface StrokeDao {
     @Delete
     suspend fun deleteAll(strokes: List<Stroke>)
 
-    @Query("DELETE FROM strokes WHERE sheetHash = :hash")
-    suspend fun deleteForSheet(hash: String)
+    @Query("DELETE FROM strokes WHERE sheetId = :sheetId")
+    suspend fun deleteForSheet(sheetId: Long)
 
-    @Query("DELETE FROM strokes WHERE sheetHash = :hash AND page = :page")
-    suspend fun deletePage(hash: String, page: Int)
+    @Query("DELETE FROM strokes WHERE sheetId = :sheetId AND page = :page")
+    suspend fun deletePage(sheetId: Long, page: Int)
 }

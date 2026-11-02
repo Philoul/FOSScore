@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.library.isTextStamp
+import com.musigatto.fosscore.ui.viewer.hitTextStamp
 import kotlin.math.abs
 
 // Zoom cap. Reference viewers do NOT scale the page with a transform: they redraw it at the
@@ -56,7 +58,7 @@ internal fun Modifier.pageGestures(
     editing: Boolean,
     canEdit: Boolean,
     page: Int,
-    sheetHash: String?,
+    sheetId: Long?,
     pageFit: RectPx,
     stamps: List<Stamp>,
     strokes: List<Stroke>,
@@ -64,9 +66,7 @@ internal fun Modifier.pageGestures(
     selectionRect: RectPx?,
     selectedStamp: Stamp?,
     selectedStrokes: List<Stroke>,
-    stampArmed: Boolean,
-    drawingTool: Boolean,
-    eraserTool: Boolean,
+    tool: AnnotationTool,
     penWidthPx: Float,
     eraserPx: Float,
     activeColor: Int?,
@@ -84,6 +84,10 @@ internal fun Modifier.pageGestures(
     onInkPreview: (List<Offset>) -> Unit,
     onToolsDown: () -> Unit,
     onPlaceStamp: (Offset) -> Unit,
+    // TEXT tool (issue #35): a tap on empty page creates a box; a tap on a box edits it.
+    // The measured rects (draw = hit = selection) come from the shared map.
+    textRects: Map<Long, RectPx> = emptyMap(),
+    onTextBoxTap: (Offset, Stamp?, Offset) -> Unit = { _, _, _ -> },
 ): Modifier {
     // The gesture's pointerInput(Unit) never restarts, so everything it reads from outside its own
     // loop goes through rememberUpdatedState: a captured value would keep the first composition's
@@ -92,12 +96,16 @@ internal fun Modifier.pageGestures(
     val currentCanEdit by rememberUpdatedState(canEdit)
     val currentPageStamps by rememberUpdatedState(stamps)
     val currentPageStrokes by rememberUpdatedState(strokes)
+    val currentTextRects by rememberUpdatedState(textRects)
+    // the text tool's tap reads the page as it is now (its texts' boxes, the text being typed):
+    // the lambda of the first composition would keep the boxes of that moment
+    val currentOnTextBoxTap by rememberUpdatedState(onTextBoxTap)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
     // the page (and the score) the edit belongs to. Not a local copy: this one rests on the page the
     // score opened at, so ink written on page 6 was stored under page 8 and showed up there after
     // pressing Done.
     val currentPage by rememberUpdatedState(page)
-    val currentHash by rememberUpdatedState(sheetHash)
+    val currentSheetId by rememberUpdatedState(sheetId)
     val currentPageFit by rememberUpdatedState(pageFit)
     // where the page is centred in the viewport, and the pure fit rect (origin 0,0):
     // content work and zoom anchoring live in these coordinates
@@ -109,10 +117,8 @@ internal fun Modifier.pageGestures(
     val currentSelectionRect by rememberUpdatedState(selectionRect)
     val currentSelectedStamp by rememberUpdatedState(selectedStamp)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokes)
-    val currentStampArmed by rememberUpdatedState(stampArmed)
+    val currentTool by rememberUpdatedState(tool)
     val currentLoupeAt by rememberUpdatedState(loupeAt)
-    val currentDrawingTool by rememberUpdatedState(drawingTool)
-    val currentEraserTool by rememberUpdatedState(eraserTool)
     val currentEraserPx by rememberUpdatedState(eraserPx)
     val currentPenWidth by rememberUpdatedState(penWidthPx)
     val currentActiveColor by rememberUpdatedState(activeColor)
@@ -175,6 +181,9 @@ internal fun Modifier.pageGestures(
             var movingStrokes: List<Stroke>? = null
             var movingStrokesBase: List<Stroke>? = null
             var moveStrokeLastPos = downF
+            // TEXT tool (#35): which text stamp the tap hit (if any), captured on down so the
+            // release branch does not re-hit against a stale map or moved fingers
+            var pickedText: Stamp? = null
             var inkActive = false
             var inkPts = mutableListOf<Offset>()
             var eraserActive = false
@@ -182,7 +191,12 @@ internal fun Modifier.pageGestures(
             var scaleF = 1f   // accumulated handle factor (always from startPos)
             // handle in use: (base object, grabbed corner) while scaling
             var resizing: Resizing? = null
-            if (currentEditing && currentCanEdit && !currentDrawingTool && !currentEraserTool) {
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SELECT) {
+                // a tap re-selects from scratch: the drag box (dragStamp/dragStrokes) still holds
+                // the PREVIOUS selection's position, and the handles would hang there while the
+                // resize acts on the newly picked object
+                editor.dragStamp = null
+                editor.dragStrokes = null
                 // 1) a handle on a STROKE's selection box wins over everything else:
                 //    entering by the corner stretches, entering inside moves. Stamps
                 //    have no handles (a corner drag sized them by accident); their size
@@ -206,7 +220,7 @@ internal fun Modifier.pageGestures(
                     }
                 }
                 if (resizing == null) {
-                    val hitS = hitStamp(downF, currentPageStamps, currentHitFit)
+                    val hitS = hitStamp(downF, currentPageStamps, currentHitFit, currentTextRects)
                     // A tap selects the WORD, not the single stroke. The grouping is
                     // only needed here, on the tap: doing it on every change made it
                     // O(n²) over the page after every stroke.
@@ -241,14 +255,14 @@ internal fun Modifier.pageGestures(
                     }
                 }
             }
-            if (currentEditing && currentCanEdit && currentEraserTool && !onMatte) {
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.ERASER && !onMatte) {
                 eraserActive = true
                 eraserPath.add(downF)
                 onInkPreview(listOf(downF))
             }
             // a stroke that starts on the matte is no stroke at all: nothing is drawn, and the
             // release branch stands the pen down (it reads as a tap on the matte)
-            if (currentEditing && currentCanEdit && currentDrawingTool && !onMatte) {
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.PEN && !onMatte) {
                 inkActive = true
                 inkPts.add(downF)
                 onInkPreview(listOf(downF))
@@ -256,10 +270,15 @@ internal fun Modifier.pageGestures(
             // stamp armed on an empty spot: a long press starts the loupe, so the finger
             // does not hide the exact place the stamp lands
             var lastPlacePos = down.position
-            if (currentEditing && currentCanEdit && currentStampArmed &&
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.STAMP &&
                 movingStamp == null && movingStrokes == null
             ) {
                 onLoupeAnchor(down.position)
+            }
+            // TEXT tool (#35): pick a text stamp by its MEASURED rect (textRects), not the
+            // square stampRect. A tap on empty page → new box; a tap on a box → edit it.
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.TEXT) {
+                pickedText = hitTextStamp(downF, currentPageStamps, currentTextRects)
             }
 
             try {
@@ -308,11 +327,11 @@ internal fun Modifier.pageGestures(
                             // threshold is a screen distance, so it scales with the zoom
                             val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / zoom.transform.scale)
                             onInkPreview(emptyList())
-                            // local copy: a delegated var cannot be smart cast to String
-                            val hash = currentHash
-                            if (pts.size >= 2 && !onMatte && hash != null && currentPageFit.width > 0f) {
-                                val s = Stroke(
-                                    sheetHash = hash,
+                            // local copy: a delegated var cannot be smart cast to Long
+                            val sheet = currentSheetId
+                            if (pts.size >= 2 && !onMatte && sheet != null && currentPageFit.width > 0f) {
+                                val stroke = Stroke(
+                                    sheetId = sheet,
                                     page = currentPage,
                                     points = encodePoints(
                                         pts.map { pxToNormalized(it, currentHitFit) }
@@ -320,12 +339,26 @@ internal fun Modifier.pageGestures(
                                     width = penWidthPxToFrac(currentPenWidth, currentHitFit),
                                     color = currentActiveColor
                                 )
-                                editor.addInk(currentPage, s, PageEdit(currentPageStamps, currentPageStrokes))
+                                // the word the stroke belongs to is decided now, once: the next
+                                // letter of what was just written joins it, anything else starts
+                                // a new one. Dragging one word next to another later must not
+                                // merge them, so the distance is not consulted again at selection.
+                                val grouped = stroke.copy(
+                                    groupId = groupForStroke(
+                                        previous = currentInkStrokes.maxByOrNull { it.id },
+                                        writtenAt = editor.lastInkAt,
+                                        now = System.currentTimeMillis(),
+                                        nextGroup = (currentInkStrokes.maxOfOrNull { it.groupId } ?: 0L) + 1L,
+                                        stroke = stroke,
+                                        fit = currentHitFit,
+                                    )
+                                )
+                                editor.addInk(currentPage, grouped, PageEdit(currentPageStamps, currentPageStrokes))
                             }
                         } else if (eraserActive) {
                             val path = eraserPath
                             onInkPreview(emptyList())
-                            if (path.isNotEmpty() && currentHash != null && currentPageFit.width > 0f) {
+                            if (path.isNotEmpty() && currentSheetId != null && currentPageFit.width > 0f) {
                                 val radiusPx = currentEraserPx
                                 // the eraser always deletes what it grazes: to remove a whole
                                 // word, tap it (that selects it) and press the bin
@@ -404,20 +437,30 @@ internal fun Modifier.pageGestures(
                                 // already handled above: neither places a stamp nor turns the page
                             } else if (currentEditing && currentCanEdit) {
                                 // Select mode: a horizontal swipe turns the page, the same one
-                                // that works while reading. forScore turns from row 1 (‹ ›); this
-                                // is our own addition, so it is only active with no tool armed and
-                                // only at fit, where a one-finger drag is not a pan.
-                                val isSwipe = !currentStampArmed &&
+                                // that works while reading. Turning happens only with the arrow,
+                                // at fit, where a one-finger drag is not a pan (issue #56).
+                                val isSwipe = currentTool == AnnotationTool.SELECT &&
                                     zoom.transform.scale <= 1f &&
                                     totalPan.getDistance() > swipeThresholdPx &&
                                     abs(totalPan.x) > abs(totalPan.y)
                                 // tap while editing: places the active stamp on the point touched
                                 if (isSwipe) {
                                     if (totalPan.x < 0f) onTurn(PageTurn.NEXT) else onTurn(PageTurn.PREV)
-                                } else if (!currentStampArmed) {
-                                    // no tool: just deselect
+                                } else if (currentTool == AnnotationTool.TEXT) {
+                                    // TEXT tool: tap creates/edits; swipe is disabled (no page turn)
+                                    if (!onMatte && currentSheetId != null &&
+                                        (aimed || totalPan.getDistance() <= touchSlopPx)
+                                    ) {
+                                        currentOnTextBoxTap(
+                                            pxToNormalized(fitPoint(lastPlacePos), currentHitFit),
+                                            pickedText,
+                                            lastPlacePos,
+                                        )
+                                    }
+                                } else if (currentTool != AnnotationTool.STAMP) {
+                                    // the arrow on an empty spot: deselect
                                     editor.clearSelection()
-                                } else if (currentHash != null &&
+                                } else if (currentSheetId != null &&
                                     (aimed || totalPan.getDistance() <= touchSlopPx)
                                 ) {
                                     // a drag is a pan and must not drop a stamp; the loupe is

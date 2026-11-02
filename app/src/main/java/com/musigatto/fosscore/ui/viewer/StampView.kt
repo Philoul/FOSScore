@@ -38,9 +38,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.R
 import kotlin.math.roundToInt
@@ -112,6 +114,14 @@ fun stampColor(color: Int?, fallback: Color): Color = color?.let(::Color) ?: fal
  * density. Draw (here) and measure (the shared textRects) both pass THROUGH this, or they diverge. */
 fun textFontSp(fontPx: Float, density: Density): TextUnit = (fontPx / density.density).sp
 
+/**
+ * The style of a text stamp's words, from [base] (the theme's): its font at [fontPx], each line
+ * [TEXT_LINE_EM] of that font high. The theme's line height is a fixed 24 sp: a big text's lines
+ * ran into each other and a small one's were far apart. Draw, measure and typing all take it.
+ */
+fun textStampStyle(base: TextStyle, fontPx: Float, density: Density, color: Color = Color.Unspecified): TextStyle =
+    base.copy(fontSize = textFontSp(fontPx, density), lineHeight = TEXT_LINE_EM.em, color = color)
+
 /** The words of a text stamp, wrapped at the page's width and tinted like the other ink. */
 @Composable
 internal fun TextStampView(
@@ -124,7 +134,7 @@ internal fun TextStampView(
     val density = LocalDensity.current
     Text(
         text = text,
-        style = LocalTextStyle.current.copy(fontSize = textFontSp(fontPx, density), color = color),
+        style = textStampStyle(LocalTextStyle.current, fontPx, density, color),
         modifier = modifier.widthIn(max = with(density) { maxWidthPx.toDp() })
     )
 }

@@ -100,6 +100,16 @@ internal fun typingOutcome(draft: TextDraft, typed: Stamp): TypingOutcome {
     }
 }
 
+/** The size (px at zoom 1) and the colour the text panel shows. */
+internal data class TextPanelValues(val px: Float, val color: Int?)
+
+/**
+ * What the text panel shows: the size and the colour of the text being typed, so that editing a
+ * text shows its own; [nextPx] and [nextColor] (those of the next new text) the rest of the time.
+ */
+internal fun textPanelValues(typing: TextDraft?, nextPx: Float, nextColor: Int?, fit: RectPx): TextPanelValues =
+    typing?.let { TextPanelValues(textFontPx(it.size, fit), it.color) } ?: TextPanelValues(nextPx, nextColor)
+
 /**
  * The top left corner where a new text starts, from the point tapped ([tap], page fractions): the
  * middle of its first line on the point, as a pen would start there. [lineHeight] is the height of
@@ -164,7 +174,7 @@ internal fun TypingField(
             value = it
             if (changed) onText(it.text)
         },
-        textStyle = LocalTextStyle.current.copy(fontSize = textFontSp(fontPx, density), color = color),
+        textStyle = textStampStyle(LocalTextStyle.current, fontPx, density, color),
         cursorBrush = SolidColor(color),
         // an empty new text shows its size and colour, faintly, until the first letter
         decorationBox = { inner ->
@@ -172,7 +182,7 @@ internal fun TypingField(
                 if (value.text.isEmpty()) {
                     Text(
                         stringResource(R.string.text_placeholder),
-                        style = LocalTextStyle.current.copy(fontSize = textFontSp(fontPx, density), color = color.copy(alpha = 0.4f)),
+                        style = textStampStyle(LocalTextStyle.current, fontPx, density, color.copy(alpha = 0.4f)),
                     )
                 }
                 inner()

@@ -93,6 +93,15 @@ internal data class PanelPlace(val above: Boolean, val maxHeightPx: Int)
 internal fun annotationBarOffsetPx(barDragY: Float, statusBarPx: Int): Int =
     if (barDragY > 0f) (barDragY + statusBarPx).roundToInt() else 0
 
+/**
+ * How far down the annotation bar is while the keyboard is up ([keyboardTopPx], px from the top
+ * of the bar's box; null while there is none): where it was dragged, or just above the keyboard
+ * if that was under it, so its size, colour and ✓ stay at hand while a text is typed.
+ */
+internal fun annotationBarDragOverKeyboard(barDragY: Float, barHeightPx: Int, statusBarPx: Int, keyboardTopPx: Float?): Float =
+    if (keyboardTopPx == null || barDragY <= 0f) barDragY
+    else barDragY.coerceAtMost(keyboardTopPx - barHeightPx - statusBarPx).coerceAtLeast(0f)
+
 internal fun toolPanelPlace(
     barTopPx: Float,
     barHeightPx: Int,
@@ -129,6 +138,7 @@ internal fun AnnotationBar(
     penWidthPx: Float,
     eraserPx: Float,
     textPx: Float,
+    defaultTextPx: Float,
     placePx: Float,
     defaultStampPx: Float,
     pageTouched: Boolean,
@@ -149,6 +159,7 @@ internal fun AnnotationBar(
     onPenWidth: (Float) -> Unit,
     onEraserPx: (Float) -> Unit,
     onTextPx: (Float) -> Unit,
+    onSaveTextDefault: () -> Unit,
     onPenColor: (Int?) -> Unit,
     onStampColor: (Int?) -> Unit,
     onTextColor: (Int?) -> Unit,
@@ -409,6 +420,8 @@ internal fun AnnotationBar(
                             range = MIN_TEXT_PX..MAX_TEXT_PX,
                             onValue = onTextPx,
                             lead = { ColorChoices(active = textColor, invert = invert, onPick = onTextColor) },
+                            onSaveDefault = onSaveTextDefault,
+                            isDefault = textPx.roundToInt() == defaultTextPx.roundToInt(),
                         )
 
                         else -> Unit

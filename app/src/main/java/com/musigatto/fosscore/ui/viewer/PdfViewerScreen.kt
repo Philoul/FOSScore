@@ -335,7 +335,8 @@ fun PdfViewerScreen(
     var textColor by rememberSaveable { mutableStateOf<Int?>(null) }  // text tool color
     // sizes per tool: pen width, eraser radius, stamp size, text size (all px at zoom 1)
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
-    var textPx by rememberSaveable { mutableFloatStateOf(DEFAULT_TEXT_PX) }  // text font size (px at zoom 1)
+    var textPx by rememberSaveable { mutableFloatStateOf(Settings.textPx(context)) }  // next new text's font size (px at zoom 1)
+    var defaultTextPx by remember { mutableFloatStateOf(Settings.textPx(context)) }
     var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
     // double-tap animation in flight: any new touch cancels it
@@ -437,9 +438,7 @@ fun PdfViewerScreen(
                 if (!st.isTextStamp()) continue
                 val layout = textMeasurer.measure(
                     st.text.orEmpty(),
-                    measureStyle.copy(
-                        fontSize = textFontSp(textFontPx(st.size, hitFit), measureDensity)
-                    ),
+                    textStampStyle(measureStyle, textFontPx(st.size, hitFit), measureDensity),
                     overflow = TextOverflow.Clip,
                     softWrap = true,
                     constraints = Constraints(
@@ -455,7 +454,7 @@ fun PdfViewerScreen(
     fun measureText(text: String, sizeFrac: Float): Pair<Float, Float> {
         val layout = textMeasurer.measure(
             text,
-            measureStyle.copy(fontSize = textFontSp(textFontPx(sizeFrac, hitFit), measureDensity)),
+            textStampStyle(measureStyle, textFontPx(sizeFrac, hitFit), measureDensity),
             overflow = TextOverflow.Clip,
             softWrap = true,
             constraints = Constraints(maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)),
@@ -686,6 +685,8 @@ fun PdfViewerScreen(
     LaunchedEffect(editor.typing == null) { if (editor.typing == null) keyFocus.requestFocus() }
     // where the page's box starts in the window, and how far down the keyboard leaves it visible
     var viewportTop by remember { mutableFloatStateOf(0f) }
+    // and where the viewer's own box starts (the annotation bar's place is counted from there)
+    var screenTop by remember { mutableFloatStateOf(0f) }
     val visibleBottom by rememberVisibleBottom()
 
     // the page reached and when, on every turn and when the score closes: back to it if the
@@ -935,6 +936,7 @@ fun PdfViewerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { screenTop = it.positionInWindow().y }
             // the matte around the page: the theme background, and black when "Neg" is on (the page
             // turns black and the bands were left white)
             .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
@@ -954,13 +956,18 @@ fun PdfViewerScreen(
         // A text typed low on the page would be under the keyboard: the page goes up while it is
         // typed, just enough for the text and a line more to show above the keyboard.
         val typingNow = editor.typing
+        // a bar parked at the bottom would be under the keyboard: it goes up above it while a
+        // text is typed, and then the text has to show above the bar
+        val keyboardTop = if (typingNow == null || visibleBottom == Int.MAX_VALUE) null else visibleBottom - screenTop
+        val barY = annotationBarDragOverKeyboard(barDragY, annBarPx, statusTopPx, keyboardTop)
+        val textRoomBottom = if (barY < barDragY) screenTop + annotationBarOffsetPx(barY, statusTopPx) else visibleBottom.toFloat()
         val lift = if (typingNow == null || hitFit.height <= 0f) 0f else {
             val k = zoom.transform.scale
             val (_, h) = measureText(typingNow.text.ifEmpty { " " }, typingNow.size)
             val line = textFontPx(typingNow.size, hitFit) * 1.3f
             val textBottom = viewportTop + pageFit.top + zoom.transform.offset.y +
                 (typingNow.top * hitFit.height + h + line) * k
-            (textBottom - visibleBottom).coerceAtLeast(0f)
+            (textBottom - textRoomBottom).coerceAtLeast(0f)
         }
         val pageLift by animateFloatAsState(lift, label = "pageLift")
         // The page lives in its own box: in edit mode it starts below the chrome instead of under
@@ -1233,6 +1240,8 @@ fun PdfViewerScreen(
             }
 
             if (editing && canEdit) {
+                val textPanel = textPanelValues(editor.typing, textPx, textColor, hitFit)
+                    .let { it.copy(px = it.px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
                 AnnotationBar(
                     tool = tool,
                     stampSymbol = stampSymbol,
@@ -1240,10 +1249,11 @@ fun PdfViewerScreen(
                     invert = invert,
                     penColor = penColor,
                     stampColor = stampColor,
-                    textColor = textColor,
+                    textColor = textPanel.color,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
-                    textPx = textPx,
+                    textPx = textPanel.px,
+                    defaultTextPx = defaultTextPx,
                     placePx = placePx,
                     defaultStampPx = defaultStampPx,
                     pageTouched = pageTouched,
@@ -1270,12 +1280,18 @@ fun PdfViewerScreen(
                     onPenWidth = { penWidthPx = it },
                     onEraserPx = { eraserPx = it },
                     onPenColor = { penColor = it },
+                    // a text being edited takes the size and the colour; the next new one keeps its own
                     onTextPx = { px ->
-                        textPx = px
+                        if (editor.typing?.origin == null) textPx = px
                         editor.retype { it.copy(size = textSizePxToFrac(px, hitFit)) }
                     },
+                    onSaveTextDefault = {
+                        Settings.setTextPx(context, textPanel.px)
+                        defaultTextPx = textPanel.px
+                        textPx = textPanel.px
+                    },
                     onTextColor = { argb ->
-                        textColor = argb
+                        if (editor.typing?.origin == null) textColor = argb
                         editor.retype { it.copy(color = argb) }
                     },
                     onStampColor = { argb ->
@@ -1290,14 +1306,14 @@ fun PdfViewerScreen(
                         }
                     },
                     onHeight = { annBarPx = it },
-                    atTop = barDragY == 0f,
-                    panelPlace = toolPanelPlace(barDragY, annBarPx, viewport.height + annBarPx, statusTopPx, navigationBottomPx),
+                    atTop = barY == 0f,
+                    panelPlace = toolPanelPlace(barY, annBarPx, viewport.height + annBarPx, statusTopPx, navigationBottomPx),
                     // the top of the screen: while annotating this bar IS the title bar, and the
                     // grip moves it down out of the way, where it turns see-through so the page
                     // underneath stays readable
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .offset { IntOffset(0, annotationBarOffsetPx(barDragY, statusTopPx)) }
+                        .offset { IntOffset(0, annotationBarOffsetPx(barY, statusTopPx)) }
                         .alpha(if (barDragging) 0.75f else 1f),
                 )
 

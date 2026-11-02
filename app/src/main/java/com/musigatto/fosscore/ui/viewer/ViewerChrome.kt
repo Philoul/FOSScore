@@ -587,10 +587,33 @@ fun ToolSizePanel(
     range: ClosedFloatingPointRange<Float>,
     onValue: (Float) -> Unit,
     lead: (@Composable ColumnScope.() -> Unit)? = null,
+    // the size the tool starts with next time: saved by the button beside the label
+    onSaveDefault: (() -> Unit)? = null,
+    isDefault: Boolean = true,
 ) {
     ToolBlock {
         lead?.invoke(this)
-        Text("$label · ${value.roundToInt()} px", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "$label · ${value.roundToInt()} px",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            if (onSaveDefault != null) {
+                TextButton(
+                    onClick = onSaveDefault,
+                    enabled = !isDefault,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier.height(TOOL_SLIDER_DP.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.stamp_default_save),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepArrow(label = "-") { onValue((value - 1f).coerceIn(range.start, range.endInclusive)) }
             Slider(

@@ -1,6 +1,10 @@
 package com.musigatto.fosscore.ui.viewer
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.musigatto.fosscore.library.Stamp
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -83,5 +87,29 @@ class TextTypingTest {
         val corner = newTextCorner(Offset(0.3f, 0.5f), lineHeight = 40f, fit = fit)
         assertEquals(0.3f, corner.x, 0f)
         assertEquals(0.5f - 20f / 2000f, corner.y, 1e-6f)
+    }
+
+    @Test
+    fun theLinesOfATextAreAsFarApartAsItsFontIsBig() {
+        // the theme's style: 16 sp letters on 24 sp lines, whatever their size
+        val theme = TextStyle(fontSize = 16.sp, lineHeight = 24.sp)
+        val density = Density(2f)
+        val big = textStampStyle(theme, fontPx = 192f, density = density)
+        val small = textStampStyle(theme, fontPx = 24f, density = density)
+        assertEquals(96f, big.fontSize.value, 0f)
+        // a line of fingering 96 sp high was 24 sp apart from the next one
+        assertEquals(TEXT_LINE_EM.em, big.lineHeight)
+        assertEquals(TEXT_LINE_EM.em, small.lineHeight)
+    }
+
+    @Test
+    fun theTextPanelShowsTheTextBeingEdited() {
+        val edited = draft("pp", origin = stamp("pp")).copy(size = 0.03f, color = 0xFFFF0000.toInt())
+        // 0.03 of a page 2000 px high: 60 px, red, not the 24 px black of the next new text
+        assertEquals(TextPanelValues(60f, 0xFFFF0000.toInt()), textPanelValues(edited, 24f, null, fit))
+        // a new text being typed shows its own too (the panel changed it)
+        assertEquals(TextPanelValues(24f, null), textPanelValues(draft("").copy(size = 0.012f), 40f, 7, fit))
+        // nothing typed: the next new text's
+        assertEquals(TextPanelValues(40f, 7), textPanelValues(null, 40f, 7, fit))
     }
 }

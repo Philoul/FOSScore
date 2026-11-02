@@ -59,4 +59,16 @@ class AnnotationBarTest {
         // its buttons were 81 px down (under the status bar strip); dragged by 500 they are 581 px down
         assertEquals(581, annotationBarOffsetPx(barDragY = 500f, statusBarPx = 81))
     }
+
+    @Test
+    fun theKeyboardPushesTheBarUpNotOverIt() {
+        // the bar parked at the bottom (dragged 1800 px, 81 px status bar, 120 px high): the
+        // keyboard comes up to 1300 px, the bar goes just above it
+        assertEquals(1099f, annotationBarDragOverKeyboard(1800f, 120, 81, keyboardTopPx = 1300f), 0f)
+        // no keyboard, or a bar already above it: it stays where it was put
+        assertEquals(1800f, annotationBarDragOverKeyboard(1800f, 120, 81, keyboardTopPx = null), 0f)
+        assertEquals(300f, annotationBarDragOverKeyboard(300f, 120, 81, keyboardTopPx = 1300f), 0f)
+        // at the top it stays at the top
+        assertEquals(0f, annotationBarDragOverKeyboard(0f, 120, 81, keyboardTopPx = 1300f), 0f)
+    }
 }

@@ -274,4 +274,11 @@
     <string name="sound_bank_waiting">Its sounds will be prepared (it can be chosen once ready)</string>
     <string name="part_sound_bank_preparing">%1$s (preparing its sounds… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (its sounds will be prepared)</string>
+    <string name="prefs_keyboard">Keyboard and pedals</string>
+    <string name="prefs_keyboard_summary">Typing text on the page while a pedal is connected</string>
+    <string name="prefs_screen_keyboard">On-screen keyboard with a pedal</string>
+    <string name="prefs_screen_keyboard_on">On: the keyboard shows to type a text, pedal connected or not</string>
+    <string name="prefs_screen_keyboard_off">Off: while a pedal is connected, the keyboard does not show</string>
+    <string name="prefs_screen_keyboard_why">Most pedals present themselves to Android as a keyboard, and Android then hides the on-screen keyboard. The switch that brings it back belongs to Android and applies to every app: open its settings and turn on “Show virtual keyboard”. Once on, it stays on.</string>
+    <string name="prefs_screen_keyboard_open">Open Android settings</string>
 </resources>

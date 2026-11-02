@@ -276,4 +276,11 @@
     <string name="sound_bank_waiting">Sus sonidos se van a preparar (disponible cuando esté listo)</string>
     <string name="part_sound_bank_preparing">%1$s (preparando los sonidos… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (sonidos por preparar)</string>
+    <string name="prefs_keyboard">Teclado y pedales</string>
+    <string name="prefs_keyboard_summary">Escribir texto en la página con un pedal conectado</string>
+    <string name="prefs_screen_keyboard">Teclado en pantalla con un pedal</string>
+    <string name="prefs_screen_keyboard_on">Activado: el teclado aparece para escribir un texto, con o sin pedal</string>
+    <string name="prefs_screen_keyboard_off">Desactivado: mientras haya un pedal conectado, el teclado no aparece</string>
+    <string name="prefs_screen_keyboard_why">La mayoría de los pedales se presentan a Android como un teclado, y Android oculta entonces el teclado en pantalla. El ajuste que lo devuelve es de Android y vale para todas las aplicaciones: abra sus ajustes y active «Mostrar teclado virtual». Una vez activado, se queda así.</string>
+    <string name="prefs_screen_keyboard_open">Abrir los ajustes de Android</string>
 </resources>

@@ -17,6 +17,13 @@ interface StrokeDao {
     @Query("SELECT * FROM strokes WHERE sheetId = :sheetId ORDER BY page, id")
     suspend fun listBySheet(sheetId: Long): List<Stroke>
 
+    // the ink of a MusicXML score: it hangs on measures, not on pages (score.MeasureAnchors)
+    @Query("SELECT * FROM strokes WHERE sheetId = :sheetId AND measure IS NOT NULL ORDER BY id")
+    fun observeAnchored(sheetId: Long): Flow<List<Stroke>>
+
+    @Query("DELETE FROM strokes WHERE sheetId = :sheetId AND measure IN (:measures)")
+    suspend fun deleteMeasures(sheetId: Long, measures: List<Int>)
+
     @Insert
     suspend fun insert(stroke: Stroke): Long
 

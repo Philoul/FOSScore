@@ -24,6 +24,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
+import com.musigatto.fosscore.ui.viewer.LineIcon
 
 /** A space separates tags; `,` and `;` stay so old free text still reads as separate tags. */
 private val SEPARATORS = Regex("[\\s,;]+")
@@ -105,7 +107,7 @@ private fun TagChip(tag: String, onRemove: () -> Unit) {
                     .size(32.dp)
                     .semantics { contentDescription = removeLabel }
             ) {
-                Text("✕", style = MaterialTheme.typography.labelMedium)
+                LineIcon(LINE_CLOSE, size = 14.dp)
             }
         }
     }

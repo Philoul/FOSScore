@@ -965,11 +965,15 @@ fun PdfViewerScreen(
             .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
             .then(stylusHoverMod)
             .onPreviewKeyEvent { e ->
-                val turn = pageTurnFor(e.key, e.isShiftPressed, typing = editor.typing != null)
+                // read at each key: the preferences may have changed them since the score opened
+                val action = Settings.keyShortcuts(context).actionFor(e.nativeKeyEvent.keyCode, e.isShiftPressed, typing = editor.typing != null)
                     ?: return@onPreviewKeyEvent false
-                // a held key repeats: turn one page per press, not a burst
+                // a held key repeats: one action per press, not a burst
                 if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
-                    if (turn == PageTurn.NEXT) applyNext() else applyPrev()
+                    when (action) {
+                        KeyAction.NEXT_PAGE -> applyNext()
+                        KeyAction.PREV_PAGE -> applyPrev()
+                    }
                 }
                 true
             }

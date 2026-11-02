@@ -225,12 +225,23 @@
     <string name="metronome_previous_page">Previous page</string>
     <string name="metronome_next_page">Next page</string>
     <string name="prefs_keyboard">Keyboard and pedals</string>
-    <string name="prefs_keyboard_summary">Typing text on the page while a pedal is connected</string>
+    <string name="prefs_keyboard_summary">On-screen keyboard, shortcuts of the keys and pedals</string>
     <string name="prefs_screen_keyboard">On-screen keyboard with a pedal</string>
-    <string name="prefs_screen_keyboard_on">On: the keyboard shows to type a text, pedal connected or not</string>
+    <string name="prefs_screen_keyboard_on">On</string>
     <string name="prefs_screen_keyboard_off">Off: while a pedal is connected, the keyboard does not show</string>
     <string name="prefs_screen_keyboard_why">Most pedals present themselves to Android as a keyboard, and Android then hides the on-screen keyboard. The switch that brings it back belongs to Android and applies to every app: open its settings and turn on “Show virtual keyboard”. Once on, it stays on.</string>
     <string name="prefs_screen_keyboard_open">Open Android settings</string>
+    <string name="prefs_shortcuts">Shortcuts</string>
+    <string name="prefs_shortcuts_add">Add a shortcut</string>
+    <string name="prefs_shortcuts_reset">Back to the default keys</string>
+    <string name="prefs_shortcuts_press">Press the key on the keyboard or the pedal</string>
+    <string name="prefs_shortcuts_was">This key did: %1$s</string>
+    <string name="key_action_prev_page">Previous page</string>
+    <string name="key_action_next_page">Next page</string>
+    <string name="key_space">Space</string>
+    <string name="key_enter">Enter</string>
+    <string name="key_numpad_enter">Enter (keypad)</string>
+    <string name="key_shift">Shift</string>
     <string name="prefs_library">Library</string>
     <string name="prefs_library_summary">Export or import a copy of the whole library</string>
 </resources>

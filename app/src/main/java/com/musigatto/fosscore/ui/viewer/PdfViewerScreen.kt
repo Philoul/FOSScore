@@ -408,7 +408,9 @@ fun PdfViewerScreen(
     val musicXmlPages = pageSource as? MusicXmlPages
     val geometryVersion = musicXmlPages?.geometryVersion?.collectAsState()?.value
     val lineBoundaries = remember(musicXmlPages, currentPage, geometryVersion) {
-        musicXmlPages?.geometry(currentPage)?.let { MeasureAnchors.boundaries(MeasureAnchors.slotsOf(it)) }.orEmpty()
+        musicXmlPages?.let { pages ->
+            pages.geometry(currentPage)?.let { MeasureAnchors.boundaries(MeasureAnchors.slotsOf(it), pages.blankBands(currentPage)) }
+        }.orEmpty()
     }
 
     // marks and stamps of the current page, shared between the overlay and the gestures.

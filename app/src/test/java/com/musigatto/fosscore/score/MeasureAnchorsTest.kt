@@ -3,6 +3,7 @@ package com.musigatto.fosscore.score
 import androidx.compose.ui.geometry.Offset
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.ui.viewer.Band
 import com.musigatto.fosscore.ui.viewer.decodePoints
 import com.musigatto.fosscore.ui.viewer.encodePoints
 import org.junit.Assert.assertEquals
@@ -59,6 +60,20 @@ class MeasureAnchorsTest {
         assertEquals(1, MeasureAnchors.slotAt(Offset(0.3f, 0.16f), twoLines)?.measure)
         // the staves of one measure make one line, and so do measures side by side
         assertEquals(emptyList<Float>(), MeasureAnchors.boundaries(page))
+    }
+
+    @Test
+    fun theBoundaryIsInTheMiddleOfTheBlankBetweenTwoLines() {
+        // lyrics under measure 1 (down to 0.16) and a tempo over measure 2 (from 0.24): the paper
+        // between them is the blank from 0.16 to 0.24, and a narrower band lower
+        val blanks = listOf(Band(0.0f, 0.09f), Band(0.16f, 0.24f), Band(0.26f, 0.28f))
+        val boundary = MeasureAnchors.boundaries(twoLines, blanks).single()
+        // halfway between the staves (0.22) gave the bottom of the tempo to measure 1
+        assertEquals(0.2f, boundary, 1e-6f)
+        assertEquals(1, MeasureAnchors.slotAt(Offset(0.5f, 0.19f), twoLines, listOf(boundary))?.measure)
+        assertEquals(2, MeasureAnchors.slotAt(Offset(0.5f, 0.21f), twoLines, listOf(boundary))?.measure)
+        // no blank between the lines: halfway between their staves
+        assertEquals(0.22f, MeasureAnchors.boundaries(twoLines, listOf(Band(0.0f, 0.09f))).single(), 1e-6f)
     }
 
     @Test

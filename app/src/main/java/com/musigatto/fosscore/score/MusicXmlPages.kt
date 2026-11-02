@@ -14,7 +14,9 @@ import com.musigatto.fosscore.musicxml.ScoreSummary
 import com.musigatto.fosscore.musicxml.SoundSpec
 import com.musigatto.fosscore.pdf.MAX_RENDER_PIXELS
 import com.musigatto.fosscore.pdf.PageBox
+import com.musigatto.fosscore.ui.viewer.Band
 import com.musigatto.fosscore.ui.viewer.ScoreLayout
+import com.musigatto.fosscore.ui.viewer.blankBands
 import java.io.File
 import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
@@ -83,6 +85,9 @@ class MusicXmlPages private constructor(
     // its geometry is known (a page from the cache shows before it), and go with the old layout
     private val _geometryVersion = MutableStateFlow(0)
     val geometryVersion: StateFlow<Int> = _geometryVersion.asStateFlow()
+    // the blank bands of each page drawn while annotating: where its lines of music hand over
+    // to the next (MeasureAnchors.boundaries)
+    private val blanks = ConcurrentHashMap<Int, List<Band>>()
     private val bitmaps = object : LinkedHashMap<Long, Bitmap>(MAX_CACHED_BITMAPS + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Bitmap>?) =
             size > MAX_CACHED_BITMAPS
@@ -102,6 +107,7 @@ class MusicXmlPages private constructor(
         // are dropped, not recycled
         bitmaps.clear()
         geometries.clear()
+        blanks.clear()
         _geometryVersion.update { it + 1 }
         box = PageBox(0f, 0f, spec.width.toFloat(), spec.height.toFloat())
         laidOut = spec
@@ -162,6 +168,7 @@ class MusicXmlPages private constructor(
                         }
                     }
             }
+            readBlanks(index, bitmap, name)
             return bitmap
         }
         return try {
@@ -175,12 +182,26 @@ class MusicXmlPages private constructor(
             bitmaps[key] = page.bitmap
             file?.let { keep(it, page.bitmap) }
             svgFile?.let { keepSvg(it, page.svg) }
+            scope.launch { readBlanks(index, page.bitmap, name) }
             page.bitmap
         } catch (e: Exception) {
             Log.e(LOG_TAG, "page $index could not be drawn: ${e.message}", e)
             null
         }
     }
+
+    // annotating: the blank bands of a page, read from its picture once
+    private fun readBlanks(index: Int, bitmap: Bitmap, name: String?) {
+        if (laidOut?.annotating != true || blanks.containsKey(index)) return
+        val bands = bitmap.blankBands()
+        if (kept == name) {
+            blanks[index] = bands
+            _geometryVersion.update { it + 1 }
+        }
+    }
+
+    /** The blank bands of page [index] (fractions of its height), once drawn in an annotating layout. */
+    fun blankBands(index: Int): List<Band> = blanks[index].orEmpty()
 
     /** Where the notes and the measures of page [index] are, once the page has been drawn. Positions in SVG units. */
     fun geometry(index: Int): PageGeometry? = geometries[index]
@@ -198,6 +219,7 @@ class MusicXmlPages private constructor(
         scope.cancel()
         bitmaps.clear()
         geometries.clear()
+        blanks.clear()
         engine.close()
     }
 

@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.musicxml.PageGeometry
+import com.musigatto.fosscore.ui.viewer.Band
 import com.musigatto.fosscore.ui.viewer.decodePoints
 import com.musigatto.fosscore.ui.viewer.encodePoints
 import kotlin.math.abs
@@ -86,11 +87,20 @@ object MeasureAnchors {
         }
 
     /**
-     * Where a line of music hands over to the next, down the page (0..1): halfway between their
-     * staves. A mark above a boundary belongs to the line above it, below to the line below.
+     * Where a line of music hands over to the next, down the page (0..1): in the middle of the
+     * widest of the page's [blanks] (paper with nothing drawn on it) between their staves, so the
+     * lyrics, the notes above or below and the text around a line stay on its side; halfway
+     * between the staves when there is none. A mark above a boundary belongs to the line above
+     * it, below to the line below; the viewer draws them while annotating.
      */
-    fun boundaries(slots: List<StaffSlot>): List<Float> =
-        linesOf(slots).zipWithNext { a, b -> (a.bottom + b.top) / 2 }
+    fun boundaries(slots: List<StaffSlot>, blanks: List<Band> = emptyList()): List<Float> =
+        linesOf(slots).zipWithNext { a, b ->
+            blanks.map { Band(maxOf(it.start, a.bottom), minOf(it.end, b.top)) }
+                .filter { it.end > it.start }
+                .maxByOrNull { it.end - it.start }
+                ?.let { (it.start + it.end) / 2 }
+                ?: ((a.bottom + b.top) / 2)
+        }
 
     /**
      * The staff a mark at [at] belongs to: the line of music between the [boundaries] it is in,

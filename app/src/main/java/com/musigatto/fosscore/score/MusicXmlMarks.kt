@@ -21,6 +21,15 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
 
     private fun slots(page: Int): List<StaffSlot> = pages.geometry(page)?.let(MeasureAnchors::slotsOf).orEmpty()
 
+    // where a line of music hands over to the next on [page]: through its blank paper, as drawn
+    private fun boundaries(page: Int, slots: List<StaffSlot>) = MeasureAnchors.boundaries(slots, pages.blankBands(page))
+
+    private fun anchorOf(stamp: Stamp, page: Int = stamp.page) =
+        slots(page).let { MeasureAnchors.anchor(stamp, it, boundaries(page, it)) }
+
+    private fun anchorOf(stroke: Stroke, page: Int = stroke.page) =
+        slots(page).let { MeasureAnchors.anchor(stroke, it, boundaries(page, it)) }
+
     // the measures of a page: what an undo of that page puts back
     private fun measures(slots: List<StaffSlot>): List<Int> = slots.map { it.measure }.distinct()
 
@@ -32,10 +41,10 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
             }
 
         override suspend fun insert(stamp: Stamp): Long =
-            MeasureAnchors.anchor(stamp, slots(stamp.page))?.let { stampDao.insert(it) } ?: -1
+            anchorOf(stamp)?.let { stampDao.insert(it) } ?: -1
 
         override suspend fun update(stamp: Stamp) {
-            MeasureAnchors.anchor(stamp, slots(stamp.page))?.let { stampDao.update(it) }
+            anchorOf(stamp)?.let { stampDao.update(it) }
         }
 
         // a row is deleted by its id: the page's copy will do
@@ -47,7 +56,7 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
             val slots = slots(page)
             if (slots.isEmpty()) return
             stampDao.deleteMeasures(sheetId, measures(slots))
-            stampDao.insertAll(stamps.mapNotNull { MeasureAnchors.anchor(it, slots) })
+            stampDao.insertAll(stamps.mapNotNull { anchorOf(it, page) })
         }
     }
 
@@ -59,14 +68,14 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
             }
 
         override suspend fun insert(stroke: Stroke): Long =
-            MeasureAnchors.anchor(stroke, slots(stroke.page))?.let { strokeDao.insert(it) } ?: -1
+            anchorOf(stroke)?.let { strokeDao.insert(it) } ?: -1
 
         override suspend fun insertAll(strokes: List<Stroke>) {
-            strokeDao.insertAll(strokes.mapNotNull { MeasureAnchors.anchor(it, slots(it.page)) })
+            strokeDao.insertAll(strokes.mapNotNull { anchorOf(it) })
         }
 
         override suspend fun update(stroke: Stroke) {
-            MeasureAnchors.anchor(stroke, slots(stroke.page))?.let { strokeDao.update(it) }
+            anchorOf(stroke)?.let { strokeDao.update(it) }
         }
 
         override suspend fun delete(stroke: Stroke) = strokeDao.delete(stroke)
@@ -77,7 +86,7 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
             val slots = slots(page)
             if (slots.isEmpty()) return
             strokeDao.deleteMeasures(sheetId, measures(slots))
-            strokeDao.insertAll(strokes.mapNotNull { MeasureAnchors.anchor(it, slots) })
+            strokeDao.insertAll(strokes.mapNotNull { anchorOf(it, page) })
         }
     }
 }

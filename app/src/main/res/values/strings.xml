@@ -224,6 +224,9 @@
     <string name="tempo_as_written_short">As written</string>
     <string name="metronome_previous_page">Previous page</string>
     <string name="metronome_next_page">Next page</string>
+    <string name="prefs_viewer">Score screen</string>
+    <string name="chrome_menu">Menu ☰: every function in one list</string>
+    <string name="chrome_icons">Icon bar: one icon per function</string>
     <string name="prefs_keyboard">Keyboard and pedals</string>
     <string name="prefs_keyboard_summary">On-screen keyboard, shortcuts of the keys and pedals</string>
     <string name="prefs_screen_keyboard">On-screen keyboard with a pedal</string>

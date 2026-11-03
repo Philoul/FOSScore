@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Build
@@ -109,6 +110,7 @@ object Settings {
     private const val KEY_MET_ACCENT = "metronome_accent"
     private const val KEY_MET_VOLUME = "metronome_volume"
     private const val KEY_TURN_AHEAD = "turn_ahead"
+    private const val KEY_CHROME_STYLE = "top_bar"
 
     fun language(context: Context): AppLanguage =
         AppLanguage.of(context.prefs().getString(KEY_LANGUAGE, null))
@@ -172,6 +174,26 @@ object Settings {
 
     fun setKeepScreenOn(context: Context, value: Boolean) {
         context.prefs().edit { putBoolean(KEY_KEEP_SCREEN_ON, value) }
+    }
+
+    // the look of the viewer's top bar, chosen in the preferences: the menu by default
+    fun chromeStyle(context: Context): ChromeStyle = ChromeStyle.of(context.prefs().getString(KEY_CHROME_STYLE, null))
+
+    fun setChromeStyle(context: Context, value: ChromeStyle) {
+        context.prefs().edit { putString(KEY_CHROME_STYLE, value.name) }
+    }
+
+    /**
+     * Calls [onChange] whenever the look of the top bar changes: the preferences open over a score
+     * that stays on screen. Returns what stops it.
+     */
+    fun onChromeStyleChange(context: Context, onChange: (ChromeStyle) -> Unit): () -> Unit {
+        val prefs = context.prefs()
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_CHROME_STYLE) onChange(chromeStyle(context))
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
     /** When the score at [uri] was opened last (ms since 1970), 0 if never. */

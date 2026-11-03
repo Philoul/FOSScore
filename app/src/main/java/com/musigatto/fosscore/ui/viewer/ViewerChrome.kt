@@ -348,9 +348,13 @@ internal fun StepperRow(
     }
 }
 
+// the pause in the typing after which a number typed applies
+private const val TYPED_PAUSE_MS = 800
+
 /**
  * − [value] +, as AndroidAPS's NumberInputRow: the value is typed in place (kept with Done or when
- * the field loses focus, and brought into [range], shown under the field while typing), and − / +
+ * the field loses focus, and brought into [range], shown under the field while typing; a value in
+ * [range] also applies once the typing pauses), and − / +
  * move it to the next multiple of [step] on each press, at once (not on release), repeating while
  * held after a short wait.
  */
@@ -369,6 +373,7 @@ internal fun NumberFieldRow(
 ) {
     // the held button reads the value it changes, not the one it saw when the press began
     val current by rememberUpdatedState(value)
+    val apply by rememberUpdatedState(onValue)
     val focus = LocalFocusManager.current
     var text by remember { mutableStateOf(TextFieldValue(value.toString())) }
     var focused by remember { mutableStateOf(false) }
@@ -376,6 +381,13 @@ internal fun NumberFieldRow(
     val wrong = typed == null || typed !in range
     // − / + and other controls change the value from outside the field
     LaunchedEffect(value) { if (typed != value) text = TextFieldValue(value.toString()) }
+    // a value typed is laid out once the typing pauses, the field still open: its result shows
+    // without leaving the panel (the keyboard closed with Back kept the focus, so nothing changed)
+    LaunchedEffect(text.text) {
+        val live = typedToApply(text.text, range, current) ?: return@LaunchedEffect
+        delay(TYPED_PAUSE_MS.milliseconds)
+        apply(live)
+    }
     fun keep() {
         val kept = (typed ?: current).coerceIn(range)
         text = TextFieldValue(kept.toString())
@@ -423,6 +435,13 @@ internal fun NumberFieldRow(
         )
     }
 }
+
+/**
+ * The value typed in a number field to lay out now, the field still open: a whole number in
+ * [range] other than [current]; null while it is not one (still being typed, out of range).
+ */
+internal fun typedToApply(text: String, range: IntRange, current: Int): Int? =
+    text.toIntOrNull()?.takeIf { it in range && it != current }
 
 /** The next multiple of [step] above [value] (direction 1) or below it (-1): 87 › 90 or 85 by 5. */
 internal fun stepped(value: Int, step: Int, direction: Int): Int =

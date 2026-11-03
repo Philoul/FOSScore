@@ -126,9 +126,10 @@ private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, on
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
-        // as the library: ☰ and the name (or the views' icons) on the left, ✕ on the right
+        // as the library (same margins, so the icon bar stays in place from one view to the other):
+        // ☰ and the name (or the views' icons) on the left, ✕ on the right
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.weight(1f)) { navigation() }

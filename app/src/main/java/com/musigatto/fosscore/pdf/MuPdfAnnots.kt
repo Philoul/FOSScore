@@ -41,6 +41,9 @@ object MuPdfAnnots {
      * Writes [strokes] per page as ink annotations and saves the file.
      * Returns the pages that were written (so the caller can delete that sidecar).
      * Edits nothing if the document does not open as an editable PDF.
+     *
+     * Only ink is meant to go inside the PDF: shape strokes (strokes.kind != Stroke.INK) stay in
+     * the sidecar — the caller filters them out until shapes get their own annotation types.
      */
     fun exportInk(
         filePath: String,

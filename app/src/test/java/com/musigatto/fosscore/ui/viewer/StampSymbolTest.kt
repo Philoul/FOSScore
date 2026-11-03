@@ -9,10 +9,10 @@ import org.junit.Test
 class StampSymbolTest {
     @Test
     fun completeSetWithUniqueLabels() {
-        // 27 con nombre traducido + 10 digitaciones que se anuncian con su propio número
-        assertEquals(37, StampSymbol.entries.size)
+        // 33 con nombre traducido + 10 digitaciones que se anuncian con su propio número
+        assertEquals(43, StampSymbol.entries.size)
         val named = StampSymbol.entries.filter { it.descRes != null }
-        assertEquals(27, named.size)
+        assertEquals(33, named.size)
         assertEquals(named.size, named.map { it.descRes }.toSet().size)
 
         // one glyph per stamp, all in SMuFL's private use area (a duplicated code point, or a
@@ -24,6 +24,18 @@ class StampSymbolTest {
         StampSymbol.entries.forEach {
             assertTrue("U+%04X".format(it.codepoint), it.codepoint in 0xE000..0xF8FF)
         }
+    }
+
+    @Test
+    fun newSymbolsCarryTheirSmuflCodepoints() {
+        // verified against the official SMuFL tables (holds-and-pauses, common-ornaments,
+        // plucked-techniques, keyboard-techniques)
+        assertEquals(0xE4CE, StampSymbol.BREATH_COMMA.codepoint)
+        assertEquals(0xE567, StampSymbol.TURN.codepoint)
+        assertEquals(0xE634, StampSymbol.ARPEGGIO_UP.codepoint)
+        assertEquals(0xE635, StampSymbol.ARPEGGIO_DOWN.codepoint)
+        assertEquals(0xE650, StampSymbol.PEDAL.codepoint)
+        assertEquals(0xE655, StampSymbol.PEDAL_RELEASE.codepoint)
     }
 
     @Test

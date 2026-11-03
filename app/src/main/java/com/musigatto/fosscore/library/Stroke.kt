@@ -27,4 +27,20 @@ data class Stroke(
     // the word it was written as: the strokes of one word share an id and move together.
     // 0 = ink from before this column, grouped by distance instead (groupInk)
     val groupId: Long = 0,
-)
+    /**
+     * What the stroke is: [INK] free ink, [SHAPE] a shape's outline (generated, drawn with its own
+     * width or per-kind fill), [SHAPE_FILLED] a shape drawn filled (a solid: the eraser deletes it
+     * whole, and it stays in the sidecar — it is not exported to /Annots).
+     */
+    val kind: Int = 0,
+) {
+    companion object {
+        const val INK = 0
+        const val SHAPE = 1
+        const val SHAPE_FILLED = 2
+
+        /** The shapes' column default in old rows: everything that was here before is ink. */
+        fun isShape(kind: Int): Boolean = kind != INK
+        fun isFilled(kind: Int): Boolean = kind >= SHAPE_FILLED
+    }
+}

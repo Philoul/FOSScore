@@ -203,4 +203,19 @@ class InkGeometryTest {
         assertEquals(listOf(1L, 2L), word?.strokes?.map { it.id })
         assertNull(groupAt(Offset(700f, 700f), groups, padPx = 6f))
     }
+
+    @Test
+    fun aShapeIsItsOwnObjectEvenDrawnOnAnother() {
+        val fit = RectPx(0f, 0f, 1000f, 1000f)
+        // ink with no group and a box drawn over it, then a second box over the first: the word
+        // distance would merge all three, and the user could only drag them as one
+        val ink = letter(1, 0f)
+        val box = letter(2, 10f).copy(kind = Stroke.SHAPE)
+        assertEquals(2, groupInk(listOf(ink, box), fit).size)
+        val oval = letter(3, 20f).copy(kind = Stroke.SHAPE_FILLED)
+        val groups = groupInk(listOf(ink, box, oval), fit)
+        assertEquals(3, groups.size)
+        // a tap on the overlap takes one of them, never the pile
+        assertEquals(1, groupAt(Offset(25f, 10f), groups, padPx = 0f)?.strokes?.size)
+    }
 }

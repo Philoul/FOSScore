@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
@@ -202,6 +201,17 @@ internal fun dashes(length: Float, dash: Float): List<Pair<Float, Float>> {
     if (length <= 0f || dash <= 0f) return emptyList()
     return generateSequence(0f) { it + 2 * dash }.takeWhile { it < length }
         .map { it to minOf(it + dash, length) }.toList()
+}
+
+/**
+ * The dashes of the half-page cut line from [left] to [right]: across the page on a blank band,
+ * only a [tick] in each margin when the cut goes through the music, so it does not cross out a
+ * staff. Dash by dash, as the line boundaries: Android 7 draws a line with a dash effect as a full
+ * line.
+ */
+internal fun halfCutDashes(left: Float, right: Float, onBlank: Boolean, tick: Float, dash: Float): List<Pair<Float, Float>> {
+    val spans = if (onBlank) listOf(left to right) else listOf(left to left + tick, right - tick to right)
+    return spans.flatMap { (from, to) -> dashes(to - from, dash).map { (a, b) -> from + a to from + b } }
 }
 
 /**
@@ -489,11 +499,8 @@ internal fun PageCanvas(
                             val left = pageFit.left + offsetX()
                             val right = left + pageFit.width * scale()
                             val y = pageFit.top + offsetY() + pageFit.height * scale() * cut.mark
-                            val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
-                            val spans = if (cut.split.onBlank) listOf(left to right)
-                            else CUT_TICK_DP.dp.toPx().let { tick -> listOf(left to left + tick, right - tick to right) }
-                            spans.forEach { (from, to) ->
-                                drawLine(cutColor, Offset(from, y), Offset(to, y), strokeWidth = 1.dp.toPx(), pathEffect = dash)
+                            for ((from, to) in halfCutDashes(left, right, cut.split.onBlank, CUT_TICK_DP.dp.toPx(), 4.dp.toPx())) {
+                                drawLine(cutColor, Offset(from, y), Offset(to, y), strokeWidth = 1.dp.toPx())
                             }
                         }
                     }

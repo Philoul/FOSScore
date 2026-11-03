@@ -40,11 +40,22 @@ class MigrationTest {
                 put("hash", HASH)
                 put("title", "Song")
                 put("composer", "Composer")
+                // v5 kept its format already computed by the 4→5 migration; a hand-filled v5
+                // database with no format is not a database a user can have
+                if (version >= 5) put("format", "PDF")
                 put("genre", "Folk")
                 put("musicalKey", "F")
                 put("tags", "duo, practice")
             }
         )
+        if (version >= 5) {
+            // a database born at v5 already went through the 4→5 migration: its tags live
+            // in their table, split from the sheets' free text
+            db.execSQL(
+                "INSERT INTO `tags` (`name`, `kind`) VALUES ('Folk','GENRE'),('duo','FREE'),('practice','FREE')"
+            )
+            db.execSQL("INSERT INTO `sheet_tags` (`sheetId`, `tagId`) SELECT 1, `id` FROM `tags`")
+        }
         if (version >= 2) {
             db.insert(
                 "stamps", SQLiteDatabase.CONFLICT_ABORT,
@@ -73,6 +84,8 @@ class MigrationTest {
                     put("points", "0.1;0.1|0.2;0.2")
                     put("width", 0.003f)
                     if (version >= 5) put("groupId", 7L)
+                    // v6: strokes carry their kind; a shape row is what the new schema adds
+                    if (version >= 6) put("kind", 1)
                 }
             )
         }
@@ -111,8 +124,11 @@ class MigrationTest {
                 assertEquals("v$version: strokes", if (version >= 4) 1 else 0, strokes.size)
                 if (version >= 4) {
                     assertEquals("v$version: stroke sheetId", sheet.id, strokes[0].sheetId)
-                    // v5 gives old ink no group: it falls back to the geometric word box
-                    assertEquals("v$version: groupId", 0L, strokes[0].groupId)
+                    // ink from before v5 gets no group (it falls back to the geometric word
+                    // box); a database born at v5 already had its own group ids written
+                    assertEquals("v$version: groupId", if (version >= 5) 7L else 0L, strokes[0].groupId)
+                    // v6: old ink is ink (kind 0); a shape written on v6 stays a shape
+                    assertEquals("v$version: stroke kind", if (version >= 6) 1 else 0, strokes[0].kind)
                 }
 
                 // v5: the free text becomes tags, the genre as a genre
@@ -133,7 +149,11 @@ class MigrationTest {
             close()
         }
         withRoom { db ->
+            // the kind column comes out of the schema the way it was written: a shape row
+            // created on v6 stays a shape (and old rows default to ink through the migration)
+            val stroke = db.strokeDao().observePage(1L, 2).first().single()
             assertEquals(1, db.strokeDao().observePage(1L, 2).first().size)
+            assertEquals("v6 keeps a shape's kind", Stroke.SHAPE, stroke.kind)
         }
     }
 

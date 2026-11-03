@@ -15,6 +15,12 @@
     <string name="tool_select">Seleccionar</string>
     <string name="tool_stamp">Sello</string>
   <string name="tool_text">Texto</string>
+    <string name="tool_shapes">Figuras</string>
+    <string name="shape_line">Línea</string>
+    <string name="shape_rect">Rectángulo</string>
+    <string name="shape_ellipse">Elipse</string>
+    <string name="shape_arrow">Flecha</string>
+    <string name="shape_fill">Relleno</string>
   <string name="text_placeholder">Aa</string>
     <string name="search_label">Buscar</string>
     <string name="library_title">Biblioteca</string>
@@ -86,10 +92,13 @@
     <string name="stamp_decresc">Decrescendo</string>
     <string name="stamp_upbow">Arco arriba</string>
     <string name="stamp_downbow">Arco abajo</string>
+    <string name="stamp_arpeggio_up">Arpegio ascendente</string>
+    <string name="stamp_arpeggio_down">Arpegio descendente</string>
     <string name="stamp_accent">Acento</string>
     <string name="stamp_staccato">Staccato</string>
     <string name="stamp_tenuto">Tenuto</string>
     <string name="stamp_fermata">Calderón</string>
+    <string name="stamp_breath_comma">Coma de respiración</string>
     <string name="stamp_sharp">Sostenido</string>
     <string name="stamp_flat">Bemol</string>
     <string name="stamp_natural">Becuadro</string>
@@ -159,8 +168,11 @@
     <string name="stamp_trill">Trino</string>
     <string name="stamp_mordent_up">Mordente superior</string>
     <string name="stamp_mordent_down">Mordente inferior</string>
+    <string name="stamp_turn">Grupetto</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Apoyatura</string>
+    <string name="stamp_pedal">Pedal (pisar)</string>
+    <string name="stamp_pedal_release">Soltar pedal</string>
 
     <!-- Menú de la biblioteca: exportar / importar -->
     <string name="menu_open">Abrir el menú</string>
@@ -242,8 +254,6 @@
     <string name="part_sound_title">Sonido de %1$s</string>
     <string name="part_sound_bank">Banco</string>
     <string name="part_sound_drums">Baterías</string>
-    <string name="prefs_library">Biblioteca</string>
-    <string name="prefs_library_summary">Exportar o importar una copia de toda la biblioteca</string>
     <string name="part_sound_from_score">de la partitura</string>
     <!-- the 16 families of General MIDI, 8 programs each, in order -->
     <string-array name="gm_families">
@@ -276,11 +286,36 @@
     <string name="sound_bank_waiting">Sus sonidos se van a preparar (disponible cuando esté listo)</string>
     <string name="part_sound_bank_preparing">%1$s (preparando los sonidos… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (sonidos por preparar)</string>
+    <string name="prefs_viewer">Pantalla de la partitura</string>
+    <string name="chrome_menu">Menú ☰: todas las funciones en una lista</string>
+    <string name="chrome_icons">Barra de iconos: un icono por función</string>
     <string name="prefs_keyboard">Teclado y pedales</string>
-    <string name="prefs_keyboard_summary">Escribir texto en la página con un pedal conectado</string>
+    <string name="prefs_keyboard_summary">Teclado en pantalla, atajos de las teclas y los pedales</string>
     <string name="prefs_screen_keyboard">Teclado en pantalla con un pedal</string>
-    <string name="prefs_screen_keyboard_on">Activado: el teclado aparece para escribir un texto, con o sin pedal</string>
+    <string name="prefs_screen_keyboard_on">Activado</string>
     <string name="prefs_screen_keyboard_off">Desactivado: mientras haya un pedal conectado, el teclado no aparece</string>
     <string name="prefs_screen_keyboard_why">La mayoría de los pedales se presentan a Android como un teclado, y Android oculta entonces el teclado en pantalla. El ajuste que lo devuelve es de Android y vale para todas las aplicaciones: abra sus ajustes y active «Mostrar teclado virtual». Una vez activado, se queda así.</string>
     <string name="prefs_screen_keyboard_open">Abrir los ajustes de Android</string>
+    <string name="prefs_shortcuts">Atajos</string>
+    <string name="prefs_shortcuts_add">Añadir un atajo</string>
+    <string name="prefs_shortcuts_reset">Volver a las teclas por defecto</string>
+    <string name="prefs_shortcuts_press">Pulse la tecla del teclado o del pedal</string>
+    <string name="prefs_shortcuts_was">Esta tecla hacía: %1$s</string>
+    <string name="key_action_prev_page">Página anterior</string>
+    <string name="key_action_next_page">Página siguiente</string>
+    <string name="key_action_first_page">Primera página</string>
+    <string name="key_action_last_page">Última página</string>
+    <string name="key_action_play_pause">Reproducir / pausar la música</string>
+    <string name="key_action_restart">Música desde el principio</string>
+    <string name="key_action_loop">Bucle activado / desactivado</string>
+    <string name="key_action_metronome">Metrónomo en marcha / parado</string>
+    <string name="key_action_tap_tempo">Marcar el tempo</string>
+    <string name="key_action_show_bar">Mostrar / ocultar la barra</string>
+    <string name="key_action_annotate">Anotar / terminar</string>
+    <string name="key_space">Espacio</string>
+    <string name="key_enter">Intro</string>
+    <string name="key_numpad_enter">Intro (teclado numérico)</string>
+    <string name="key_shift">Mayús</string>
+    <string name="prefs_library">Biblioteca</string>
+    <string name="prefs_library_summary">Exportar o importar una copia de toda la biblioteca</string>
 </resources>

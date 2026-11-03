@@ -63,8 +63,46 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
+ * What an entry opens, chosen in the menu or with its icon in the icon bar: the same for both, so
+ * the two stay one way into each function.
+ */
+internal fun openMenuEntry(
+    item: ViewerMenuItem,
+    menu: ViewerMenuViewModel,
+    metronomeVm: MetronomeViewModel,
+    playbackVm: PlaybackViewModel,
+    editing: Boolean,
+    onOpenLibrary: () -> Unit,
+    onOpenPreferences: () -> Unit,
+    onToggleEditing: () -> Unit,
+    onShowChrome: () -> Unit,
+) {
+    when (item) {
+        ViewerMenuItem.LIBRARY -> onOpenLibrary()
+        ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
+        ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
+        ViewerMenuItem.PLAYBACK -> {
+            metronomeVm.show(false)
+            menu.show(ViewerSurface.PLAYBACK)
+        }
+        // its settings, as for playback; its band takes the place of the playback band
+        ViewerMenuItem.METRONOME -> {
+            playbackVm.stop()
+            metronomeVm.show(true)
+            onShowChrome()
+            menu.show(ViewerSurface.METRONOME)
+        }
+        ViewerMenuItem.ANNOTATE -> if (!editing) onToggleEditing()
+        ViewerMenuItem.SETTINGS -> onOpenPreferences()
+        // greyed out in the menu: never chosen
+        else -> Unit
+    }
+}
+
+/**
  * The menu and its panels, over everything: one at a time (ViewerMenuViewModel), the panels
- * under the bar at the top while it shows.
+ * under the bar at the top while it shows. With the icon bar ([chromeStyle]), a panel unfolds
+ * from it.
  */
 @Composable
 internal fun ViewerOverlays(
@@ -104,34 +142,19 @@ internal fun ViewerOverlays(
     onSetHalf: (Boolean) -> Unit,
     tempoFactor: Float,
     panelTop: Dp,
+    chromeStyle: ChromeStyle = ChromeStyle.MENU,
 ) {
-    CompositionLocalProvider(LocalPanelTop provides panelTop) {
+    CompositionLocalProvider(LocalPanelTop provides panelTop, LocalChromeStyle provides chromeStyle) {
         when (surface) {
             ViewerSurface.NONE -> Unit
             ViewerSurface.MENU -> ViewerMenuPanel(
                 isMusicXml = format.isMusicXml,
                 onSelect = { item ->
                     menu.dismiss()
-                    when (item) {
-                        ViewerMenuItem.LIBRARY -> onOpenLibrary()
-                        ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
-                        ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
-                        ViewerMenuItem.PLAYBACK -> {
-                            metronomeVm.show(false)
-                            menu.show(ViewerSurface.PLAYBACK)
-                        }
-                        // its settings, as for playback; its band takes the place of the playback band
-                        ViewerMenuItem.METRONOME -> {
-                            playbackVm.stop()
-                            metronomeVm.show(true)
-                            onShowChrome()
-                            menu.show(ViewerSurface.METRONOME)
-                        }
-                        ViewerMenuItem.ANNOTATE -> if (!editing) onToggleEditing()
-                        ViewerMenuItem.SETTINGS -> onOpenPreferences()
-                        // greyed out in the menu: never chosen
-                        else -> Unit
-                    }
+                    openMenuEntry(
+                        item, menu, metronomeVm, playbackVm, editing,
+                        onOpenLibrary, onOpenPreferences, onToggleEditing, onShowChrome,
+                    )
                 },
                 onDismiss = menu::dismiss,
             )
@@ -249,7 +272,4 @@ internal fun ViewerOverlays(
     }
 }
 
-internal fun inkTint(color: Int?, invert: Boolean): Color {
-    val c = color?.let { com.musigatto.fosscore.ui.viewer.stampColor(it, Color.Black) } ?: Color.Black
-    return if (invert) c.copy(red = 1f - c.red, green = 1f - c.green, blue = 1f - c.blue) else c
-}
+

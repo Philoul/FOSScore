@@ -27,12 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -70,7 +70,7 @@ private val INVERT_FILTER = ColorFilter.colorMatrix(ColorMatrix(INVERT_MATRIX))
 
 // ink and stamps default to black (not the theme's bluish primary); with "Neg" they are inverted
 // like the page, or black ink would disappear on the now-black background
-internal fun pageInkTint(color: Int?, invert: Boolean): Color {
+internal fun inkTint(color: Int?, invert: Boolean): Color {
     val c = stampColor(color, Color.Black)
     return if (invert) c.inverted() else c
 }
@@ -86,14 +86,22 @@ internal fun inkPath(pts: List<Offset>): Path {
     return path
 }
 
-private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Float) {
-    if (pts.size < 2) return
+// the one place that decides how a stroke looks: a filled solid, or a round-capped line
+private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, filled: Boolean = false) =
     drawPath(
-        inkPath(pts),
-        color = color,
-        style = DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        path,
+        color,
+        style = if (filled) Fill
+        else DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
+
+private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Float, filled: Boolean = false) {
+    if (pts.size < 2) return
+    drawInk(inkPath(pts), color, widthPx, filled)
 }
+
+// an already-built path (the committed ink, so a redraw re-issues it instead of decoding points)
+private fun DrawScope.drawInk(d: InkDraw) = drawInk(d.path, d.color, d.width, d.filled)
 
 // ink, live ink and the selection box all draw in page coordinates: this puts the page's fit rect
 // and its zoom into the DrawScope transform
@@ -143,17 +151,7 @@ private fun PageOverlay(
                     translate(paper.left, paper.top)
                     scale(sx, sy, pivot = Offset.Zero)
                 }) {
-                    for (d in ink) {
-                        drawPath(
-                            d.path,
-                            d.color,
-                            style = DrawStroke(
-                                width = max(1f, d.width),
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-                    }
+                    for (d in ink) drawInk(d)
                 }
             }
         }
@@ -178,7 +176,7 @@ private fun PageOverlay(
                     StampView(
                         symbol = sym,
                         sizePx = r.width,
-                        color = pageInkTint(stamp.color, invert),
+                        color = inkTint(stamp.color, invert),
                         modifier = Modifier
                             .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                             .requiredSize(
@@ -202,6 +200,17 @@ internal fun dashes(length: Float, dash: Float): List<Pair<Float, Float>> {
     if (length <= 0f || dash <= 0f) return emptyList()
     return generateSequence(0f) { it + 2 * dash }.takeWhile { it < length }
         .map { it to minOf(it + dash, length) }.toList()
+}
+
+/**
+ * The dashes of the half-page cut line from [left] to [right]: across the page on a blank band,
+ * only a [tick] in each margin when the cut goes through the music, so it does not cross out a
+ * staff. Dash by dash, as the line boundaries: Android 7 draws a line with a dash effect as a full
+ * line.
+ */
+internal fun halfCutDashes(left: Float, right: Float, onBlank: Boolean, tick: Float, dash: Float): List<Pair<Float, Float>> {
+    val spans = if (onBlank) listOf(left to right) else listOf(left to left + tick, right - tick to right)
+    return spans.flatMap { (from, to) -> dashes(to - from, dash).map { (a, b) -> from + a to from + b } }
 }
 
 /**
@@ -241,10 +250,10 @@ internal fun PageCanvas(
     lineBoundaries: List<Float>,
     dragStrokes: List<Stroke>?,
     inkPreview: List<Offset>,
-    eraserTool: Boolean,
-    activeColor: Int?,
-    eraserPx: Float,
-    penWidthPx: Float,
+    /** Color and width of the live stroke: the eraser's red, the pen's ink or a shape's own. */
+    previewColor: Color,
+    previewWidthPx: Float,
+    previewFilled: Boolean,
     pageStamps: List<Stamp>,
     dragStamp: Stamp?,
     selectionRect: RectPx?,
@@ -489,11 +498,8 @@ internal fun PageCanvas(
                             val left = pageFit.left + offsetX()
                             val right = left + pageFit.width * scale()
                             val y = pageFit.top + offsetY() + pageFit.height * scale() * cut.mark
-                            val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
-                            val spans = if (cut.split.onBlank) listOf(left to right)
-                            else CUT_TICK_DP.dp.toPx().let { tick -> listOf(left to left + tick, right - tick to right) }
-                            spans.forEach { (from, to) ->
-                                drawLine(cutColor, Offset(from, y), Offset(to, y), strokeWidth = 1.dp.toPx(), pathEffect = dash)
+                            for ((from, to) in halfCutDashes(left, right, cut.split.onBlank, CUT_TICK_DP.dp.toPx(), 4.dp.toPx())) {
+                                drawLine(cutColor, Offset(from, y), Offset(to, y), strokeWidth = 1.dp.toPx())
                             }
                         }
                     }
@@ -524,15 +530,7 @@ internal fun PageCanvas(
                                     // the ink being moved/stretched is drawn only at its
                                     // live position (otherwise two copies = a ghost)
                                     if (dragStrokes?.any { it.id == d.id } == true) continue
-                                    drawPath(
-                                        d.path,
-                                        d.color,
-                                        style = DrawStroke(
-                                            width = max(1f, d.width),
-                                            cap = StrokeCap.Round,
-                                            join = StrokeJoin.Round
-                                        )
-                                    )
+                                    drawInk(d)
                                 }
                             }
                         }
@@ -543,18 +541,15 @@ internal fun PageCanvas(
                                 dragStrokes?.forEach { ds ->
                                     drawInkPath(
                                         strokePointsPx(ds, hitFit),
-                                        pageInkTint(ds.color, invert),
-                                        ds.width * hitFit.height
+                                        inkTint(ds.color, invert),
+                                        ds.width * hitFit.height,
+                                        Stroke.isFilled(ds.kind)
                                     )
                                 }
+                                // the shape being aimed draws filled while its panel says so:
+                                // the preview never lies about what will be committed
                                 if (inkPreview.size >= 2) {
-                                    drawInkPath(
-                                        inkPreview,
-                                        if (eraserTool) Color.Red.copy(alpha = 0.4f)
-                                        else pageInkTint(activeColor, invert),
-                                        if (eraserTool) eraserPx * 2f
-                                        else penWidthPx
-                                    )
+                                    drawInkPath(inkPreview, previewColor, previewWidthPx, previewFilled)
                                 }
                             }
                         }
@@ -594,7 +589,7 @@ internal fun PageCanvas(
                                     // in fit units: the layer applies the scale, not the
                                     // stamp size (otherwise it is applied twice)
                                     sizePx = r.width,
-                                    color = pageInkTint(shown.color, invert),
+                                    color = inkTint(shown.color, invert),
                                     modifier = Modifier
                                         .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
                                         .requiredSize(
@@ -656,7 +651,7 @@ internal fun PageCanvas(
 @Composable
 private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: Boolean, density: Density) {
     val fontPx = textFontPx(stamp.size, fit)
-    val color = pageInkTint(stamp.color, invert)
+    val color = inkTint(stamp.color, invert)
     // the rect follows the LIVE stamp: while it is dragged x/y move, the measured SIZE stays,
     // so textBoxRect re-clamps it at the edge instead of replaying a stale rect
     val rect = measured?.let { textBoxRect(stamp, it.width, it.height, fit) }

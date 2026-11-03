@@ -1,15 +1,12 @@
 package com.musigatto.fosscore.ui.viewer
 
-import com.musigatto.fosscore.score.MusicXmlMarks
-import com.musigatto.fosscore.library.StrokeStore
-import com.musigatto.fosscore.library.StampStore
 import android.content.res.Configuration
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -18,19 +15,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,7 +46,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,7 +61,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -76,26 +72,27 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
-import com.musigatto.fosscore.library.isTextStamp
+import com.musigatto.fosscore.library.StampStore
 import com.musigatto.fosscore.library.Stroke
+import com.musigatto.fosscore.library.StrokeStore
+import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
@@ -103,6 +100,7 @@ import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.score.MeasureAnchors
+import com.musigatto.fosscore.score.MusicXmlMarks
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.PageSource
@@ -156,7 +154,7 @@ internal data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit
 // neutral one and the only one that selects and moves; every other tool acts on what it creates and
 // keeps itself in hand until another tool is chosen.
 internal enum class AnnotationTool {
-    SELECT, PEN, ERASER, STAMP, TEXT;
+    SELECT, PEN, SHAPE, ERASER, STAMP, TEXT;
 
     /** The arrow has no settings: tapping it again does nothing. */
     val hasPanel: Boolean get() = this != SELECT
@@ -164,7 +162,8 @@ internal enum class AnnotationTool {
 
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
-internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float)
+// [filled] carries a solid shape (strokes.kinds is the shape kind): drawn Fill, no outline.
+internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float, val filled: Boolean)
 
 private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): List<InkDraw> =
     strokes.map { st ->
@@ -172,7 +171,8 @@ private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): Lis
             id = st.id,
             path = inkPath(strokePointsPx(st, fit)),
             color = inkTint(st.color, invert),
-            width = st.width * fit.height
+            width = st.width * fit.height,
+            filled = Stroke.isFilled(st.kind)
         )
     }
 
@@ -279,6 +279,13 @@ fun PdfViewerScreen(
     val dimPct = display.dimPct
     val invert = display.invert
     val keepScreenOn = display.keepScreenOn
+    // the look of the top bar, chosen in the preferences; they open over the score, so a change
+    // made there shows at once
+    var chromeStyle by remember { mutableStateOf(Settings.chromeStyle(context)) }
+    DisposableEffect(context) {
+        val stop = Settings.onChromeStyleChange(context) { chromeStyle = it }
+        onDispose { stop() }
+    }
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
     val view = LocalView.current
@@ -357,6 +364,13 @@ fun PdfViewerScreen(
     var penColor by rememberSaveable { mutableStateOf<Int?>(null) }   // ARGB; null = theme
     var stampColor by rememberSaveable { mutableStateOf<Int?>(null) }
     var textColor by rememberSaveable { mutableStateOf<Int?>(null) }  // text tool color
+    var shapeColor by rememberSaveable { mutableStateOf<Int?>(null) } // shapes' own tine (#56)
+    // whether the next shape draws filled (the solid box that covers a line: white flips black in
+    // negative mode, painted through inkTint like any other ink)
+    var shapeFilled by rememberSaveable { mutableStateOf(false) }
+    var shapeType by rememberSaveable { mutableStateOf(ShapeKind.LINE) }
+    var shapeWidthPx by rememberSaveable { mutableFloatStateOf(Settings.shapePx(context)) }
+    var defaultShapePx by remember { mutableFloatStateOf(Settings.shapePx(context)) }
     // sizes per tool: pen width, eraser radius, stamp size, text size (all px at zoom 1)
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
     var textPx by rememberSaveable { mutableFloatStateOf(Settings.textPx(context)) }  // next new text's font size (px at zoom 1)
@@ -496,13 +510,12 @@ fun PdfViewerScreen(
     // the text being typed (#35) is written once it is over: placed, edited or deleted as it stands
     fun finishTyping() {
         val draft = editor.typing ?: return
-        val sid = sheetId
-        if (sid == null || draft.page != currentPage || hitFit.width <= 0f) {
+        if (sheetId == null || draft.page != currentPage || hitFit.width <= 0f) {
             editor.dropTyping()
             return
         }
         val (w, h) = measureText(draft.text, draft.size)
-        val typed = draftStamp(draft, sid, w, h, hitFit)
+        val typed = draftStamp(draft, sheetId, w, h, hitFit)
         editor.endTyping(draft.page, typingOutcome(draft, typed), PageEdit(pageStamps, pageStrokes))
     }
     // while a text is typed in, the field draws it: its row steps aside
@@ -905,6 +918,38 @@ fun PdfViewerScreen(
         }
     }
 
+    // What a key of the keyboard or the pedal does (Settings › Keyboard and pedals): the same as the
+    // button of the bar or the band. An action that has no meaning here (playback on a PDF score)
+    // does nothing.
+    fun runKeyAction(action: KeyAction) {
+        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+        when (action) {
+            KeyAction.PREV_PAGE -> applyPrev()
+            KeyAction.NEXT_PAGE -> applyNext()
+            KeyAction.FIRST_PAGE -> {
+                currentPage = 0
+                halfTurned = false
+            }
+            KeyAction.LAST_PAGE -> {
+                currentPage = (pageCount - 1).coerceAtLeast(0)
+                halfTurned = false
+            }
+            KeyAction.PLAY_PAUSE -> if (format.isMusicXml) {
+                metronomeVm.stop()
+                playbackVm.playPause(notesOnScreen())
+            }
+            KeyAction.RESTART -> if (format.isMusicXml) playbackVm.restart()
+            KeyAction.LOOP -> if (format.isMusicXml) playbackVm.toggleLoop()
+            KeyAction.METRONOME -> startStopMetronome()
+            KeyAction.TAP_TEMPO -> metronomeVm.tap()?.let { bpm ->
+                if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
+            }
+            KeyAction.SHOW_BAR -> if (!editing) navVisible = !navVisible
+            // in, or out keeping what was drawn, as ✓
+            KeyAction.ANNOTATE -> if (canEdit) toggleEditing()
+        }
+    }
+
     // The pages turn with the metronome: a MusicXML score knows its bars, a PDF score has the
     // bars of each page counted by the user (BarPages). Only forward: a page turned back by hand
     // stays until the metronome gets past it. pageCount: a score laid out again changes the bars.
@@ -977,11 +1022,12 @@ fun PdfViewerScreen(
             .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
             .then(stylusHoverMod)
             .onPreviewKeyEvent { e ->
-                val turn = pageTurnFor(e.key, e.isShiftPressed, typing = editor.typing != null)
+                // read at each key: the preferences may have changed them since the score opened
+                val action = Settings.keyShortcuts(context).actionFor(e.nativeKeyEvent.keyCode, e.isShiftPressed, typing = editor.typing != null)
                     ?: return@onPreviewKeyEvent false
-                // a held key repeats: turn one page per press, not a burst
+                // a held key repeats: one action per press, not a burst
                 if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
-                    if (turn == PageTurn.NEXT) applyNext() else applyPrev()
+                    runKeyAction(action)
                 }
                 true
             }
@@ -1058,7 +1104,11 @@ fun PdfViewerScreen(
                     tool = tool,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
-                    activeColor = penColor,
+                    // each tool carries its own tint (#56); the shapes draw with theirs
+                    activeColor = if (tool == AnnotationTool.SHAPE) shapeColor else penColor,
+                    shapeKind = shapeType,
+                    shapeWidthPx = shapeWidthPx,
+                    shapeFilled = shapeFilled,
                     loupeAt = loupeAt,
                     zoom = zoom,
                     zoomFrame = zoomFrameNow(),
@@ -1185,10 +1235,20 @@ fun PdfViewerScreen(
                     lineBoundaries = if (editing) lineBoundaries else emptyList(),
                     dragStrokes = editor.dragStrokes,
                     inkPreview = inkPreview,
-                    eraserTool = tool == AnnotationTool.ERASER,
-                    activeColor = penColor,
-                    eraserPx = eraserPx,
-                    penWidthPx = penWidthPx,
+                    // the live stroke: the eraser's red trail, the pen's ink or the shape being aimed
+                    previewColor = when (tool) {
+                        AnnotationTool.ERASER -> Color.Red.copy(alpha = 0.4f)
+                        AnnotationTool.SHAPE -> inkTint(shapeColor, invert)
+                        else -> inkTint(penColor, invert)
+                    },
+                    previewWidthPx = when (tool) {
+                        AnnotationTool.ERASER -> eraserPx * 2f
+                        AnnotationTool.SHAPE -> shapeWidthPx
+                        else -> penWidthPx
+                    },
+                    // the same rule the commit uses: fill is only for the closures. A filled
+                    // line's preview would be a Fill of its 2-point path — nothing on screen
+                    previewFilled = tool == AnnotationTool.SHAPE && shapeFilled && shapeType.canFill,
                     pageStamps = shownStamps,
                     dragStamp = editor.dragStamp,
                     selectionRect = selectionRect,
@@ -1226,7 +1286,7 @@ fun PdfViewerScreen(
                             topLeft = Offset(box.left, box.top),
                             fontPx = textFontPx(draft.size, hitFit),
                             maxWidthPx = hitFit.width * TEXT_MAX_WRAP - 16f,
-                            color = pageInkTint(draft.color, invert),
+                            color = inkTint(draft.color, invert),
                             onText = { typed -> editor.retype { it.copy(text = typed) } },
                             onDone = { finishTyping() },
                         )
@@ -1253,27 +1313,62 @@ fun PdfViewerScreen(
         if ((navVisible || editing) && loupeAt == null) {
 
             // while annotating there is ONE bar: the annotation bar takes the top of the screen
-            // and the title bar steps aside (spec §5: forScore replaces it). ✕ / ✓ are its ends.
+            // and the title bar (or the icon bar) steps aside (spec §5: forScore replaces it).
+            // ✕ / ✓ are its ends.
             if (!(editing && canEdit)) {
-                // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
-                ViewerTitleBar(
-                    title = title,
-                    composer = composer,
-                    pageLabel = pageLabel,
-                    editing = editing,
-                    onOpenMenu = { menu.show(ViewerSurface.MENU) },
-                    onToggleEditing = { toggleEditing() },
-                    annotatable = sheetId != null,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        // edge-to-edge: the pills were slipping under the status bar, and in landscape
-                        // under the side navigation bar.
-                        .windowInsetsPadding(
-                            WindowInsets.systemBars.only(
-                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                            )
-                        ),
-                )
+                val topBarModifier = Modifier
+                    .align(Alignment.TopCenter)
+                    // edge-to-edge: the pills were slipping under the status bar, and in landscape
+                    // under the side navigation bar.
+                    .windowInsetsPadding(
+                        WindowInsets.systemBars.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                        )
+                    )
+                if (chromeStyle == ChromeStyle.MENU) {
+                    // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
+                    ViewerTitleBar(
+                        title = title,
+                        composer = composer,
+                        pageLabel = pageLabel,
+                        editing = editing,
+                        onOpenMenu = { menu.show(ViewerSurface.MENU) },
+                        onToggleEditing = { toggleEditing() },
+                        annotatable = sheetId != null,
+                        modifier = topBarModifier,
+                    )
+                } else {
+                    // the entry whose panel shows: its icon is framed, and a second tap closes it
+                    val open = when (surface) {
+                        ViewerSurface.DISPLAY -> ViewerMenuItem.DISPLAY
+                        ViewerSurface.LAYOUT -> ViewerMenuItem.LAYOUT
+                        ViewerSurface.PLAYBACK -> ViewerMenuItem.PLAYBACK
+                        ViewerSurface.METRONOME -> ViewerMenuItem.METRONOME
+                        else -> null
+                    }
+                    ViewerIconBar(
+                        title = title,
+                        pageLabel = pageLabel,
+                        isMusicXml = format.isMusicXml,
+                        annotatable = editEntryShown(editing, sheetId != null),
+                        open = open,
+                        onSelect = { item ->
+                            menu.dismiss()
+                            if (item != open) {
+                                openMenuEntry(
+                                    item, menu, metronomeVm, playbackVm, editing,
+                                    onOpenLibrary, onOpenPreferences, { toggleEditing() }, { navVisible = true },
+                                )
+                            }
+                        },
+                        onMore = { menu.show(ViewerSurface.MENU) },
+                        onAnnotate = {
+                            menu.dismiss()
+                            toggleEditing()
+                        },
+                        modifier = topBarModifier,
+                    )
+                }
             }
 
             if (editing && canEdit) {
@@ -1287,6 +1382,11 @@ fun PdfViewerScreen(
                     penColor = penColor,
                     stampColor = stampColor,
                     textColor = textPanel.color,
+                    shapeKind = shapeType,
+                    shapeColor = shapeColor,
+                    shapeFilled = shapeFilled,
+                    shapeWidthPx = shapeWidthPx,
+                    defaultShapePx = defaultShapePx,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
                     textPx = textPanel.px,
@@ -1330,6 +1430,14 @@ fun PdfViewerScreen(
                     onTextColor = { argb ->
                         if (editor.typing?.origin == null) textColor = argb
                         editor.retype { it.copy(color = argb) }
+                    },
+                    onShapeKind = { shapeType = it },
+                    onShapeColor = { shapeColor = it },
+                    onShapeFilled = { shapeFilled = it },
+                    onShapeWidth = { shapeWidthPx = it },
+                    onSaveShapeDefault = {
+                        Settings.setShapePx(context, shapeWidthPx)
+                        defaultShapePx = shapeWidthPx
                     },
                     onStampColor = { argb ->
                         stampColor = argb
@@ -1452,6 +1560,7 @@ fun PdfViewerScreen(
             },
             tempoFactor = tempoFactor,
             panelTop = panelTop,
+            chromeStyle = chromeStyle,
         )
 
         // ✕ with something drawn: say what would be lost before losing it (issue #50)

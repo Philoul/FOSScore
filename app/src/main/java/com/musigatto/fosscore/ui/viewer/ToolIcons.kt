@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
@@ -119,5 +121,32 @@ fun EraserIcon(modifier: Modifier = Modifier) {
             end = Offset(20f * u, 21f * u),
             strokeWidth = 1.5f * u,
         )
+    }
+}
+
+/**
+ * The Shapes tool: the glyph is the shape itself, so like the stamp button, the bar shows what is
+ * armed. [ShapeKind.LINE] / [ShapeKind.RECT] / [ShapeKind.ELLIPSE] are primitives; the arrow is
+ * shaft + tip + wings, the same geometry the page draws.
+ */
+@Composable
+fun ShapeGlyph(kind: ShapeKind, modifier: Modifier = Modifier) {
+    val color = LocalContentColor.current
+    Canvas(modifier.size(ICON_DP.dp)) {
+        val u = size.minDimension / ICON_UNITS
+        val sw = 1.8f * u
+        val stroke = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        when (kind) {
+            ShapeKind.LINE -> drawLine(color, Offset(4f * u, 17f * u), Offset(20f * u, 7f * u), strokeWidth = sw)
+            ShapeKind.RECT -> drawRect(color, topLeft = Offset(4f * u, 5f * u), size = Size(16f * u, 14f * u), style = stroke)
+            ShapeKind.ELLIPSE -> drawOval(color, topLeft = Offset(3f * u, 6f * u), size = Size(18f * u, 12f * u), style = stroke)
+            ShapeKind.ARROW -> {
+                val tip = Offset(20f * u, 7f * u)
+                drawLine(color, Offset(4f * u, 17f * u), tip, strokeWidth = sw)
+                // the wings trail behind the tip, the way the drawn arrow opens
+                drawLine(color, tip, Offset(16f * u, 13.7f * u), strokeWidth = sw)
+                drawLine(color, tip, Offset(12.2f * u, 7.9f * u), strokeWidth = sw)
+            }
+        }
     }
 }

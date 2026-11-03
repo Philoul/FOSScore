@@ -51,6 +51,7 @@ import com.musigatto.fosscore.sound.BankFile
 import com.musigatto.fosscore.sound.SoundBank
 import com.musigatto.fosscore.sound.SoundBankEntry
 import com.musigatto.fosscore.ui.viewer.AppLanguage
+import com.musigatto.fosscore.ui.viewer.ChromeStyle
 import com.musigatto.fosscore.ui.viewer.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -63,18 +64,20 @@ private const val FOUND_HEIGHT_DP = 320
 private const val MAX_WIDTH_DP = 640
 
 /** The sections of the preferences, in their order. Each one opens under its title. */
-private enum class Section { LANGUAGE, KEYBOARD, MIDI, LIBRARY }
+private enum class Section { LANGUAGE, VIEWER, KEYBOARD, MIDI, LIBRARY }
 
 /**
  * The app's preferences, over the screen it was opened from: what applies to every score. A list
  * of sections, each opened under its title (one at a time), so new ones join without changing the
- * others: the language, the keyboard and the pedals, MIDI (the sound banks), and the library
- * (export and import).
+ * others: the language, the score screen (menu or icon bar), the keyboard and the pedals, MIDI
+ * (the sound banks), and the library (export and import).
  */
 @Composable
 fun PreferencesScreen(onDone: () -> Unit) {
+    val context = LocalContext.current
     // the section open, by name (kept when the screen turns, and when a new language recreates it)
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var chromeStyle by remember { mutableStateOf(Settings.chromeStyle(context)) }
     BackHandler(onBack = onDone)
     Column(
         modifier = Modifier
@@ -88,11 +91,15 @@ fun PreferencesScreen(onDone: () -> Unit) {
             Text(stringResource(R.string.menu_settings), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 8.dp))
             Section.entries.forEach { section ->
                 val isOpen = open == section.name
-                SectionTitle(section.title(), section.summary(), isOpen) { open = if (isOpen) null else section.name }
+                SectionTitle(section.title(), section.summary(chromeStyle), isOpen) { open = if (isOpen) null else section.name }
                 if (isOpen) {
                     Column(modifier = Modifier.padding(start = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         when (section) {
                             Section.LANGUAGE -> LanguageSection()
+                            Section.VIEWER -> ViewerSection(chromeStyle) {
+                                chromeStyle = it
+                                Settings.setChromeStyle(context, it)
+                            }
                             Section.KEYBOARD -> KeyboardSection()
                             Section.MIDI -> SoundBanks()
                             Section.LIBRARY -> LibraryBackupSection()
@@ -110,6 +117,7 @@ fun PreferencesScreen(onDone: () -> Unit) {
 private fun Section.title(): String = stringResource(
     when (this) {
         Section.LANGUAGE -> R.string.language_label
+        Section.VIEWER -> R.string.prefs_viewer
         Section.KEYBOARD -> R.string.prefs_keyboard
         Section.MIDI -> R.string.prefs_midi
         Section.LIBRARY -> R.string.prefs_library
@@ -117,12 +125,38 @@ private fun Section.title(): String = stringResource(
 )
 
 @Composable
-private fun Section.summary(): String = when (this) {
+private fun Section.summary(chromeStyle: ChromeStyle): String = when (this) {
     Section.LANGUAGE -> Settings.language(LocalContext.current).displayName.ifEmpty { stringResource(R.string.language_system) }
+    Section.VIEWER -> chromeStyle.label()
     Section.KEYBOARD -> stringResource(R.string.prefs_keyboard_summary)
     Section.MIDI -> stringResource(R.string.prefs_midi_summary)
     Section.LIBRARY -> stringResource(R.string.prefs_library_summary)
 }
+
+/** The top of the score screen: the ☰ menu (as before) or the icon bar. A score on screen follows at once. */
+@Composable
+private fun ViewerSection(current: ChromeStyle, onPick: (ChromeStyle) -> Unit) {
+    ChromeStyle.entries.forEach { style ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .selectable(selected = style == current, role = Role.RadioButton) { onPick(style) },
+        ) {
+            RadioButton(selected = style == current, onClick = null)
+            Text(style.label(), modifier = Modifier.padding(start = 12.dp))
+        }
+    }
+}
+
+@Composable
+private fun ChromeStyle.label(): String = stringResource(
+    when (this) {
+        ChromeStyle.MENU -> R.string.chrome_menu
+        ChromeStyle.ICONS -> R.string.chrome_icons
+    }
+)
 
 // a section's title, what it holds under it, and ▸ / ▾ for closed / open; a tap opens or closes it
 @Composable

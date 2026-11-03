@@ -54,8 +54,8 @@ abstract class AppDatabase : RoomDatabase() {
          *
          * The sheet's `id` becomes the key of everything that hangs off a score: the annotations
          * stop following the file hash, which changes when the file changes, and follow the sheet,
-         * which survives a re-export. Nothing is dropped: the old free text columns stay until v6,
-         * once the new tables are checked.
+         * which survives a re-export. Nothing is dropped: the old free text columns stay until a
+         * later version, once the new tags are proven.
          */
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -182,7 +182,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "INSERT OR IGNORE INTO `sheet_tags` (`sheetId`, `tagId`) SELECT ?, `id` FROM `tags` WHERE `name` = ?",
-                    arrayOf(sheetId, name)
+                    arrayOf<Any>(sheetId, name)
                 )
             }
             for ((sheetId, value) in rows) {
@@ -192,16 +192,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6: shapes. The strokes table gains `kind`: 0 = ink (what every row was until now),
+         * 1 = a shape's outline, 2 = a filled shape. Everything else stays put.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `strokes` ADD COLUMN `kind` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         const val NAME = "fosscore.db"
 
         /**
          * Schema version. When it changes: add the migration to [MIGRATIONS] (or an automatic
          * migration), commit the new file in `app/schemas/`, and extend `MigrationTest`.
          */
-        const val VERSION = 5
+        const val VERSION = 6
 
         /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         private var instance: AppDatabase? = null
 

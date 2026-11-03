@@ -14,6 +14,12 @@
     <string name="tool_select">Sélection</string>
     <string name="tool_stamp">Tampon</string>
   <string name="tool_text">Texte</string>
+    <string name="tool_shapes">Formes</string>
+    <string name="shape_line">Trait</string>
+    <string name="shape_rect">Rectangle</string>
+    <string name="shape_ellipse">Ellipse</string>
+    <string name="shape_arrow">Flèche</string>
+    <string name="shape_fill">Rempli</string>
   <string name="text_placeholder">Aa</string>
     <string name="search_label">Rechercher</string>
     <string name="library_title">Bibliothèque</string>
@@ -71,10 +77,13 @@
     <string name="stamp_decresc">Decrescendo</string>
     <string name="stamp_upbow">Poussé</string>
     <string name="stamp_downbow">Tiré</string>
+    <string name="stamp_arpeggio_up">Arpège montant</string>
+    <string name="stamp_arpeggio_down">Arpège descendant</string>
     <string name="stamp_accent">Accent</string>
     <string name="stamp_staccato">Staccato</string>
     <string name="stamp_tenuto">Tenuto</string>
     <string name="stamp_fermata">Point d’orgue</string>
+    <string name="stamp_breath_comma">Soufflet (comma)</string>
     <string name="stamp_sharp">Dièse</string>
     <string name="stamp_flat">Bémol</string>
     <string name="stamp_natural">Bécarre</string>
@@ -86,8 +95,11 @@
     <string name="stamp_trill">Trille</string>
     <string name="stamp_mordent_up">Mordant supérieur</string>
     <string name="stamp_mordent_down">Mordant inférieur</string>
+    <string name="stamp_turn">Gruppetto</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Appoggiature</string>
+    <string name="stamp_pedal">Pédale (enfoncer)</string>
+    <string name="stamp_pedal_release">Relâcher la pédale</string>
 
     <!-- Commandes de la visionneuse (options d’affichage) -->
     <string name="action_close">Fermer</string>
@@ -244,8 +256,6 @@
     <string name="part_sound_title">Son de %1$s</string>
     <string name="part_sound_bank">Banque</string>
     <string name="part_sound_drums">Batteries</string>
-    <string name="prefs_library">Bibliothèque</string>
-    <string name="prefs_library_summary">Exporter ou importer une copie de toute la bibliothèque</string>
     <string name="part_sound_from_score">de la partition</string>
     <!-- the 16 families of General MIDI, 8 programs each, in order -->
     <string-array name="gm_families">
@@ -278,11 +288,36 @@
     <string name="sound_bank_waiting">Ses sons vont être préparés (disponible une fois prête)</string>
     <string name="part_sound_bank_preparing">%1$s (préparation des sons… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (sons à préparer)</string>
+    <string name="prefs_viewer">Écran de la partition</string>
+    <string name="chrome_menu">Menu ☰ : toutes les fonctions dans une liste</string>
+    <string name="chrome_icons">Barre d’icônes : une icône par fonction</string>
     <string name="prefs_keyboard">Clavier et pédales</string>
-    <string name="prefs_keyboard_summary">Taper du texte sur la page avec une pédale connectée</string>
+    <string name="prefs_keyboard_summary">Clavier à l’écran, raccourcis des touches et des pédales</string>
     <string name="prefs_screen_keyboard">Clavier à l’écran avec une pédale</string>
-    <string name="prefs_screen_keyboard_on">Activé : le clavier s’affiche pour taper un texte, pédale connectée ou non</string>
+    <string name="prefs_screen_keyboard_on">Activé</string>
     <string name="prefs_screen_keyboard_off">Désactivé : tant qu’une pédale est connectée, le clavier ne s’affiche pas</string>
     <string name="prefs_screen_keyboard_why">La plupart des pédales se présentent à Android comme un clavier, et Android cache alors le clavier à l’écran. Le réglage qui le fait revenir appartient à Android et vaut pour toutes les applications : ouvrez ses paramètres et activez « Afficher le clavier virtuel ». Une fois activé, il le reste.</string>
     <string name="prefs_screen_keyboard_open">Ouvrir les paramètres Android</string>
+    <string name="prefs_shortcuts">Raccourcis</string>
+    <string name="prefs_shortcuts_add">Ajouter un raccourci</string>
+    <string name="prefs_shortcuts_reset">Rétablir les touches par défaut</string>
+    <string name="prefs_shortcuts_press">Appuyez sur la touche du clavier ou de la pédale</string>
+    <string name="prefs_shortcuts_was">Cette touche faisait : %1$s</string>
+    <string name="key_action_prev_page">Page précédente</string>
+    <string name="key_action_next_page">Page suivante</string>
+    <string name="key_action_first_page">Première page</string>
+    <string name="key_action_last_page">Dernière page</string>
+    <string name="key_action_play_pause">Lecture / pause de la musique</string>
+    <string name="key_action_restart">Musique depuis le début</string>
+    <string name="key_action_loop">Boucle activée / désactivée</string>
+    <string name="key_action_metronome">Métronome marche / arrêt</string>
+    <string name="key_action_tap_tempo">Taper le tempo</string>
+    <string name="key_action_show_bar">Afficher / masquer la barre</string>
+    <string name="key_action_annotate">Annoter / terminer</string>
+    <string name="key_space">Espace</string>
+    <string name="key_enter">Entrée</string>
+    <string name="key_numpad_enter">Entrée (pavé numérique)</string>
+    <string name="key_shift">Maj</string>
+    <string name="prefs_library">Bibliothèque</string>
+    <string name="prefs_library_summary">Exporter ou importer une copie de toute la bibliothèque</string>
 </resources>

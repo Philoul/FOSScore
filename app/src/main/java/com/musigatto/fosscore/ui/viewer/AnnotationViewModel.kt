@@ -212,6 +212,8 @@ internal class AnnotationViewModel(
         // the "looks deleted now" cache is stale after a restore: the
         // snapshots go back with their original ids
         clearHidden()
+        // a drag preview in flight shows the PRE-undo content: the restored rows win
+        dragStamp = null
         keepOnly(edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
@@ -228,6 +230,7 @@ internal class AnnotationViewModel(
         if (target == page) undoStack = (undoStack + (target to current)).takeLast(UNDO_LEVELS)
         clearSelection()
         clearHidden()
+        dragStamp = null
         keepOnly(edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
@@ -239,8 +242,8 @@ internal class AnnotationViewModel(
     fun deleteSelection(page: Int, stamp: Stamp?, selection: List<Stroke>, current: PageEdit) {
         if (stamp == null && selection.isEmpty()) return
         pushUndo(current, page)
-        selectedId = null
-        selectedStrokeIds = emptySet()
+        // the box and the preview of what was moved go too: they drew an empty square where it was
+        clearSelection()
         hiddenStampIds = hiddenStampIds + listOfNotNull(stamp?.id)
         hiddenStrokeIds = hiddenStrokeIds + selection.map { it.id }
         forget(selection.map { it.id } + listOfNotNull(stamp?.id))
@@ -274,8 +277,8 @@ internal class AnnotationViewModel(
         // level that restores the very state we are in
         if (goneStamps.isEmpty() && goneStrokes.isEmpty()) return
         pushUndo(current, page)
-        selectedId = null
-        selectedStrokeIds = emptySet()
+        // the box and the preview of what was moved go too: they drew an empty square where it was
+        clearSelection()
         hiddenStampIds = hiddenStampIds + goneStamps.map { it.id }
         hiddenStrokeIds = hiddenStrokeIds + goneStrokes.map { it.id }
         forget(goneStamps.map { it.id } + goneStrokes.map { it.id })

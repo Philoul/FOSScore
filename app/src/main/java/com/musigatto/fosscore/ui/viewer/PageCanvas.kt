@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -85,14 +86,22 @@ internal fun inkPath(pts: List<Offset>): Path {
     return path
 }
 
-private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Float) {
-    if (pts.size < 2) return
+// the one place that decides how a stroke looks: a filled solid, or a round-capped line
+private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, filled: Boolean = false) =
     drawPath(
-        inkPath(pts),
-        color = color,
-        style = DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        path,
+        color,
+        style = if (filled) Fill
+        else DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
+
+private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Float, filled: Boolean = false) {
+    if (pts.size < 2) return
+    drawInk(inkPath(pts), color, widthPx, filled)
 }
+
+// an already-built path (the committed ink, so a redraw re-issues it instead of decoding points)
+private fun DrawScope.drawInk(d: InkDraw) = drawInk(d.path, d.color, d.width, d.filled)
 
 // ink, live ink and the selection box all draw in page coordinates: this puts the page's fit rect
 // and its zoom into the DrawScope transform
@@ -142,17 +151,7 @@ private fun PageOverlay(
                     translate(paper.left, paper.top)
                     scale(sx, sy, pivot = Offset.Zero)
                 }) {
-                    for (d in ink) {
-                        drawPath(
-                            d.path,
-                            d.color,
-                            style = DrawStroke(
-                                width = max(1f, d.width),
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-                    }
+                    for (d in ink) drawInk(d)
                 }
             }
         }
@@ -251,10 +250,10 @@ internal fun PageCanvas(
     lineBoundaries: List<Float>,
     dragStrokes: List<Stroke>?,
     inkPreview: List<Offset>,
-    eraserTool: Boolean,
-    activeColor: Int?,
-    eraserPx: Float,
-    penWidthPx: Float,
+    /** Color and width of the live stroke: the eraser's red, the pen's ink or a shape's own. */
+    previewColor: Color,
+    previewWidthPx: Float,
+    previewFilled: Boolean,
     pageStamps: List<Stamp>,
     dragStamp: Stamp?,
     selectionRect: RectPx?,
@@ -531,15 +530,7 @@ internal fun PageCanvas(
                                     // the ink being moved/stretched is drawn only at its
                                     // live position (otherwise two copies = a ghost)
                                     if (dragStrokes?.any { it.id == d.id } == true) continue
-                                    drawPath(
-                                        d.path,
-                                        d.color,
-                                        style = DrawStroke(
-                                            width = max(1f, d.width),
-                                            cap = StrokeCap.Round,
-                                            join = StrokeJoin.Round
-                                        )
-                                    )
+                                    drawInk(d)
                                 }
                             }
                         }
@@ -551,17 +542,14 @@ internal fun PageCanvas(
                                     drawInkPath(
                                         strokePointsPx(ds, hitFit),
                                         inkTint(ds.color, invert),
-                                        ds.width * hitFit.height
+                                        ds.width * hitFit.height,
+                                        Stroke.isFilled(ds.kind)
                                     )
                                 }
+                                // the shape being aimed draws filled while its panel says so:
+                                // the preview never lies about what will be committed
                                 if (inkPreview.size >= 2) {
-                                    drawInkPath(
-                                        inkPreview,
-                                        if (eraserTool) Color.Red.copy(alpha = 0.4f)
-                                        else inkTint(activeColor, invert),
-                                        if (eraserTool) eraserPx * 2f
-                                        else penWidthPx
-                                    )
+                                    drawInkPath(inkPreview, previewColor, previewWidthPx, previewFilled)
                                 }
                             }
                         }

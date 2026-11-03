@@ -90,6 +90,7 @@ object Settings {
     const val LAST_PAGE_KEPT_MS = 30 * 60 * 1000L
     private const val KEY_STAMP_PX = "stamp_px"
     private const val KEY_TEXT_PX = "text_px"
+    private const val KEY_SHAPE_PX = "shape_px"
     private const val KEY_ANNOTATION_TOOL = "annotation_tool"
     private const val KEY_MUSIC_SIZE = "music_size_"
     private const val KEY_TRANSPOSE = "transpose_"
@@ -213,6 +214,14 @@ object Settings {
 
     fun setTextPx(context: Context, px: Float) {
         context.prefs().edit { putFloat(KEY_TEXT_PX, px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
+    }
+
+    // thickness a new shape starts with, saved from the shapes panel
+    fun shapePx(context: Context): Float =
+        context.prefs().getFloat(KEY_SHAPE_PX, DEFAULT_SHAPE_PX)
+
+    fun setShapePx(context: Context, px: Float) {
+        context.prefs().edit { putFloat(KEY_SHAPE_PX, px.coerceIn(MIN_PEN_PX, MAX_PEN_PX)) }
     }
 
     /** The tool the annotation bar starts with: the last one used, the arrow the very first time. */

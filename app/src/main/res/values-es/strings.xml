@@ -15,6 +15,12 @@
     <string name="tool_select">Seleccionar</string>
     <string name="tool_stamp">Sello</string>
   <string name="tool_text">Texto</string>
+    <string name="tool_shapes">Figuras</string>
+    <string name="shape_line">Línea</string>
+    <string name="shape_rect">Rectángulo</string>
+    <string name="shape_ellipse">Elipse</string>
+    <string name="shape_arrow">Flecha</string>
+    <string name="shape_fill">Relleno</string>
   <string name="text_placeholder">Aa</string>
     <string name="search_label">Buscar</string>
     <string name="library_title">Biblioteca</string>
@@ -86,10 +92,13 @@
     <string name="stamp_decresc">Decrescendo</string>
     <string name="stamp_upbow">Arco arriba</string>
     <string name="stamp_downbow">Arco abajo</string>
+    <string name="stamp_arpeggio_up">Arpegio ascendente</string>
+    <string name="stamp_arpeggio_down">Arpegio descendente</string>
     <string name="stamp_accent">Acento</string>
     <string name="stamp_staccato">Staccato</string>
     <string name="stamp_tenuto">Tenuto</string>
     <string name="stamp_fermata">Calderón</string>
+    <string name="stamp_breath_comma">Coma de respiración</string>
     <string name="stamp_sharp">Sostenido</string>
     <string name="stamp_flat">Bemol</string>
     <string name="stamp_natural">Becuadro</string>
@@ -157,8 +166,11 @@
     <string name="stamp_trill">Trino</string>
     <string name="stamp_mordent_up">Mordente superior</string>
     <string name="stamp_mordent_down">Mordente inferior</string>
+    <string name="stamp_turn">Grupetto</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Apoyatura</string>
+    <string name="stamp_pedal">Pedal (pisar)</string>
+    <string name="stamp_pedal_release">Soltar pedal</string>
 
     <!-- Menú de la biblioteca: exportar / importar -->
     <string name="menu_open">Abrir el menú</string>

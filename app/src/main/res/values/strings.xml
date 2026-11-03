@@ -16,6 +16,12 @@
     <string name="tool_select">Select</string>
     <string name="tool_stamp">Stamp</string>
   <string name="tool_text">Text</string>
+    <string name="tool_shapes">Shapes</string>
+    <string name="shape_line">Line</string>
+    <string name="shape_rect">Rectangle</string>
+    <string name="shape_ellipse">Ellipse</string>
+    <string name="shape_arrow">Arrow</string>
+    <string name="shape_fill">Filled</string>
   <string name="text_placeholder">Aa</string>
     <string name="search_label">Search</string>
     <string name="library_title">Library</string>
@@ -85,10 +91,13 @@
     <string name="stamp_decresc">Decrescendo</string>
     <string name="stamp_upbow">Up bow</string>
     <string name="stamp_downbow">Down bow</string>
+    <string name="stamp_arpeggio_up">Arpeggio up</string>
+    <string name="stamp_arpeggio_down">Arpeggio down</string>
     <string name="stamp_accent">Accent</string>
     <string name="stamp_staccato">Staccato</string>
     <string name="stamp_tenuto">Tenuto</string>
     <string name="stamp_fermata">Fermata</string>
+    <string name="stamp_breath_comma">Breath mark (comma)</string>
     <string name="stamp_sharp">Sharp</string>
     <string name="stamp_flat">Flat</string>
     <string name="stamp_natural">Natural</string>
@@ -156,8 +165,11 @@
     <string name="stamp_trill">Trill</string>
     <string name="stamp_mordent_up">Upper mordent</string>
     <string name="stamp_mordent_down">Lower mordent</string>
+    <string name="stamp_turn">Turn</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Appoggiatura</string>
+    <string name="stamp_pedal">Pedal (press)</string>
+    <string name="stamp_pedal_release">Pedal release</string>
 
     <!-- Library menu: export / import -->
     <string name="menu_open">Open the menu</string>

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -27,12 +26,11 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -135,6 +132,11 @@ internal fun AnnotationBar(
     penColor: Int?,
     stampColor: Int?,
     textColor: Int?,
+    shapeKind: ShapeKind,
+    shapeColor: Int?,
+    shapeFilled: Boolean,
+    shapeWidthPx: Float,
+    defaultShapePx: Float,
     penWidthPx: Float,
     eraserPx: Float,
     textPx: Float,
@@ -163,6 +165,11 @@ internal fun AnnotationBar(
     onPenColor: (Int?) -> Unit,
     onStampColor: (Int?) -> Unit,
     onTextColor: (Int?) -> Unit,
+    onShapeKind: (ShapeKind) -> Unit,
+    onShapeColor: (Int?) -> Unit,
+    onShapeFilled: (Boolean) -> Unit,
+    onShapeWidth: (Float) -> Unit,
+    onSaveShapeDefault: () -> Unit,
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
     panelPlace: PanelPlace = PanelPlace(above = false, maxHeightPx = Int.MAX_VALUE),
@@ -190,6 +197,7 @@ internal fun AnnotationBar(
         // the tools are drawn glyphs now, with no text of their own: the names come from here
         val selectLabel = stringResource(R.string.tool_select)
         val penLabel = stringResource(R.string.tool_pen)
+        val shapeLabel = stringResource(R.string.tool_shapes)
         val eraserLabel = stringResource(R.string.tool_eraser)
         val stampLabel = stringResource(R.string.tool_stamp)
         val textLabel = stringResource(R.string.tool_text)
@@ -236,6 +244,17 @@ internal fun AnnotationBar(
                             toolX[AnnotationTool.PEN] = it.positionInWindow().x
                         },
                     ) { ToolIcon(ICON_PENCIL) }
+                    Spacer(Modifier.width(4.dp))
+                    // like the stamp, the shapes button shows the shape in hand
+                    ToolButton(
+                        active = tool == AnnotationTool.SHAPE,
+                        panelOpen = openPanel == AnnotationTool.SHAPE,
+                        label = shapeLabel,
+                        onClick = { onTool(AnnotationTool.SHAPE) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.SHAPE] = it.positionInWindow().x
+                        },
+                    ) { ShapeGlyph(shapeKind) }
                     Spacer(Modifier.width(4.dp))
                     ToolButton(
                         active = tool == AnnotationTool.ERASER,
@@ -380,6 +399,12 @@ internal fun AnnotationBar(
                             panelWidth = it.width
                             panelHeight = it.height
                         }
+                        // solid like the bar it drops from: a transparent panel would overlap the
+                        // sheet's notes and become unreadable. The bar's own drag handles that fade
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(12.dp)
+                        )
                         // a panel taller than that room scrolls
                         .heightIn(max = with(LocalDensity.current) { panelPlace.maxHeightPx.coerceAtLeast(0).toDp() })
                         .verticalScroll(rememberScrollState())
@@ -406,6 +431,43 @@ internal fun AnnotationBar(
                             onValue = onPenWidth,
                             lead = { ColorChoices(active = penColor, invert = invert, onPick = onPenColor) },
                         )
+
+                        AnnotationTool.SHAPE -> Column {
+                            // the kind in hand: glyphs as buttons, the same radio-set look as the
+                            // tools themselves
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf(
+                                    ShapeKind.LINE to stringResource(R.string.shape_line),
+                                    ShapeKind.RECT to stringResource(R.string.shape_rect),
+                                    ShapeKind.ELLIPSE to stringResource(R.string.shape_ellipse),
+                                    ShapeKind.ARROW to stringResource(R.string.shape_arrow),
+                                ).forEach { (kind, label) ->
+                                    ToolButton(
+                                        active = shapeKind == kind,
+                                        panelOpen = false,
+                                        label = label,
+                                        onClick = { onShapeKind(kind) },
+                                    ) { ShapeGlyph(kind) }
+                                }
+                            }
+                            // fill is only for the closures: a line or an arrow has no inside
+                            if (shapeKind.canFill) {
+                                OptionRow(
+                                    label = stringResource(R.string.shape_fill),
+                                    checked = shapeFilled,
+                                    role = Role.Checkbox,
+                                ) { onShapeFilled(!shapeFilled) }
+                            }
+                            ToolSizePanel(
+                                label = stringResource(R.string.thickness_label),
+                                value = shapeWidthPx,
+                                range = MIN_PEN_PX..MAX_PEN_PX,
+                                onValue = onShapeWidth,
+                                lead = { ColorChoices(active = shapeColor, invert = invert, onPick = onShapeColor) },
+                                onSaveDefault = onSaveShapeDefault,
+                                isDefault = shapeWidthPx.roundToInt() == defaultShapePx.roundToInt(),
+                            )
+                        }
 
                         AnnotationTool.ERASER -> ToolSizePanel(
                             label = stringResource(R.string.size_label),

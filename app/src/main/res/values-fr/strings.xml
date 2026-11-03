@@ -14,6 +14,12 @@
     <string name="tool_select">Sélection</string>
     <string name="tool_stamp">Tampon</string>
   <string name="tool_text">Texte</string>
+    <string name="tool_shapes">Formes</string>
+    <string name="shape_line">Trait</string>
+    <string name="shape_rect">Rectangle</string>
+    <string name="shape_ellipse">Ellipse</string>
+    <string name="shape_arrow">Flèche</string>
+    <string name="shape_fill">Rempli</string>
   <string name="text_placeholder">Aa</string>
     <string name="search_label">Rechercher</string>
     <string name="library_title">Bibliothèque</string>
@@ -71,10 +77,13 @@
     <string name="stamp_decresc">Decrescendo</string>
     <string name="stamp_upbow">Poussé</string>
     <string name="stamp_downbow">Tiré</string>
+    <string name="stamp_arpeggio_up">Arpège montant</string>
+    <string name="stamp_arpeggio_down">Arpège descendant</string>
     <string name="stamp_accent">Accent</string>
     <string name="stamp_staccato">Staccato</string>
     <string name="stamp_tenuto">Tenuto</string>
     <string name="stamp_fermata">Point d’orgue</string>
+    <string name="stamp_breath_comma">Soufflet (comma)</string>
     <string name="stamp_sharp">Dièse</string>
     <string name="stamp_flat">Bémol</string>
     <string name="stamp_natural">Bécarre</string>
@@ -86,8 +95,11 @@
     <string name="stamp_trill">Trille</string>
     <string name="stamp_mordent_up">Mordant supérieur</string>
     <string name="stamp_mordent_down">Mordant inférieur</string>
+    <string name="stamp_turn">Gruppetto</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Appoggiature</string>
+    <string name="stamp_pedal">Pédale (enfoncer)</string>
+    <string name="stamp_pedal_release">Relâcher la pédale</string>
 
     <!-- Commandes de la visionneuse (options d’affichage) -->
     <string name="action_close">Fermer</string>

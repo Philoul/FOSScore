@@ -66,12 +66,14 @@ internal fun openMenuEntry(
     playbackVm: PlaybackViewModel,
     editing: Boolean,
     onOpenLibrary: () -> Unit,
+    onOpenSetlist: () -> Unit,
     onOpenPreferences: () -> Unit,
     onToggleEditing: () -> Unit,
     onShowChrome: () -> Unit,
 ) {
     when (item) {
         ViewerMenuItem.LIBRARY -> onOpenLibrary()
+        ViewerMenuItem.SETLIST -> onOpenSetlist()
         ViewerMenuItem.DISPLAY -> menu.show(ViewerSurface.DISPLAY)
         ViewerMenuItem.LAYOUT -> menu.show(ViewerSurface.LAYOUT)
         ViewerMenuItem.PLAYBACK -> {
@@ -103,6 +105,7 @@ internal fun ViewerOverlays(
     menu: ViewerMenuViewModel,
     format: SheetFormat,
     onOpenLibrary: () -> Unit,
+    onOpenSetlist: () -> Unit,
     onOpenPreferences: () -> Unit,
     editing: Boolean,
     onToggleEditing: () -> Unit,
@@ -146,7 +149,7 @@ internal fun ViewerOverlays(
                     menu.dismiss()
                     openMenuEntry(
                         item, menu, metronomeVm, playbackVm, editing,
-                        onOpenLibrary, onOpenPreferences, onToggleEditing, onShowChrome,
+                        onOpenLibrary, onOpenSetlist, onOpenPreferences, onToggleEditing, onShowChrome,
                     )
                 },
                 onDismiss = menu::dismiss,

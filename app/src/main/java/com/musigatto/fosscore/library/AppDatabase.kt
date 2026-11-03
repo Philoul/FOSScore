@@ -12,6 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Sheet::class, Stamp::class, Stroke::class,
         SheetKey::class, Person::class, SheetPerson::class,
         Tag::class, SheetTag::class, SheetLayout::class,
+        Setlist::class, SetlistItem::class,
     ],
     version = AppDatabase.VERSION
 )
@@ -19,6 +20,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sheetDao(): SheetDao
     abstract fun stampDao(): StampDao
     abstract fun strokeDao(): StrokeDao
+    abstract fun setlistDao(): SetlistDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -161,6 +163,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+
         /**
          * `sheets.tags` ("duo, practice") and `sheets.genre` ("Folk") become tags. The genre goes
          * first: a name that is a genre somewhere is a genre everywhere, so a free tag of the same
@@ -202,16 +205,39 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7: setlists, named and ordered lists of scores. A score may come back in the same
+         * setlist, so a place has an id of its own. Nothing existing changes.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `setlists` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `setlist_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`setlistId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `sheetId` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`setlistId`) REFERENCES `setlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                        "FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_setlist_items_setlistId_position` ON `setlist_items` (`setlistId`, `position`)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_setlist_items_sheetId` ON `setlist_items` (`sheetId`)")
+            }
+        }
+
         const val NAME = "fosscore.db"
 
         /**
          * Schema version. When it changes: add the migration to [MIGRATIONS] (or an automatic
          * migration), commit the new file in `app/schemas/`, and extend `MigrationTest`.
          */
-        const val VERSION = 6
+        const val VERSION = 7
 
         /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         private var instance: AppDatabase? = null
 

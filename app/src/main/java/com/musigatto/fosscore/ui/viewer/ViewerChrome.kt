@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -104,6 +107,12 @@ private val NUMBER_FIELD_WIDTH = 112.dp
  */
 internal fun editEntryShown(editing: Boolean, annotatable: Boolean): Boolean = !editing && annotatable
 
+/** The score open is the [number]th of the [size] places of the setlist [name]. */
+data class SetlistPlace(val name: String, val number: Int, val size: Int) {
+    /** "2/8": the place, as the title bar shows it under the setlist's name. */
+    val label: String get() = "$number/$size"
+}
+
 @Composable
 fun ViewerTitleBar(
     title: String,
@@ -114,6 +123,7 @@ fun ViewerTitleBar(
     onToggleEditing: () -> Unit,
     modifier: Modifier = Modifier,
     annotatable: Boolean = true,
+    setlistPlace: SetlistPlace? = null,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         // rule 7 of the spec: the extra room depends on the width, not on the device. On a phone the
@@ -133,22 +143,37 @@ fun ViewerTitleBar(
             // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
             // reads as the main zone.
             Pill(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 40.dp)
-                        .padding(horizontal = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                Row(
+                    modifier = Modifier.height(IntrinsicSize.Min).heightIn(min = 40.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    if (pageLabel.isNotEmpty()) {
-                        Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                    // in a setlist: its name, and the score's place in it, before the title
+                    setlistPlace?.let { place ->
+                        Column(
+                            modifier = Modifier.widthIn(max = if (compact) 72.dp else 160.dp).padding(start = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(place.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                            Text(place.label, maxLines = 1, style = MaterialTheme.typography.titleMedium)
+                        }
+                        VerticalDivider(Modifier.fillMaxHeight().padding(start = 12.dp, top = 6.dp, bottom = 6.dp))
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            listOf(title, composer).filter(String::isNotBlank).joinToString(" · "),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        if (pageLabel.isNotEmpty()) {
+                            Text(pageLabel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -112,6 +113,7 @@ fun ViewerIconBar(
     onMore: () -> Unit,
     onAnnotate: () -> Unit,
     modifier: Modifier = Modifier,
+    setlistPlace: SetlistPlace? = null,
 ) {
     val joined = open != null
     val items = barItems(isMusicXml, annotatable)
@@ -144,6 +146,17 @@ fun ViewerIconBar(
                     }
                 }
                 BarIcon(LINE_MORE, stringResource(R.string.menu_label), panelOpen = false, size = button, onClick = onMore)
+                // in a setlist: its name, and the score's place in it, before the title
+                setlistPlace?.let { place ->
+                    Column(
+                        modifier = Modifier.widthIn(max = 96.dp).padding(start = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(place.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                        Text(place.label, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                    }
+                    GroupSeparator()
+                }
                 Column(
                     modifier = Modifier
                         .weight(1f)

@@ -111,14 +111,14 @@ class ViewerMenuViewModelTest {
         }
         assertEquals(
             listOf(
-                ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT, ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK,
+                ViewerMenuItem.LIBRARY, ViewerMenuItem.SETLIST, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT, ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK,
                 ViewerMenuItem.ANNOTATE, ViewerMenuItem.SETTINGS,
             ),
             ready,
         )
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.METRONOME, isMusicXml = false))
         assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.TUNER, isMusicXml = true))
-        assertEquals(MenuItemState.SOON, menuItemState(ViewerMenuItem.SETLIST, isMusicXml = false))
+        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.SETLIST, isMusicXml = false))
     }
 
     @Test

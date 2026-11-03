@@ -186,7 +186,16 @@ fun PdfViewerScreen(
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     onOpenPreferences: () -> Unit = {},
-    sheetId: Long? = null
+    sheetId: Long? = null,
+    /** In a setlist, the setlist: ≡ in the menu opens it (the setlists otherwise). */
+    onOpenSetlist: () -> Unit = onOpenLibrary,
+    /** In a setlist, turning past the last page opens the next score, before the first the one before. */
+    onPastEnd: (() -> Unit)? = null,
+    onBeforeStart: (() -> Unit)? = null,
+    /** Where the score opens: its first page (the next score of a setlist), its last one (the one before). */
+    start: StartPage = StartPage.REMEMBERED,
+    /** In a setlist, its name and the score's place in it, recalled next to the title. */
+    setlistPlace: SetlistPlace? = null,
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -257,8 +266,10 @@ fun PdfViewerScreen(
     // bumped when a MusicXML score is laid out again: its pages changed under the same numbers
     var layoutVersion by remember { mutableIntStateOf(0) }
     var currentPage by rememberSaveable(pdfUri) {
-        mutableIntStateOf(Settings.lastPage(context, pdfUri.toString()))
+        mutableIntStateOf(if (start == StartPage.REMEMBERED) Settings.lastPage(context, pdfUri.toString()) else 0)
     }
+    // opened from the score after it in a setlist: its last page, once its pages are counted
+    var toLastPage by rememberSaveable(pdfUri) { mutableStateOf(start == StartPage.LAST) }
     // the same for every score, half page for each orientation (ViewerViewModel)
     val display by viewer.display.collectAsState()
     val twoUp = display.twoUp
@@ -272,6 +283,12 @@ fun PdfViewerScreen(
     // Plain reads: the paper holds them as Compose state, so a change recomposes the screen.
     val pageCount = paper.pageCount
     val error = paper.error
+    LaunchedEffect(pageCount, toLastPage) {
+        if (toLastPage && pageCount > 0) {
+            currentPage = pageCount - 1
+            toLastPage = false
+        }
+    }
     // zoom and pan: read in the gesture's pointer loop and in the canvas' draw lambdas, never
     // in composition (a per-frame read here would recompose the screen on every pinch frame)
     val zoom = rememberZoomState()
@@ -625,17 +642,27 @@ fun PdfViewerScreen(
 
     val applyNext: () -> Unit = {
         finishTyping()
-        playbackVm.pageTurnedByHand()
-        val f = branch.next()
-        currentPage = f.page
-        halfTurned = f.halfTurned
+        when (val turn = turnNext(branch, onPastEnd != null)) {
+            is Turn.ToPage -> {
+                playbackVm.pageTurnedByHand()
+                currentPage = turn.flow.page
+                halfTurned = turn.flow.halfTurned
+            }
+            Turn.ToOtherScore -> onPastEnd?.invoke()
+            Turn.Stay -> Unit
+        }
     }
     val applyPrev: () -> Unit = {
         finishTyping()
-        playbackVm.pageTurnedByHand()
-        val f = branch.prev()
-        currentPage = f.page
-        halfTurned = f.halfTurned
+        when (val turn = turnPrev(branch, onBeforeStart != null)) {
+            is Turn.ToPage -> {
+                playbackVm.pageTurnedByHand()
+                currentPage = turn.flow.page
+                halfTurned = turn.flow.halfTurned
+            }
+            Turn.ToOtherScore -> onBeforeStart?.invoke()
+            Turn.Stay -> Unit
+        }
     }
     // The gesture's pointerInput(Unit) never restarts, so it must read the live turns: a captured
     // lambda keeps the `branch` it closed over and stops advancing past the first page.
@@ -1331,6 +1358,7 @@ fun PdfViewerScreen(
                         title = title,
                         composer = composer,
                         pageLabel = pageLabel,
+                        setlistPlace = setlistPlace,
                         editing = editing,
                         onOpenMenu = { menu.show(ViewerSurface.MENU) },
                         onToggleEditing = { toggleEditing() },
@@ -1349,6 +1377,7 @@ fun PdfViewerScreen(
                     ViewerIconBar(
                         title = title,
                         pageLabel = pageLabel,
+                        setlistPlace = setlistPlace,
                         isMusicXml = format.isMusicXml,
                         annotatable = editEntryShown(editing, sheetId != null),
                         open = open,
@@ -1357,7 +1386,7 @@ fun PdfViewerScreen(
                             if (item != open) {
                                 openMenuEntry(
                                     item, menu, metronomeVm, playbackVm, editing,
-                                    onOpenLibrary, onOpenPreferences, { toggleEditing() }, { navVisible = true },
+                                    onOpenLibrary, onOpenSetlist, onOpenPreferences, { toggleEditing() }, { navVisible = true },
                                 )
                             }
                         },
@@ -1523,6 +1552,7 @@ fun PdfViewerScreen(
             format = format,
             onOpenLibrary = onOpenLibrary,
             onOpenPreferences = onOpenPreferences,
+            onOpenSetlist = onOpenSetlist,
             editing = editing,
             onToggleEditing = { toggleEditing() },
             onShowChrome = { navVisible = true },

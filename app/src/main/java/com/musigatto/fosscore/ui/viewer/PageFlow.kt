@@ -160,3 +160,29 @@ fun pagesToDraw(
 } else {
     listOf(currentPage)
 }
+/** Where a score opens: the page it was left on, or (in a setlist) its first or its last page. */
+enum class StartPage { REMEMBERED, FIRST, LAST }
+
+/** What a page turn does: turn the page, open another score of the setlist, or nothing. */
+sealed class Turn {
+    data class ToPage(val flow: PageFlow) : Turn()
+    data object ToOtherScore : Turn()
+    data object Stay : Turn()
+}
+
+/**
+ * A turn forward. Past the last page, a setlist with a score after this one ([hasNextScore])
+ * opens it; otherwise the page stays.
+ */
+fun turnNext(flow: PageFlow, hasNextScore: Boolean): Turn = when {
+    flow.canNext -> Turn.ToPage(flow.next())
+    hasNextScore -> Turn.ToOtherScore
+    else -> Turn.Stay
+}
+
+/** A turn back. Before the first page, a setlist opens the score before this one, on its last page. */
+fun turnPrev(flow: PageFlow, hasPreviousScore: Boolean): Turn = when {
+    flow.canPrev -> Turn.ToPage(flow.prev())
+    hasPreviousScore -> Turn.ToOtherScore
+    else -> Turn.Stay
+}

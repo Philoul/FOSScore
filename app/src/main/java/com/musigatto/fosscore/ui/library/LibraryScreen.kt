@@ -178,8 +178,8 @@ fun LibraryScreen(
                 style = MaterialTheme.typography.bodyLarge
             )
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(visible, key = { it.id }) { sheet ->
+            // sorted by title under a bar for each letter, the letters on the right
+            IndexedList(visible, name = { it.title }, key = { it.id }, modifier = Modifier.fillMaxSize()) { sheet ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -191,16 +191,7 @@ fun LibraryScreen(
                             .heightIn(min = ROW_MIN_HEIGHT),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(sheet.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
-                                Spacer(Modifier.width(8.dp))
-                                FormatBadge(formatLabel(sheet.path))
-                            }
-                            if (sheet.composer.isNotBlank()) {
-                                Text(sheet.composer, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
+                        SheetText(sheet, Modifier.weight(1f))
                         // the check box shows in a room every row keeps, and a tap on the row ticks
                         // it: on a long press nothing moves, the row stays under the finger
                         Spacer(Modifier.width(8.dp))
@@ -210,8 +201,6 @@ fun LibraryScreen(
                             }
                         }
                     }
-                    HorizontalDivider()
-                }
             }
         }
     }
@@ -330,20 +319,3 @@ private fun BulkEditDialog(
     )
 }
 
-/**
- * The kind of score, as the copy the importer keeps says ("PDF", "MusicXML"). Later the same
- * place can show an attached MIDI or audio file, or the tags.
- */
-internal fun formatLabel(path: String): String = if (SheetFormat.of(path).isMusicXml) "MusicXML" else "PDF"
-
-@Composable
-private fun FormatBadge(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 1.dp)
-    )
-}

@@ -48,6 +48,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -183,6 +185,7 @@ fun PdfViewerScreen(
     onOpenLibrary: () -> Unit = onBack,
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
+    onOpenPreferences: () -> Unit = {},
     sheetId: Long? = null
 ) {
     val context = LocalContext.current
@@ -210,6 +213,16 @@ fun PdfViewerScreen(
     val heardPicked by playbackVm.heard.collectAsState()
     val playbackFailed by playbackVm.failed.collectAsState()
     val aheadNotes by playbackVm.ahead.collectAsState()
+    // another score opened, or the viewer closed: this score's music stops (its ViewModel stays
+    // in memory with the screen, and its player would go on playing)
+    DisposableEffect(playbackVm) { onDispose { playbackVm.stop() } }
+    // the music heard, read from the audio clock at every frame while it plays: the playback bar
+    // glides with it (only the bar is drawn again, nothing is composed again)
+    var playQuarters by remember { mutableStateOf<Double?>(null) }
+    LaunchedEffect(playState, cursorNotes) {
+        playQuarters = playbackVm.positionNow()
+        if (playState == PlayState.PLAYING) while (true) withFrameNanos { playQuarters = playbackVm.positionNow() }
+    }
 
     // the metronome: its band, its clicks and the page turns it drives (MetronomeViewModel)
     val metronomeVm: MetronomeViewModel = viewModel(
@@ -892,6 +905,38 @@ fun PdfViewerScreen(
         }
     }
 
+    // What a key of the keyboard or the pedal does (Settings › Keyboard and pedals): the same as the
+    // button of the bar or the band. An action that has no meaning here (playback on a PDF score)
+    // does nothing.
+    fun runKeyAction(action: KeyAction) {
+        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+        when (action) {
+            KeyAction.PREV_PAGE -> applyPrev()
+            KeyAction.NEXT_PAGE -> applyNext()
+            KeyAction.FIRST_PAGE -> {
+                currentPage = 0
+                halfTurned = false
+            }
+            KeyAction.LAST_PAGE -> {
+                currentPage = (pageCount - 1).coerceAtLeast(0)
+                halfTurned = false
+            }
+            KeyAction.PLAY_PAUSE -> if (format.isMusicXml) {
+                metronomeVm.stop()
+                playbackVm.playPause(notesOnScreen())
+            }
+            KeyAction.RESTART -> if (format.isMusicXml) playbackVm.restart()
+            KeyAction.LOOP -> if (format.isMusicXml) playbackVm.toggleLoop()
+            KeyAction.METRONOME -> startStopMetronome()
+            KeyAction.TAP_TEMPO -> metronomeVm.tap()?.let { bpm ->
+                if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
+            }
+            KeyAction.SHOW_BAR -> if (!editing) navVisible = !navVisible
+            // in, or out keeping what was drawn, as ✓
+            KeyAction.ANNOTATE -> if (canEdit) toggleEditing()
+        }
+    }
+
     // The pages turn with the metronome: a MusicXML score knows its bars, a PDF score has the
     // bars of each page counted by the user (BarPages). Only forward: a page turned back by hand
     // stays until the metronome gets past it. pageCount: a score laid out again changes the bars.
@@ -964,11 +1009,12 @@ fun PdfViewerScreen(
             .background(if (invert) Color.Black else MaterialTheme.colorScheme.background)
             .then(stylusHoverMod)
             .onPreviewKeyEvent { e ->
-                val turn = pageTurnFor(e.key, e.isShiftPressed, typing = editor.typing != null)
+                // read at each key: the preferences may have changed them since the score opened
+                val action = Settings.keyShortcuts(context).actionFor(e.nativeKeyEvent.keyCode, e.isShiftPressed, typing = editor.typing != null)
                     ?: return@onPreviewKeyEvent false
-                // a held key repeats: turn one page per press, not a burst
+                // a held key repeats: one action per press, not a burst
                 if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
-                    if (turn == PageTurn.NEXT) applyNext() else applyPrev()
+                    runKeyAction(action)
                 }
                 true
             }
@@ -1155,7 +1201,7 @@ fun PdfViewerScreen(
                     branch = branch,
                     halfTurned = halfTurned,
                     halfSplit = { halfSplit() },
-                    above = { geo, id, fraction -> above(geo, id, fraction) },
+                    pageHeight = pageHeight,
                     pageFit = pageFit,
                     hitFit = hitFit,
                     scale = { zoom.transform.scale },
@@ -1163,7 +1209,8 @@ fun PdfViewerScreen(
                     offsetY = { zoom.transform.offset.y },
                     invert = invert,
                     pageSource = pageSource,
-                    cursorNotes = cursorNotes,
+                    playback = playbackVm.currentPlayback,
+                    playQuarters = { playQuarters },
                     halfCut = paper.halfCut,
                     layoutVersion = layoutVersion,
                     canEdit = canEdit,
@@ -1400,6 +1447,7 @@ fun PdfViewerScreen(
             menu = menu,
             format = format,
             onOpenLibrary = onOpenLibrary,
+            onOpenPreferences = onOpenPreferences,
             editing = editing,
             onToggleEditing = { toggleEditing() },
             onShowChrome = { navVisible = true },

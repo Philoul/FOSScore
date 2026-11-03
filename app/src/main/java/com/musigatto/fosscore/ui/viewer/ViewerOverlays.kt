@@ -65,6 +65,7 @@ internal fun ViewerOverlays(
     menu: ViewerMenuViewModel,
     format: SheetFormat,
     onOpenLibrary: () -> Unit,
+    onOpenPreferences: () -> Unit,
     editing: Boolean,
     onToggleEditing: () -> Unit,
     onShowChrome: () -> Unit,
@@ -120,6 +121,7 @@ internal fun ViewerOverlays(
                             menu.show(ViewerSurface.METRONOME)
                         }
                         ViewerMenuItem.ANNOTATE -> if (!editing) onToggleEditing()
+                        ViewerMenuItem.SETTINGS -> onOpenPreferences()
                         // greyed out in the menu: never chosen
                         else -> Unit
                     }

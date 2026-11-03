@@ -146,9 +146,7 @@ fun MetronomeBand(
         if (onPlayback != null) {
             BandButton(stringResource(R.string.menu_playback), active = true, onClick = onPlayback) { ToolIcon(ICON_METRONOME) }
         } else {
-            BandButton(stringResource(R.string.metronome_close), active = false, onClick = onClose) {
-                Text("✕", style = MaterialTheme.typography.labelLarge)
-            }
+            BandButton(stringResource(R.string.metronome_close), active = false, onClick = onClose) { LineIcon(LINE_CLOSE, size = 20.dp) }
         }
     }
 }
@@ -292,7 +290,7 @@ fun MetronomeOverlay(
         if (settings.mode != MetronomeMode.VISUAL) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 DropdownButton(settings.sound, ClickSound.entries, { stringResource(it.label) }, onSound)
-                Text("🔊")
+                LineIcon(LINE_VOLUME)
                 Slider(
                     value = settings.volume.toFloat(),
                     onValueChange = { onVolume(it.roundToInt()) },
@@ -325,9 +323,9 @@ fun MetronomeOverlay(
         }
         if (pageBars != null && settings.autoTurn) {
             CompactRow(null) {
-                MiniButton("◀", stringResource(R.string.metronome_previous_page), pageBars.page > 0) { onBarsPage(pageBars.page - 1) }
+                MiniButton(LINE_PREVIOUS, stringResource(R.string.metronome_previous_page), pageBars.page > 0) { onBarsPage(pageBars.page - 1) }
                 Text(stringResource(R.string.metronome_page_of, pageBars.page + 1, pageBars.pageCount), style = MaterialTheme.typography.bodyLarge)
-                MiniButton("▶", stringResource(R.string.metronome_next_page), pageBars.page < pageBars.pageCount - 1) { onBarsPage(pageBars.page + 1) }
+                MiniButton(LINE_NEXT, stringResource(R.string.metronome_next_page), pageBars.page < pageBars.pageCount - 1) { onBarsPage(pageBars.page + 1) }
                 Spacer(Modifier.weight(1f))
                 MiniStepper(
                     pageBars.bars.toString(), pageBars.bars > 1, pageBars.bars < 99,
@@ -339,7 +337,7 @@ fun MetronomeOverlay(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // the count of this page for every page after it
-                MiniButton("⇊", stringResource(R.string.metronome_copy_bars), true, onCopyBars)
+                MiniButton(LINE_COPY_DOWN, stringResource(R.string.metronome_copy_bars), true, onCopyBars)
             }
         }
     }
@@ -385,9 +383,9 @@ private fun MiniStepper(value: String, canLess: Boolean, canMore: Boolean, onLes
 
 // a small button with a glyph, described for screen readers
 @Composable
-private fun MiniButton(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+private fun MiniButton(icon: String, label: String, enabled: Boolean, onClick: () -> Unit) {
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(MINI_BUTTON).semantics { contentDescription = label }) {
-        Text(glyph, style = MaterialTheme.typography.titleMedium)
+        LineIcon(icon, size = 20.dp)
     }
 }
 

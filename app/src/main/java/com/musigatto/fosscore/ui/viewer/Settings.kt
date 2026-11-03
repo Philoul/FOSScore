@@ -77,6 +77,7 @@ object Settings {
     private const val PREFS = "fosscore_settings"
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_THEME = "theme"
+    private const val KEY_SHORTCUTS = "key_shortcuts"
     private const val KEY_DIM = "dim"
     private const val KEY_INVERT = "invert"
     private const val KEY_HALF_PAGE = "half_page_"
@@ -116,6 +117,19 @@ object Settings {
         context.prefs().edit {
             if (language.tag == null) remove(KEY_LANGUAGE) else putString(KEY_LANGUAGE, language.tag)
         }
+    }
+
+    /** The keys the viewer answers: the defaults until the user changes them in the preferences. */
+    fun keyShortcuts(context: Context): KeyShortcuts =
+        KeyShortcuts.parse(context.prefs().getString(KEY_SHORTCUTS, null))
+
+    fun setKeyShortcuts(context: Context, shortcuts: KeyShortcuts) {
+        context.prefs().edit { putString(KEY_SHORTCUTS, shortcuts.format()) }
+    }
+
+    /** Back to the default keys, and to the new defaults of a later version. */
+    fun resetKeyShortcuts(context: Context) {
+        context.prefs().edit { remove(KEY_SHORTCUTS) }
     }
 
     fun themeMode(context: Context): ThemeMode =

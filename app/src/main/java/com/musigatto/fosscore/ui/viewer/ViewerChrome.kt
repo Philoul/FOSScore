@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -38,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -119,7 +121,7 @@ fun ViewerTitleBar(
         ) {
             // one entry for everything else (library, display, layout, annotate...): ViewerMenuPanel
             Pill {
-                PillEntry("☰", stringResource(R.string.menu_label), compact = compact, onClick = onOpenMenu)
+                PillEntry(LINE_MENU, stringResource(R.string.menu_label), compact = compact, onClick = onOpenMenu)
             }
             Spacer(Modifier.width(8.dp))
             // center pill: "what am I reading". It takes the leftover width and the darker tone, so it
@@ -151,7 +153,7 @@ fun ViewerTitleBar(
                 Spacer(Modifier.width(8.dp))
                 Pill {
                     PillEntry(
-                        "✎",
+                        LINE_EDIT,
                         stringResource(R.string.action_edit),
                         compact = compact,
                         onClick = onToggleEditing,
@@ -275,7 +277,7 @@ internal fun PanelOverlay(
                     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     val closeLabel = stringResource(R.string.action_close)
                     TextButton(onClick = onDismiss, modifier = Modifier.semantics { contentDescription = closeLabel }) {
-                        Text("✕", style = MaterialTheme.typography.titleMedium)
+                        LineIcon(LINE_CLOSE)
                     }
                 }
                 content()
@@ -346,9 +348,13 @@ internal fun StepperRow(
     }
 }
 
+// the pause in the typing after which a number typed applies
+private const val TYPED_PAUSE_MS = 800
+
 /**
  * − [value] +, as AndroidAPS's NumberInputRow: the value is typed in place (kept with Done or when
- * the field loses focus, and brought into [range], shown under the field while typing), and − / +
+ * the field loses focus, and brought into [range], shown under the field while typing; a value in
+ * [range] also applies once the typing pauses), and − / +
  * move it to the next multiple of [step] on each press, at once (not on release), repeating while
  * held after a short wait.
  */
@@ -367,6 +373,7 @@ internal fun NumberFieldRow(
 ) {
     // the held button reads the value it changes, not the one it saw when the press began
     val current by rememberUpdatedState(value)
+    val apply by rememberUpdatedState(onValue)
     val focus = LocalFocusManager.current
     var text by remember { mutableStateOf(TextFieldValue(value.toString())) }
     var focused by remember { mutableStateOf(false) }
@@ -374,6 +381,13 @@ internal fun NumberFieldRow(
     val wrong = typed == null || typed !in range
     // − / + and other controls change the value from outside the field
     LaunchedEffect(value) { if (typed != value) text = TextFieldValue(value.toString()) }
+    // a value typed is laid out once the typing pauses, the field still open: its result shows
+    // without leaving the panel (the keyboard closed with Back kept the focus, so nothing changed)
+    LaunchedEffect(text.text) {
+        val live = typedToApply(text.text, range, current) ?: return@LaunchedEffect
+        delay(TYPED_PAUSE_MS.milliseconds)
+        apply(live)
+    }
     fun keep() {
         val kept = (typed ?: current).coerceIn(range)
         text = TextFieldValue(kept.toString())
@@ -421,6 +435,13 @@ internal fun NumberFieldRow(
         )
     }
 }
+
+/**
+ * The value typed in a number field to lay out now, the field still open: a whole number in
+ * [range] other than [current]; null while it is not one (still being typed, out of range).
+ */
+internal fun typedToApply(text: String, range: IntRange, current: Int): Int? =
+    text.toIntOrNull()?.takeIf { it in range && it != current }
 
 /** The next multiple of [step] above [value] (direction 1) or below it (-1): 87 › 90 or 85 by 5. */
 internal fun stepped(value: Int, step: Int, direction: Int): Int =
@@ -500,9 +521,9 @@ private fun Pill(
 }
 
 /**
- * Glyph + label entry. The glyph takes the accent, the label the plain content color, so the pill
- * reads as a Material component instead of a gray slab; [selected] switches both to the accent
- * container's content color. The label is what a screen reader announces.
+ * Icon + label entry. The icon (a LineIcons path) takes the accent, the label the plain content
+ * color, so the pill reads as a Material component instead of a gray slab; [selected] switches both
+ * to the accent container's content color. The label is what a screen reader announces.
  */
 @Composable
 private fun PillEntry(
@@ -522,7 +543,7 @@ private fun PillEntry(
         // without its label the glyph has no name of its own: keep the label spoken
         modifier = if (compact) Modifier.semantics { contentDescription = label } else Modifier,
     ) {
-        Text(icon, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = glyphColor)
+        CompositionLocalProvider(LocalContentColor provides glyphColor) { LineIcon(icon, size = 20.dp) }
         if (!compact) {
             Spacer(Modifier.width(6.dp))
             Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = labelColor)

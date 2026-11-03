@@ -1,6 +1,7 @@
 package com.musigatto.fosscore
 
 import com.musigatto.fosscore.library.Sheet
+import com.musigatto.fosscore.ui.library.MenuView
 import com.musigatto.fosscore.ui.viewer.StartPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -60,6 +61,16 @@ class NavStateTest {
         assertEquals(null, nav.sheet)
         assertFalse(nav.setlistsOpen)
         assertFalse(nav.libraryOpen)
+    }
+
+    @Test
+    fun aViewNotBuiltYetChangesNothing() {
+        val nav = NavState(sheet = score, setlistsOpen = true, setlistShown = 3)
+
+        assertEquals(nav, nav.toView(MenuView.TAGS))
+        assertEquals(nav, nav.toView(MenuView.PRACTICE))
+        assertEquals(nav.toLibrary(), nav.toView(MenuView.LIBRARY))
+        assertEquals(nav.toSetlists(), nav.toView(MenuView.SETLISTS))
     }
 
     @Test

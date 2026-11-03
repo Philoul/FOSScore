@@ -14,7 +14,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
+import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +33,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.ui.viewer.LINE_ABOUT
+import com.musigatto.fosscore.ui.viewer.LINE_LIBRARY
+import com.musigatto.fosscore.ui.viewer.LINE_PRACTICE
+import com.musigatto.fosscore.ui.viewer.LINE_SETLIST
+import com.musigatto.fosscore.ui.viewer.LINE_SETTINGS
+import com.musigatto.fosscore.ui.viewer.LINE_TAG
+import com.musigatto.fosscore.ui.viewer.LineIcon
 import kotlinx.coroutines.launch
 
 /**
@@ -41,8 +53,7 @@ fun LibraryMenuDrawer(
     drawerState: DrawerState,
     current: MenuView,
     onOpenPreferences: () -> Unit,
-    onOpenLibrary: () -> Unit,
-    onOpenSetlists: () -> Unit,
+    onOpenView: (MenuView) -> Unit,
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -56,41 +67,50 @@ fun LibraryMenuDrawer(
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
                 )
-                DrawerRow(stringResource(R.string.library_title), selected = current == MenuView.LIBRARY) {
-                    scope.launch { drawerState.close() }
-                    onOpenLibrary()
+                MenuView.entries.forEach { view ->
+                    if (view.ready) {
+                        DrawerRow(stringResource(view.label), view.icon, selected = view == current) {
+                            scope.launch { drawerState.close() }
+                            onOpenView(view)
+                        }
+                    } else {
+                        SoonItem(view.label, view.icon)
+                    }
                 }
-                DrawerRow(stringResource(R.string.library_menu_setlists), selected = current == MenuView.SETLISTS) {
-                    scope.launch { drawerState.close() }
-                    onOpenSetlists()
-                }
-                SoonItem(R.string.library_menu_tags)
-                SoonItem(R.string.library_menu_practice)
                 HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 4.dp))
-                DrawerRow(stringResource(R.string.library_menu_settings)) {
+                DrawerRow(stringResource(R.string.library_menu_settings), LINE_SETTINGS) {
                     scope.launch { drawerState.close() }
                     onOpenPreferences()
                 }
-                SoonItem(R.string.library_menu_about)
+                SoonItem(R.string.library_menu_about, LINE_ABOUT)
             }
         },
         content = content
     )
 }
 
-/** The views the side menu goes between. */
-enum class MenuView { LIBRARY, SETLISTS }
+/**
+ * The views of the app, in the side menu (and in the icon bar that can take its place): their
+ * name, their icon, and whether they are built yet ([ready]; the others show greyed out).
+ */
+enum class MenuView(@StringRes val label: Int, val icon: String, val ready: Boolean) {
+    LIBRARY(R.string.library_title, LINE_LIBRARY, true),
+    SETLISTS(R.string.library_menu_setlists, LINE_SETLIST, true),
+    TAGS(R.string.library_menu_tags, LINE_TAG, false),
+    PRACTICE(R.string.library_menu_practice, LINE_PRACTICE, false),
+}
 
 // an entry that is not built yet: greyed out ("Coming soon" for a screen reader), and a tap does nothing
 @Composable
-private fun SoonItem(label: Int) {
-    DrawerRow(stringResource(label), soon = stringResource(R.string.library_menu_soon))
+private fun SoonItem(label: Int, icon: String) {
+    DrawerRow(stringResource(label), icon, soon = stringResource(R.string.library_menu_soon))
 }
 
 // An entry of the menu, on one line: the whole menu stays in sight on a phone. [soon]: not built
 // yet, greyed out and not clickable. [selected]: the view shown, marked as in the viewer's menu.
+// [icon]: one of the line icons, before the label.
 @Composable
-private fun DrawerRow(label: String, soon: String? = null, selected: Boolean = false, onClick: () -> Unit = {}) {
+private fun DrawerRow(label: String, icon: String, soon: String? = null, selected: Boolean = false, onClick: () -> Unit = {}) {
     val color = when {
         soon != null -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         selected -> MaterialTheme.colorScheme.onSecondaryContainer
@@ -112,6 +132,8 @@ private fun DrawerRow(label: String, soon: String? = null, selected: Boolean = f
             }
             .padding(horizontal = 16.dp)
     ) {
+        CompositionLocalProvider(LocalContentColor provides color) { LineIcon(icon) }
+        Spacer(Modifier.width(16.dp))
         Text(
             label,
             style = MaterialTheme.typography.bodyLarge,

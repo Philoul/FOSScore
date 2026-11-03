@@ -15,14 +15,20 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -251,21 +257,38 @@ internal fun PanelOverlay(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
+    // with the icon bar, the panel unfolds from it like a tab, as wide as it, and the scrim starts
+    // under it: the bar stays lit, so one tap goes from a panel to the next
+    val icons = LocalChromeStyle.current == ChromeStyle.ICONS
+    // under the status bar at least, when the bar at the top is hidden
+    val top = maxOf(LocalPanelTop.current, WindowInsets.systemBars.asPaddingValues().calculateTopPadding())
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
-            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
-        contentAlignment = alignment,
+            .then(
+                if (icons) {
+                    Modifier
+                        .padding(top = top)
+                        .background(Color.Black.copy(alpha = 0.2f))
+                        .pointerInput(Unit) { detectTapGestures { onDismiss() } }
+                        // the panel clear of a navigation bar on the side or at the bottom
+                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                } else {
+                    Modifier
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .pointerInput(Unit) { detectTapGestures { onDismiss() } }
+                }
+            ),
+        contentAlignment = if (icons) Alignment.TopStart else alignment,
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = if (icons) RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp) else RoundedCornerShape(16.dp),
+            shadowElevation = if (icons) 6.dp else 0.dp,
             // swallow taps on the panel: without this they reach the scrim behind and dismiss
-            modifier = Modifier
-                .padding(top = LocalPanelTop.current)
-                .widthIn(max = maxWidth)
-                .padding(16.dp)
-                .pointerInput(Unit) { detectTapGestures { } },
+            modifier = (
+                if (icons) Modifier.padding(horizontal = 12.dp).fillMaxWidth()
+                else Modifier.padding(top = LocalPanelTop.current).widthIn(max = maxWidth).padding(16.dp)
+            ).pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(
                 modifier = Modifier

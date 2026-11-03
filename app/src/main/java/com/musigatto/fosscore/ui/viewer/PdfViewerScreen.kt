@@ -279,6 +279,13 @@ fun PdfViewerScreen(
     val dimPct = display.dimPct
     val invert = display.invert
     val keepScreenOn = display.keepScreenOn
+    // the look of the top bar, chosen in the preferences; they open over the score, so a change
+    // made there shows at once
+    var chromeStyle by remember { mutableStateOf(Settings.chromeStyle(context)) }
+    DisposableEffect(context) {
+        val stop = Settings.onChromeStyleChange(context) { chromeStyle = it }
+        onDispose { stop() }
+    }
 
     // Applies only while the viewer is on screen: the library lets the device sleep as usual.
     val view = LocalView.current
@@ -1306,27 +1313,62 @@ fun PdfViewerScreen(
         if ((navVisible || editing) && loupeAt == null) {
 
             // while annotating there is ONE bar: the annotation bar takes the top of the screen
-            // and the title bar steps aside (spec §5: forScore replaces it). ✕ / ✓ are its ends.
+            // and the title bar (or the icon bar) steps aside (spec §5: forScore replaces it).
+            // ✕ / ✓ are its ends.
             if (!(editing && canEdit)) {
-                // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
-                ViewerTitleBar(
-                    title = title,
-                    composer = composer,
-                    pageLabel = pageLabel,
-                    editing = editing,
-                    onOpenMenu = { menu.show(ViewerSurface.MENU) },
-                    onToggleEditing = { toggleEditing() },
-                    annotatable = sheetId != null,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        // edge-to-edge: the pills were slipping under the status bar, and in landscape
-                        // under the side navigation bar.
-                        .windowInsetsPadding(
-                            WindowInsets.systemBars.only(
-                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                            )
-                        ),
-                )
+                val topBarModifier = Modifier
+                    .align(Alignment.TopCenter)
+                    // edge-to-edge: the pills were slipping under the status bar, and in landscape
+                    // under the side navigation bar.
+                    .windowInsetsPadding(
+                        WindowInsets.systemBars.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                        )
+                    )
+                if (chromeStyle == ChromeStyle.MENU) {
+                    // ponytail: no ⌄ (score actions), no ⌕ (global search), no long-press-to-annotate yet.
+                    ViewerTitleBar(
+                        title = title,
+                        composer = composer,
+                        pageLabel = pageLabel,
+                        editing = editing,
+                        onOpenMenu = { menu.show(ViewerSurface.MENU) },
+                        onToggleEditing = { toggleEditing() },
+                        annotatable = sheetId != null,
+                        modifier = topBarModifier,
+                    )
+                } else {
+                    // the entry whose panel shows: its icon is framed, and a second tap closes it
+                    val open = when (surface) {
+                        ViewerSurface.DISPLAY -> ViewerMenuItem.DISPLAY
+                        ViewerSurface.LAYOUT -> ViewerMenuItem.LAYOUT
+                        ViewerSurface.PLAYBACK -> ViewerMenuItem.PLAYBACK
+                        ViewerSurface.METRONOME -> ViewerMenuItem.METRONOME
+                        else -> null
+                    }
+                    ViewerIconBar(
+                        title = title,
+                        pageLabel = pageLabel,
+                        isMusicXml = format.isMusicXml,
+                        annotatable = editEntryShown(editing, sheetId != null),
+                        open = open,
+                        onSelect = { item ->
+                            menu.dismiss()
+                            if (item != open) {
+                                openMenuEntry(
+                                    item, menu, metronomeVm, playbackVm, editing,
+                                    onOpenLibrary, onOpenPreferences, { toggleEditing() }, { navVisible = true },
+                                )
+                            }
+                        },
+                        onMore = { menu.show(ViewerSurface.MENU) },
+                        onAnnotate = {
+                            menu.dismiss()
+                            toggleEditing()
+                        },
+                        modifier = topBarModifier,
+                    )
+                }
             }
 
             if (editing && canEdit) {
@@ -1518,6 +1560,7 @@ fun PdfViewerScreen(
             },
             tempoFactor = tempoFactor,
             panelTop = panelTop,
+            chromeStyle = chromeStyle,
         )
 
         // ✕ with something drawn: say what would be lost before losing it (issue #50)

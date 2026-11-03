@@ -240,6 +240,9 @@
     <string name="tempo_as_written_short">Comme écrit</string>
     <string name="metronome_previous_page">Page précédente</string>
     <string name="metronome_next_page">Page suivante</string>
+    <string name="prefs_viewer">Écran de la partition</string>
+    <string name="chrome_menu">Menu ☰ : toutes les fonctions dans une liste</string>
+    <string name="chrome_icons">Barre d’icônes : une icône par fonction</string>
     <string name="prefs_keyboard">Clavier et pédales</string>
     <string name="prefs_keyboard_summary">Clavier à l’écran, raccourcis des touches et des pédales</string>
     <string name="prefs_screen_keyboard">Clavier à l’écran avec une pédale</string>

@@ -238,6 +238,9 @@
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
+    <string name="prefs_main">Pantalla principal</string>
+    <string name="main_menu">Menú ☰: las vistas en el menú lateral</string>
+    <string name="main_icons">Barra de iconos: un icono por vista</string>
     <string name="prefs_viewer">Pantalla de la partitura</string>
     <string name="chrome_menu">Menú ☰: todas las funciones en una lista</string>
     <string name="chrome_icons">Barra de iconos: un icono por función</string>

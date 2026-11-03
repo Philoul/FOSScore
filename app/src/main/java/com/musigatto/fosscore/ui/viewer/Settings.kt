@@ -112,6 +112,7 @@ object Settings {
     private const val KEY_MET_VOLUME = "metronome_volume"
     private const val KEY_TURN_AHEAD = "turn_ahead"
     private const val KEY_CHROME_STYLE = "top_bar"
+    private const val KEY_MAIN_STYLE = "main_bar"
 
     fun language(context: Context): AppLanguage =
         AppLanguage.of(context.prefs().getString(KEY_LANGUAGE, null))
@@ -192,6 +193,23 @@ object Settings {
         val prefs = context.prefs()
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == KEY_CHROME_STYLE) onChange(chromeStyle(context))
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    // the look of the main views' header (library, setlists), chosen apart: the menu by default
+    fun mainStyle(context: Context): ChromeStyle = ChromeStyle.of(context.prefs().getString(KEY_MAIN_STYLE, null))
+
+    fun setMainStyle(context: Context, value: ChromeStyle) {
+        context.prefs().edit { putString(KEY_MAIN_STYLE, value.name) }
+    }
+
+    /** Calls [onChange] whenever the look of the main views' header changes. Returns what stops it. */
+    fun onMainStyleChange(context: Context, onChange: (ChromeStyle) -> Unit): () -> Unit {
+        val prefs = context.prefs()
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_MAIN_STYLE) onChange(mainStyle(context))
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         return { prefs.unregisterOnSharedPreferenceChangeListener(listener) }

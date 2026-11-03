@@ -1,113 +1,42 @@
 package com.musigatto.fosscore.ui.library
 
-import android.app.Activity
-import android.content.Intent
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
-import com.musigatto.fosscore.library.AppDatabase
-import com.musigatto.fosscore.library.BackupCheck
-import com.musigatto.fosscore.library.BackupManifest
-import com.musigatto.fosscore.library.CheckItem
-import com.musigatto.fosscore.library.CheckStatus
-import com.musigatto.fosscore.library.LibraryBackup
-import com.musigatto.fosscore.ui.viewer.AppLanguage
-import com.musigatto.fosscore.ui.viewer.Settings
-import java.text.DateFormat
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * The library's side menu, opened by the ☰ button of the library header or by swiping from the
- * left edge. It holds what concerns the whole app: the export and import of the library, then,
- * greyed out until they are built, setlists, tags, practice, the settings and "About" (roadmap
- * 3.6). [onMessage] shows a short result to the user.
+ * left edge. It holds what concerns the whole app: the preferences (language, the export and
+ * import of the library), then, greyed out until they are built, setlists, tags, practice
+ * and "About" (roadmap 3.6).
  */
 @Composable
-fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val app = context.applicationContext
+fun LibraryMenuDrawer(
+    drawerState: DrawerState,
+    onOpenPreferences: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     val scope = rememberCoroutineScope()
-    var busy by remember { mutableStateOf(false) }
-    var inspection by remember { mutableStateOf<LibraryBackup.Inspection?>(null) }
-    var choosingLanguage by remember { mutableStateOf(false) }
-    val backup = remember { LibraryBackup(app) }
-
-    val failed = stringResource(R.string.backup_failed)
-    // The export result is worded outside composition, where stringResource cannot be used. The
-    // activity is recreated on a language change, so these are the resources of the chosen language.
-    @Suppress("LocalContextResourcesRead")
-    val resources = context.resources
-
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        busy = true
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    app.contentResolver.openOutputStream(uri)?.use { backup.export(AppDatabase.get(app), it) }
-                }
-            }
-            busy = false
-            // no stream (the system could not open the document) counts as a failure
-            onMessage(result.getOrNull()?.let { resources.getQuantityString(R.plurals.backup_exported, it.sheets, it.sheets) } ?: failed)
-        }
-    }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        busy = true
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { app.contentResolver.openInputStream(uri)?.use { backup.inspect(it) } }
-            }
-            busy = false
-            result.getOrNull()?.let { inspection = it } ?: onMessage(failed)
-        }
-    }
-
-    // Closes the drawer, then runs [action] unless an export or import is already running.
-    fun fromMenu(action: () -> Unit) {
-        scope.launch { drawerState.close() }
-        if (!busy) action()
-    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -118,208 +47,45 @@ fun LibraryMenuDrawer(drawerState: DrawerState, onMessage: (String) -> Unit, con
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
                 )
-                NavigationDrawerItem(
-                    label = { Text(stringResource(R.string.backup_export)) },
-                    selected = false,
-                    onClick = {
-                        fromMenu {
-                            val day = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
-                            // No file picker on some stripped-down devices.
-                            runCatching { exportLauncher.launch("fosscore-library-$day.zip") }.onFailure { onMessage(failed) }
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text(stringResource(R.string.backup_import)) },
-                    selected = false,
-                    onClick = {
-                        fromMenu {
-                            // Some file managers report .zip files as generic binary data.
-                            runCatching {
-                                importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
-                            }.onFailure { onMessage(failed) }
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
-                NavigationDrawerItem(
-                    label = { Text(stringResource(R.string.language_label)) },
-                    selected = false,
-                    onClick = { fromMenu { choosingLanguage = true } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
                 SoonItem(R.string.library_menu_setlists)
                 SoonItem(R.string.library_menu_tags)
                 SoonItem(R.string.library_menu_practice)
-                HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
-                SoonItem(R.string.library_menu_settings)
+                HorizontalDivider(Modifier.padding(horizontal = 28.dp, vertical = 4.dp))
+                DrawerRow(stringResource(R.string.library_menu_settings)) {
+                    scope.launch { drawerState.close() }
+                    onOpenPreferences()
+                }
                 SoonItem(R.string.library_menu_about)
             }
         },
         content = content
     )
-
-    if (choosingLanguage) {
-        LanguageDialog(
-            current = Settings.language(context),
-            onDismiss = { choosingLanguage = false },
-            onPick = { language ->
-                choosingLanguage = false
-                Settings.setLanguage(context, language)
-                // The activity is recreated to resolve every string again; the drawer is snapped
-                // shut first so it does not come back open.
-                scope.launch {
-                    drawerState.snapTo(DrawerValue.Closed)
-                    (context as? Activity)?.recreate()
-                }
-            }
-        )
-    }
-
-    inspection?.let { current ->
-        ImportCheckDialog(
-            inspection = current,
-            onCancel = {
-                inspection = null
-                scope.launch(Dispatchers.IO) { backup.discard() }
-            },
-            onImport = {
-                inspection = null
-                scope.launch {
-                    val staged = withContext(Dispatchers.IO) { runCatching { backup.stage(current) }.isSuccess }
-                    if (staged) restart(context as? Activity) else onMessage(failed)
-                }
-            }
-        )
-    }
 }
 
-/** System default first, then every language the app ships, each named in itself. */
-@Composable
-private fun LanguageDialog(current: AppLanguage, onDismiss: () -> Unit, onPick: (AppLanguage) -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.language_label)) },
-        text = {
-            Column {
-                AppLanguage.entries.forEach { language ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPick(language) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = language == current, onClick = { onPick(language) })
-                        Spacer(Modifier.width(8.dp))
-                        Text(language.displayName.ifEmpty { stringResource(R.string.language_system) })
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
-    )
-}
-
-// an entry that is not built yet: greyed out, "Coming soon" under it, and a tap does nothing
+// an entry that is not built yet: greyed out ("Coming soon" for a screen reader), and a tap does nothing
 @Composable
 private fun SoonItem(label: Int) {
-    val grey = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    NavigationDrawerItem(
-        label = {
-            Column {
-                Text(stringResource(label), color = grey)
-                Text(stringResource(R.string.library_menu_soon), color = grey, style = MaterialTheme.typography.labelSmall)
-            }
-        },
-        selected = false,
-        onClick = {},
-        modifier = Modifier.padding(horizontal = 12.dp)
-    )
+    DrawerRow(stringResource(label), soon = stringResource(R.string.library_menu_soon))
 }
 
+// An entry of the menu, on one line: the whole menu stays in sight on a phone. [soon]: not built
+// yet, greyed out and not clickable.
 @Composable
-private fun ImportCheckDialog(inspection: LibraryBackup.Inspection, onCancel: () -> Unit, onImport: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.backup_import_title)) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (check in inspection.checks) {
-                    Row {
-                        Text(symbol(check.status), color = color(check.status), modifier = Modifier.width(28.dp))
-                        Text(describe(check, inspection.manifest), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                if (inspection.canImport) {
-                    Text(stringResource(R.string.backup_import_replaces), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        },
-        confirmButton = {
-            if (inspection.canImport) {
-                TextButton(onClick = onImport) { Text(stringResource(R.string.backup_import_confirm)) }
-            }
-        },
-        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.backup_cancel)) } }
-    )
-}
-
-private fun symbol(status: CheckStatus) = when (status) {
-    CheckStatus.OK -> "✓"
-    CheckStatus.WARN -> "⚠"
-    CheckStatus.ERROR -> "✗"
-}
-
-// Same meaning as AndroidAPS's import: green, amber, red.
-private fun color(status: CheckStatus) = when (status) {
-    CheckStatus.OK -> Color(0xFF2E7D32)
-    CheckStatus.WARN -> Color(0xFFEF8F00)
-    CheckStatus.ERROR -> Color(0xFFC62828)
-}
-
-@Composable
-private fun describe(check: BackupCheck, manifest: BackupManifest?): String {
-    // every check but the format reads the manifest: without one, the format is what failed
-    return when (check.item) {
-        CheckItem.FORMAT ->
-            if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_format_ok)
-            else stringResource(R.string.backup_check_format_error)
-        CheckItem.DATABASE -> when (check.status) {
-            CheckStatus.OK -> manifest?.let { stringResource(R.string.backup_check_db_ok, it.dbVersion) }
-            CheckStatus.WARN -> manifest?.let { stringResource(R.string.backup_check_db_older, it.dbVersion, AppDatabase.VERSION) }
-            CheckStatus.ERROR -> manifest?.let { stringResource(R.string.backup_check_db_newer, it.dbVersion, AppDatabase.VERSION) }
-        }
-        CheckItem.CONTENT ->
-            if (check.status == CheckStatus.OK) manifest?.let { stringResource(R.string.backup_check_content_ok, it.sheets, it.stamps, it.strokes) }
-            else stringResource(R.string.backup_check_content_error)
-        CheckItem.AGE -> manifest?.let {
-            val date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it.createdAt))
-            if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_age_ok, date)
-            else stringResource(R.string.backup_check_age_old, date)
-        }
-        CheckItem.DEVICE ->
-            if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_device_ok)
-            else manifest?.let { stringResource(R.string.backup_check_device_other, it.device) }
-        CheckItem.FILES ->
-            if (check.status == CheckStatus.OK) stringResource(R.string.backup_check_files_ok)
-            else manifest?.let { stringResource(R.string.backup_check_files_missing, it.missingFiles) }
-    } ?: stringResource(R.string.backup_check_format_error)
-}
-
-/**
- * Restarts the app so the staged import is applied before the database opens. The library must
- * not be used in between: the process ends right away.
- */
-private fun restart(activity: Activity?) {
-    if (activity != null) {
-        activity.packageManager.getLaunchIntentForPackage(activity.packageName)?.let {
-            activity.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
-        }
-        activity.finishAffinity()
+private fun DrawerRow(label: String, soon: String? = null, onClick: () -> Unit = {}) {
+    val color = if (soon == null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = DRAWER_ROW_HEIGHT)
+            .clickable(enabled = soon == null, role = Role.Button, onClick = onClick)
+            .semantics { if (soon != null) stateDescription = soon }
+            .padding(horizontal = 28.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = color)
     }
-    Runtime.getRuntime().exit(0)
 }
+
+// a row of the menu: as the viewer's menu, low enough for the whole list, high enough for a finger
+private val DRAWER_ROW_HEIGHT = 40.dp

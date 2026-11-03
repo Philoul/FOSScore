@@ -185,6 +185,7 @@ fun PdfViewerScreen(
     onOpenLibrary: () -> Unit = onBack,
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
+    onOpenPreferences: () -> Unit = {},
     sheetId: Long? = null
 ) {
     val context = LocalContext.current
@@ -1413,6 +1414,7 @@ fun PdfViewerScreen(
             menu = menu,
             format = format,
             onOpenLibrary = onOpenLibrary,
+            onOpenPreferences = onOpenPreferences,
             editing = editing,
             onToggleEditing = { toggleEditing() },
             onShowChrome = { navVisible = true },

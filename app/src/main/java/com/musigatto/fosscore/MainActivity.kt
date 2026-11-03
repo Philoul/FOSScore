@@ -42,6 +42,7 @@ import com.musigatto.fosscore.score.SheetFormat
 import com.musigatto.fosscore.ui.library.LibraryMenuDrawer
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
+import com.musigatto.fosscore.ui.settings.PreferencesScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
 import com.musigatto.fosscore.ui.viewer.AppLanguage
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
@@ -90,7 +91,9 @@ class MainActivity : ComponentActivity() {
 private data class NavState(
     val sheet: Sheet? = null,
     val libraryOpen: Boolean = false,
-    val detail: Sheet? = null
+    val detail: Sheet? = null,
+    // the app's preferences, over whatever screen opened them
+    val preferences: Boolean = false
 )
 
 // rotating the tablet recreates the Activity: without saving this, the open sheet was closed, and we
@@ -100,7 +103,8 @@ private val NavSaver = listSaver(
         listOf(
             it.sheet?.toSaveable() ?: emptyList<Any>(),
             it.libraryOpen,
-            it.detail?.toSaveable() ?: emptyList<Any>()
+            it.detail?.toSaveable() ?: emptyList<Any>(),
+            it.preferences
         )
     },
     restore = { v ->
@@ -110,7 +114,8 @@ private val NavSaver = listSaver(
         NavState(
             sheet = sheetAt(0),
             libraryOpen = v[1] as Boolean,
-            detail = sheetAt(2)
+            detail = sheetAt(2),
+            preferences = v.getOrNull(3) as? Boolean ?: false
         )
     }
 )
@@ -152,8 +157,6 @@ private fun FOSScoreNav(
 ) {
     var nav by rememberSaveable(stateSaver = NavSaver) { mutableStateOf(NavState()) }
     var messageRes by remember { mutableStateOf<Int?>(null) }
-    // already formatted texts (counts), from the library export / import
-    var messageText by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // the library's side menu, kept here for the back key below
@@ -191,6 +194,7 @@ private fun FOSScoreNav(
                     onOpenLibrary = { nav = nav.copy(libraryOpen = true) },
                     themeMode = themeMode,
                     onToggleTheme = toggleTheme,
+                    onOpenPreferences = { nav = nav.copy(preferences = true) },
                     sheetId = sheet.id
                 )
             }
@@ -199,7 +203,7 @@ private fun FOSScoreNav(
         // ponytail: the library covers the whole screen. The sliding/tiled sidebar and its animation
         // are their own step — this layering is what they will need.
         if (s.libraryOpen || s.sheet == null) {
-            LibraryMenuDrawer(drawerState, onMessage = { messageText = it }) {
+            LibraryMenuDrawer(drawerState, onOpenPreferences = { nav = nav.copy(preferences = true) }) {
                 Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
                     Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                         LibraryScreen(
@@ -217,12 +221,6 @@ private fun FOSScoreNav(
                                 messageRes = null
                             }
                         }
-                        messageText?.let { msg ->
-                            LaunchedEffect(msg) {
-                                snackbar.showSnackbar(msg)
-                                messageText = null
-                            }
-                        }
                     }
                 }
             }
@@ -238,6 +236,12 @@ private fun FOSScoreNav(
                     sheet = sheet,
                     onDone = { nav = nav.copy(detail = null) }
                 )
+            }
+        }
+        // over everything, with its own back handling
+        if (s.preferences) {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                PreferencesScreen(onDone = { nav = nav.copy(preferences = false) })
             }
         }
         // registered after the viewer on purpose: BackHandler resolves last-registered-first, so with

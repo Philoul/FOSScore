@@ -15,14 +15,20 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -251,21 +257,38 @@ internal fun PanelOverlay(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
+    // with the icon bar, the panel unfolds from it like a tab, as wide as it, and the scrim starts
+    // under it: the bar stays lit, so one tap goes from a panel to the next
+    val icons = LocalChromeStyle.current == ChromeStyle.ICONS
+    // under the status bar at least, when the bar at the top is hidden
+    val top = maxOf(LocalPanelTop.current, WindowInsets.systemBars.asPaddingValues().calculateTopPadding())
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
-            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
-        contentAlignment = alignment,
+            .then(
+                if (icons) {
+                    Modifier
+                        .padding(top = top)
+                        .background(Color.Black.copy(alpha = 0.2f))
+                        .pointerInput(Unit) { detectTapGestures { onDismiss() } }
+                        // the panel clear of a navigation bar on the side or at the bottom
+                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                } else {
+                    Modifier
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .pointerInput(Unit) { detectTapGestures { onDismiss() } }
+                }
+            ),
+        contentAlignment = if (icons) Alignment.TopStart else alignment,
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = if (icons) RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp) else RoundedCornerShape(16.dp),
+            shadowElevation = if (icons) 6.dp else 0.dp,
             // swallow taps on the panel: without this they reach the scrim behind and dismiss
-            modifier = Modifier
-                .padding(top = LocalPanelTop.current)
-                .widthIn(max = maxWidth)
-                .padding(16.dp)
-                .pointerInput(Unit) { detectTapGestures { } },
+            modifier = (
+                if (icons) Modifier.padding(horizontal = 12.dp).fillMaxWidth()
+                else Modifier.padding(top = LocalPanelTop.current).widthIn(max = maxWidth).padding(16.dp)
+            ).pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(
                 modifier = Modifier
@@ -348,9 +371,13 @@ internal fun StepperRow(
     }
 }
 
+// the pause in the typing after which a number typed applies
+private const val TYPED_PAUSE_MS = 800
+
 /**
  * − [value] +, as AndroidAPS's NumberInputRow: the value is typed in place (kept with Done or when
- * the field loses focus, and brought into [range], shown under the field while typing), and − / +
+ * the field loses focus, and brought into [range], shown under the field while typing; a value in
+ * [range] also applies once the typing pauses), and − / +
  * move it to the next multiple of [step] on each press, at once (not on release), repeating while
  * held after a short wait.
  */
@@ -369,6 +396,7 @@ internal fun NumberFieldRow(
 ) {
     // the held button reads the value it changes, not the one it saw when the press began
     val current by rememberUpdatedState(value)
+    val apply by rememberUpdatedState(onValue)
     val focus = LocalFocusManager.current
     var text by remember { mutableStateOf(TextFieldValue(value.toString())) }
     var focused by remember { mutableStateOf(false) }
@@ -376,6 +404,13 @@ internal fun NumberFieldRow(
     val wrong = typed == null || typed !in range
     // − / + and other controls change the value from outside the field
     LaunchedEffect(value) { if (typed != value) text = TextFieldValue(value.toString()) }
+    // a value typed is laid out once the typing pauses, the field still open: its result shows
+    // without leaving the panel (the keyboard closed with Back kept the focus, so nothing changed)
+    LaunchedEffect(text.text) {
+        val live = typedToApply(text.text, range, current) ?: return@LaunchedEffect
+        delay(TYPED_PAUSE_MS.milliseconds)
+        apply(live)
+    }
     fun keep() {
         val kept = (typed ?: current).coerceIn(range)
         text = TextFieldValue(kept.toString())
@@ -423,6 +458,13 @@ internal fun NumberFieldRow(
         )
     }
 }
+
+/**
+ * The value typed in a number field to lay out now, the field still open: a whole number in
+ * [range] other than [current]; null while it is not one (still being typed, out of range).
+ */
+internal fun typedToApply(text: String, range: IntRange, current: Int): Int? =
+    text.toIntOrNull()?.takeIf { it in range && it != current }
 
 /** The next multiple of [step] above [value] (direction 1) or below it (-1): 87 › 90 or 85 by 5. */
 internal fun stepped(value: Int, step: Int, direction: Int): Int =

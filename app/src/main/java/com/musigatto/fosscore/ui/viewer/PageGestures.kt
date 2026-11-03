@@ -19,8 +19,6 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
-import com.musigatto.fosscore.library.isTextStamp
-import com.musigatto.fosscore.ui.viewer.hitTextStamp
 import kotlin.math.abs
 
 // Zoom cap. Reference viewers do NOT scale the page with a transform: they redraw it at the
@@ -70,6 +68,10 @@ internal fun Modifier.pageGestures(
     penWidthPx: Float,
     eraserPx: Float,
     activeColor: Int?,
+    // SHAPE: the kind in hand and the width of the next shape (px at zoom 1)
+    shapeKind: ShapeKind,
+    shapeWidthPx: Float,
+    shapeFilled: Boolean,
     loupeAt: Offset?,
     zoom: ZoomState,
     zoomFrame: ZoomFrame,
@@ -122,6 +124,9 @@ internal fun Modifier.pageGestures(
     val currentEraserPx by rememberUpdatedState(eraserPx)
     val currentPenWidth by rememberUpdatedState(penWidthPx)
     val currentActiveColor by rememberUpdatedState(activeColor)
+    val currentShapeKind by rememberUpdatedState(shapeKind)
+    val currentShapeWidth by rememberUpdatedState(shapeWidthPx)
+    val currentShapeFilled by rememberUpdatedState(shapeFilled)
 
     // touch noise, the double-tap window and the swipe that turns a page: they belong to the
     // gesture, so they are read here
@@ -186,6 +191,11 @@ internal fun Modifier.pageGestures(
             var pickedText: Stamp? = null
             var inkActive = false
             var inkPts = mutableListOf<Offset>()
+            // SHAPE: the drag's two ends make the shape, so only the start point is captured on
+            // down; the live end is tracked in the move loop and the points come out on release
+            var shapeActive = false
+            var shapeFrom = Offset.Zero
+            var shapeTo = Offset.Zero
             var eraserActive = false
             var eraserPath = mutableListOf<Offset>()
             var scaleF = 1f   // accumulated handle factor (always from startPos)
@@ -267,11 +277,16 @@ internal fun Modifier.pageGestures(
                 inkPts.add(downF)
                 onInkPreview(listOf(downF))
             }
+            // the shape starts where the finger landed; the matte stands it down like the pen
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SHAPE && !onMatte) {
+                shapeActive = true
+                shapeFrom = downF
+                shapeTo = downF
+            }
             // stamp armed on an empty spot: a long press starts the loupe, so the finger
             // does not hide the exact place the stamp lands
             var lastPlacePos = down.position
-            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.STAMP &&
-                movingStamp == null && movingStrokes == null
+            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.STAMP
             ) {
                 onLoupeAnchor(down.position)
             }
@@ -355,6 +370,42 @@ internal fun Modifier.pageGestures(
                                 )
                                 editor.addInk(currentPage, grouped, PageEdit(currentPageStamps, currentPageStrokes))
                             }
+                        } else if (shapeActive) {
+                            onInkPreview(emptyList())
+                            val sheet = currentSheetId
+                            val dragPx = (shapeTo - shapeFrom).getDistance() * zoom.transform.scale
+                            // a drag, not a tap: under the touch slop the shape never commits
+                            // (the SELECT tool is the one that deselects; the pen taps the same way)
+                            if (sheet != null && currentPageFit.width > 0f &&
+                                dragPx >= touchSlopPx
+                            ) {
+                                // filled is only for the closures: a portrait as a drawn arrow
+                                // or a shape-less line is a shape-less "solid" with no inside to fill
+                                val kind = if (currentShapeFilled && currentShapeKind.canFill) {
+                                    Stroke.SHAPE_FILLED
+                                } else {
+                                    Stroke.SHAPE
+                                }
+                                editor.addInk(
+                                    currentPage,
+                                    Stroke(
+                                        sheetId = sheet,
+                                        page = currentPage,
+                                        points = encodePoints(
+                                            shapePoints(
+                                                currentShapeKind,
+                                                shapeFrom,
+                                                shapeTo,
+                                                arrowHeadPx(currentShapeWidth)
+                                            ).map { pxToNormalized(it, currentHitFit) }
+                                        ),
+                                        width = penWidthPxToFrac(currentShapeWidth, currentHitFit),
+                                        color = currentActiveColor,
+                                        kind = kind,
+                                    ),
+                                    PageEdit(currentPageStamps, currentPageStrokes),
+                                )
+                            }
                         } else if (eraserActive) {
                             val path = eraserPath
                             onInkPreview(emptyList())
@@ -373,8 +424,11 @@ internal fun Modifier.pageGestures(
                                     if (runs.size == 1 && runs[0].size == ptsPx.size) {
                                         // untouched
                                     } else {
+                                        // the whole stroke goes; a shape deletes whole, whether
+                                        // solid or outline: a cut rectangle that loses one side is
+                                        // no shape
                                         goneStrokes.add(st)
-                                        runs.forEach { r ->
+                                        if (!Stroke.isShape(st.kind)) runs.forEach { r ->
                                             newRuns.add(
                                                 st.copy(
                                                     id = 0,
@@ -597,7 +651,31 @@ internal fun Modifier.pageGestures(
                             continue
                         }
                     }
-    
+
+                    if (shapeActive) {
+                        if (pressed.size > 1) {
+                            // a second finger arrived: drop the shape and let the pinch zoom
+                            shapeActive = false
+                            onInkPreview(emptyList())
+                        } else {
+                            val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                            shapeTo = pagePoint(tracking.position)
+                            // the same geometry as on release: the preview never lies about
+                            // what will be committed
+                            onInkPreview(
+                                shapePoints(
+                                    currentShapeKind,
+                                    shapeFrom,
+                                    shapeTo,
+                                    arrowHeadPx(currentShapeWidth)
+                                )
+                            )
+                            prevCentroid = tracking.position
+                            event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+                            continue
+                        }
+                    }
+
                     if (eraserActive) {
                         if (pressed.size > 1) {
                             eraserActive = false

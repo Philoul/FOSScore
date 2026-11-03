@@ -123,6 +123,10 @@ fun stampsTouched(
     }
     points.add(path.last())
     return stamps.filter { st ->
+        // ponytail: the hit is the SQUARE of stampRect for every row, including text stamps
+        // (#35): a wide wrapped lyric erases by its square, so its tail can survive the pass.
+        // If the eraser ever feels blind over lyrics, stampRect(st, fit).let { r -> text rects
+        // first (rect = textRects[st.id] ?: r) } is the upgrade — it needs the measured map here.
         val r = stampRect(st, fit)
         points.any { p ->
             p.x >= r.left - radiusPx && p.x <= r.right + radiusPx &&

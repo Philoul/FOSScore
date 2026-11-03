@@ -122,6 +122,10 @@ fun groupForStroke(
  * handwriting-segmentation literature), union-find over the pairs, thresholded by the median stroke
  * height so it follows the size the user writes at.
  *
+ * A shape ([Stroke.isShape]) is never a letter: it is its own object, so the word distance is not
+ * consulted for it. Two boxes drawn one on the other, or a box over the ink around it, are picked
+ * one at a time — which is what the user drew.
+ *
  * ponytail: O(n²) over the page's strokes; a page holds a few hundred, and the result is cached by
  * the caller. Upgrade only if a page with thousands of strokes ever lags.
  */
@@ -142,6 +146,9 @@ fun groupInk(strokes: List<Stroke>, fit: RectPx): List<InkGroup> {
     }
     for (i in strokes.indices) {
         for (j in i + 1 until strokes.size) {
+            // a shape is its own object: no word joins it, neither another shape nor the ink
+            // drawn next to it, so it is selected alone
+            if (Stroke.isShape(strokes[i].kind) || Stroke.isShape(strokes[j].kind)) continue
             val gi = strokes[i].groupId
             val gj = strokes[j].groupId
             val together = if (gi != 0L || gj != 0L) {

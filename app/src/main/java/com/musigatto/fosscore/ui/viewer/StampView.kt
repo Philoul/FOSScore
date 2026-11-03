@@ -65,10 +65,14 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
     DECRESC(0xE53F, R.string.stamp_decresc),
     UPBOW(0xE612, R.string.stamp_upbow),
     DOWNBOW(0xE610, R.string.stamp_downbow),
+    ARPEGGIO_UP(0xE634, R.string.stamp_arpeggio_up),
+    ARPEGGIO_DOWN(0xE635, R.string.stamp_arpeggio_down),
     ACCENT(0xE4A0, R.string.stamp_accent),
     STACCATO(0xE4A2, R.string.stamp_staccato),
     TENUTO(0xE4A4, R.string.stamp_tenuto),
+    // breath mark (comma) lives with the fermata in SMuFL's "holds and pauses" range
     FERMATA(0xE4C0, R.string.stamp_fermata),
+    BREATH_COMMA(0xE4CE, R.string.stamp_breath_comma),
     SHARP(0xE262, R.string.stamp_sharp),
     FLAT(0xE260, R.string.stamp_flat),
     NATURAL(0xE261, R.string.stamp_natural),
@@ -79,8 +83,12 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
     // one is ornamentMordent (E56D, the wavy line with the stroke through it)
     MORDENT_UP(0xE56C, R.string.stamp_mordent_up),
     MORDENT_DOWN(0xE56D, R.string.stamp_mordent_down),
+    TURN(0xE567, R.string.stamp_turn),
     ACCIACCATURA(0xE560, R.string.stamp_acciaccatura),
     APPOGGIATURA(0xE562, R.string.stamp_appoggiatura),
+    // piano pedaling: keyboardPedalPed = "Ped." mark, keyboardPedalUp = the release mark
+    PEDAL(0xE650, R.string.stamp_pedal),
+    PEDAL_RELEASE(0xE655, R.string.stamp_pedal_release),
     // fingering 6-9 sit apart from 0-5 in SMuFL: 0-5 are ED10-ED15, 6-9 are ED24-ED27
     FINGERING_0(0xED10, null),
     FINGERING_1(0xED11, null),
@@ -97,8 +105,8 @@ enum class StampSymbol(val codepoint: Int, @param:StringRes val descRes: Int?) {
 // tint colors that read well on light and dark backgrounds. White stores as white; in negative
 // mode inkTint renders it BLACK, good for painting over the page's own (now white) notes. On a
 // plain white page with negative off it blends in — that is the nature of a white ink.
-// the stamps' panel: eight symbols a row (and the eight colours on one), so the 37 symbols take
-// five rows, not ten, and the panel fits above or below the bar on a phone upright
+// the stamps' panel: eight symbols a row (and the eight colours on one), so the 43 symbols take
+// six rows, and the panel fits above or below the bar on a phone upright
 private const val STAMP_COLUMNS = 8
 
 val SWATCH_COLORS = listOf(

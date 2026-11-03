@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Build
@@ -79,6 +80,7 @@ object Settings {
     private const val PREFS = "fosscore_settings"
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_THEME = "theme"
+    private const val KEY_SHORTCUTS = "key_shortcuts"
     private const val KEY_DIM = "dim"
     private const val KEY_INVERT = "invert"
     private const val KEY_HALF_PAGE = "half_page_"
@@ -91,6 +93,7 @@ object Settings {
     const val LAST_PAGE_KEPT_MS = 30 * 60 * 1000L
     private const val KEY_STAMP_PX = "stamp_px"
     private const val KEY_TEXT_PX = "text_px"
+    private const val KEY_SHAPE_PX = "shape_px"
     private const val KEY_ANNOTATION_TOOL = "annotation_tool"
     private const val KEY_MUSIC_SIZE = "music_size_"
     private const val KEY_TRANSPOSE = "transpose_"
@@ -118,6 +121,7 @@ object Settings {
     private const val KEY_MET_ACCENT = "metronome_accent"
     private const val KEY_MET_VOLUME = "metronome_volume"
     private const val KEY_TURN_AHEAD = "turn_ahead"
+    private const val KEY_CHROME_STYLE = "top_bar"
 
     fun language(context: Context): AppLanguage =
         AppLanguage.of(context.prefs().getString(KEY_LANGUAGE, null))
@@ -126,6 +130,19 @@ object Settings {
         context.prefs().edit {
             if (language.tag == null) remove(KEY_LANGUAGE) else putString(KEY_LANGUAGE, language.tag)
         }
+    }
+
+    /** The keys the viewer answers: the defaults until the user changes them in the preferences. */
+    fun keyShortcuts(context: Context): KeyShortcuts =
+        KeyShortcuts.parse(context.prefs().getString(KEY_SHORTCUTS, null))
+
+    fun setKeyShortcuts(context: Context, shortcuts: KeyShortcuts) {
+        context.prefs().edit { putString(KEY_SHORTCUTS, shortcuts.format()) }
+    }
+
+    /** Back to the default keys, and to the new defaults of a later version. */
+    fun resetKeyShortcuts(context: Context) {
+        context.prefs().edit { remove(KEY_SHORTCUTS) }
     }
 
     fun themeMode(context: Context): ThemeMode =
@@ -170,6 +187,26 @@ object Settings {
         context.prefs().edit { putBoolean(KEY_KEEP_SCREEN_ON, value) }
     }
 
+    // the look of the viewer's top bar, chosen in the preferences: the menu by default
+    fun chromeStyle(context: Context): ChromeStyle = ChromeStyle.of(context.prefs().getString(KEY_CHROME_STYLE, null))
+
+    fun setChromeStyle(context: Context, value: ChromeStyle) {
+        context.prefs().edit { putString(KEY_CHROME_STYLE, value.name) }
+    }
+
+    /**
+     * Calls [onChange] whenever the look of the top bar changes: the preferences open over a score
+     * that stays on screen. Returns what stops it.
+     */
+    fun onChromeStyleChange(context: Context, onChange: (ChromeStyle) -> Unit): () -> Unit {
+        val prefs = context.prefs()
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_CHROME_STYLE) onChange(chromeStyle(context))
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     /** When the score at [uri] was opened last (ms since 1970), 0 if never. */
     fun openedAt(context: Context, uri: String): Long = context.prefs().getLong(KEY_OPENED_AT + uri, 0L)
 
@@ -209,6 +246,14 @@ object Settings {
 
     fun setTextPx(context: Context, px: Float) {
         context.prefs().edit { putFloat(KEY_TEXT_PX, px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
+    }
+
+    // thickness a new shape starts with, saved from the shapes panel
+    fun shapePx(context: Context): Float =
+        context.prefs().getFloat(KEY_SHAPE_PX, DEFAULT_SHAPE_PX)
+
+    fun setShapePx(context: Context, px: Float) {
+        context.prefs().edit { putFloat(KEY_SHAPE_PX, px.coerceIn(MIN_PEN_PX, MAX_PEN_PX)) }
     }
 
     /** The tool the annotation bar starts with: the last one used, the arrow the very first time. */

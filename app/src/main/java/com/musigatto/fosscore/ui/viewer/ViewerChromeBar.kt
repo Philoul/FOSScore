@@ -399,12 +399,6 @@ internal fun AnnotationBar(
                             panelWidth = it.width
                             panelHeight = it.height
                         }
-                        // solid like the bar it drops from: a transparent panel would overlap the
-                        // sheet's notes and become unreadable. The bar's own drag handles that fade
-                        .background(
-                            MaterialTheme.colorScheme.surface,
-                            RoundedCornerShape(12.dp)
-                        )
                         // a panel taller than that room scrolls
                         .heightIn(max = with(LocalDensity.current) { panelPlace.maxHeightPx.coerceAtLeast(0).toDp() })
                         .verticalScroll(rememberScrollState())
@@ -432,42 +426,42 @@ internal fun AnnotationBar(
                             lead = { ColorChoices(active = penColor, invert = invert, onPick = onPenColor) },
                         )
 
-                        AnnotationTool.SHAPE -> Column {
-                            // the kind in hand: glyphs as buttons, the same radio-set look as the
-                            // tools themselves
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                listOf(
-                                    ShapeKind.LINE to stringResource(R.string.shape_line),
-                                    ShapeKind.RECT to stringResource(R.string.shape_rect),
-                                    ShapeKind.ELLIPSE to stringResource(R.string.shape_ellipse),
-                                    ShapeKind.ARROW to stringResource(R.string.shape_arrow),
-                                ).forEach { (kind, label) ->
-                                    ToolButton(
-                                        active = shapeKind == kind,
-                                        panelOpen = false,
-                                        label = label,
-                                        onClick = { onShapeKind(kind) },
-                                    ) { ShapeGlyph(kind) }
+                        AnnotationTool.SHAPE -> ToolSizePanel(
+                            label = stringResource(R.string.thickness_label),
+                            value = shapeWidthPx,
+                            range = MIN_PEN_PX..MAX_PEN_PX,
+                            onValue = onShapeWidth,
+                            // the kind in hand and whether the next one closes and fills: the same
+                            // glyphs as buttons, the same radio-set look as the tools themselves
+                            lead = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(
+                                        ShapeKind.LINE to stringResource(R.string.shape_line),
+                                        ShapeKind.RECT to stringResource(R.string.shape_rect),
+                                        ShapeKind.ELLIPSE to stringResource(R.string.shape_ellipse),
+                                        ShapeKind.ARROW to stringResource(R.string.shape_arrow),
+                                    ).forEach { (kind, label) ->
+                                        ToolButton(
+                                            active = shapeKind == kind,
+                                            panelOpen = false,
+                                            label = label,
+                                            onClick = { onShapeKind(kind) },
+                                        ) { ShapeGlyph(kind) }
+                                    }
                                 }
-                            }
-                            // fill is only for the closures: a line or an arrow has no inside
-                            if (shapeKind.canFill) {
-                                OptionRow(
-                                    label = stringResource(R.string.shape_fill),
-                                    checked = shapeFilled,
-                                    role = Role.Checkbox,
-                                ) { onShapeFilled(!shapeFilled) }
-                            }
-                            ToolSizePanel(
-                                label = stringResource(R.string.thickness_label),
-                                value = shapeWidthPx,
-                                range = MIN_PEN_PX..MAX_PEN_PX,
-                                onValue = onShapeWidth,
-                                lead = { ColorChoices(active = shapeColor, invert = invert, onPick = onShapeColor) },
-                                onSaveDefault = onSaveShapeDefault,
-                                isDefault = shapeWidthPx.roundToInt() == defaultShapePx.roundToInt(),
-                            )
-                        }
+                                // fill is only for the closures: a line or an arrow has no inside
+                                if (shapeKind.canFill) {
+                                    OptionRow(
+                                        label = stringResource(R.string.shape_fill),
+                                        checked = shapeFilled,
+                                        role = Role.Checkbox,
+                                    ) { onShapeFilled(!shapeFilled) }
+                                }
+                                ColorChoices(active = shapeColor, invert = invert, onPick = onShapeColor)
+                            },
+                            onSaveDefault = onSaveShapeDefault,
+                            isDefault = shapeWidthPx.roundToInt() == defaultShapePx.roundToInt(),
+                        )
 
                         AnnotationTool.ERASER -> ToolSizePanel(
                             label = stringResource(R.string.size_label),

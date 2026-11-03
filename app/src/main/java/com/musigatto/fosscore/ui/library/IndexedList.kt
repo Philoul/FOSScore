@@ -84,7 +84,8 @@ private fun LetterBar(letter: String) {
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 2.dp),
+            // level with the titles of the rows under it
+            .padding(horizontal = 16.dp, vertical = 2.dp),
     )
 }
 

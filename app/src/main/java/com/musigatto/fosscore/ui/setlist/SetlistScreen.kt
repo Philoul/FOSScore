@@ -436,7 +436,7 @@ private fun LibraryPicker(library: LibraryRepository, present: Map<Long, Int>, o
                     .background(if (times > 0) inSetlist else MaterialTheme.colorScheme.surface)
                     .clickable { onAdd(sheet) },
             ) {
-                SheetText(sheet, Modifier.fillMaxWidth().padding(start = 12.dp, end = 40.dp, top = 8.dp, bottom = 8.dp))
+                SheetText(sheet, Modifier.fillMaxWidth().padding(start = 16.dp, end = 40.dp, top = 8.dp, bottom = 8.dp))
                 // how many times it is in the setlist, in the top right corner: a score played
                 // twice shows at a glance
                 if (times > 0) {

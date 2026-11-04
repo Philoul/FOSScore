@@ -280,8 +280,8 @@ fun strokeBounds(pts: List<Offset>): RectPx {
     return RectPx(l, t, r - l, b - t)
 }
 
-fun scalePoints(pts: List<Offset>, center: Offset, factor: Float): List<Offset> =
-    pts.map { Offset(center.x + (it.x - center.x) * factor, center.y + (it.y - center.y) * factor) }
+fun scalePoints(pts: List<Offset>, center: Offset, sx: Float, sy: Float): List<Offset> =
+    pts.map { Offset(center.x + (it.x - center.x) * sx, center.y + (it.y - center.y) * sy) }
 
 // the stroke under the finger (tolerance = the handle or the thickness, whichever is bigger)
 fun hitStroke(pos: Offset, strokes: List<Stroke>, fit: RectPx): Stroke? {

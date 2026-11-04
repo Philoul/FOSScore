@@ -117,6 +117,9 @@ internal fun toolPanelPlace(
 // the width the annotation bar takes on one row: ✕, the five tools, the actions, ✓ and the grip
 private const val ONE_ROW_MIN_DP = 570f
 
+// shapes a row in the shapes panel: the first five are the musical ones
+private const val SHAPE_COLUMNS = 5
+
 /** Whether the annotation bar holds on one row at [widthDp]; on two rows otherwise (a phone upright). */
 internal fun annotationBarFitsOneRow(widthDp: Float): Boolean = widthDp >= ONE_ROW_MIN_DP
 
@@ -437,19 +440,18 @@ internal fun AnnotationBar(
                             // the kind in hand and whether the next one closes and fills: the same
                             // glyphs as buttons, the same radio-set look as the tools themselves
                             lead = {
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    listOf(
-                                        ShapeKind.LINE to stringResource(R.string.shape_line),
-                                        ShapeKind.RECT to stringResource(R.string.shape_rect),
-                                        ShapeKind.ELLIPSE to stringResource(R.string.shape_ellipse),
-                                        ShapeKind.ARROW to stringResource(R.string.shape_arrow),
-                                    ).forEach { (kind, label) ->
-                                        ToolButton(
-                                            active = shapeKind == kind,
-                                            panelOpen = false,
-                                            label = label,
-                                            onClick = { onShapeKind(kind) },
-                                        ) { ShapeGlyph(kind) }
+                                // nine kinds in rows of five: the musical ones on the first row,
+                                // the same glyphs as buttons, the same radio-set look as the tools
+                                ShapeKind.entries.chunked(SHAPE_COLUMNS).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        row.forEach { kind ->
+                                            ToolButton(
+                                                active = shapeKind == kind,
+                                                panelOpen = false,
+                                                label = stringResource(kind.labelRes),
+                                                onClick = { onShapeKind(kind) },
+                                            ) { ShapeGlyph(kind) }
+                                        }
                                     }
                                 }
                                 // fill is only for the closures: a line or an arrow has no inside

@@ -4,7 +4,6 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.geometry.Offset
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stroke
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -120,14 +119,20 @@ fun shapePoints(kind: ShapeKind, from: Offset, to: Offset, headPx: Float): List<
             return arcPoints(from, to, (from + to) / 2f - side * sag)
         }
         ShapeKind.CRESCENDO -> {
-            // hairpin: three points, open V. drag from shut end toward open end.
-            // left→right = crescendo < (shut at from), right→left = decrescendo > (shut at from).
-            val midY = (from.y + to.y) / 2f
-            val h = (abs(from.y - to.y) / 2f).coerceAtLeast(1f)
-            val shut = from
-            val openTop = Offset(to.x, midY - h)
-            val openBottom = Offset(to.x, midY + h)
-            return listOf(shut, openTop, openBottom)
+            // Like a rectangle, the drag's bounding box sets both dimensions. The x direction
+            // still decides which end is shut: left-to-right crescendos, right-to-left decrescendos.
+            val left = min(from.x, to.x)
+            val right = max(from.x, to.x)
+            val top = min(from.y, to.y)
+            val bottom = max(from.y, to.y)
+            val centerY = (top + bottom) / 2f
+            val tipX = if (to.x >= from.x) left else right
+            val mouthX = if (to.x >= from.x) right else left
+            return listOf(
+                Offset(mouthX, top),
+                Offset(tipX, centerY),
+                Offset(mouthX, bottom),
+            )
         }
         ShapeKind.TUPLET -> {
             // the bracket over the notes: a line with a tick down at each end

@@ -2,7 +2,6 @@ package com.musigatto.fosscore.ui.viewer
 
 import androidx.compose.ui.geometry.Offset
 import com.musigatto.fosscore.library.Stroke
-import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -143,22 +142,40 @@ class ShapeGeometryTest {
     }
 
     @Test
-    fun aHairpinIsThreePointsOpenVFromShutToOpen() {
-        // left-to-right = crescendo < : shut at from (left), open at to (right)
-        val from = Offset(100f, 100f)
-        val to = Offset(300f, 150f)
+    fun aHairpinUsesTheDragBoxForItsWidthAndHeight() {
+        val from = Offset(100f, 120f)
+        val to = Offset(300f, 80f)
         val pts = shapePoints(ShapeKind.CRESCENDO, from, to, headPx = 0f)
         assertEquals(3, pts.size)
-        assertEquals(from, pts[0]) // shut end
-        val midY = (from.y + to.y) / 2f
-        val h = abs(from.y - to.y) / 2f
-        assertEquals(Offset(to.x, midY - h), pts[1]) // open top
-        assertEquals(Offset(to.x, midY + h), pts[2]) // open bottom
-        // right-to-left = decrescendo > : shut at from (right), open at to (left)
-        val rev = shapePoints(ShapeKind.CRESCENDO, to, from, headPx = 0f)
-        assertEquals(to, rev[0]) // shut end
-        assertEquals(Offset(from.x, midY - h), rev[1]) // open top
-        assertEquals(Offset(from.x, midY + h), rev[2]) // open bottom
+        assertEquals(Offset(100f, 100f), pts[1])
+        assertEquals(Offset(300f, 80f), pts[0])
+        assertEquals(Offset(300f, 120f), pts[2])
+    }
+
+    @Test
+    fun aHorizontalHairpinDoesNotGrowWithItsLength() {
+        val pts = shapePoints(
+            ShapeKind.CRESCENDO,
+            Offset(100f, 100f),
+            Offset(300f, 100f),
+            headPx = 0f,
+        )
+        assertEquals(Offset(300f, 100f), pts[0])
+        assertEquals(Offset(100f, 100f), pts[1])
+        assertEquals(Offset(300f, 100f), pts[2])
+    }
+
+    @Test
+    fun draggingRightToLeftKeepsTheMouthOnTheLeft() {
+        val pts = shapePoints(
+            ShapeKind.CRESCENDO,
+            Offset(300f, 80f),
+            Offset(100f, 120f),
+            headPx = 0f,
+        )
+        assertEquals(Offset(300f, 100f), pts[1])
+        assertEquals(Offset(100f, 80f), pts[0])
+        assertEquals(Offset(100f, 120f), pts[2])
     }
 
     @Test

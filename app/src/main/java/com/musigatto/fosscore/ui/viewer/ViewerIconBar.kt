@@ -56,7 +56,7 @@ val LocalChromeStyle = compositionLocalOf { ChromeStyle.MENU }
 // the entries that get an icon in the bar, in this order; the others, not built yet, stay in the
 // full menu behind ⋯
 private val BAR_ITEMS = listOf(
-    ViewerMenuItem.LIBRARY, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT,
+    ViewerMenuItem.LIBRARY, ViewerMenuItem.SETLIST, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT,
     ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK, ViewerMenuItem.SETTINGS,
 )
 

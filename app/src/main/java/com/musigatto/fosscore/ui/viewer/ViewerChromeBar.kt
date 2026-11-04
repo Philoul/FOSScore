@@ -435,16 +435,11 @@ internal fun AnnotationBar(
                             // glyphs as buttons, the same radio-set look as the tools themselves
                             lead = {
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    listOf(
-                                        ShapeKind.LINE to stringResource(R.string.shape_line),
-                                        ShapeKind.RECT to stringResource(R.string.shape_rect),
-                                        ShapeKind.ELLIPSE to stringResource(R.string.shape_ellipse),
-                                        ShapeKind.ARROW to stringResource(R.string.shape_arrow),
-                                    ).forEach { (kind, label) ->
+                                    ShapeKind.entries.forEach { kind ->
                                         ToolButton(
                                             active = shapeKind == kind,
                                             panelOpen = false,
-                                            label = label,
+                                            label = stringResource(kind.labelRes),
                                             onClick = { onShapeKind(kind) },
                                         ) { ShapeGlyph(kind) }
                                     }

@@ -95,7 +95,7 @@ private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, filled: 
         else DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 
-private fun DrawScope.drawInkPath(pts: List<Offset>, color: Color, widthPx: Float, filled: Boolean = false) {
+private fun DrawScope.drawInk(pts: List<Offset>, color: Color, widthPx: Float, filled: Boolean = false) {
     if (pts.size < 2) return
     drawInk(inkPath(pts), color, widthPx, filled)
 }
@@ -539,7 +539,7 @@ internal fun PageCanvas(
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             inPage(pageFit, offsetX(), offsetY(), scale()) {
                                 dragStrokes?.forEach { ds ->
-                                    drawInkPath(
+                                    drawInk(
                                         strokePointsPx(ds, hitFit),
                                         inkTint(ds.color, invert),
                                         ds.width * hitFit.height,
@@ -549,7 +549,7 @@ internal fun PageCanvas(
                                 // the shape being aimed draws filled while its panel says so:
                                 // the preview never lies about what will be committed
                                 if (inkPreview.size >= 2) {
-                                    drawInkPath(inkPreview, previewColor, previewWidthPx, previewFilled)
+                                    drawInk(inkPreview, previewColor, previewWidthPx, previewFilled)
                                 }
                             }
                         }

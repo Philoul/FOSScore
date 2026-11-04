@@ -1,6 +1,8 @@
 package com.musigatto.fosscore.ui.viewer
 
+import androidx.annotation.StringRes
 import androidx.compose.ui.geometry.Offset
+import com.musigatto.fosscore.R
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -11,7 +13,12 @@ import kotlin.math.PI
  * annotation machinery (draw, select, move, erase, undo, backup) works on them with no new code.
  * [shapePoints] is the whole geometry, called on release with the drag's two ends.
  */
-enum class ShapeKind { LINE, RECT, ELLIPSE, ARROW }
+enum class ShapeKind(@param:StringRes val labelRes: Int) {
+    LINE(R.string.shape_line),
+    RECT(R.string.shape_rect),
+    ELLIPSE(R.string.shape_ellipse),
+    ARROW(R.string.shape_arrow),
+}
 
 /** Fill is only for what has an inside: a line or an arrow has nothing to paint. */
 val ShapeKind.canFill: Boolean get() = this == ShapeKind.RECT || this == ShapeKind.ELLIPSE

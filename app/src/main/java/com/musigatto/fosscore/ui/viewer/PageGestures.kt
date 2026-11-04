@@ -196,6 +196,10 @@ internal fun Modifier.pageGestures(
             var shapeActive = false
             var shapeFrom = Offset.Zero
             var shapeTo = Offset.Zero
+            // the shape from the finger to the finger, with the tool in hand: one call for the
+            // live preview and for what the release commits, so the two cannot drift
+            fun aimedShape(from: Offset, to: Offset) =
+                shapePoints(currentShapeKind, from, to, arrowHeadPx(currentShapeWidth))
             var eraserActive = false
             var eraserPath = mutableListOf<Offset>()
             var scaleF = 1f   // accumulated handle factor (always from startPos)
@@ -392,12 +396,8 @@ internal fun Modifier.pageGestures(
                                         sheetId = sheet,
                                         page = currentPage,
                                         points = encodePoints(
-                                            shapePoints(
-                                                currentShapeKind,
-                                                shapeFrom,
-                                                shapeTo,
-                                                arrowHeadPx(currentShapeWidth)
-                                            ).map { pxToNormalized(it, currentHitFit) }
+                                            aimedShape(shapeFrom, shapeTo)
+                                                .map { pxToNormalized(it, currentHitFit) }
                                         ),
                                         width = penWidthPxToFrac(currentShapeWidth, currentHitFit),
                                         color = currentActiveColor,
@@ -662,14 +662,7 @@ internal fun Modifier.pageGestures(
                             shapeTo = pagePoint(tracking.position)
                             // the same geometry as on release: the preview never lies about
                             // what will be committed
-                            onInkPreview(
-                                shapePoints(
-                                    currentShapeKind,
-                                    shapeFrom,
-                                    shapeTo,
-                                    arrowHeadPx(currentShapeWidth)
-                                )
-                            )
+                            onInkPreview(aimedShape(shapeFrom, shapeTo))
                             prevCentroid = tracking.position
                             event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                             continue

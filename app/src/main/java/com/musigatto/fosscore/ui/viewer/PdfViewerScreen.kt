@@ -1210,6 +1210,12 @@ fun PdfViewerScreen(
                     },
                 )
 
+                // the live stroke: the eraser's red trail, the pen's ink or the shape being aimed
+                val (liveColor, liveWidth) = when (tool) {
+                    AnnotationTool.ERASER -> Color.Red.copy(alpha = 0.4f) to eraserPx * 2f
+                    AnnotationTool.SHAPE -> inkTint(shapeColor, invert) to shapeWidthPx
+                    else -> inkTint(penColor, invert) to penWidthPx
+                }
                 PageCanvas(
                     bitmaps = paper.bitmaps,
                     currentPage = currentPage,
@@ -1235,17 +1241,8 @@ fun PdfViewerScreen(
                     lineBoundaries = if (editing) lineBoundaries else emptyList(),
                     dragStrokes = editor.dragStrokes,
                     inkPreview = inkPreview,
-                    // the live stroke: the eraser's red trail, the pen's ink or the shape being aimed
-                    previewColor = when (tool) {
-                        AnnotationTool.ERASER -> Color.Red.copy(alpha = 0.4f)
-                        AnnotationTool.SHAPE -> inkTint(shapeColor, invert)
-                        else -> inkTint(penColor, invert)
-                    },
-                    previewWidthPx = when (tool) {
-                        AnnotationTool.ERASER -> eraserPx * 2f
-                        AnnotationTool.SHAPE -> shapeWidthPx
-                        else -> penWidthPx
-                    },
+                    previewColor = liveColor,
+                    previewWidthPx = liveWidth,
                     // the same rule the commit uses: fill is only for the closures. A filled
                     // line's preview would be a Fill of its 2-point path — nothing on screen
                     previewFilled = tool == AnnotationTool.SHAPE && shapeFilled && shapeType.canFill,

@@ -160,10 +160,11 @@ fun ShapeGlyph(kind: ShapeKind, modifier: Modifier = Modifier) {
                     style = stroke
                 )
             }
-            // a mouth at the far end, shut at this one
+            // a box hairpin: shut on the left, open on the right (drag left→right)
             ShapeKind.CRESCENDO -> {
-                drawLine(color, Offset(4f * u, 12f * u), Offset(20f * u, 6f * u), strokeWidth = sw)
-                drawLine(color, Offset(4f * u, 12f * u), Offset(20f * u, 18f * u), strokeWidth = sw)
+                drawLine(color, Offset(4f * u, 6f * u), Offset(20f * u, 3f * u), strokeWidth = sw)
+                drawLine(color, Offset(4f * u, 6f * u), Offset(20f * u, 9f * u), strokeWidth = sw)
+                drawLine(color, Offset(20f * u, 3f * u), Offset(20f * u, 9f * u), strokeWidth = sw)
             }
             // the bracket over the notes: a line with a tick down at each end
             ShapeKind.TUPLET -> {

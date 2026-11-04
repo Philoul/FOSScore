@@ -53,8 +53,7 @@ private const val ARC_SEGMENTS = 24
 private const val SLUR_SAG = 0.20f
 private const val TIE_SAG = 0.07f
 
-/** How far a hairpin opens, and the tick at each end of a tuplet bracket, as a share of its length. */
-private const val HAIRPIN_HEIGHT = 0.20f
+/** The tick at each end of a tuplet bracket, as a share of its length. */
 private const val BRACKET_TICK = 0.14f
 private const val TICK_MAX_PX = 28f
 
@@ -120,9 +119,16 @@ fun shapePoints(kind: ShapeKind, from: Offset, to: Offset, headPx: Float): List<
             return arcPoints(from, to, (from + to) / 2f - side * sag)
         }
         ShapeKind.CRESCENDO -> {
-            // a mouth at the far end, shut at the start: drag back and it is a decrescendo
-            val h = len * HAIRPIN_HEIGHT
-            return listOf(to + side * h, from, to - side * h)
+            // the drag box IS the hairpin: shut on the side where the drag started horizontally.
+            // left→right = crescendo (shut left), right→left = decrescendo (shut right).
+            val left = min(from.x, to.x)
+            val right = max(from.x, to.x)
+            val top = min(from.y, to.y)
+            val bottom = max(from.y, to.y)
+            val shutOnLeft = from.x < to.x
+            val shutX = if (shutOnLeft) left else right
+            val openX = if (shutOnLeft) right else left
+            return listOf(Offset(shutX, top), Offset(openX, top), Offset(openX, bottom), Offset(shutX, bottom))
         }
         ShapeKind.TUPLET -> {
             // the bracket over the notes: a line with a tick down at each end

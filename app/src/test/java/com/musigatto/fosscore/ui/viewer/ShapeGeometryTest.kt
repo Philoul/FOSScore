@@ -142,17 +142,22 @@ class ShapeGeometryTest {
     }
 
     @Test
-    fun aHairpinShutsWhereTheFingerLandedAndOpensWhereItLeft() {
+    fun aHairpinFillsItsDragBoxShutOnOneSideOpenOnTheOther() {
+        // left-to-right = crescendo: shut on left, open on right
         val from = Offset(100f, 100f)
-        val to = Offset(300f, 100f)
+        val to = Offset(300f, 150f)
         val pts = shapePoints(ShapeKind.CRESCENDO, from, to, headPx = 0f)
-        assertEquals(3, pts.size)
-        assertEquals(from, pts[1])
-        // the mouth is at the far end and opens on both sides of the drag
-        assertEquals(to.x, pts[0].x, 1e-3f)
-        assertEquals(to.x, pts[2].x, 1e-3f)
-        assertEquals(pts[0].y - from.y, -(pts[2].y - from.y), 1e-3f)
-        assertTrue(pts[0].y > from.y && pts[2].y < from.y)
+        assertEquals(4, pts.size) // closed box: shut corner, open top, open bottom, shut corner (closed)
+        assertEquals(Offset(100f, 100f), pts[0]) // shut at from
+        assertEquals(Offset(300f, 100f), pts[1]) // open top
+        assertEquals(Offset(300f, 150f), pts[2]) // open bottom
+        assertEquals(Offset(100f, 150f), pts[3]) // shut bottom
+        // right-to-left = decrescendo: shut on right, open on left
+        val rev = shapePoints(ShapeKind.CRESCENDO, to, from, headPx = 0f)
+        assertEquals(Offset(300f, 100f), rev[0]) // shut at from (now top-right)
+        assertEquals(Offset(100f, 100f), rev[1]) // open top
+        assertEquals(Offset(100f, 150f), rev[2]) // open bottom
+        assertEquals(Offset(300f, 150f), rev[3]) // shut bottom
     }
 
     @Test

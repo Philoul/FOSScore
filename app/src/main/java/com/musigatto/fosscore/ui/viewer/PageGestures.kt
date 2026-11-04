@@ -9,7 +9,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputChange
@@ -20,10 +19,6 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 // Zoom cap. Reference viewers do NOT scale the page with a transform: they redraw it at the
@@ -143,7 +138,6 @@ internal fun Modifier.pageGestures(
     var lastTapPos by remember { mutableStateOf(Offset.Zero) }
 
     return this.pointerInput(Unit) {
-        val gestureScope = CoroutineScope(currentCoroutineContext())
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             if (down.isConsumed) return@awaitEachGesture
@@ -197,19 +191,6 @@ internal fun Modifier.pageGestures(
             var pickedText: Stamp? = null
             var inkActive = false
             var inkPts = mutableListOf<Offset>()
-            var inkPreviewJob: Job? = null
-            fun scheduleInkPreview() {
-                if (inkPreviewJob?.isActive == true) return
-                inkPreviewJob = gestureScope.launch {
-                    withFrameNanos {
-                        inkPreviewJob = null
-                        if (inkActive) {
-                            onInkPreview(inkPts.toList())
-                            InkPerfMetrics.previewPublished(inkPts.size)
-                        }
-                    }
-                }
-            }
             // SHAPE: the drag's two ends make the shape, so only the start point is captured on
             // down; the live end is tracked in the move loop and the points come out on release
             var shapeActive = false
@@ -224,6 +205,9 @@ internal fun Modifier.pageGestures(
             var scaleF = 1f   // accumulated handle factor (always from startPos)
             // handle in use: (base object, grabbed corner) while scaling
             var resizing: Resizing? = null
+            // hit-testing only the rows the DB already knows: a pending row has no stable id yet
+            val committedStamps = currentPageStamps.filter { it.id > 0L }
+            val committedInk = currentInkStrokes.filter { it.id > 0L }
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SELECT) {
                 // a tap re-selects from scratch: the drag box (dragStamp/dragStrokes) still holds
                 // the PREVIOUS selection's position, and the handles would hang there while the
@@ -253,8 +237,6 @@ internal fun Modifier.pageGestures(
                     }
                 }
                 if (resizing == null) {
-                    val committedStamps = currentPageStamps.filter { it.id > 0L }
-                    val committedInk = currentInkStrokes.filter { it.id > 0L }
                     val hitS = hitStamp(downF, committedStamps, currentHitFit, currentTextRects)
                     // A tap selects the WORD, not the single stroke. The grouping is
                     // only needed here, on the tap: doing it on every change made it
@@ -302,7 +284,6 @@ internal fun Modifier.pageGestures(
                 inkPts.add(downF)
                 InkPerfMetrics.beginStroke()
                 onInkPreview(listOf(downF))
-                InkPerfMetrics.previewPublished(1)
             }
             // the shape starts where the finger landed; the matte stands it down like the pen
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SHAPE && !onMatte) {
@@ -322,7 +303,7 @@ internal fun Modifier.pageGestures(
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.TEXT) {
                 pickedText = hitTextStamp(
                     downF,
-                    currentPageStamps.filter { it.id > 0L },
+                    committedStamps,
                     currentTextRects
                 )
             }
@@ -330,7 +311,6 @@ internal fun Modifier.pageGestures(
             try {
                 while (true) {
                     val event = awaitPointerEvent()
-                    if (inkActive) InkPerfMetrics.pointerEvent()
                     val pressed = event.changes.filter { it.pressed }
                     if (pressed.isEmpty()) {
                         onPageTouched(false)
@@ -377,8 +357,6 @@ internal fun Modifier.pageGestures(
                             val saved = pts.size >= 2 && !onMatte && sheet != null &&
                                 currentPageFit.width > 0f
                             InkPerfMetrics.finishStroke(pts.size, saved)
-                            inkPreviewJob?.cancel()
-                            inkPreviewJob = null
                             onInkPreview(emptyList())
                             // local copy: a delegated var cannot be smart cast to Long
                             if (pts.size >= 2 && !onMatte && sheet != null && currentPageFit.width > 0f) {
@@ -448,7 +426,7 @@ internal fun Modifier.pageGestures(
                                 // the eraser always deletes what it grazes: to remove a whole
                                 // word, tap it (that selects it) and press the bin
                                 val goneStamps = stampsTouched(
-                                    currentPageStamps.filter { it.id > 0L },
+                                    committedStamps,
                                     currentHitFit,
                                     path,
                                     radiusPx
@@ -672,8 +650,6 @@ internal fun Modifier.pageGestures(
                             // a second finger arrived: drop the ink and let the pinch zoom
                             inkActive = false
                             inkPts = mutableListOf()
-                            inkPreviewJob?.cancel()
-                            inkPreviewJob = null
                             InkPerfMetrics.cancelStroke()
                             onInkPreview(emptyList())
                         } else {
@@ -684,7 +660,7 @@ internal fun Modifier.pageGestures(
                             // with the zoom
                             if ((p - last).getDistance() >= MIN_SAMPLE_DIST_PX / zoom.transform.scale) {
                                 inkPts.add(p)
-                                scheduleInkPreview()
+                                onInkPreview(inkPts.toList())
                             }
                             prevCentroid = tracking.position
                             event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
@@ -784,8 +760,6 @@ internal fun Modifier.pageGestures(
                     event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                 }
             } finally {
-                inkPreviewJob?.cancel()
-                inkPreviewJob = null
                 InkPerfMetrics.cancelStroke()
                 // a gesture a parent takes over (or that is cancelled) never reaches its
                 // release branch: put the half state back, or the loupe, the ghost stroke and

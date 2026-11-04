@@ -68,8 +68,6 @@ internal class AnnotationViewModel(
     // otherwise eat both stamps at once, since the snapshot was read without them)
     var pendingStamps by mutableStateOf<List<Stamp>>(emptyList())
     private var nextPendingId = -1L
-    private var latestDbStamps: List<Stamp> = emptyList()
-    private var latestDbStrokes: List<Stroke> = emptyList()
     // optimistic delete: the view hides what is gone at once and the DB confirms afterward.
     // ponytail: a Set of ids pruned by settle(); enough, because deleting never brings ids back.
     var hiddenStampIds by mutableStateOf<Set<Long>>(emptySet())
@@ -181,8 +179,6 @@ internal class AnnotationViewModel(
      * freshly written ink).
      */
     fun settle(dbStamps: List<Stamp>, dbStrokes: List<Stroke>) {
-        latestDbStamps = dbStamps
-        latestDbStrokes = dbStrokes
         val liveStamps = dbStamps.map { it.id }.toSet()
         val liveStrokes = dbStrokes.map { it.id }.toSet()
         if (hiddenStampIds.any { it !in liveStamps }) hiddenStampIds = hiddenStampIds intersect liveStamps
@@ -199,11 +195,9 @@ internal class AnnotationViewModel(
             if (settled) dragStrokes = null
         }
         // the DB has this ink already: drop it from the optimistic layer
-        pendingInk = pendingInk.filter { p ->
-            p.id <= 0L || dbStrokes.none { it.id == p.id && it.points == p.points }
-        }
+        pendingInk = pendingInk.filter { p -> dbStrokes.none { it.id == p.id && it.points == p.points } }
         pendingStamps = pendingStamps.filter { p ->
-            p.id <= 0L || dbStamps.none { it.id == p.id && it.x == p.x && it.y == p.y && it.size == p.size }
+            dbStamps.none { it.id == p.id && it.x == p.x && it.y == p.y && it.size == p.size }
         }
     }
 
@@ -268,20 +262,15 @@ internal class AnnotationViewModel(
         pendingInk = pendingInk + optimistic
         viewModelScope.launch {
             try {
-                val insertStartedAt = InkPerfMetrics.databaseInsertStarted()
                 val id = strokes.insert(stroke)
-                InkPerfMetrics.databaseInsertFinished(insertStartedAt, id)
                 when {
                     id <= 0L -> Unit
-                    pendingInk.any { it.id == optimistic.id } -> {
-                        val saved = optimistic.copy(id = id)
-                        pendingInk = pendingInk.map { if (it.id == optimistic.id) saved else it }
-                        if (latestDbStrokes.any {
-                                it.id == id && it.page == saved.page && it.points == saved.points
-                            }) {
-                            pendingInk = pendingInk.filterNot { it.id == id }
+                    pendingInk.any { it.id == optimistic.id } ->
+                        // the real id, so the row can be drawn and hit-tested until settle()
+                        // sees Room's flow and drops the copy
+                        pendingInk = pendingInk.map {
+                            if (it.id == optimistic.id) optimistic.copy(id = id) else it
                         }
-                    }
                     else -> strokes.delete(stroke.copy(id = id))
                 }
             } finally {
@@ -340,12 +329,10 @@ internal class AnnotationViewModel(
                 when {
                     id <= 0L -> Unit
                     pendingStamps.any { it.id == optimistic.id } -> {
-                        val saved = optimistic.copy(id = id)
-                        pendingStamps = pendingStamps.map { if (it.id == optimistic.id) saved else it }
-                        selectedId = id
-                        if (latestDbStamps.any { it.id == id && it.page == saved.page }) {
-                            pendingStamps = pendingStamps.filterNot { it.id == id }
+                        pendingStamps = pendingStamps.map {
+                            if (it.id == optimistic.id) optimistic.copy(id = id) else it
                         }
+                        selectedId = id
                     }
                     else -> stamps.delete(stamp.copy(id = id))
                 }

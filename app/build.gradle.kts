@@ -73,7 +73,6 @@ ksp {
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
-    debugImplementation("androidx.compose.runtime:runtime-tracing")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)

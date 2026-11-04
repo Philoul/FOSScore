@@ -551,9 +551,7 @@ internal fun PageCanvas(
                                 // the preview never lies about what will be committed
                                 val preview = inkPreview.value
                                 if (preview.size >= 2) {
-                                    val drawStarted = InkPerfMetrics.previewDrawStarted()
                                     drawInk(preview, previewColor, previewWidthPx, previewFilled)
-                                    InkPerfMetrics.previewDrawFinished(drawStarted)
                                 }
                             }
                         }

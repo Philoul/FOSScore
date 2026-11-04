@@ -1,13 +1,13 @@
 package com.musigatto.fosscore
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.FrameMetrics
-import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,8 +59,6 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var frameMetricsListener: Window.OnFrameMetricsAvailableListener? = null
-
     // The app language is chosen in the app, so resources are resolved against it; the default
     // locale follows too, for dates and numbers. Picking another one recreates the activity.
     override fun attachBaseContext(newBase: Context) {
@@ -77,18 +75,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            val refreshRate = windowManager.defaultDisplay.refreshRate
-            InkPerfMetrics.enable(refreshRate)
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            InkPerfMetrics.enable(windowManager.defaultDisplay.refreshRate)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                frameMetricsListener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
-                    InkPerfMetrics.frame(
-                        totalNs = metrics.getMetric(FrameMetrics.TOTAL_DURATION),
-                        drawNs = metrics.getMetric(FrameMetrics.DRAW_DURATION),
-                    )
-                }
+                // no removal needed: the listener hangs off the window, which dies with the activity
                 window.addOnFrameMetricsAvailableListener(
-                    frameMetricsListener!!,
+                    { _, metrics, _ ->
+                        InkPerfMetrics.frame(metrics.getMetric(FrameMetrics.TOTAL_DURATION))
+                    },
                     Handler(Looper.getMainLooper()),
                 )
             }
@@ -107,12 +101,6 @@ class MainActivity : ComponentActivity() {
                 FOSScoreNav(repository, themeMode, toggleTheme)
             }
         }
-    }
-
-    override fun onDestroy() {
-        frameMetricsListener?.let(window::removeOnFrameMetricsAvailableListener)
-        frameMetricsListener = null
-        super.onDestroy()
     }
 }
 

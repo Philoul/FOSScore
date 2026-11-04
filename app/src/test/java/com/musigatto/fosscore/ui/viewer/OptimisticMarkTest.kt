@@ -58,6 +58,8 @@ class OptimisticMarkTest {
 
         editor.settle(emptyList(), listOf(stroke.copy(id = 42)))
         insertedId.complete(42)
+        // Room's page flow lands once the row exists: that settle drops the optimistic copy
+        editor.settle(emptyList(), listOf(stroke.copy(id = 42)))
 
         assertTrue(editor.pendingInk.isEmpty())
     }
@@ -74,6 +76,8 @@ class OptimisticMarkTest {
 
         editor.settle(listOf(stamp.copy(id = 42)), emptyList())
         insertedId.complete(42)
+        // Room's page flow lands once the row exists: that settle drops the optimistic copy
+        editor.settle(listOf(stamp.copy(id = 42)), emptyList())
 
         assertTrue(editor.pendingStamps.isEmpty())
         assertEquals(42L, editor.selectedId)

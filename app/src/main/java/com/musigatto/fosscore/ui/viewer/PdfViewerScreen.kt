@@ -375,7 +375,7 @@ fun PdfViewerScreen(
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
     var textPx by rememberSaveable { mutableFloatStateOf(Settings.textPx(context)) }  // next new text's font size (px at zoom 1)
     var defaultTextPx by remember { mutableFloatStateOf(Settings.textPx(context)) }
-    var inkPreview by remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
+    val inkPreview = remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
@@ -444,11 +444,11 @@ fun PdfViewerScreen(
     // The fit comes from MuPDF's size in points (not from the bitmap), so the UI can lay out from
     // the first frame and the overlay does not wait for a draw to land.
     val pageBox = pageSource?.pageSize(currentPage)
-    // the DAO already returns only this page's rows; pendingStamps are the ones it has not handed
-    // back yet (distinctBy drops the copy once the flow shows them), and this drops the ones
-    // deleted a second ago
-    val pageStamps =
-        (stamps + editor.pendingStamps).distinctBy { it.id }.filter { it.id !in editor.hiddenStampIds }
+    // Keep an inserted stamp visible while Room's page flow catches up; settle() removes its
+    // optimistic copy after the inserted row appears.
+    val pageStamps = (
+        stamps + editor.pendingStamps.filter { it.page == currentPage }
+    ).distinctBy { it.id }.filter { it.id !in editor.hiddenStampIds }
     val pageStrokes = remember(strokes, editor.hiddenStrokeIds) { strokes.filter { it.id !in editor.hiddenStrokeIds } }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
@@ -460,10 +460,11 @@ fun PdfViewerScreen(
     // PURE fit rect (origin 0,0): content coordinates (the page itself, without pageFit's
     // centring margin). The whole overlay and the edit gesture live here.
     val hitFit = RectPx(0f, 0f, pageFit.width, pageFit.height)
-    // the ink that is on screen: what the DB returned plus what it has not handed back yet
-    // (editor.pendingInk). Drawing, hit-testing and grouping must all see the same set, or a letter
-    // written a second ago is not selectable and the word's box comes out short.
-    val inkStrokes = (editor.pendingInk + pageStrokes).distinctBy { it.id }
+    // Draw the DB rows plus strokes Room has not acknowledged yet. Pending strokes are excluded
+    // from hit-testing until they receive their persistent IDs.
+    val inkStrokes = (
+        editor.pendingInk.filter { it.page == currentPage } + pageStrokes
+    ).distinctBy { it.id }
     // the same ink, ready to draw: decode + Path once per change, not once per frame
     val inkDraws = remember(inkStrokes, hitFit, invert) { inkDrawsOf(inkStrokes, hitFit, invert) }
     // the MEASURED boxes of the visible TEXT stamps: one layout per change, the same box feeds the
@@ -580,7 +581,7 @@ fun PdfViewerScreen(
             // the tool stays for the next visit (issue #56: the one used last); only what it had
             // open is put away
             openPanel = null
-            inkPreview = emptyList()
+            inkPreview.value = emptyList()
             editor.clearHidden()
         }
     }
@@ -693,7 +694,7 @@ fun PdfViewerScreen(
             tool = picked
             openPanel = null
             editor.clearSelection()
-            inkPreview = emptyList()
+            inkPreview.value = emptyList()
             Settings.setAnnotationTool(context, picked)
         }
     }
@@ -745,9 +746,6 @@ fun PdfViewerScreen(
 
     // the DB no longer has what we hid: clear the optimistic delete (and the drag preview)
     LaunchedEffect(stamps, strokes) { editor.settle(stamps, strokes) }
-
-    // a fresh page (or leaving edit mode) must not keep the ink the DB has not handed back
-    LaunchedEffect(currentPage, editing) { editor.pendingInk = emptyList() }
 
     // MuPDF (prebuilt AAR, AGPL-3.0: see LICENSE). Opens and works out sizes in the background:
     // opening parses the PDF index and must not touch the main thread.
@@ -1132,11 +1130,11 @@ fun PdfViewerScreen(
                     onPageTouched = { pageTouched = it },
                     onLoupeAnchor = { loupeAnchor = it },
                     onLoupe = { loupeAt = it },
-                    onInkPreview = { inkPreview = it },
+                    onInkPreview = { inkPreview.value = it },
                     // a tap on the matte closes the panel and drops the selection; it does not
                     // change the tool (issue #56)
                     onToolsDown = {
-                        inkPreview = emptyList()
+                        inkPreview.value = emptyList()
                         openPanel = null
                         editor.clearSelection()
                     },

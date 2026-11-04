@@ -67,6 +67,9 @@ internal class AnnotationViewModel(
     // that the NEXT edit takes includes it even if Room's flow has not come back yet ( Undo would
     // otherwise eat both stamps at once, since the snapshot was read without them)
     var pendingStamps by mutableStateOf<List<Stamp>>(emptyList())
+    private var nextPendingId = -1L
+    private var latestDbStamps: List<Stamp> = emptyList()
+    private var latestDbStrokes: List<Stroke> = emptyList()
     // optimistic delete: the view hides what is gone at once and the DB confirms afterward.
     // ponytail: a Set of ids pruned by settle(); enough, because deleting never brings ids back.
     var hiddenStampIds by mutableStateOf<Set<Long>>(emptySet())
@@ -111,11 +114,11 @@ internal class AnnotationViewModel(
 
     /** After a restore the page is exactly [strokes]: anything else in the optimistic layer is inked
      * over a state that no longer exists (an undone stroke would stay on screen forever). */
-    private fun keepOnly(edit: PageEdit) {
+    private fun keepOnly(page: Int, edit: PageEdit) {
         val stampIds = edit.stamps.map { it.id }.toSet()
-        pendingStamps = pendingStamps.filter { it.id in stampIds }
+        pendingStamps = pendingStamps.filter { it.page != page || it.id in stampIds }
         val strokeIds = edit.strokes.map { it.id }.toSet()
-        pendingInk = pendingInk.filter { it.id in strokeIds }
+        pendingInk = pendingInk.filter { it.page != page || it.id in strokeIds }
     }
 
     /** Stacks [current] (the state before the change) for [page]. */
@@ -178,6 +181,8 @@ internal class AnnotationViewModel(
      * freshly written ink).
      */
     fun settle(dbStamps: List<Stamp>, dbStrokes: List<Stroke>) {
+        latestDbStamps = dbStamps
+        latestDbStrokes = dbStrokes
         val liveStamps = dbStamps.map { it.id }.toSet()
         val liveStrokes = dbStrokes.map { it.id }.toSet()
         if (hiddenStampIds.any { it !in liveStamps }) hiddenStampIds = hiddenStampIds intersect liveStamps
@@ -194,9 +199,11 @@ internal class AnnotationViewModel(
             if (settled) dragStrokes = null
         }
         // the DB has this ink already: drop it from the optimistic layer
-        pendingInk = pendingInk.filter { p -> dbStrokes.none { it.id == p.id && it.points == p.points } }
+        pendingInk = pendingInk.filter { p ->
+            p.id <= 0L || dbStrokes.none { it.id == p.id && it.points == p.points }
+        }
         pendingStamps = pendingStamps.filter { p ->
-            dbStamps.none { it.id == p.id && it.x == p.x && it.y == p.y && it.size == p.size }
+            p.id <= 0L || dbStamps.none { it.id == p.id && it.x == p.x && it.y == p.y && it.size == p.size }
         }
     }
 
@@ -214,7 +221,7 @@ internal class AnnotationViewModel(
         clearHidden()
         // a drag preview in flight shows the PRE-undo content: the restored rows win
         dragStamp = null
-        keepOnly(edit)
+        keepOnly(target, edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
             strokes.restorePage(id, target, edit.strokes)
@@ -231,7 +238,7 @@ internal class AnnotationViewModel(
         clearSelection()
         clearHidden()
         dragStamp = null
-        keepOnly(edit)
+        keepOnly(target, edit)
         viewModelScope.launch {
             stamps.restorePage(id, target, edit.stamps)
             strokes.restorePage(id, target, edit.strokes)
@@ -257,10 +264,29 @@ internal class AnnotationViewModel(
     fun addInk(page: Int, stroke: Stroke, current: PageEdit) {
         pushUndo(current, page)
         lastInkAt = System.currentTimeMillis()
+        val optimistic = stroke.copy(id = nextPendingId--)
+        pendingInk = pendingInk + optimistic
         viewModelScope.launch {
-            val id = strokes.insert(stroke)
-            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
-            if (id > 0) pendingInk = pendingInk + stroke.copy(id = id)
+            try {
+                val insertStartedAt = InkPerfMetrics.databaseInsertStarted()
+                val id = strokes.insert(stroke)
+                InkPerfMetrics.databaseInsertFinished(insertStartedAt, id)
+                when {
+                    id <= 0L -> Unit
+                    pendingInk.any { it.id == optimistic.id } -> {
+                        val saved = optimistic.copy(id = id)
+                        pendingInk = pendingInk.map { if (it.id == optimistic.id) saved else it }
+                        if (latestDbStrokes.any {
+                                it.id == id && it.page == saved.page && it.points == saved.points
+                            }) {
+                            pendingInk = pendingInk.filterNot { it.id == id }
+                        }
+                    }
+                    else -> strokes.delete(stroke.copy(id = id))
+                }
+            } finally {
+                pendingInk = pendingInk.filterNot { it.id == optimistic.id }
+            }
         }
     }
 
@@ -306,12 +332,25 @@ internal class AnnotationViewModel(
     /** A placed stamp: it stays selected so its box shows where it landed. */
     fun placeStamp(page: Int, stamp: Stamp, current: PageEdit) {
         pushUndo(current, page)
+        val optimistic = stamp.copy(id = nextPendingId--)
+        pendingStamps = pendingStamps + optimistic
         viewModelScope.launch {
-            val id = stamps.insert(stamp)
-            // -1: nowhere to keep it (off the music of a MusicXML page): no ghost of it stays
-            if (id > 0) {
-                pendingStamps = pendingStamps + stamp.copy(id = id)
-                selectedId = id
+            try {
+                val id = stamps.insert(stamp)
+                when {
+                    id <= 0L -> Unit
+                    pendingStamps.any { it.id == optimistic.id } -> {
+                        val saved = optimistic.copy(id = id)
+                        pendingStamps = pendingStamps.map { if (it.id == optimistic.id) saved else it }
+                        selectedId = id
+                        if (latestDbStamps.any { it.id == id && it.page == saved.page }) {
+                            pendingStamps = pendingStamps.filterNot { it.id == id }
+                        }
+                    }
+                    else -> stamps.delete(stamp.copy(id = id))
+                }
+            } finally {
+                pendingStamps = pendingStamps.filterNot { it.id == optimistic.id }
             }
         }
     }

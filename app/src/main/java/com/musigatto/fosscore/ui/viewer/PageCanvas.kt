@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
@@ -249,7 +250,7 @@ internal fun PageCanvas(
     // the boundaries between the lines of music of a MusicXML page while annotating (0..1)
     lineBoundaries: List<Float>,
     dragStrokes: List<Stroke>?,
-    inkPreview: List<Offset>,
+    inkPreview: State<List<Offset>>,
     /** Color and width of the live stroke: the eraser's red, the pen's ink or a shape's own. */
     previewColor: Color,
     previewWidthPx: Float,
@@ -548,8 +549,11 @@ internal fun PageCanvas(
                                 }
                                 // the shape being aimed draws filled while its panel says so:
                                 // the preview never lies about what will be committed
-                                if (inkPreview.size >= 2) {
-                                    drawInk(inkPreview, previewColor, previewWidthPx, previewFilled)
+                                val preview = inkPreview.value
+                                if (preview.size >= 2) {
+                                    val drawStarted = InkPerfMetrics.previewDrawStarted()
+                                    drawInk(preview, previewColor, previewWidthPx, previewFilled)
+                                    InkPerfMetrics.previewDrawFinished(drawStarted)
                                 }
                             }
                         }

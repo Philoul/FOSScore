@@ -2,7 +2,12 @@ package com.musigatto.fosscore
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -45,6 +50,7 @@ import com.musigatto.fosscore.ui.library.SheetDetailScreen
 import com.musigatto.fosscore.ui.settings.PreferencesScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
 import com.musigatto.fosscore.ui.viewer.AppLanguage
+import com.musigatto.fosscore.ui.viewer.InkPerfMetrics
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
 import com.musigatto.fosscore.ui.viewer.Settings
 import com.musigatto.fosscore.ui.viewer.ThemeMode
@@ -53,6 +59,8 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var frameMetricsListener: Window.OnFrameMetricsAvailableListener? = null
+
     // The app language is chosen in the app, so resources are resolved against it; the default
     // locale follows too, for dates and numbers. Picking another one recreates the activity.
     override fun attachBaseContext(newBase: Context) {
@@ -69,6 +77,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            val refreshRate = windowManager.defaultDisplay.refreshRate
+            InkPerfMetrics.enable(refreshRate)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                frameMetricsListener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+                    InkPerfMetrics.frame(
+                        totalNs = metrics.getMetric(FrameMetrics.TOTAL_DURATION),
+                        drawNs = metrics.getMetric(FrameMetrics.DRAW_DURATION),
+                    )
+                }
+                window.addOnFrameMetricsAvailableListener(
+                    frameMetricsListener!!,
+                    Handler(Looper.getMainLooper()),
+                )
+            }
+        }
         enableEdgeToEdge()
         setContent {
             val context = LocalContext.current
@@ -83,6 +107,12 @@ class MainActivity : ComponentActivity() {
                 FOSScoreNav(repository, themeMode, toggleTheme)
             }
         }
+    }
+
+    override fun onDestroy() {
+        frameMetricsListener?.let(window::removeOnFrameMetricsAvailableListener)
+        frameMetricsListener = null
+        super.onDestroy()
     }
 }
 

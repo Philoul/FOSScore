@@ -50,6 +50,25 @@ class SelectionGeometryTest {
     }
 
     @Test
+    fun axisScalesStretchOneSideWithoutTouchingTheOther() {
+        val center = Offset(500f, 500f)
+        // tirar en horizontal: más ancho, igual de alto (un pentagrama sobre el impreso)
+        assertEquals(2f, axisScales(center, Offset(600f, 500f), Offset(700f, 500f)).x, 1e-4f)
+        assertEquals(1f, axisScales(center, Offset(600f, 500f), Offset(700f, 500f)).y, 1e-4f)
+        // tirar en vertical: más alto, igual de ancho
+        assertEquals(1f, axisScales(center, Offset(500f, 600f), Offset(500f, 700f)).x, 1e-4f)
+        assertEquals(2f, axisScales(center, Offset(500f, 600f), Offset(500f, 700f)).y, 1e-4f)
+    }
+
+    @Test
+    fun axisScalesLeaveAnAxisThatStartedOnTheCenterline() {
+        val center = Offset(500f, 500f)
+        val s = axisScales(center, Offset(500f, 600f), Offset(620f, 700f))
+        assertEquals(1f, s.x, 1e-4f)   // sin tirador horizontal no hay factor que calcular
+        assertEquals(2f, s.y, 1e-4f)
+    }
+
+    @Test
     fun strokeSelectionRectAddsHalfWidthPadding() {
         val r = strokeSelectionRect(listOf(Offset(100f, 100f), Offset(200f, 300f)), 20f)
         assertEquals(90f, r.left, 1e-3f)

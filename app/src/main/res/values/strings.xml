@@ -17,6 +17,11 @@
     <string name="tool_stamp">Stamp</string>
   <string name="tool_text">Text</string>
     <string name="tool_shapes">Shapes</string>
+    <string name="shape_slur">Slur</string>
+    <string name="shape_tie">Tie</string>
+    <string name="shape_crescendo">Crescendo</string>
+    <string name="shape_tuplet">Tuplet</string>
+    <string name="shape_staff">Staff</string>
     <string name="shape_line">Line</string>
     <string name="shape_rect">Rectangle</string>
     <string name="shape_ellipse">Ellipse</string>
@@ -168,6 +173,14 @@
     <string name="stamp_turn">Turn</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Appoggiatura</string>
+    <string name="stamp_treble_clef">Treble clef</string>
+    <string name="stamp_bass_clef">Bass clef</string>
+    <string name="stamp_alto_clef">Alto clef (C clef)</string>
+    <string name="stamp_treble_clef_8va">Treble clef 8va (octave higher)</string>
+    <string name="stamp_treble_clef_8vb">Treble clef 8vb (octave lower)</string>
+    <string name="stamp_repeat_start">Start repeat barline</string>
+    <string name="stamp_repeat_end">End repeat barline</string>
+    <string name="stamp_repeat_start_end">Combined start and end repeat barline</string>
     <string name="stamp_pedal">Pedal (press)</string>
     <string name="stamp_pedal_release">Pedal release</string>
 

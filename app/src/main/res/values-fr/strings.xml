@@ -15,6 +15,11 @@
     <string name="tool_stamp">Tampon</string>
   <string name="tool_text">Texte</string>
     <string name="tool_shapes">Formes</string>
+    <string name="shape_slur">Liaison</string>
+    <string name="shape_tie">Prolongation</string>
+    <string name="shape_crescendo">Crescendo</string>
+    <string name="shape_tuplet">Groupe irrégulier</string>
+    <string name="shape_staff">Portée</string>
     <string name="shape_line">Trait</string>
     <string name="shape_rect">Rectangle</string>
     <string name="shape_ellipse">Ellipse</string>
@@ -98,6 +103,14 @@
     <string name="stamp_turn">Gruppetto</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Appoggiature</string>
+    <string name="stamp_treble_clef">Clef de sol</string>
+    <string name="stamp_bass_clef">Clef de fa</string>
+    <string name="stamp_alto_clef">Clef d’ut (alto)</string>
+    <string name="stamp_treble_clef_8va">Clef de sol à l’octave supérieure (8va)</string>
+    <string name="stamp_treble_clef_8vb">Clef de sol à l’octave inférieure (8vb)</string>
+    <string name="stamp_repeat_start">Barre de début de reprise</string>
+    <string name="stamp_repeat_end">Barre de fin de reprise</string>
+    <string name="stamp_repeat_start_end">Barre de début et de fin de reprise</string>
     <string name="stamp_pedal">Pédale (enfoncer)</string>
     <string name="stamp_pedal_release">Relâcher la pédale</string>
 

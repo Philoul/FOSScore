@@ -196,11 +196,19 @@ internal fun Modifier.pageGestures(
             var shapeActive = false
             var shapeFrom = Offset.Zero
             var shapeTo = Offset.Zero
+            // the shape from the finger to the finger, with the tool in hand: one call for the
+            // live preview and for what the release commits, so the two cannot drift
+            fun aimedShape(from: Offset, to: Offset) =
+                shapePoints(currentShapeKind, from, to, arrowHeadPx(currentShapeWidth))
             var eraserActive = false
             var eraserPath = mutableListOf<Offset>()
-            var scaleF = 1f   // accumulated handle factor (always from startPos)
+            var scaleX = 1f   // accumulated handle factors (always from startPos)
+            var scaleY = 1f
             // handle in use: (base object, grabbed corner) while scaling
             var resizing: Resizing? = null
+            // hit-testing only the rows the DB already knows: a pending row has no stable id yet
+            val committedStamps = currentPageStamps.filter { it.id > 0L }
+            val committedInk = currentInkStrokes.filter { it.id > 0L }
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.SELECT) {
                 // a tap re-selects from scratch: the drag box (dragStamp/dragStrokes) still holds
                 // the PREVIOUS selection's position, and the handles would hang there while the
@@ -230,17 +238,17 @@ internal fun Modifier.pageGestures(
                     }
                 }
                 if (resizing == null) {
-                    val hitS = hitStamp(downF, currentPageStamps, currentHitFit, currentTextRects)
+                    val hitS = hitStamp(downF, committedStamps, currentHitFit, currentTextRects)
                     // A tap selects the WORD, not the single stroke. The grouping is
                     // only needed here, on the tap: doing it on every change made it
                     // O(n²) over the page after every stroke.
                     val groups = if (hitS != null) {
                         emptyList()
-                    } else groupInk(currentInkStrokes, currentHitFit)
+                    } else groupInk(committedInk, currentHitFit)
                     // If no stroke is hit, the word's box still catches it: the hole
                     // of an 'o' and the gap between two letters have no ink to aim at
                     val group = if (hitS != null) null else {
-                        val st = hitStroke(downF, currentInkStrokes, currentHitFit)
+                        val st = hitStroke(downF, committedInk, currentHitFit)
                         st?.let { hit ->
                             groups.firstOrNull { g -> g.strokes.any { it.id == hit.id } }
                         } ?: groupAt(downF, groups, handleRadiusPx(currentHitFit))
@@ -275,6 +283,7 @@ internal fun Modifier.pageGestures(
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.PEN && !onMatte) {
                 inkActive = true
                 inkPts.add(downF)
+                InkPerfMetrics.beginStroke()
                 onInkPreview(listOf(downF))
             }
             // the shape starts where the finger landed; the matte stands it down like the pen
@@ -293,7 +302,11 @@ internal fun Modifier.pageGestures(
             // TEXT tool (#35): pick a text stamp by its MEASURED rect (textRects), not the
             // square stampRect. A tap on empty page → new box; a tap on a box → edit it.
             if (currentEditing && currentCanEdit && currentTool == AnnotationTool.TEXT) {
-                pickedText = hitTextStamp(downF, currentPageStamps, currentTextRects)
+                pickedText = hitTextStamp(
+                    downF,
+                    committedStamps,
+                    currentTextRects
+                )
             }
 
             try {
@@ -318,9 +331,12 @@ internal fun Modifier.pageGestures(
                         if (matteTap && currentEditing && currentCanEdit) {
                             onToolsDown()
                         } else if (rz != null) {
-                            val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
+                            val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleX, scaleY) }
                             val changed = pts != rz.ptsPx
                             if (changed) {
+                                // a shape keeps the thickness its panel gave it: the stretch
+                                // moves its lines apart, it does not make them bolder
+                                val shape = Stroke.isShape(rz.strokes.first().kind)
                                 editor.updateStrokes(
                                     currentPage,
                                     rz.strokes.mapIndexed { i, base ->
@@ -330,7 +346,8 @@ internal fun Modifier.pageGestures(
                                                     pxToNormalized(it, currentHitFit)
                                                 }
                                             ),
-                                            width = (base.width * scaleF)
+                                            width = if (shape) base.width
+                                            else (base.width * scaleX)
                                                 .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
                                         )
                                     },
@@ -341,9 +358,12 @@ internal fun Modifier.pageGestures(
                             // ink capture lives in fit coordinates (F): the sampling
                             // threshold is a screen distance, so it scales with the zoom
                             val pts = samplePoints(inkPts, MIN_SAMPLE_DIST_PX / zoom.transform.scale)
+                            val sheet = currentSheetId
+                            val saved = pts.size >= 2 && !onMatte && sheet != null &&
+                                currentPageFit.width > 0f
+                            InkPerfMetrics.finishStroke(pts.size, saved)
                             onInkPreview(emptyList())
                             // local copy: a delegated var cannot be smart cast to Long
-                            val sheet = currentSheetId
                             if (pts.size >= 2 && !onMatte && sheet != null && currentPageFit.width > 0f) {
                                 val stroke = Stroke(
                                     sheetId = sheet,
@@ -360,7 +380,8 @@ internal fun Modifier.pageGestures(
                                 // merge them, so the distance is not consulted again at selection.
                                 val grouped = stroke.copy(
                                     groupId = groupForStroke(
-                                        previous = currentInkStrokes.maxByOrNull { it.id },
+                                        previous = editor.pendingInk.lastOrNull { it.page == currentPage }
+                                            ?: currentInkStrokes.maxByOrNull { it.id },
                                         writtenAt = editor.lastInkAt,
                                         now = System.currentTimeMillis(),
                                         nextGroup = (currentInkStrokes.maxOfOrNull { it.groupId } ?: 0L) + 1L,
@@ -381,23 +402,15 @@ internal fun Modifier.pageGestures(
                             ) {
                                 // filled is only for the closures: a portrait as a drawn arrow
                                 // or a shape-less line is a shape-less "solid" with no inside to fill
-                                val kind = if (currentShapeFilled && currentShapeKind.canFill) {
-                                    Stroke.SHAPE_FILLED
-                                } else {
-                                    Stroke.SHAPE
-                                }
+                                val kind = strokeKindOf(currentShapeKind, currentShapeFilled)
                                 editor.addInk(
                                     currentPage,
                                     Stroke(
                                         sheetId = sheet,
                                         page = currentPage,
                                         points = encodePoints(
-                                            shapePoints(
-                                                currentShapeKind,
-                                                shapeFrom,
-                                                shapeTo,
-                                                arrowHeadPx(currentShapeWidth)
-                                            ).map { pxToNormalized(it, currentHitFit) }
+                                            aimedShape(shapeFrom, shapeTo)
+                                                .map { pxToNormalized(it, currentHitFit) }
                                         ),
                                         width = penWidthPxToFrac(currentShapeWidth, currentHitFit),
                                         color = currentActiveColor,
@@ -414,7 +427,10 @@ internal fun Modifier.pageGestures(
                                 // the eraser always deletes what it grazes: to remove a whole
                                 // word, tap it (that selects it) and press the bin
                                 val goneStamps = stampsTouched(
-                                    currentPageStamps, currentHitFit, path, radiusPx
+                                    committedStamps,
+                                    currentHitFit,
+                                    path,
+                                    radiusPx
                                 )
                                 val goneStrokes = mutableListOf<Stroke>()
                                 val newRuns = mutableListOf<Stroke>()
@@ -539,7 +555,7 @@ internal fun Modifier.pageGestures(
                         }
                         break
                     }
-    
+
                     if (currentLoupeAt != null) {
                         if (pressed.size > 1) {
                             // a second finger is a pinch, not an aimed placement
@@ -555,41 +571,46 @@ internal fun Modifier.pageGestures(
                             continue
                         }
                     }
-    
+
                     resizing?.let { rz ->
-                        // stretching the selected word by a handle: one pointer, scaling
-                        // around the box center. the factor is worked out from the
-                        // starting position, never accumulated
+                        // stretching the selection by a handle, around the box center. The factor
+                        // is worked out from the starting position, never accumulated. A word
+                        // keeps one factor (it is handwriting); a shape gets one per axis, so a
+                        // staff can be made wider or taller on its own to sit on the printed one
                         val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                        val f0 = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
+                        val now = fitPoint(tracking.position)
+                        val shape = Stroke.isShape(rz.strokes.first().kind)
+                        val f = scaleFactor(rz.center, rz.startPos, now)
+                        val s = if (shape) axisScales(rz.center, rz.startPos, now) else Offset(f, f)
                         // growing stops when the far corner reaches the sheet: a stretch near the
                         // border must not push the word (or hide part of it) outside the page
-                        var fMax = Float.MAX_VALUE
+                        var fMaxX = Float.MAX_VALUE
+                        var fMaxY = Float.MAX_VALUE
                         rz.ptsPx.flatten().forEach { p ->
                             val dx = p.x - rz.center.x
                             val dy = p.y - rz.center.y
-                            if (dx > 0f) fMax = minOf(fMax, (currentHitFit.width - rz.center.x) / dx)
-                            else if (dx < 0f) fMax = minOf(fMax, rz.center.x / -dx)
-                            if (dy > 0f) fMax = minOf(fMax, (currentHitFit.height - rz.center.y) / dy)
-                            else if (dy < 0f) fMax = minOf(fMax, rz.center.y / -dy)
+                            if (dx > 0f) fMaxX = minOf(fMaxX, (currentHitFit.width - rz.center.x) / dx)
+                            else if (dx < 0f) fMaxX = minOf(fMaxX, rz.center.x / -dx)
+                            if (dy > 0f) fMaxY = minOf(fMaxY, (currentHitFit.height - rz.center.y) / dy)
+                            else if (dy < 0f) fMaxY = minOf(fMaxY, rz.center.y / -dy)
                         }
-                        val f = f0.coerceAtMost(fMax).coerceAtLeast(0f)
-                        scaleF = f
+                        scaleX = s.x.coerceAtMost(fMaxX).coerceAtLeast(0f)
+                        scaleY = s.y.coerceAtMost(fMaxY).coerceAtLeast(0f)
                         editor.dragStrokes = rz.strokes.mapIndexed { i, st ->
                             st.copy(
                                 points = encodePoints(
-                                    scalePoints(rz.ptsPx[i], rz.center, f)
+                                    scalePoints(rz.ptsPx[i], rz.center, scaleX, scaleY)
                                         .map { pxToNormalized(it, currentHitFit) }
                                 ),
-                                width = (st.width * f)
-                                    .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+                                width = if (shape) st.width
+                                else (st.width * f).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
                             )
                         }
                         prevCentroid = tracking.position
                         event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                         continue
                     }
-    
+
                     if (movingStrokes != null) {
                         val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
                         val m = pxToNormalized(fitPoint(tracking.position), currentHitFit) -
@@ -610,7 +631,7 @@ internal fun Modifier.pageGestures(
                         event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                         continue
                     }
-    
+
                     if (movingStamp != null) {
                         // move with one finger (the initial pointer, no jump when a second
                         // finger arrives); no pinch to resize — size is changed with the slider
@@ -629,12 +650,13 @@ internal fun Modifier.pageGestures(
                         event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                         continue
                     }
-    
+
                     if (inkActive) {
                         if (pressed.size > 1) {
                             // a second finger arrived: drop the ink and let the pinch zoom
                             inkActive = false
                             inkPts = mutableListOf()
+                            InkPerfMetrics.cancelStroke()
                             onInkPreview(emptyList())
                         } else {
                             val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
@@ -662,14 +684,7 @@ internal fun Modifier.pageGestures(
                             shapeTo = pagePoint(tracking.position)
                             // the same geometry as on release: the preview never lies about
                             // what will be committed
-                            onInkPreview(
-                                shapePoints(
-                                    currentShapeKind,
-                                    shapeFrom,
-                                    shapeTo,
-                                    arrowHeadPx(currentShapeWidth)
-                                )
-                            )
+                            onInkPreview(aimedShape(shapeFrom, shapeTo))
                             prevCentroid = tracking.position
                             event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                             continue
@@ -696,7 +711,7 @@ internal fun Modifier.pageGestures(
                             continue
                         }
                     }
-    
+
                     val nids = pressed.map { it.id }.toSet()
                     // Re-anchor if the SET of fingers changes OR their NUMBER. Comparing the
                     // set alone let 1 -> 2 -> 1 through: back on one finger, nids was ids
@@ -709,7 +724,7 @@ internal fun Modifier.pageGestures(
                         anchorDist = 0f      // re-anchor the ratio reference
                         prevCentroid = centroid(pressed)
                     }
-    
+
                     val c = centroid(pressed)
                     val delta = c - prevCentroid
                     totalPan += delta
@@ -721,7 +736,7 @@ internal fun Modifier.pageGestures(
                     // taken again. That is what stops the two branches fighting over the
                     // offset.
                     scaling = pressed.size > 1
-    
+
                     if (scaling) {
                         isTransform = true
                         val d = (pressed[0].position - pressed[1].position).getDistance()
@@ -751,6 +766,7 @@ internal fun Modifier.pageGestures(
                     event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
                 }
             } finally {
+                InkPerfMetrics.cancelStroke()
                 // a gesture a parent takes over (or that is cancelled) never reaches its
                 // release branch: put the half state back, or the loupe, the ghost stroke and
                 // the "page is touched" flag stay on screen until the next touch

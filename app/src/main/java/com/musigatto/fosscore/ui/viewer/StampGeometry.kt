@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.isTextStamp
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -223,6 +224,17 @@ fun scaleFactor(center: Offset, start: Offset, now: Offset): Float {
     val d0 = (start - center).getDistance()
     if (d0 <= 1e-3f) return 1f
     return ((now - center).getDistance() / d0).coerceIn(MIN_SCALE_FACTOR, MAX_SCALE_FACTOR)
+}
+
+/**
+ * The same, one factor per axis: dragging a corner sideways stretches a shape wider without
+ * making it taller, which is how a drawn staff is fitted onto the printed one. An axis whose
+ * handle started on the centerline is left alone instead of blowing up.
+ */
+fun axisScales(center: Offset, start: Offset, now: Offset): Offset {
+    fun one(d0: Float, d1: Float) =
+        if (abs(d0) <= 1e-3f) 1f else (d1 / d0).coerceIn(MIN_SCALE_FACTOR, MAX_SCALE_FACTOR)
+    return Offset(one(start.x - center.x, now.x - center.x), one(start.y - center.y, now.y - center.y))
 }
 
 // selection box for a stroke: the box around its points, plus half the thickness of margin

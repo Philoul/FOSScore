@@ -85,7 +85,7 @@ class InkGeometryTest {
         val pts = listOf(Offset(0f, 0f), Offset(10f, 0f))
         assertEquals(
             listOf(Offset(-5f, 0f), Offset(15f, 0f)),
-            scalePoints(pts, Offset(5f, 0f), 2f)
+            scalePoints(pts, Offset(5f, 0f), 2f, 2f)
         )
     }
 

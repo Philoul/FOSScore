@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.ui.viewer
 
 import androidx.compose.ui.geometry.Offset
+import com.musigatto.fosscore.library.Stroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -109,9 +110,113 @@ class ShapeGeometryTest {
     @Test
     fun degenerateDragMakesNoNonsense() {
         // the gesture guards a tap from reaching here, but the maths must not NaN either way
-        listOf(ShapeKind.LINE, ShapeKind.RECT, ShapeKind.ELLIPSE, ShapeKind.ARROW).forEach { kind ->
+        ShapeKind.entries.forEach { kind ->
             val pts = shapePoints(kind, a, a, headPx = 10f)
             assertTrue(pts.all { p -> !p.x.isNaN() && !p.y.isNaN() })
         }
+    }
+
+    @Test
+    fun theStaffIsFiveLinesOfItsBox() {
+        val pts = shapePoints(ShapeKind.STAFF, Offset(20f, 100f), Offset(220f, 180f), headPx = 0f)
+        assertEquals(STAFF_LINES * 2, pts.size)
+        // one line per pair: same height, edge to edge
+        (0 until STAFF_LINES).forEach { i ->
+            val left = pts[i * 2]
+            val right = pts[i * 2 + 1]
+            assertEquals(20f, left.x, 1e-3f)
+            assertEquals(220f, right.x, 1e-3f)
+            assertEquals(left.y, right.y, 1e-3f)
+        }
+        // evenly spread from the top of the drag to the bottom: that is how it sits on the printed one
+        val ys = (0 until STAFF_LINES).map { pts[it * 2].y }
+        assertEquals(listOf(100f, 120f, 140f, 160f, 180f), ys)
+    }
+
+    @Test
+    fun theStaffReadsTheSameFromEitherCorner() {
+        // the drag that started at the bottom-right draws the same staff
+        val flip = shapePoints(ShapeKind.STAFF, Offset(220f, 180f), Offset(20f, 100f), headPx = 0f)
+        val straight = shapePoints(ShapeKind.STAFF, Offset(20f, 100f), Offset(220f, 180f), headPx = 0f)
+        assertEquals(straight, flip)
+    }
+
+    @Test
+    fun aHairpinUsesTheDragBoxForItsWidthAndHeight() {
+        val from = Offset(100f, 120f)
+        val to = Offset(300f, 80f)
+        val pts = shapePoints(ShapeKind.CRESCENDO, from, to, headPx = 0f)
+        assertEquals(3, pts.size)
+        assertEquals(Offset(100f, 100f), pts[1])
+        assertEquals(Offset(300f, 80f), pts[0])
+        assertEquals(Offset(300f, 120f), pts[2])
+    }
+
+    @Test
+    fun aHorizontalHairpinDoesNotGrowWithItsLength() {
+        val pts = shapePoints(
+            ShapeKind.CRESCENDO,
+            Offset(100f, 100f),
+            Offset(300f, 100f),
+            headPx = 0f,
+        )
+        assertEquals(Offset(300f, 100f), pts[0])
+        assertEquals(Offset(100f, 100f), pts[1])
+        assertEquals(Offset(300f, 100f), pts[2])
+    }
+
+    @Test
+    fun draggingRightToLeftKeepsTheMouthOnTheLeft() {
+        val pts = shapePoints(
+            ShapeKind.CRESCENDO,
+            Offset(300f, 80f),
+            Offset(100f, 120f),
+            headPx = 0f,
+        )
+        assertEquals(Offset(300f, 100f), pts[1])
+        assertEquals(Offset(100f, 80f), pts[0])
+        assertEquals(Offset(100f, 120f), pts[2])
+    }
+
+    @Test
+    fun theTupletBracketHasATickAtEachEnd() {
+        val from = Offset(100f, 100f)
+        val to = Offset(300f, 100f)
+        val pts = shapePoints(ShapeKind.TUPLET, from, to, headPx = 0f)
+        assertEquals(4, pts.size)
+        assertEquals(to, pts[2])
+        // both ticks point the same way, away from the line over the notes
+        assertTrue(pts[0].y < from.y)
+        assertTrue(pts[3].y < to.y)
+    }
+
+    @Test
+    fun aSlurBowsOffTheLineAndATieLessSo() {
+        val from = Offset(100f, 100f)
+        val to = Offset(300f, 100f)
+        val slur = shapePoints(ShapeKind.SLUR, from, to, headPx = 0f)
+        val tie = shapePoints(ShapeKind.TIE, from, to, headPx = 0f)
+        // starts and ends where the finger did
+        assertEquals(from, slur.first())
+        assertEquals(to, slur.last())
+        assertEquals(from, tie.first())
+        assertEquals(to, tie.last())
+        // bows up on a left-to-right drag, a slur deeper than a tie, and never below the line
+        val slurSag = from.y - slur.minOf { it.y }
+        val tieSag = from.y - tie.minOf { it.y }
+        assertTrue("slur $slurSag, tie $tieSag", slurSag > tieSag)
+        assertTrue(tieSag > 0f)
+        assertTrue(slur.all { it.y <= from.y + 1e-3f })
+        // smooth: sampled, not a hand of straight pieces
+        slur.zipWithNext().forEach { (a0, b0) -> assertTrue((b0 - a0).getDistance() < 20f) }
+    }
+
+    @Test
+    fun theRowKindTellsAStaffAndASolidApart() {
+        assertEquals(Stroke.SHAPE_STAFF, strokeKindOf(ShapeKind.STAFF, filled = true))
+        assertEquals(Stroke.SHAPE_FILLED, strokeKindOf(ShapeKind.RECT, filled = true))
+        assertEquals(Stroke.SHAPE, strokeKindOf(ShapeKind.RECT, filled = false))
+        // a line has no inside: "filled" cannot turn it into a solid
+        assertEquals(Stroke.SHAPE, strokeKindOf(ShapeKind.LINE, filled = true))
     }
 }

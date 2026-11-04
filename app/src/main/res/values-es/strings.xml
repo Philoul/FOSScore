@@ -16,6 +16,11 @@
     <string name="tool_stamp">Sello</string>
   <string name="tool_text">Texto</string>
     <string name="tool_shapes">Figuras</string>
+    <string name="shape_slur">Ligadura</string>
+    <string name="shape_tie">Prolongación</string>
+    <string name="shape_crescendo">Crescendo</string>
+    <string name="shape_tuplet">Grupo irregular</string>
+    <string name="shape_staff">Pentagrama</string>
     <string name="shape_line">Línea</string>
     <string name="shape_rect">Rectángulo</string>
     <string name="shape_ellipse">Elipse</string>
@@ -171,6 +176,14 @@
     <string name="stamp_turn">Grupetto</string>
     <string name="stamp_acciaccatura">Acciaccatura</string>
     <string name="stamp_appoggiatura">Apoyatura</string>
+    <string name="stamp_treble_clef">Clave de sol</string>
+    <string name="stamp_bass_clef">Clave de fa</string>
+    <string name="stamp_alto_clef">Clave de do (alto)</string>
+    <string name="stamp_treble_clef_8va">Clave de sol con 8va alta</string>
+    <string name="stamp_treble_clef_8vb">Clave de sol con 8va baja</string>
+    <string name="stamp_repeat_start">Barra de inicio de repetición</string>
+    <string name="stamp_repeat_end">Barra de fin de repetición</string>
+    <string name="stamp_repeat_start_end">Barra de inicio y fin de repetición</string>
     <string name="stamp_pedal">Pedal (pisar)</string>
     <string name="stamp_pedal_release">Soltar pedal</string>
 

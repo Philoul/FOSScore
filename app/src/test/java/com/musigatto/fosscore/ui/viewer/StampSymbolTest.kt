@@ -9,10 +9,10 @@ import org.junit.Test
 class StampSymbolTest {
     @Test
     fun completeSetWithUniqueLabels() {
-        // 33 con nombre traducido + 10 digitaciones que se anuncian con su propio número
-        assertEquals(43, StampSymbol.entries.size)
+        // 41 con nombre traducido + 10 digitaciones que se anuncian con su propio número
+        assertEquals(51, StampSymbol.entries.size)
         val named = StampSymbol.entries.filter { it.descRes != null }
-        assertEquals(33, named.size)
+        assertEquals(41, named.size)
         assertEquals(named.size, named.map { it.descRes }.toSet().size)
 
         // one glyph per stamp, all in SMuFL's private use area (a duplicated code point, or a
@@ -29,13 +29,21 @@ class StampSymbolTest {
     @Test
     fun newSymbolsCarryTheirSmuflCodepoints() {
         // verified against the official SMuFL tables (holds-and-pauses, common-ornaments,
-        // plucked-techniques, keyboard-techniques)
+        // clefs, repeats, plucked-techniques, keyboard-techniques)
         assertEquals(0xE4CE, StampSymbol.BREATH_COMMA.codepoint)
         assertEquals(0xE567, StampSymbol.TURN.codepoint)
         assertEquals(0xE634, StampSymbol.ARPEGGIO_UP.codepoint)
         assertEquals(0xE635, StampSymbol.ARPEGGIO_DOWN.codepoint)
         assertEquals(0xE650, StampSymbol.PEDAL.codepoint)
         assertEquals(0xE655, StampSymbol.PEDAL_RELEASE.codepoint)
+        assertEquals(0xE050, StampSymbol.TREBLE_CLEF.codepoint)
+        assertEquals(0xE062, StampSymbol.BASS_CLEF.codepoint)
+        assertEquals(0xE05C, StampSymbol.ALTO_CLEF.codepoint)
+        assertEquals(0xE053, StampSymbol.TREBLE_CLEF_8VA.codepoint)
+        assertEquals(0xE052, StampSymbol.TREBLE_CLEF_8VB.codepoint)
+        assertEquals(0xE040, StampSymbol.REPEAT_START.codepoint)
+        assertEquals(0xE041, StampSymbol.REPEAT_END.codepoint)
+        assertEquals(0xE042, StampSymbol.REPEAT_START_END.codepoint)
     }
 
     @Test

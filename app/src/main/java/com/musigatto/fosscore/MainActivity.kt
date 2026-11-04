@@ -1,8 +1,13 @@
 package com.musigatto.fosscore
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.FrameMetrics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,6 +55,7 @@ import com.musigatto.fosscore.ui.settings.PreferencesScreen
 import com.musigatto.fosscore.ui.setlist.SetlistsScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
 import com.musigatto.fosscore.ui.viewer.AppLanguage
+import com.musigatto.fosscore.ui.viewer.InkPerfMetrics
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
 import com.musigatto.fosscore.ui.viewer.SetlistPlace
 import com.musigatto.fosscore.ui.viewer.Settings
@@ -78,6 +84,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            InkPerfMetrics.enable(windowManager.defaultDisplay.refreshRate)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                // no removal needed: the listener hangs off the window, which dies with the activity
+                window.addOnFrameMetricsAvailableListener(
+                    { _, metrics, _ ->
+                        InkPerfMetrics.frame(metrics.getMetric(FrameMetrics.TOTAL_DURATION))
+                    },
+                    Handler(Looper.getMainLooper()),
+                )
+            }
+        }
         enableEdgeToEdge()
         setContent {
             val context = LocalContext.current

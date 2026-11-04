@@ -1,6 +1,7 @@
 package com.musigatto.fosscore
 
 import com.musigatto.fosscore.library.Sheet
+import com.musigatto.fosscore.ui.viewer.StartPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,6 +31,15 @@ class NavStateTest {
         assertFalse(nav.setlistsOpen)
         assertTrue(nav.libraryOpen)
         assertEquals(score, nav.sheet)
+    }
+
+    @Test
+    fun turningToTheNextScoreOfASetlistKeepsTheTopBarAsItWas() {
+        val next = score.copy(id = 2L, hash = "h2")
+        val playing = NavState(sheet = score, playSetlist = 3, playItem = 9)
+
+        assertTrue(playing.toPlace(next, itemId = 10, start = StartPage.FIRST, chromeShown = true).chromeShown)
+        assertFalse(playing.toPlace(next, itemId = 10, start = StartPage.FIRST, chromeShown = false).chromeShown)
     }
 
     @Test

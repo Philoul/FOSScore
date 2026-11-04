@@ -189,13 +189,18 @@ fun PdfViewerScreen(
     sheetId: Long? = null,
     /** In a setlist, the setlist: ≡ in the menu opens it (the setlists otherwise). */
     onOpenSetlist: () -> Unit = onOpenLibrary,
-    /** In a setlist, turning past the last page opens the next score, before the first the one before. */
-    onPastEnd: (() -> Unit)? = null,
-    onBeforeStart: (() -> Unit)? = null,
+    /**
+     * In a setlist, turning past the last page opens the next score, before the first the one
+     * before; each is told whether the top bar shows, for the other score to open the same way.
+     */
+    onPastEnd: ((Boolean) -> Unit)? = null,
+    onBeforeStart: ((Boolean) -> Unit)? = null,
     /** Where the score opens: its first page (the next score of a setlist), its last one (the one before). */
     start: StartPage = StartPage.REMEMBERED,
     /** In a setlist, its name and the score's place in it, recalled next to the title. */
     setlistPlace: SetlistPlace? = null,
+    /** The top bar shows on opening: the score before in the setlist was left with it. */
+    chromeShown: Boolean = false,
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -275,8 +280,8 @@ fun PdfViewerScreen(
     val twoUp = display.twoUp
     val halfEnabled = display.halfPage
     var halfTurned by rememberSaveable { mutableStateOf(false) }
-    // the chrome starts hidden: the app is the page (spec §0)
-    var navVisible by rememberSaveable { mutableStateOf(false) }
+    // the chrome starts hidden: the app is the page (spec §0); in a setlist, as the score before left it
+    var navVisible by rememberSaveable { mutableStateOf(chromeShown) }
     // the paper: the document, its bitmaps, the cut of a half page and the lock MuPDF needs
     val paper = rememberPagePaper(pdfUri)
     // the paper that is open: how many pages it has, and why it is not there if it is not.
@@ -648,7 +653,7 @@ fun PdfViewerScreen(
                 currentPage = turn.flow.page
                 halfTurned = turn.flow.halfTurned
             }
-            Turn.ToOtherScore -> onPastEnd?.invoke()
+            Turn.ToOtherScore -> onPastEnd?.invoke(navVisible)
             Turn.Stay -> Unit
         }
     }
@@ -660,7 +665,7 @@ fun PdfViewerScreen(
                 currentPage = turn.flow.page
                 halfTurned = turn.flow.halfTurned
             }
-            Turn.ToOtherScore -> onBeforeStart?.invoke()
+            Turn.ToOtherScore -> onBeforeStart?.invoke(navVisible)
             Turn.Stay -> Unit
         }
     }

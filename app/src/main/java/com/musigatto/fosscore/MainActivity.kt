@@ -111,7 +111,16 @@ internal data class NavState(
     val playItem: Long = 0,
     /** The page the score opens on. */
     val start: StartPage = StartPage.REMEMBERED,
+    /** The score opens with its top bar shown: the one before in the setlist was left with it. */
+    val chromeShown: Boolean = false,
 ) {
+    /**
+     * Another place of the setlist playing, turned to from the score open: [chromeShown] is
+     * whether that score's top bar showed, and the next one opens the same way.
+     */
+    fun toPlace(sheet: Sheet, itemId: Long, start: StartPage, chromeShown: Boolean) =
+        copy(sheet = sheet, playItem = itemId, start = start, chromeShown = chromeShown)
+
     /** The library, chosen in the side menu: the view it replaces closes. */
     fun toLibrary() = copy(libraryOpen = true, setlistsOpen = false)
 
@@ -228,9 +237,9 @@ private fun FOSScoreNav(
     val place = playingIds.indexOf(s.playItem).takeIf { it >= 0 }?.let { at ->
         playingName?.let { name -> SetlistPlace(name, at + 1, playingIds.size) }
     }
-    fun openPlace(itemId: Long?, start: StartPage): (() -> Unit)? {
+    fun openPlace(itemId: Long?, start: StartPage): ((Boolean) -> Unit)? {
         val entry = playing.find { it.itemId == itemId } ?: return null
-        return { nav = nav.copy(sheet = entry.sheet, playItem = entry.itemId, start = start) }
+        return { chromeShown -> nav = nav.toPlace(entry.sheet, entry.itemId, start, chromeShown) }
     }
     // The window background is always light (Theme.FOSScore extends Theme.Material.Light), and a
     // composable that paints nothing shows it: that is why the page matte was white even in dark
@@ -260,6 +269,7 @@ private fun FOSScoreNav(
                     onBeforeStart = openPlace(neighbour(playingIds, s.playItem, -1), StartPage.LAST),
                     start = s.start,
                     setlistPlace = place,
+                    chromeShown = s.chromeShown,
                 )
             }
         }
@@ -281,7 +291,7 @@ private fun FOSScoreNav(
                         if (libraryShown) LibraryScreen(
                             repository = repository,
                             onOpen = {
-                                nav = nav.copy(sheet = it, libraryOpen = false, playSetlist = 0, playItem = 0, start = StartPage.REMEMBERED)
+                                nav = nav.copy(sheet = it, libraryOpen = false, playSetlist = 0, playItem = 0, start = StartPage.REMEMBERED, chromeShown = false)
                             },
                             onEdit = { nav = nav.copy(detail = it) },
                             onImport = { picker.launch(SheetFormat.PICKER_TYPES) },
@@ -302,7 +312,7 @@ private fun FOSScoreNav(
                                     onPlay = { setlistId, entry ->
                                         nav = nav.copy(
                                             sheet = entry.sheet, libraryOpen = false, setlistsOpen = false,
-                                            playSetlist = setlistId, playItem = entry.itemId, start = StartPage.FIRST,
+                                            playSetlist = setlistId, playItem = entry.itemId, start = StartPage.FIRST, chromeShown = false,
                                         )
                                     },
                                     onClose = { nav = nav.copy(setlistsOpen = false) },

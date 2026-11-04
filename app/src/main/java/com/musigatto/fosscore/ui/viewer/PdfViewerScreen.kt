@@ -162,17 +162,17 @@ internal enum class AnnotationTool {
 
 // A stroke prepared for drawing: the Path is built in fit coordinates once per change, so a
 // redraw (next pen point, pinch, pan) only re-issues it instead of decoding the points again.
-// [filled] carries a solid shape (strokes.kinds is the shape kind): drawn Fill, no outline.
-internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float, val filled: Boolean)
+// [kind] is `strokes.kind`: it decides the fill and the staff's several lines, at draw time.
+internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float, val kind: Int)
 
 private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): List<InkDraw> =
     strokes.map { st ->
         InkDraw(
             id = st.id,
-            path = inkPath(strokePointsPx(st, fit)),
+            path = inkPath(strokePointsPx(st, fit), st.kind),
             color = inkTint(st.color, invert),
             width = st.width * fit.height,
-            filled = Stroke.isFilled(st.kind)
+            kind = st.kind
         )
     }
 
@@ -1243,7 +1243,11 @@ fun PdfViewerScreen(
                     previewWidthPx = liveWidth,
                     // the same rule the commit uses: fill is only for the closures. A filled
                     // line's preview would be a Fill of its 2-point path — nothing on screen
-                    previewFilled = tool == AnnotationTool.SHAPE && shapeFilled && shapeType.canFill,
+                    previewKind = if (tool == AnnotationTool.SHAPE) {
+                        strokeKindOf(shapeType, shapeFilled)
+                    } else {
+                        Stroke.INK
+                    },
                     pageStamps = shownStamps,
                     dragStamp = editor.dragStamp,
                     selectionRect = selectionRect,

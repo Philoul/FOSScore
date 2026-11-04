@@ -17,6 +17,11 @@
     <string name="tool_stamp">Stamp</string>
   <string name="tool_text">Text</string>
     <string name="tool_shapes">Shapes</string>
+    <string name="shape_slur">Slur</string>
+    <string name="shape_tie">Tie</string>
+    <string name="shape_crescendo">Crescendo</string>
+    <string name="shape_tuplet">Tuplet</string>
+    <string name="shape_staff">Staff</string>
     <string name="shape_line">Line</string>
     <string name="shape_rect">Rectangle</string>
     <string name="shape_ellipse">Ellipse</string>

@@ -126,8 +126,8 @@ fun EraserIcon(modifier: Modifier = Modifier) {
 
 /**
  * The Shapes tool: the glyph is the shape itself, so like the stamp button, the bar shows what is
- * armed. [ShapeKind.LINE] / [ShapeKind.RECT] / [ShapeKind.ELLIPSE] are primitives; the arrow is
- * shaft + tip + wings, the same geometry the page draws.
+ * armed. Line, rectangle and ellipse are primitives; the arrow is shaft + tip + wings, the same
+ * geometry the page draws; the staff is its five lines.
  */
 @Composable
 fun ShapeGlyph(kind: ShapeKind, modifier: Modifier = Modifier) {
@@ -146,6 +146,34 @@ fun ShapeGlyph(kind: ShapeKind, modifier: Modifier = Modifier) {
                 // the wings trail behind the tip, the way the drawn arrow opens
                 drawLine(color, tip, Offset(16f * u, 13.7f * u), strokeWidth = sw)
                 drawLine(color, tip, Offset(12.2f * u, 7.9f * u), strokeWidth = sw)
+            }
+            // the same bow on the page: a slur deep, a tie barely off the line
+            ShapeKind.SLUR, ShapeKind.TIE -> {
+                val deep = kind == ShapeKind.SLUR
+                drawArc(
+                    color,
+                    startAngle = 180f,
+                    sweepAngle = -180f,
+                    useCenter = false,
+                    topLeft = Offset(3f * u, (if (deep) 7f else 11f) * u),
+                    size = Size(18f * u, (if (deep) 10f else 5f) * u),
+                    style = stroke
+                )
+            }
+            // a mouth at the far end, shut at this one
+            ShapeKind.CRESCENDO -> {
+                drawLine(color, Offset(4f * u, 12f * u), Offset(20f * u, 6f * u), strokeWidth = sw)
+                drawLine(color, Offset(4f * u, 12f * u), Offset(20f * u, 18f * u), strokeWidth = sw)
+            }
+            // the bracket over the notes: a line with a tick down at each end
+            ShapeKind.TUPLET -> {
+                drawLine(color, Offset(4f * u, 9f * u), Offset(20f * u, 9f * u), strokeWidth = sw)
+                drawLine(color, Offset(4f * u, 9f * u), Offset(4f * u, 14f * u), strokeWidth = sw)
+                drawLine(color, Offset(20f * u, 9f * u), Offset(20f * u, 14f * u), strokeWidth = sw)
+            }
+            ShapeKind.STAFF -> (0 until STAFF_LINES).forEach { i ->
+                val y = (6f + 3f * i) * u
+                drawLine(color, Offset(3f * u, y), Offset(21f * u, y), strokeWidth = sw)
             }
         }
     }

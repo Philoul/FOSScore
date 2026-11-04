@@ -16,6 +16,11 @@
     <string name="tool_stamp">Sello</string>
   <string name="tool_text">Texto</string>
     <string name="tool_shapes">Figuras</string>
+    <string name="shape_slur">Ligadura</string>
+    <string name="shape_tie">Prolongación</string>
+    <string name="shape_crescendo">Crescendo</string>
+    <string name="shape_tuplet">Grupo irregular</string>
+    <string name="shape_staff">Pentagrama</string>
     <string name="shape_line">Línea</string>
     <string name="shape_rect">Rectángulo</string>
     <string name="shape_ellipse">Elipse</string>

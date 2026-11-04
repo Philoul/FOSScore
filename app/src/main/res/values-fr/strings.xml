@@ -15,6 +15,11 @@
     <string name="tool_stamp">Tampon</string>
   <string name="tool_text">Texte</string>
     <string name="tool_shapes">Formes</string>
+    <string name="shape_slur">Liaison</string>
+    <string name="shape_tie">Prolongation</string>
+    <string name="shape_crescendo">Crescendo</string>
+    <string name="shape_tuplet">Groupe irrégulier</string>
+    <string name="shape_staff">Portée</string>
     <string name="shape_line">Trait</string>
     <string name="shape_rect">Rectangle</string>
     <string name="shape_ellipse">Ellipse</string>

@@ -202,7 +202,8 @@ internal fun Modifier.pageGestures(
                 shapePoints(currentShapeKind, from, to, arrowHeadPx(currentShapeWidth))
             var eraserActive = false
             var eraserPath = mutableListOf<Offset>()
-            var scaleF = 1f   // accumulated handle factor (always from startPos)
+            var scaleX = 1f   // accumulated handle factors (always from startPos)
+            var scaleY = 1f
             // handle in use: (base object, grabbed corner) while scaling
             var resizing: Resizing? = null
             // hit-testing only the rows the DB already knows: a pending row has no stable id yet
@@ -330,9 +331,12 @@ internal fun Modifier.pageGestures(
                         if (matteTap && currentEditing && currentCanEdit) {
                             onToolsDown()
                         } else if (rz != null) {
-                            val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleF) }
+                            val pts = rz.ptsPx.map { scalePoints(it, rz.center, scaleX, scaleY) }
                             val changed = pts != rz.ptsPx
                             if (changed) {
+                                // a shape keeps the thickness its panel gave it: the stretch
+                                // moves its lines apart, it does not make them bolder
+                                val shape = Stroke.isShape(rz.strokes.first().kind)
                                 editor.updateStrokes(
                                     currentPage,
                                     rz.strokes.mapIndexed { i, base ->
@@ -342,7 +346,8 @@ internal fun Modifier.pageGestures(
                                                     pxToNormalized(it, currentHitFit)
                                                 }
                                             ),
-                                            width = (base.width * scaleF)
+                                            width = if (shape) base.width
+                                            else (base.width * scaleX)
                                                 .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
                                         )
                                     },
@@ -397,11 +402,7 @@ internal fun Modifier.pageGestures(
                             ) {
                                 // filled is only for the closures: a portrait as a drawn arrow
                                 // or a shape-less line is a shape-less "solid" with no inside to fill
-                                val kind = if (currentShapeFilled && currentShapeKind.canFill) {
-                                    Stroke.SHAPE_FILLED
-                                } else {
-                                    Stroke.SHAPE
-                                }
+                                val kind = strokeKindOf(currentShapeKind, currentShapeFilled)
                                 editor.addInk(
                                     currentPage,
                                     Stroke(
@@ -572,32 +573,37 @@ internal fun Modifier.pageGestures(
                     }
 
                     resizing?.let { rz ->
-                        // stretching the selected word by a handle: one pointer, scaling
-                        // around the box center. the factor is worked out from the
-                        // starting position, never accumulated
+                        // stretching the selection by a handle, around the box center. The factor
+                        // is worked out from the starting position, never accumulated. A word
+                        // keeps one factor (it is handwriting); a shape gets one per axis, so a
+                        // staff can be made wider or taller on its own to sit on the printed one
                         val tracking = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
-                        val f0 = scaleFactor(rz.center, rz.startPos, fitPoint(tracking.position))
+                        val now = fitPoint(tracking.position)
+                        val shape = Stroke.isShape(rz.strokes.first().kind)
+                        val f = scaleFactor(rz.center, rz.startPos, now)
+                        val s = if (shape) axisScales(rz.center, rz.startPos, now) else Offset(f, f)
                         // growing stops when the far corner reaches the sheet: a stretch near the
                         // border must not push the word (or hide part of it) outside the page
-                        var fMax = Float.MAX_VALUE
+                        var fMaxX = Float.MAX_VALUE
+                        var fMaxY = Float.MAX_VALUE
                         rz.ptsPx.flatten().forEach { p ->
                             val dx = p.x - rz.center.x
                             val dy = p.y - rz.center.y
-                            if (dx > 0f) fMax = minOf(fMax, (currentHitFit.width - rz.center.x) / dx)
-                            else if (dx < 0f) fMax = minOf(fMax, rz.center.x / -dx)
-                            if (dy > 0f) fMax = minOf(fMax, (currentHitFit.height - rz.center.y) / dy)
-                            else if (dy < 0f) fMax = minOf(fMax, rz.center.y / -dy)
+                            if (dx > 0f) fMaxX = minOf(fMaxX, (currentHitFit.width - rz.center.x) / dx)
+                            else if (dx < 0f) fMaxX = minOf(fMaxX, rz.center.x / -dx)
+                            if (dy > 0f) fMaxY = minOf(fMaxY, (currentHitFit.height - rz.center.y) / dy)
+                            else if (dy < 0f) fMaxY = minOf(fMaxY, rz.center.y / -dy)
                         }
-                        val f = f0.coerceAtMost(fMax).coerceAtLeast(0f)
-                        scaleF = f
+                        scaleX = s.x.coerceAtMost(fMaxX).coerceAtLeast(0f)
+                        scaleY = s.y.coerceAtMost(fMaxY).coerceAtLeast(0f)
                         editor.dragStrokes = rz.strokes.mapIndexed { i, st ->
                             st.copy(
                                 points = encodePoints(
-                                    scalePoints(rz.ptsPx[i], rz.center, f)
+                                    scalePoints(rz.ptsPx[i], rz.center, scaleX, scaleY)
                                         .map { pxToNormalized(it, currentHitFit) }
                                 ),
-                                width = (st.width * f)
-                                    .coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+                                width = if (shape) st.width
+                                else (st.width * f).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
                             )
                         }
                         prevCentroid = tracking.position

@@ -79,30 +79,41 @@ internal fun inkTint(color: Int?, invert: Boolean): Color {
 // the same negative as INVERT_MATRIX, for what is drawn with a color instead of a bitmap
 internal fun Color.inverted(): Color = Color(1f - red, 1f - green, 1f - blue, alpha)
 
-internal fun inkPath(pts: List<Offset>): Path {
+/**
+ * The path of a stroke. Free ink and every closed shape are one polyline; a staff ([Stroke.SHAPE_STAFF])
+ * is stored as point pairs and each pair is a line of its own, so one stroke draws five.
+ */
+internal fun inkPath(pts: List<Offset>, kind: Int = Stroke.INK): Path {
     val path = Path()
     if (pts.size < 2) return path
+    if (kind == Stroke.SHAPE_STAFF) {
+        for (i in 0 until pts.size - 1 step 2) {
+            path.moveTo(pts[i].x, pts[i].y)
+            path.lineTo(pts[i + 1].x, pts[i + 1].y)
+        }
+        return path
+    }
     path.moveTo(pts[0].x, pts[0].y)
     for (i in 1 until pts.size) path.lineTo(pts[i].x, pts[i].y)
     return path
 }
 
 // the one place that decides how a stroke looks: a filled solid, or a round-capped line
-private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, filled: Boolean = false) =
+private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, kind: Int = Stroke.INK) =
     drawPath(
         path,
         color,
-        style = if (filled) Fill
+        style = if (Stroke.isFilled(kind)) Fill
         else DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 
-private fun DrawScope.drawInk(pts: List<Offset>, color: Color, widthPx: Float, filled: Boolean = false) {
+private fun DrawScope.drawInk(pts: List<Offset>, color: Color, widthPx: Float, kind: Int = Stroke.INK) {
     if (pts.size < 2) return
-    drawInk(inkPath(pts), color, widthPx, filled)
+    drawInk(inkPath(pts, kind), color, widthPx, kind)
 }
 
 // an already-built path (the committed ink, so a redraw re-issues it instead of decoding points)
-private fun DrawScope.drawInk(d: InkDraw) = drawInk(d.path, d.color, d.width, d.filled)
+private fun DrawScope.drawInk(d: InkDraw) = drawInk(d.path, d.color, d.width, d.kind)
 
 // ink, live ink and the selection box all draw in page coordinates: this puts the page's fit rect
 // and its zoom into the DrawScope transform
@@ -251,10 +262,13 @@ internal fun PageCanvas(
     lineBoundaries: List<Float>,
     dragStrokes: List<Stroke>?,
     inkPreview: State<List<Offset>>,
-    /** Color and width of the live stroke: the eraser's red, the pen's ink or a shape's own. */
+    /**
+     * Color, width and kind of the live stroke: the eraser's red trail, the pen's ink or the shape
+     * being aimed (its kind decides fill and whether it is a five-line staff).
+     */
     previewColor: Color,
     previewWidthPx: Float,
-    previewFilled: Boolean,
+    previewKind: Int,
     pageStamps: List<Stamp>,
     dragStamp: Stamp?,
     selectionRect: RectPx?,
@@ -544,14 +558,14 @@ internal fun PageCanvas(
                                         strokePointsPx(ds, hitFit),
                                         inkTint(ds.color, invert),
                                         ds.width * hitFit.height,
-                                        Stroke.isFilled(ds.kind)
+                                        ds.kind
                                     )
                                 }
-                                // the shape being aimed draws filled while its panel says so:
-                                // the preview never lies about what will be committed
+                                // the shape being aimed draws as it will land: filled, or a staff
+                                // in its five lines, never a single line that becomes something else
                                 val preview = inkPreview.value
                                 if (preview.size >= 2) {
-                                    drawInk(preview, previewColor, previewWidthPx, previewFilled)
+                                    drawInk(preview, previewColor, previewWidthPx, previewKind)
                                 }
                             }
                         }

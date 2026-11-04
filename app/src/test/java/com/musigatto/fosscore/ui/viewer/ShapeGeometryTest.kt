@@ -2,6 +2,7 @@ package com.musigatto.fosscore.ui.viewer
 
 import androidx.compose.ui.geometry.Offset
 import com.musigatto.fosscore.library.Stroke
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -142,22 +143,22 @@ class ShapeGeometryTest {
     }
 
     @Test
-    fun aHairpinFillsItsDragBoxShutOnOneSideOpenOnTheOther() {
-        // left-to-right = crescendo: shut on left, open on right
+    fun aHairpinIsThreePointsOpenVFromShutToOpen() {
+        // left-to-right = crescendo < : shut at from (left), open at to (right)
         val from = Offset(100f, 100f)
         val to = Offset(300f, 150f)
         val pts = shapePoints(ShapeKind.CRESCENDO, from, to, headPx = 0f)
-        assertEquals(4, pts.size) // closed box: shut corner, open top, open bottom, shut corner (closed)
-        assertEquals(Offset(100f, 100f), pts[0]) // shut at from
-        assertEquals(Offset(300f, 100f), pts[1]) // open top
-        assertEquals(Offset(300f, 150f), pts[2]) // open bottom
-        assertEquals(Offset(100f, 150f), pts[3]) // shut bottom
-        // right-to-left = decrescendo: shut on right, open on left
+        assertEquals(3, pts.size)
+        assertEquals(from, pts[0]) // shut end
+        val midY = (from.y + to.y) / 2f
+        val h = abs(from.y - to.y) / 2f
+        assertEquals(Offset(to.x, midY - h), pts[1]) // open top
+        assertEquals(Offset(to.x, midY + h), pts[2]) // open bottom
+        // right-to-left = decrescendo > : shut at from (right), open at to (left)
         val rev = shapePoints(ShapeKind.CRESCENDO, to, from, headPx = 0f)
-        assertEquals(Offset(300f, 100f), rev[0]) // shut at from (now top-right)
-        assertEquals(Offset(100f, 100f), rev[1]) // open top
-        assertEquals(Offset(100f, 150f), rev[2]) // open bottom
-        assertEquals(Offset(300f, 150f), rev[3]) // shut bottom
+        assertEquals(to, rev[0]) // shut end
+        assertEquals(Offset(from.x, midY - h), rev[1]) // open top
+        assertEquals(Offset(from.x, midY + h), rev[2]) // open bottom
     }
 
     @Test

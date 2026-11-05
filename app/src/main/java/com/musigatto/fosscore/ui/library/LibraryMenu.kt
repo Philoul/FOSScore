@@ -26,8 +26,9 @@ import kotlinx.coroutines.launch
 
 /**
  * The library's side menu, opened by the ☰ button of the library header or by swiping from the
- * left edge. It holds what concerns the whole app: the preferences (language, the export and
- * import of the library), then, greyed out until they are built, setlists, tags, practice
+ * left edge. It holds what concerns the whole app: the preferences (language, keyboard and
+ * pedals, MIDI, the export and import of the library), then, greyed out until they are built,
+ * setlists, tags, practice
  * and "About" (roadmap 3.6).
  */
 @Composable

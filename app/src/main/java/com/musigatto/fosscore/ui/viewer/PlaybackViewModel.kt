@@ -12,8 +12,10 @@ import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.musicxml.SoundSpec
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.ScorePrecompute
+import com.musigatto.fosscore.sound.ChannelSound
 import com.musigatto.fosscore.sound.LivePlayer
 import com.musigatto.fosscore.sound.MidiSong
+import com.musigatto.fosscore.sound.PartSound
 import com.musigatto.fosscore.sound.SoundBank
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
@@ -45,6 +47,9 @@ private const val SETTLE_MS = 200L
 
 // playback of a newly laid out score is made ready once its first pages are drawn
 private const val WARM_DELAY_MS = 1000L
+
+// the MIDI channels a part's sound can be set on
+private const val MIDI_CHANNELS = 16
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
@@ -128,9 +133,17 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _tempo = MutableStateFlow(Settings.tempo(context, score))
     val tempo: StateFlow<Float> = _tempo.asStateFlow()
 
+    // semitones the music is heard up or down, the score shown staying as it is
+    private val _transpose = MutableStateFlow(Settings.playbackTranspose(context, score))
+    val transpose: StateFlow<Int> = _transpose.asStateFlow()
+
     // null: the parts shown are the parts heard
     private val _heard = MutableStateFlow(Settings.heardParts(context, score))
     val heard: StateFlow<Set<String>?> = _heard.asStateFlow()
+
+    // the sound chosen for each part, by part id (a part left out plays the file's instrument)
+    private val _partSounds = MutableStateFlow(Settings.partSounds(context, score))
+    val partSounds: StateFlow<Map<String, PartSound>> = _partSounds.asStateFlow()
 
     private val _failed = MutableStateFlow(false)
     val failed: StateFlow<Boolean> = _failed.asStateFlow()
@@ -148,6 +161,12 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var attachedFor: Any? = null
     private var player: LivePlayer? = null
     private var playback: Playback? = null
+    // the music the player plays now, to set the parts' sounds on its channels
+    private var song: MidiSong? = null
+    // a part's sound the user is trying, not saved: the part, and its sound (null: the file's)
+    private var trying: Pair<String, PartSound?>? = null
+    // the parts' new sounds being read, before they are heard
+    private var swapping: Job? = null
     // the last playback of this layout, kept after a stop: ⏮ can still show where it goes
     private var lastPlayback: Playback? = null
     private var starting: Job? = null
@@ -177,7 +196,13 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     // ▶ then starts at once
                     runCatching {
                         val made = livePlayer()
-                        it.playback(liveSound())?.let { pb -> withContext(Dispatchers.Default) { made.warm(MidiSong.read(pb.midi)) } }
+                        it.playback(liveSound())?.let { pb ->
+                            withContext(Dispatchers.Default) {
+                                val read = MidiSong.read(pb.midi)
+                                made.setSounds(channelSounds(pb, read))
+                                made.warm(read)
+                            }
+                        }
                     }
                 }
             }
@@ -243,6 +268,15 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         player?.tempoFactor = f.toDouble()
     }
 
+    /** Plays the music [semitones] up or down, at once; the score shown does not change. */
+    fun setTranspose(semitones: Int) {
+        val s = semitones.coerceIn(-MAX_TRANSPOSE, MAX_TRANSPOSE)
+        if (s == _transpose.value) return
+        _transpose.value = s
+        Settings.setPlaybackTranspose(context, score, s)
+        player?.transpose(s)
+    }
+
     fun setHeard(id: String, heard: Boolean, parts: List<Part>) {
         val now = heardParts(_heard.value, shownParts, parts)
         val next = if (heard) now + id else now - id
@@ -252,6 +286,50 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         if (next.isEmpty() || playback == null) player?.muted = next.isEmpty()
         // all muted: the music goes on as it is, unheard
         if (next.isNotEmpty()) soundChanged()
+    }
+
+    /**
+     * Part [id] plays [sound] (null: the instrument its file gives it), from its next notes on
+     * when the music plays.
+     */
+    fun setPartSound(id: String, sound: PartSound?) {
+        trying = null
+        val next = if (sound == null) _partSounds.value - id else _partSounds.value + (id to sound)
+        if (next != _partSounds.value) {
+            _partSounds.value = next
+            Settings.setPartSounds(context, score, next)
+        }
+        soundsChanged()
+    }
+
+    /**
+     * Part [id] heard with [sound] (null: the instrument its file gives it) while the user tries
+     * sounds, nothing saved; [setPartSound] keeps one, and a null [id] goes back to the saved ones.
+     */
+    fun tryPartSound(id: String?, sound: PartSound?) {
+        trying = id?.let { it to sound }
+        soundsChanged()
+    }
+
+    // the parts' sounds on the player's channels, from its next notes on
+    // The new sounds are heard once their samples are read (decoding a bank of the user's takes
+    // seconds on a slow tablet): the old ones play meanwhile, and a newer choice drops this one.
+    private fun soundsChanged() {
+        swapping?.cancel()
+        val pb = playback ?: return
+        val playing = song ?: return
+        swapping = viewModelScope.launch {
+            try {
+                val sounds = withContext(Dispatchers.Default) {
+                    channelSounds(pb, playing).also { s -> player?.warm(playing, s) { !isActive } }
+                }
+                if (isActive) player?.setSounds(sounds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "new sound not set: ${e.message}", e)
+            }
+        }
     }
 
     /** A page turned by hand during playback: let the reader look ahead or back. */
@@ -276,6 +354,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         following = null
         player?.pause()
         playback = null
+        song = null
         followPaused = false
         _ahead.value = emptyList()
         _cursor.value = emptyList()
@@ -317,13 +396,38 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     // the music for the live player: at the written tempo, which the player scales as it goes
     private fun liveSound() = sound().copy(tempo = 1.0)
 
-    // the player, made once (its sound bank is read the first time)
+    // the player, made once with the default bank of the preferences (read the first time)
     private suspend fun livePlayer(): LivePlayer = player ?: withContext(Dispatchers.Default) {
-        LivePlayer(SoundBank.load(context))
+        LivePlayer(SoundBank.load(context, SoundBank.usable(context, Settings.soundBank(context))))
     }.also { made ->
         made.onEnd = { viewModelScope.launch { onEnd() } }
         made.muted = _heard.value?.isEmpty() == true
         player = made
+    }
+
+    // The sound of each channel of [music] from the parts' sounds: a part plays on the channels of
+    // its tracks. Reads the banks it needs: off the main thread.
+    private fun channelSounds(pb: Playback, music: MidiSong): List<ChannelSound?> {
+        val out = arrayOfNulls<ChannelSound>(MIDI_CHANNELS)
+        val tried = trying
+        val sounds = if (tried == null) _partSounds.value
+        else tried.second?.let { _partSounds.value + (tried.first to it) } ?: (_partSounds.value - tried.first)
+        val default = SoundBank.usable(context, Settings.soundBank(context))
+        for (part in pages?.parts.orEmpty()) {
+            // what the part plays: its sound, or the score's; from another bank when that one is
+            // gone, not ready, or without the instrument (resolveSound)
+            val score = part.scoreSound(default)
+            val sound = SoundBank.resolve(context, sounds[part.id], score)
+            // the score's own instrument in the default bank: the player's bank plays the file
+            if (sound == score) continue
+            val font = SoundBank.load(context, sound.bankId)
+            for (track in pb.partTracks[part.id].orEmpty()) {
+                for (channel in music.trackChannels.getOrNull(track).orEmpty()) {
+                    out[channel] = ChannelSound(font, sound.bank, sound.program)
+                }
+            }
+        }
+        return out.toList()
     }
 
     // the highlight and the page go to the notes at [quarters], without playing
@@ -353,15 +457,20 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     ?: loop.a?.takeIf { loop.on }
                     ?: pb.onsets.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters
                     ?: 0.0
-                val song = withContext(Dispatchers.Default) { MidiSong.read(pb.midi) }
+                val read = withContext(Dispatchers.Default) { MidiSong.read(pb.midi) }
                 val next = livePlayer()
-                // the samples are read now, not by the first notes on the audio thread
-                withContext(Dispatchers.Default) { next.warm(song) }
+                // the parts' sounds, and the samples read now, not by the first notes on the audio thread
+                withContext(Dispatchers.Default) {
+                    next.setSounds(channelSounds(pb, read))
+                    next.warm(read)
+                }
                 if (!isActive) return@launch
                 next.tempoFactor = _tempo.value.toDouble()
+                next.transpose(_transpose.value)
                 next.setLoop(loop.on, loop.start, loop.b)
-                next.setSong(song)
+                next.setSong(read)
                 next.play(from)
+                song = read
                 playback = pb
                 lastPlayback = pb
                 position = from
@@ -389,9 +498,17 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             val pages = pages ?: return@launch
             try {
                 val pb = pages.playback(liveSound()) ?: return@launch
-                val song = withContext(Dispatchers.Default) { MidiSong.read(pb.midi).also { player?.warm(it) } }
+                // the samples first, then the new music with its sounds: nothing is decoded while it plays
+                val (read, sounds) = withContext(Dispatchers.Default) {
+                    val music = MidiSong.read(pb.midi)
+                    val chosen = channelSounds(pb, music)
+                    player?.warm(music, chosen)
+                    music to chosen
+                }
                 if (playback == null) return@launch
-                player?.setSong(song)
+                player?.setSounds(sounds)
+                player?.setSong(read)
+                song = read
                 player?.muted = _heard.value?.isEmpty() == true
                 playback = pb
                 lastPlayback = pb

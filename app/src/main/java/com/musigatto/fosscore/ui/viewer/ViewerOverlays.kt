@@ -18,11 +18,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +57,10 @@ import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.PageSource
 import com.musigatto.fosscore.score.SheetFormat
+import com.musigatto.fosscore.sound.SoundBank
+import com.musigatto.fosscore.sound.SoundBankEntry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * What an entry opens, chosen in the menu or with its icon in the icon bar: the same for both, so
@@ -206,6 +213,26 @@ internal fun ViewerOverlays(
             )
             ViewerSurface.PLAYBACK -> {
                 val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+                val playTranspose by playbackVm.transpose.collectAsState()
+                val partSounds by playbackVm.partSounds.collectAsState()
+                // the sound banks and their instruments, for the sound of each part, read off the
+                // main thread each time the panel opens: banks added or deleted meanwhile show
+                val context = LocalContext.current
+                // read again when a preparation starts or ends: a bank becomes ready while it shows
+                val preparing by SoundBank.preparing.collectAsState()
+                val banks by produceState(emptyList<SoundBankEntry>() to SoundBank.BUILT_IN, preparing.keys) {
+                    value = withContext(Dispatchers.IO) {
+                        SoundBank.list(context) to SoundBank.usable(context, Settings.soundBank(context))
+                    }
+                }
+                val soundChoices = remember(banks) {
+                    SoundChoices(
+                        banks.first,
+                        banks.second,
+                        instrumentsOf = { id -> withContext(Dispatchers.IO) { SoundBank.load(context, id).instruments } },
+                        resolve = { saved, score -> withContext(Dispatchers.IO) { SoundBank.resolve(context, saved, score) } },
+                    )
+                }
                 PlaybackOptionsOverlay(
                     bpm = bpmOf(tempoFactor, writtenBpm),
                     writtenBpm = bpmOf(1f, writtenBpm),
@@ -214,9 +241,20 @@ internal fun ViewerOverlays(
                     onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
                     turnAhead = metronome.turnAhead,
                     onTurnAhead = metronomeVm::setTurnAhead,
+                    transpose = playTranspose,
+                    onTranspose = playbackVm::setTranspose,
+                    // the key found by ear goes into the score: it is laid out in it, and heard the same
+                    onApplyTranspose = if (format.isMusicXml) ({
+                        menu.transpose(scoreLayout.semitones + playTranspose)
+                        playbackVm.setTranspose(0)
+                    }) else null,
                     parts = parts,
                     heard = heardParts(heardPicked, shownIds, parts),
                     onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },
+                    partSounds = partSounds,
+                    soundChoices = soundChoices,
+                    onPartSound = playbackVm::setPartSound,
+                    onTryPartSound = playbackVm::tryPartSound,
                     onDismiss = menu::dismiss,
                 )
             }

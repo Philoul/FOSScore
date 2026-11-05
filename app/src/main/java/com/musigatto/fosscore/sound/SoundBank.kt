@@ -5,12 +5,32 @@ import android.media.MediaCodec
 import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
 import java.io.File
 import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlin.math.min
 
 private const val LOG_TAG = "FOSScore-SoundBank"
@@ -18,33 +38,354 @@ private const val LOG_TAG = "FOSScore-SoundBank"
 // how long the decoder waits for a free buffer, in microseconds
 private const val DECODE_WAIT_US = 10_000L
 
+// a decoder that gives nothing for this long is stuck: the sample is given up (and silent)
+private const val DECODE_STALL_MS = 2_000L
+
 /**
- * The app's sound bank, GeneralUser GS by S. Christian Collins (its licence is next to it in the
- * assets), in SF3: its samples are Ogg Vorbis streams (9 MB instead of 32). The bank is mapped
- * from the APK, where it is stored uncompressed, so it is never copied into the app's memory. A
- * sample is decoded by Android's own Vorbis decoder the first time a piece plays it, then kept in
- * the app's cache: the next pieces read it straight from there.
+ * The instrument chosen for a part: [program] (0-127) of [bank] (128 for drum kits) in sound bank
+ * [bankId] ([SoundBank.BUILT_IN] or one the user added).
+ */
+data class PartSound(val bankId: String, val bank: Int, val program: Int)
+
+/**
+ * The sound a part plays, the one its sound list shows: [saved] (or, without one, the score's own
+ * [score], whose bank is the default one) while its bank can play ([playable]: there, and ready)
+ * and has it ([has]); else the same instrument from the default bank; else from the bank that
+ * comes with the app, which always plays something. A sound is always heard, and its bank shown.
+ */
+fun resolveSound(saved: PartSound?, score: PartSound, playable: (String) -> Boolean, has: (PartSound) -> Boolean): PartSound {
+    val wanted = saved ?: score
+    if (playable(wanted.bankId) && has(wanted)) return wanted
+    val inDefault = wanted.copy(bankId = score.bankId)
+    if (playable(score.bankId) && has(inDefault)) return inDefault
+    return wanted.copy(bankId = SoundBank.BUILT_IN)
+}
+
+/** A bank file found in a folder of the device, not added yet: its file [name], [size] and [uri]. */
+data class BankFile(val name: String, val size: Long, val uri: Uri)
+
+/**
+ * One sound bank the app can play: [BUILT_IN], or one the user added ([size] bytes). A bank in SF3
+ * has its samples [compressed]: it can be chosen once [ready], every sample decoded and kept.
+ */
+data class SoundBankEntry(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val compressed: Boolean = false,
+    val ready: Boolean = true,
+) {
+    val builtIn: Boolean get() = id == SoundBank.BUILT_IN
+}
+
+/**
+ * The sound banks of the app. The built-in one is GeneralUser GS by S. Christian Collins (its
+ * licence is next to it in the assets), in SF3: its samples are Ogg Vorbis streams (9 MB instead
+ * of 32). It is mapped from the APK, where it is stored uncompressed, so it is never copied into
+ * the app's memory, and it cannot be deleted. The user adds SF2 or SF3 banks of their own: each is
+ * copied into the app's files, then mapped the same way.
+ *
+ * A compressed sample is decoded by Android's own Vorbis decoder the first time a piece plays it,
+ * then kept: the next pieces read it straight from there. Android's decoder is slow on an old
+ * tablet (a few times faster than the music), so a bank in SF3 the user adds is prepared once, in
+ * the background, when it is added ([prepare]): all its samples decoded and kept in the app's
+ * files, where the system does not clear them. It cannot be chosen, and does not play, until it
+ * is ready ([usable]); a preparation cut short (the app closed) goes on by itself the next time
+ * the app starts ([prepareAll]).
  */
 object SoundBank {
+    /** The id of the bank that comes with the app. */
+    const val BUILT_IN = "builtin"
+
     private const val ASSET = "soundfont/GeneralUser-GS.sf3"
+    private const val BUILT_IN_NAME = "GeneralUser GS"
 
-    // the decoded samples of this version of the bank
+    // the decoded samples of this version of the built-in bank; a bank added has its own folder
     private const val CACHE = "soundbank/GeneralUser-GS-2.0.3"
+    private const val ADDED_CACHE = "soundbank/added-"
+    private const val DECODED_SUFFIX = ".decoded"
+    // written once every sample of a bank is decoded: the bank can be chosen
+    private const val READY_SUFFIX = ".ready"
 
-    @Volatile private var font: SoundFont? = null
+    // the threads that prepare a bank: a slow tablet has two cores
+    private const val PREPARE_THREADS = 2
 
-    /** The bank, read on the first call (a few tens of milliseconds): call it off the main thread. */
-    fun load(context: Context): SoundFont = font ?: synchronized(this) {
-        font ?: context.assets.openFd(ASSET).use { fd ->
-            FileInputStream(fd.fileDescriptor).channel.use { channel ->
-                SoundFont.read(channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length))
+    // how often the progress of a preparation is told, in samples
+    private const val PROGRESS_EVERY = 8
+
+    // the watch over the preparations: how often it looks, and how long a preparation may go
+    // without a sample done before it is started again (a stuck decoder gives up after 2 s)
+    private const val WATCH_MS = 10_000L
+    private const val STALL_MS = 60_000L
+
+    // the banks the user added, with a text file holding the name shown for each
+    private const val FOLDER = "soundbanks"
+    private const val NAME_SUFFIX = ".name"
+
+    // how deep [filesIn] looks into the sub-folders of the folder chosen
+    private const val FOLDER_DEPTH = 3
+
+    // the banks read so far, by id
+    private val fonts = ConcurrentHashMap<String, SoundFont>()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val _preparing = MutableStateFlow<Map<String, Pair<Int, Int>>>(emptyMap())
+    // the preparations running, and when each last finished a sample
+    private val jobs = ConcurrentHashMap<String, Job>()
+    private val lastProgress = ConcurrentHashMap<String, Long>()
+    private var watching: Job? = null
+
+    /** The banks being prepared, by id: the samples done and the samples in all. */
+    val preparing: StateFlow<Map<String, Pair<Int, Int>>> = _preparing.asStateFlow()
+
+    /** The built-in bank, read on the first call (a few tens of milliseconds): call it off the main thread. */
+    fun load(context: Context): SoundFont = load(context, BUILT_IN)
+
+    /**
+     * Bank [id], read on the first call: call it off the main thread. A bank that is gone (deleted,
+     * or a file that can no longer be read) gives the built-in one.
+     */
+    fun load(context: Context, id: String): SoundFont = fonts[id] ?: synchronized(this) {
+        fonts[id] ?: (if (id == BUILT_IN) readBuiltIn(context) else readAdded(context, id))
+            ?.also { fonts[id] = it }
+            ?: load(context, BUILT_IN)
+    }
+
+    /** Whether bank [id] is there: the built-in one always is, one added until it is deleted. */
+    fun has(context: Context, id: String): Boolean =
+        id == BUILT_IN || folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }.orEmpty().isNotEmpty()
+
+    /** The banks the user can choose from: the built-in one first, then the ones added, by name. */
+    fun list(context: Context): List<SoundBankEntry> {
+        val added = folder(context).listFiles { f -> f.isFile && isBank(f.name) }.orEmpty().map { f ->
+            val id = f.nameWithoutExtension
+            val compressed = f.name.endsWith(".sf3", ignoreCase = true)
+            SoundBankEntry(
+                id = id,
+                name = File(f.parentFile, id + NAME_SUFFIX).takeIf { it.isFile }?.readText()?.trim().orEmpty().ifBlank { f.name },
+                size = f.length(),
+                compressed = compressed,
+                ready = !compressed || File(f.parentFile, id + READY_SUFFIX).isFile,
+            )
+        }.sortedBy { it.name.lowercase() }
+        return listOf(SoundBankEntry(BUILT_IN, BUILT_IN_NAME, builtInSize(context))) + added
+    }
+
+    /**
+     * Decodes every sample of bank [id] not decoded yet and keeps them, in the background, the
+     * progress in [preparing]. Samples already there are skipped: a preparation stopped (the app
+     * closed) goes on where it was. Does nothing while the bank is being prepared already.
+     */
+    fun prepare(context: Context, id: String) {
+        if (id == BUILT_IN || jobs[id]?.isActive == true) return
+        val app = context.applicationContext
+        _preparing.update { it + (id to (it[id] ?: (0 to 0))) }
+        lastProgress[id] = System.currentTimeMillis()
+        watch(app)
+        jobs[id] = scope.launch {
+            try {
+                val font = load(app, id)
+                val wanted = font.samples.filter { it.compressed }
+                val decoded = decodedFolder(app, id)
+                val queue = ConcurrentLinkedQueue(wanted)
+                val done = AtomicInteger()
+                val started = System.nanoTime()
+                val workers = List(PREPARE_THREADS) {
+                    launch {
+                        while (isActive && has(app, id)) {
+                            val sample = queue.poll() ?: break
+                            // decoded and kept on the device, not in memory: the piece reads it
+                            // later. A sample decoded before (a preparation cut short) is skipped
+                            if (!File(decoded, "${sample.index}.pcm").isFile) font.read(sample)
+                            val n = done.incrementAndGet()
+                            lastProgress[id] = System.currentTimeMillis()
+                            if (n % PROGRESS_EVERY == 0 || n == wanted.size) _preparing.update { it + (id to (n to wanted.size)) }
+                        }
+                    }
+                }
+                workers.forEach { it.join() }
+                // every sample decoded and kept, the bank still there: it can be chosen. A sample
+                // that failed is missing: the watch starts the preparation again for it
+                val missing = wanted.count { !File(decoded, "${it.index}.pcm").isFile }
+                if (missing == 0 && has(app, id)) File(folder(app), id + READY_SUFFIX).writeText("")
+                else if (missing > 0) Log.w(LOG_TAG, "bank $id: $missing samples not decoded yet")
+                Log.i(LOG_TAG, "bank $id prepared: ${wanted.size} samples in ${(System.nanoTime() - started) / 1_000_000_000} s")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // the watch starts it again (a disk full, a file that could not be read...)
+                Log.e(LOG_TAG, "bank $id not prepared: ${e.message}", e)
+            } finally {
+                releaseDecoders()
+                // a bank still being prepared keeps its progress shown: the watch goes on with it
+                if (isReady(app, id) || !has(app, id)) _preparing.update { it - id }
             }
-        }.also { read ->
-            val cache = File(context.cacheDir, CACHE)
-            read.decoder = { index, ogg -> cached(cache, index) ?: decode(ogg).also { keep(cache, index, it) } }
-            font = read
         }
     }
+
+    /**
+     * Watches the banks not ready while the app runs: a preparation that stopped (an error) or
+     * stands still (nothing done for [STALL_MS]) is started again, from where it was, until every
+     * bank is ready. The user only waits. A preparation cut short by the app closing goes on when
+     * it starts again ([prepareAll]).
+     */
+    private fun watch(app: Context) {
+        if (watching?.isActive == true) return
+        watching = scope.launch {
+            while (isActive) {
+                delay(WATCH_MS)
+                val waiting = list(app).filter { !it.ready }
+                if (waiting.isEmpty()) break
+                val now = System.currentTimeMillis()
+                for (bank in waiting) {
+                    val job = jobs[bank.id]
+                    val stalled = now - (lastProgress[bank.id] ?: 0L) > STALL_MS
+                    if (job?.isActive == true && !stalled) continue
+                    if (job?.isActive == true) {
+                        Log.w(LOG_TAG, "bank ${bank.id} preparation stands still: started again")
+                        job.cancel()
+                        job.join()
+                    }
+                    prepare(app, bank.id)
+                }
+            }
+        }
+    }
+
+    // Whether every sample of bank [id] is decoded.
+    private fun isReady(context: Context, id: String) = File(folder(context), id + READY_SUFFIX).isFile
+
+    /**
+     * Prepares every bank in SF3 the user added that is not ready: a preparation cut short when the
+     * app closed goes on from where it was. Called when the app starts.
+     */
+    fun prepareAll(context: Context) {
+        val app = context.applicationContext
+        scope.launch {
+            list(app).filter { !it.ready }.forEach { prepare(app, it.id) }
+        }
+    }
+
+    /** Whether bank [id] has [sound]'s instrument (its bank and program). Reads the bank: off the main thread. */
+    fun hasSound(context: Context, sound: PartSound): Boolean = load(context, sound.bankId).has(sound.bank, sound.program)
+
+    /** [sound]'s resolution ([resolveSound]) with the banks there: reads them, off the main thread. */
+    fun resolve(context: Context, saved: PartSound?, score: PartSound): PartSound =
+        resolveSound(saved, score, { usable(context, it) == it }) { hasSound(context, it) }
+
+    /** [id] when that bank can play now; else the built-in one (a bank gone, or not ready). */
+    fun usable(context: Context, id: String): String {
+        if (id == BUILT_IN) return id
+        val file = folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }?.firstOrNull() ?: return BUILT_IN
+        val ready = !file.name.endsWith(".sf3", ignoreCase = true) || File(folder(context), id + READY_SUFFIX).isFile
+        return if (ready) id else BUILT_IN
+    }
+
+    /**
+     * Copies the bank the user picked at [uri] into the app, after reading it once to check it is
+     * a SoundFont 2 or SF3 bank. Off the main thread. Null when it is not one.
+     */
+    fun add(context: Context, uri: Uri): SoundBankEntry? {
+        val dir = folder(context).apply { mkdirs() }
+        val id = UUID.randomUUID().toString()
+        val part = File(dir, "$id.part")
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input -> part.outputStream().use { input.copyTo(it) } } ?: return null
+            val font = map(part)
+            val shown = font.name.ifBlank { displayName(context, uri)?.substringBeforeLast('.').orEmpty() }.ifBlank { id }
+            val ext = if (font.compressed) "sf3" else "sf2"
+            val file = File(dir, "$id.$ext")
+            if (!part.renameTo(file)) return null
+            File(dir, id + NAME_SUFFIX).writeText(shown)
+            SoundBankEntry(id, shown, file.length(), compressed = ext == "sf3", ready = ext != "sf3")
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "not a sound bank: ${e.message}")
+            null
+        } finally {
+            part.delete()
+        }
+    }
+
+    /**
+     * The SF2 and SF3 files in the folder the user gave access to ([tree], from the system's folder
+     * picker) and in its sub-folders, by name; nothing else is listed. Off the main thread.
+     */
+    fun filesIn(context: Context, tree: Uri): List<BankFile> {
+        val found = ArrayList<BankFile>()
+        fun walk(documentId: String, depth: Int) {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+            val columns = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE,
+            )
+            context.contentResolver.query(children, columns, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: continue
+                    val name = c.getString(1).orEmpty()
+                    if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        if (depth < FOLDER_DEPTH) walk(id, depth + 1)
+                    } else if (isBank(name)) {
+                        found += BankFile(name, c.getLong(3), DocumentsContract.buildDocumentUriUsingTree(tree, id))
+                    }
+                }
+            }
+        }
+        runCatching { walk(DocumentsContract.getTreeDocumentId(tree), 0) }
+            .onFailure { Log.w(LOG_TAG, "folder not read: ${it.message}") }
+        return found.sortedBy { it.name.lowercase() }
+    }
+
+    /** The name of the folder the user gave access to ([tree]), to show it. */
+    fun folderName(context: Context, tree: Uri): String = runCatching {
+        val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        context.contentResolver.query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull().orEmpty()
+
+    /** Removes bank [id] the user added, with its decoded samples. The built-in bank stays. */
+    fun delete(context: Context, id: String) {
+        if (id == BUILT_IN) return
+        fonts.remove(id)
+        folder(context).listFiles { f -> f.nameWithoutExtension == id }.orEmpty().forEach { it.delete() }
+        decodedFolder(context, id).deleteRecursively()
+        File(context.cacheDir, ADDED_CACHE + id).deleteRecursively()
+    }
+
+    private fun folder(context: Context) = File(context.filesDir, FOLDER)
+
+    // the decoded samples of a bank the user added: with the bank, not in the cache the system clears
+    private fun decodedFolder(context: Context, id: String) = File(folder(context), id + DECODED_SUFFIX)
+
+    private fun isBank(name: String) = name.endsWith(".sf2", ignoreCase = true) || name.endsWith(".sf3", ignoreCase = true)
+
+    private fun builtInSize(context: Context): Long = runCatching { context.assets.openFd(ASSET).use { it.length } }.getOrDefault(0L)
+
+    private fun displayName(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
+
+    private fun readBuiltIn(context: Context): SoundFont = context.assets.openFd(ASSET).use { fd ->
+        FileInputStream(fd.fileDescriptor).channel.use { channel ->
+            SoundFont.read(channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length))
+        }
+    }.also { it.decoder = decoderFor(File(context.cacheDir, CACHE)) }
+
+    private fun readAdded(context: Context, id: String): SoundFont? =
+        folder(context).listFiles { f -> f.nameWithoutExtension == id && isBank(f.name) }?.firstOrNull()?.let { file ->
+            runCatching { map(file) }.onFailure { Log.w(LOG_TAG, "bank $id not read: ${it.message}") }.getOrNull()
+        }?.also { it.decoder = decoderFor(decodedFolder(context, id)) }
+
+    // the whole file mapped: its samples are read in place
+    private fun map(file: File): SoundFont = RandomAccessFile(file, "r").use { f ->
+        SoundFont.read(f.channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length()))
+    }
+
+    // a sample that could not be decoded (nothing came out) is not kept: the next time tries again
+    private fun decoderFor(cache: File): (Int, ByteBuffer) -> ShortArray =
+        { index, ogg -> cached(cache, index) ?: decode(ogg).also { if (it.isNotEmpty()) keep(cache, index, it) } }
 
     private fun cached(dir: File, index: Int): ShortArray? = runCatching {
         val file = File(dir, "$index.pcm").takeIf { it.isFile } ?: return null
@@ -64,11 +405,26 @@ object SoundBank {
         }
     }
 
+    // Decoders kept between samples: making one takes a good part of a sample's time on a slow
+    // tablet. [warm] reads with a few threads, each takes one and gives it back; [releaseDecoders]
+    // frees them once a piece is read.
+    private val decoders = ConcurrentLinkedQueue<MediaCodec>()
+
+    /** Frees the decoders kept: call it when the samples of a piece are read. */
+    fun releaseDecoders() {
+        while (true) {
+            val codec = decoders.poll() ?: break
+            runCatching { codec.release() }
+        }
+    }
+
     // One Ogg Vorbis stream into 16-bit values, by Android's decoder (no code of our own).
     private fun decode(ogg: ByteBuffer): ShortArray {
+        val started = System.nanoTime()
         val bytes = ByteArray(ogg.remaining()).also { ogg.duplicate().get(it) }
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        var reusable = false
         try {
             extractor.setDataSource(object : MediaDataSource() {
                 override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
@@ -85,30 +441,40 @@ object SoundBank {
             extractor.selectTrack(0)
             val format = extractor.getTrackFormat(0)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: return ShortArray(0)
-            val decoder = MediaCodec.createDecoderByType(mime).also { codec = it }
+            // a kept decoder is set up again for this stream (its headers differ), else a new one
+            val decoder = decoders.poll() ?: MediaCodec.createDecoderByType(mime)
+            codec = decoder
             decoder.configure(format, null, null, 0)
             decoder.start()
             val out = ArrayList<ShortArray>()
             var total = 0
             val info = MediaCodec.BufferInfo()
             var inputDone = false
-            while (true) {
-                if (!inputDone) {
-                    val i = decoder.dequeueInputBuffer(DECODE_WAIT_US)
-                    if (i >= 0) {
-                        val buffer = decoder.getInputBuffer(i) ?: continue
-                        val n = extractor.readSampleData(buffer, 0)
-                        if (n < 0) {
-                            decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
+            var ended = false
+            var lastProgress = System.nanoTime()
+            while (!ended) {
+                if ((System.nanoTime() - lastProgress) / 1_000_000 > DECODE_STALL_MS) {
+                    Log.w(LOG_TAG, "decoder stuck after $total values of ${bytes.size} bytes: sample given up")
+                    break
+                }
+                // every packet the decoder has room for, without waiting
+                while (!inputDone) {
+                    val i = decoder.dequeueInputBuffer(0)
+                    if (i < 0) break
+                    val buffer = decoder.getInputBuffer(i)
+                    val n = buffer?.let { extractor.readSampleData(it, 0) } ?: -1
+                    if (n < 0) {
+                        decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inputDone = true
+                    } else {
+                        decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
+                        extractor.advance()
                     }
                 }
-                val o = decoder.dequeueOutputBuffer(info, DECODE_WAIT_US)
+                // then what it has made, waiting only once all is in
+                val o = decoder.dequeueOutputBuffer(info, if (inputDone) DECODE_WAIT_US else 0L)
                 if (o >= 0) {
+                    lastProgress = System.nanoTime()
                     decoder.getOutputBuffer(o)?.let { buffer ->
                         buffer.position(info.offset)
                         buffer.limit(info.offset + info.size)
@@ -118,9 +484,24 @@ object SoundBank {
                         total += part.size
                     }
                     decoder.releaseOutputBuffer(o, false)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                    ended = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                } else if (!inputDone) {
+                    // nothing to take yet and no room to give: a short wait instead of spinning
+                    decoder.dequeueInputBuffer(DECODE_WAIT_US).takeIf { it >= 0 }?.let { i ->
+                        val buffer = decoder.getInputBuffer(i)
+                        val n = buffer?.let { extractor.readSampleData(it, 0) } ?: -1
+                        if (n < 0) {
+                            decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
+                            extractor.advance()
+                        }
+                    }
                 }
             }
+            reusable = ended
+            Log.d(LOG_TAG, "decoded ${bytes.size} bytes into $total values in ${(System.nanoTime() - started) / 1_000_000} ms")
             val pcm = ShortArray(total)
             var at = 0
             for (part in out) {
@@ -133,8 +514,11 @@ object SoundBank {
             Log.e(LOG_TAG, "sample not decoded: ${e.message}", e)
             return ShortArray(0)
         } finally {
-            runCatching { codec?.stop() }
-            runCatching { codec?.release() }
+            codec?.let { c ->
+                runCatching { c.stop() }
+                // a decoder that ended its stream cleanly is kept for the next sample
+                if (reusable) decoders.add(c) else runCatching { c.release() }
+            }
             extractor.release()
         }
     }

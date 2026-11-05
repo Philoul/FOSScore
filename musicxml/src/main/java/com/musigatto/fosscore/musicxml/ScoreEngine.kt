@@ -254,17 +254,19 @@ class ScoreEngine(
         // staff n plays on MIDI track n
         val silent = mutableSetOf<Int>()
         val programs = mutableMapOf<Int, Int>()
+        val partTracks = mutableMapOf<String, MutableList<Int>>()
         var staff = 0
         for ((id, staves) in doc.staffCounts) {
             repeat(staves) {
                 staff++
                 if (id !in heard) silent += staff
                 sound.programs[id]?.let { programs[staff] = it }
+                partTracks.getOrPut(id) { mutableListOf() } += staff
             }
         }
         val tempo = sound.tempo.coerceIn(VerovioOptions.MIN_TEMPO, VerovioOptions.MAX_TEMPO)
         return withContext(Dispatchers.Default) {
-            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes.first, notes.second)
+            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes.first, notes.second, partTracks)
         }
     }
 

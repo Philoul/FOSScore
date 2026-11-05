@@ -138,6 +138,8 @@
     <string name="transpose_none">Como está escrito</string>
     <string name="transpose_value">%1$+d</string>
     <string name="transpose_down">Un semitono más bajo</string>
+    <string name="playback_transpose_label">Transposición al oído</string>
+    <string name="playback_transpose_apply">Aplicar a la partitura</string>
     <string name="transpose_up">Un semitono más alto</string>
     <string name="lyrics_section_label">Letra</string>
     <string name="lyrics_file">Como en el archivo</string>
@@ -251,6 +253,52 @@
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
+    <string name="prefs_midi">MIDI</string>
+    <string name="prefs_midi_summary">Bancos de sonidos de la reproducción</string>
+    <string name="sound_banks_hint">Los bancos SoundFont (SF2 o SF3) dan sus instrumentos a la reproducción. El banco predeterminado toca todas las partes que no tienen un sonido propio. Un banco SF3 se prepara una vez, al añadirlo, por sí solo (unos minutos en una tableta antigua): está disponible cuando sus sonidos están listos, y entonces se tocan enseguida.</string>
+    <string name="sound_bank_default">Banco predeterminado</string>
+    <string name="sound_bank_built_in">Incluido con la aplicación</string>
+    <string name="sound_bank_add">Añadir un banco de sonidos…</string>
+    <string name="sound_bank_adding">Añadiendo el banco…</string>
+    <string name="sound_bank_not_read">Este archivo no es un banco SoundFont (SF2 o SF3).</string>
+    <string name="sound_bank_delete">Eliminar</string>
+    <string name="sound_bank_delete_title">¿Eliminar %1$s?</string>
+    <string name="sound_bank_delete_text">Las partes que lo tocan vuelven al banco predeterminado.</string>
+    <string name="part_sound_title">Sonido de %1$s</string>
+    <string name="part_sound_bank">Banco</string>
+    <string name="part_sound_drums">Baterías</string>
+    <string name="part_sound_from_score">de la partitura</string>
+    <!-- the 16 families of General MIDI, 8 programs each, in order -->
+    <string-array name="gm_families">
+        <item>Pianos</item>
+        <item>Percusión cromática</item>
+        <item>Órganos</item>
+        <item>Guitarras</item>
+        <item>Bajos</item>
+        <item>Cuerdas</item>
+        <item>Conjuntos</item>
+        <item>Metales</item>
+        <item>Lengüetas</item>
+        <item>Flautas</item>
+        <item>Sintetizadores solistas</item>
+        <item>Pads de sintetizador</item>
+        <item>Efectos de sintetizador</item>
+        <item>Instrumentos étnicos</item>
+        <item>Percusión</item>
+        <item>Efectos de sonido</item>
+    </string-array>
+    <string name="part_sound_original">Original</string>
+    <string name="sound_bank_found_title">Bancos de sonidos en %1$s</string>
+    <string name="sound_bank_none_found">Ningún archivo SF2 o SF3 en esta carpeta.</string>
+    <string name="sound_bank_other_folder">Otra carpeta…</string>
+    <string name="sound_bank_folder_title">La carpeta de sus bancos de sonidos</string>
+    <string name="sound_bank_folder_text">Android no puede mostrar solo los archivos SF2 y SF3. En la siguiente pantalla, abra la carpeta que contiene sus bancos (por ejemplo Download), sin tocar los archivos, que quedan en gris, y luego toque el botón de abajo («Seleccionar» o «Usar esta carpeta»). FOSScore muestra entonces los bancos que contiene y recuerda la carpeta para la próxima vez.</string>
+    <string name="sound_bank_folder_choose">Elegir la carpeta</string>
+    <string name="part_sound_variants">Variantes (%1$d)</string>
+    <string name="sound_bank_preparing">Preparando los sonidos… %1$d %% (disponible cuando esté listo)</string>
+    <string name="sound_bank_waiting">Sus sonidos se van a preparar (disponible cuando esté listo)</string>
+    <string name="part_sound_bank_preparing">%1$s (preparando los sonidos… %2$d %%)</string>
+    <string name="part_sound_bank_waiting">%1$s (sonidos por preparar)</string>
     <string name="prefs_viewer">Pantalla de la partitura</string>
     <string name="chrome_menu">Menú ☰: todas las funciones en una lista</string>
     <string name="chrome_icons">Barra de iconos: un icono por función</string>

@@ -159,6 +159,8 @@
     <string name="transpose_none">Comme écrit</string>
     <string name="transpose_value">%1$+d</string>
     <string name="transpose_down">Un demi-ton plus bas</string>
+    <string name="playback_transpose_label">Transposition à l\'écoute</string>
+    <string name="playback_transpose_apply">Appliquer à la partition</string>
     <string name="transpose_up">Un demi-ton plus haut</string>
     <string name="lyrics_section_label">Paroles</string>
     <string name="lyrics_file">Comme dans le fichier</string>
@@ -253,6 +255,52 @@
     <string name="tempo_as_written_short">Comme écrit</string>
     <string name="metronome_previous_page">Page précédente</string>
     <string name="metronome_next_page">Page suivante</string>
+    <string name="prefs_midi">MIDI</string>
+    <string name="prefs_midi_summary">Banques de sons de la lecture</string>
+    <string name="sound_banks_hint">Les banques SoundFont (SF2 ou SF3) donnent ses instruments à la lecture. La banque par défaut joue toutes les parties qui n’ont pas de son à elles. Une banque SF3 est préparée une fois, à l’ajout, d’elle-même (quelques minutes sur une tablette ancienne) : elle est disponible une fois ses sons prêts, et ils se jouent alors tout de suite.</string>
+    <string name="sound_bank_default">Banque par défaut</string>
+    <string name="sound_bank_built_in">Fournie avec l’application</string>
+    <string name="sound_bank_add">Ajouter une banque de sons…</string>
+    <string name="sound_bank_adding">Ajout de la banque…</string>
+    <string name="sound_bank_not_read">Ce fichier n’est pas une banque SoundFont (SF2 ou SF3).</string>
+    <string name="sound_bank_delete">Supprimer</string>
+    <string name="sound_bank_delete_title">Supprimer %1$s ?</string>
+    <string name="sound_bank_delete_text">Les parties qui la jouent reviennent à la banque par défaut.</string>
+    <string name="part_sound_title">Son de %1$s</string>
+    <string name="part_sound_bank">Banque</string>
+    <string name="part_sound_drums">Batteries</string>
+    <string name="part_sound_from_score">de la partition</string>
+    <!-- the 16 families of General MIDI, 8 programs each, in order -->
+    <string-array name="gm_families">
+        <item>Pianos</item>
+        <item>Percussions chromatiques</item>
+        <item>Orgues</item>
+        <item>Guitares</item>
+        <item>Basses</item>
+        <item>Cordes</item>
+        <item>Ensembles</item>
+        <item>Cuivres</item>
+        <item>Anches</item>
+        <item>Flûtes</item>
+        <item>Synthés solo</item>
+        <item>Nappes de synthé</item>
+        <item>Effets de synthé</item>
+        <item>Instruments du monde</item>
+        <item>Percussions</item>
+        <item>Effets sonores</item>
+    </string-array>
+    <string name="part_sound_original">D’origine</string>
+    <string name="sound_bank_found_title">Banques de sons dans %1$s</string>
+    <string name="sound_bank_none_found">Aucun fichier SF2 ou SF3 dans ce dossier.</string>
+    <string name="sound_bank_other_folder">Autre dossier…</string>
+    <string name="sound_bank_folder_title">Le dossier de vos banques de sons</string>
+    <string name="sound_bank_folder_text">Android ne sait pas montrer uniquement les fichiers SF2 et SF3. À l’écran suivant, ouvrez le dossier qui contient vos banques (par exemple Download), sans toucher les fichiers, qui restent grisés, puis touchez le bouton en bas (« Sélectionner » ou « Utiliser ce dossier »). FOSScore liste alors les banques qu’il contient, et retient le dossier pour la prochaine fois.</string>
+    <string name="sound_bank_folder_choose">Choisir le dossier</string>
+    <string name="part_sound_variants">Variantes (%1$d)</string>
+    <string name="sound_bank_preparing">Préparation des sons… %1$d %% (disponible une fois prête)</string>
+    <string name="sound_bank_waiting">Ses sons vont être préparés (disponible une fois prête)</string>
+    <string name="part_sound_bank_preparing">%1$s (préparation des sons… %2$d %%)</string>
+    <string name="part_sound_bank_waiting">%1$s (sons à préparer)</string>
     <string name="prefs_viewer">Écran de la partition</string>
     <string name="chrome_menu">Menu ☰ : toutes les fonctions dans une liste</string>
     <string name="chrome_icons">Barre d’icônes : une icône par fonction</string>

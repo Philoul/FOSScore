@@ -13,6 +13,8 @@ import com.musigatto.fosscore.metronome.ClickSound
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.metronome.MetronomeSettings
+import com.musigatto.fosscore.sound.PartSound
+import com.musigatto.fosscore.sound.SoundBank
 import androidx.core.content.edit
 import java.util.Locale
 
@@ -99,7 +101,13 @@ object Settings {
     private const val KEY_LYRICS = "lyrics_"
     private const val KEY_HIDDEN_LYRICS = "hidden_lyrics_"
     private const val KEY_TEMPO = "tempo_"
+    private const val KEY_PLAY_TRANSPOSE = "play_transpose_"
     private const val KEY_HEARD = "heard_"
+    private const val KEY_SOUND_BANK = "sound_bank"
+    private const val KEY_BANK_FOLDER = "sound_bank_folder"
+    private const val KEY_PART_SOUNDS = "part_sounds_"
+    // between the fields of a part's sound in its saved text: never in a part id
+    private const val SOUND_FIELDS = '\t'
     private const val KEY_MET_BPM = "metronome_bpm_"
     private const val KEY_MET_METER = "metronome_meter_"
     private const val KEY_MET_SUBDIVISION = "metronome_subdivision_"
@@ -294,6 +302,43 @@ object Settings {
 
     fun setTempo(context: Context, uri: String, factor: Float) {
         context.prefs().edit { putFloat(KEY_TEMPO + uri, factor) }
+    }
+
+    /** The sound bank playback uses where a part has no sound of its own. For the whole app. */
+    fun soundBank(context: Context): String =
+        context.prefs().getString(KEY_SOUND_BANK, null) ?: SoundBank.BUILT_IN
+
+    fun setSoundBank(context: Context, id: String) {
+        context.prefs().edit { putString(KEY_SOUND_BANK, id) }
+    }
+
+    /** The folder the sound banks were last added from (a folder picker's uri), or null. */
+    fun bankFolder(context: Context): String? = context.prefs().getString(KEY_BANK_FOLDER, null)
+
+    fun setBankFolder(context: Context, uri: String) {
+        context.prefs().edit { putString(KEY_BANK_FOLDER, uri) }
+    }
+
+    /** The sound chosen for each part, by part id; a part left out plays the file's. Per score. */
+    fun partSounds(context: Context, uri: String): Map<String, PartSound> =
+        context.prefs().getStringSet(KEY_PART_SOUNDS + uri, null).orEmpty().mapNotNull { saved ->
+            val f = saved.split(SOUND_FIELDS)
+            val bank = f.getOrNull(2)?.toIntOrNull()
+            val program = f.getOrNull(3)?.toIntOrNull()
+            if (f.size != 4 || bank == null || program == null) null else f[0] to PartSound(f[1], bank, program)
+        }.toMap()
+
+    fun setPartSounds(context: Context, uri: String, sounds: Map<String, PartSound>) {
+        val saved = sounds.map { (part, s) -> listOf(part, s.bankId, s.bank, s.program).joinToString(SOUND_FIELDS.toString()) }.toSet()
+        context.prefs().edit { if (saved.isEmpty()) remove(KEY_PART_SOUNDS + uri) else putStringSet(KEY_PART_SOUNDS + uri, saved) }
+    }
+
+    /** Semitones playback is heard up or down, the score shown staying as written. Per score. */
+    fun playbackTranspose(context: Context, uri: String): Int =
+        context.prefs().getInt(KEY_PLAY_TRANSPOSE + uri, 0)
+
+    fun setPlaybackTranspose(context: Context, uri: String, semitones: Int) {
+        context.prefs().edit { putInt(KEY_PLAY_TRANSPOSE + uri, semitones) }
     }
 
     /** Ids of the MusicXML parts heard, or null for the parts shown. Per score. */

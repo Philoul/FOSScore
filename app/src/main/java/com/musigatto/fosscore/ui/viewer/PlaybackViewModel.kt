@@ -7,6 +7,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.musigatto.fosscore.metronome.BeatGrid
+import com.musigatto.fosscore.metronome.ClickKind
+import com.musigatto.fosscore.metronome.Clicks
+import com.musigatto.fosscore.metronome.CountIn
+import com.musigatto.fosscore.metronome.MetronomeMode
+import com.musigatto.fosscore.metronome.MetronomeSettings
+import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.musicxml.SoundSpec
@@ -50,6 +57,9 @@ private const val WARM_DELAY_MS = 1000L
 
 // the MIDI channels a part's sound can be set on
 private const val MIDI_CHANNELS = 16
+
+// the clicks over the music at the metronome's volume 100: a little under the music's loudest
+private const val CLICK_LEVEL = 0.6f
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
@@ -141,6 +151,26 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _heard = MutableStateFlow(Settings.heardParts(context, score))
     val heard: StateFlow<Set<String>?> = _heard.asStateFlow()
 
+    // the metronome's clicks over the music: on or off (for the whole app), the beat heard, and
+    // the settings they take (the viewer's metronome: sound, volume, accent, subdivision, meter)
+    private val _clicking = MutableStateFlow(Settings.playbackClicks(context))
+    val clicking: StateFlow<Boolean> = _clicking.asStateFlow()
+    private val _tick = MutableStateFlow<Tick?>(null)
+    val tick: StateFlow<Tick?> = _tick.asStateFlow()
+
+    // the bar of the score the music is in (0 the first), for the band
+    private val _bar = MutableStateFlow<Int?>(null)
+    val bar: StateFlow<Int?> = _bar.asStateFlow()
+
+    // the music silenced at once, the parts heard kept as they are: the metronome alone, the
+    // playback bar going on. Per score
+    private val _musicOff = MutableStateFlow(Settings.musicOff(context, score))
+    val musicOff: StateFlow<Boolean> = _musicOff.asStateFlow()
+    private var metronome: MetronomeSettings? = null
+    private var grid: BeatGrid? = null
+    // the count-in of the last ▶ while it lasts: the music waits for it, the beats are counted
+    private var countIn: CountIn? = null
+
     // the sound chosen for each part, by part id (a part left out plays the file's instrument)
     private val _partSounds = MutableStateFlow(Settings.partSounds(context, score))
     val partSounds: StateFlow<Map<String, PartSound>> = _partSounds.asStateFlow()
@@ -186,6 +216,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         if (pages !== this.pages || loaded != attachedFor) {
             stop()
             lastPlayback = null
+            // the music stands at the start: the band shows its first bar until it moves
+            _bar.value = pages?.let { 0 }
             resumeAt = null
             warming?.cancel()
             warming = pages?.let {
@@ -236,6 +268,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         followPaused = false
         val pb = playback ?: lastPlayback
         val p = player
+        countIn = null
         if (playback != null && p != null) p.seek(at) else resumeAt = at
         if (pb != null) showNotesAt(pb, at) else _toFirstPage.value++
     }
@@ -251,7 +284,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
      * ⏮ put the music before ▶; null when nothing is to show.
      */
     fun positionNow(): Double? = when {
-        playback != null -> player?.position
+        playback != null -> player?.position?.let { heard -> countIn?.from?.takeIf { heard < it } ?: heard }
         _cursor.value.isNotEmpty() -> position
         else -> null
     }
@@ -283,7 +316,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         _heard.value = next
         Settings.setHeardParts(context, score, next)
         // silent at once; heard again once the new parts' music is ready (at once when stopped)
-        if (next.isEmpty() || playback == null) player?.muted = next.isEmpty()
+        if (next.isEmpty() || playback == null) player?.muted = silent()
         // all muted: the music goes on as it is, unheard
         if (next.isNotEmpty()) soundChanged()
     }
@@ -332,6 +365,46 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         }
     }
 
+    /** The music silenced, or heard again with the parts heard; the metronome and the bar go on. */
+    fun toggleMusic() {
+        _musicOff.value = !_musicOff.value
+        Settings.setMusicOff(context, score, _musicOff.value)
+        player?.muted = silent()
+    }
+
+    // nothing to hear of the music: silenced, or every part muted
+    private fun silent() = _musicOff.value || _heard.value?.isEmpty() == true
+
+    /** The metronome's clicks over the music, on or off; they follow the music from where it is. */
+    fun toggleClicks() {
+        val on = !_clicking.value
+        _clicking.value = on
+        Settings.setPlaybackClicks(context, on)
+        player?.clicking = on
+    }
+
+    /** The metronome's settings, for its clicks over the music: a change is heard at once. */
+    fun setMetronome(settings: MetronomeSettings) {
+        if (settings == metronome) return
+        metronome = settings
+        val pb = playback ?: return
+        val music = song ?: return
+        applyClicks(pb, music)
+    }
+
+    // the clicks of [music]'s bars ([pb]) with the metronome's settings, to the player
+    private fun applyClicks(pb: Playback, music: MidiSong) {
+        val m = metronome ?: return
+        val p = player ?: return
+        val beats = BeatGrid(pb.bars, music.length, m.meter, m.subdivision, m.accent)
+        grid = beats
+        val sounds = ClickKind.entries.map { Clicks.of(m.sound, it, p.sampleRate) }
+        // the flash alone: the beats are seen, not heard
+        val gain = if (m.mode == MetronomeMode.VISUAL) 0f else m.volume / 100f * CLICK_LEVEL
+        p.setClicks(beats.at, IntArray(beats.kinds.size) { beats.kinds[it].ordinal }, sounds, gain)
+        p.clicking = _clicking.value
+    }
+
     /** A page turned by hand during playback: let the reader look ahead or back. */
     fun pageTurnedByHand() {
         if (_state.value == PlayState.PLAYING) followPaused = true
@@ -355,6 +428,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         player?.pause()
         playback = null
         song = null
+        countIn = null
+        _tick.value = null
         followPaused = false
         _ahead.value = emptyList()
         _cursor.value = emptyList()
@@ -380,7 +455,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
 
     private fun resume() {
         val p = player ?: return
-        p.play(p.position)
+        playFrom(p, p.position)
         _state.value = PlayState.PLAYING
         follow()
     }
@@ -401,7 +476,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         LivePlayer(SoundBank.load(context, SoundBank.usable(context, Settings.soundBank(context))))
     }.also { made ->
         made.onEnd = { viewModelScope.launch { onEnd() } }
-        made.muted = _heard.value?.isEmpty() == true
+        made.muted = silent()
         player = made
     }
 
@@ -432,6 +507,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
 
     // the highlight and the page go to the notes at [quarters], without playing
     private fun showNotesAt(pb: Playback, quarters: Double) {
+        _bar.value = pb.barAt(quarters)
         val index = pb.onsetIndexAt(quarters).coerceAtLeast(0)
         pb.onsets.getOrNull(index)?.let {
             _ahead.value = emptyList()
@@ -469,9 +545,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 next.transpose(_transpose.value)
                 next.setLoop(loop.on, loop.start, loop.b)
                 next.setSong(read)
-                next.play(from)
                 song = read
                 playback = pb
+                applyClicks(pb, read)
+                playFrom(next, from)
                 lastPlayback = pb
                 position = from
                 resumeAt = null
@@ -486,6 +563,14 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 _failed.value = true
             }
         }
+    }
+
+    // The player starts at [from] after the bars of count-in of the metronome's settings: always
+    // counted, heard with the clicks on, else only seen (the beats and the flash), to stay discreet.
+    private fun playFrom(p: LivePlayer, from: Double) {
+        val c = metronome?.let { CountIn(it.countIn, it.meter, it.subdivision, it.accent, from) }?.takeIf { it.length > 0 }
+        countIn = c
+        if (c == null) p.play(from) else p.play(from, c.length, c.at, IntArray(c.kinds.size) { c.kinds[it].ordinal })
     }
 
     // New parts heard: the MIDI is written again (a few milliseconds) once the taps settle, and
@@ -509,7 +594,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 player?.setSounds(sounds)
                 player?.setSong(read)
                 song = read
-                player?.muted = _heard.value?.isEmpty() == true
+                player?.muted = silent()
                 playback = pb
                 lastPlayback = pb
             } catch (e: CancellationException) {
@@ -536,13 +621,19 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 val p = player ?: break
                 val pb = playback ?: break
                 if (!p.playing) break
-                position = p.position
+                // while counting in, the music stands where it starts
+                val heard = p.position
+                val counting = countIn?.takeIf { heard < it.from }
+                if (counting == null) countIn = null
+                position = counting?.from ?: heard
                 val index = pb.onsetIndexAt(position)
                 if (index != last && index >= 0) {
                     last = index
                     _ahead.value = pb.notesAhead(position, turnAhead) ?: pb.onsets[index].notes
                     _cursor.value = pb.onsets[index].notes
                 }
+                _tick.value = counting?.tickAt(heard) ?: grid?.tickAt(position)
+                _bar.value = pb.barAt(position)
                 delay(FOLLOW_MS.milliseconds)
             }
         }

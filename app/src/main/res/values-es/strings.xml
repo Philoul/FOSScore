@@ -223,11 +223,7 @@
     <string name="backup_check_files_ok">Todos los PDF incluidos</string>
     <string name="backup_check_files_missing">Faltaban %1$d archivos PDF cuando se hizo esta exportación.</string>
     <!-- metronome -->
-    <string name="metronome_start">Iniciar el metrónomo</string>
-    <string name="metronome_stop">Detener el metrónomo</string>
     <string name="metronome_tap">TAP</string>
-    <string name="metronome_settings">Ajustes del metrónomo</string>
-    <string name="metronome_close">Cerrar el metrónomo</string>
     <string name="metronome_time_signature">Compás</string>
     <string name="metronome_meter_from_score">%1$s (partitura)</string>
     <string name="metronome_fewer">Menos</string>
@@ -249,7 +245,6 @@
     <string name="metronome_bars_range">compases %1$d–%2$d</string>
     <string name="metronome_copy_bars">Mismo número en las páginas siguientes</string>
     <string name="metronome_mode_label">Indicados con</string>
-    <string name="metronome_bar">Compás %1$d</string>
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
@@ -295,10 +290,14 @@
     <string name="sound_bank_folder_text">Android no puede mostrar solo los archivos SF2 y SF3. En la siguiente pantalla, abra la carpeta que contiene sus bancos (por ejemplo Download), sin tocar los archivos, que quedan en gris, y luego toque el botón de abajo («Seleccionar» o «Usar esta carpeta»). FOSScore muestra entonces los bancos que contiene y recuerda la carpeta para la próxima vez.</string>
     <string name="sound_bank_folder_choose">Elegir la carpeta</string>
     <string name="part_sound_variants">Variantes (%1$d)</string>
+    <string name="playback_clicks_on">Activar el metrónomo</string>
+    <string name="playback_clicks_off">Desactivar el metrónomo</string>
     <string name="sound_bank_preparing">Preparando los sonidos… %1$d %% (disponible cuando esté listo)</string>
     <string name="sound_bank_waiting">Sus sonidos se van a preparar (disponible cuando esté listo)</string>
     <string name="part_sound_bank_preparing">%1$s (preparando los sonidos… %2$d %%)</string>
     <string name="part_sound_bank_waiting">%1$s (sonidos por preparar)</string>
+    <string name="playback_bar">Compás %1$d</string>
+    <string name="playback_music_off">Silenciar la música (solo el metrónomo)</string>
     <string name="prefs_viewer">Pantalla de la partitura</string>
     <string name="chrome_menu">Menú ☰: todas las funciones en una lista</string>
     <string name="chrome_icons">Barra de iconos: un icono por función</string>

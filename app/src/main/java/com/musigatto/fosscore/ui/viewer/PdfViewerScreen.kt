@@ -176,6 +176,17 @@ private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): Lis
         )
     }
 
+/** What the Metronome key does to the band. */
+internal enum class MetronomeKey { TOGGLE_CLICKS, START_STOP }
+
+/**
+ * The Metronome key does what the band's own button does: over a MusicXML score, the clicks over
+ * the music on or off (the band's metronome button); on a PDF, the metronome alone starts or stops
+ * (the band's ▶).
+ */
+internal fun metronomeKey(isMusicXml: Boolean): MetronomeKey =
+    if (isMusicXml) MetronomeKey.TOGGLE_CLICKS else MetronomeKey.START_STOP
+
 @Composable
 fun PdfViewerScreen(
     pdfUri: Uri,
@@ -207,6 +218,8 @@ fun PdfViewerScreen(
         factory = PlaybackViewModel.factory(context, pdfUri.toString()),
     )
     val playState by playbackVm.state.collectAsState()
+    val playClicking by playbackVm.clicking.collectAsState()
+    val playTick by playbackVm.tick.collectAsState()
     val loop by playbackVm.loop.collectAsState()
     val cursorNotes by playbackVm.cursor.collectAsState()
     val tempoFactor by playbackVm.tempo.collectAsState()
@@ -230,8 +243,10 @@ fun PdfViewerScreen(
         factory = MetronomeViewModel.factory(context, pdfUri.toString()),
     )
     val metronome by metronomeVm.settings.collectAsState()
+    LaunchedEffect(metronome) { playbackVm.setMetronome(metronome) }
     val metronomeOn by metronomeVm.running.collectAsState()
-    val metronomeShown by metronomeVm.shown.collectAsState()
+    // leaving the score stops its metronome, as it stops its music
+    DisposableEffect(metronomeVm) { onDispose { metronomeVm.stop() } }
     val metronomeTick by metronomeVm.tick.collectAsState()
     val meterFromScore by metronomeVm.meterFromScore.collectAsState()
 
@@ -938,7 +953,10 @@ fun PdfViewerScreen(
             }
             KeyAction.RESTART -> if (format.isMusicXml) playbackVm.restart()
             KeyAction.LOOP -> if (format.isMusicXml) playbackVm.toggleLoop()
-            KeyAction.METRONOME -> startStopMetronome()
+            KeyAction.METRONOME -> when (metronomeKey(format.isMusicXml)) {
+                MetronomeKey.TOGGLE_CLICKS -> playbackVm.toggleClicks()
+                MetronomeKey.START_STOP -> startStopMetronome()
+            }
             KeyAction.TAP_TEMPO -> metronomeVm.tap()?.let { bpm ->
                 if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
             }
@@ -1001,12 +1019,6 @@ fun PdfViewerScreen(
     val chromeInset = with(LocalDensity.current) {
         (if (editing && canEdit) annBarPx else 0).toDp()
     }
-    // With the metronome band, the bars stay on screen: a PDF page fits between the bar at the top
-    // and the bottom chrome, which hid its first and last staves. (A MusicXML page is laid out
-    // with that room already.)
-    val bandShown = metronomeShown && !format.isMusicXml && !editing
-    val bandInset = with(LocalDensity.current) { (if (bandShown) bottomChromePx else 0).toDp() }
-    val bandTopInset = with(LocalDensity.current) { (if (bandShown) chromeTop else 0).toDp() }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
     LaunchedEffect(viewport) { zoom.set(zoomFrameNow(), zoom.transform) }
@@ -1054,7 +1066,7 @@ fun PdfViewerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = chromeInset + bandTopInset, bottom = bandInset)
+                .padding(top = chromeInset)
                 .onSizeChanged { viewport = it }
                 .onGloballyPositioned { viewportTop = it.positionInWindow().y }
                 // the touches follow the page up: the layer moves them with it
@@ -1306,6 +1318,11 @@ fun PdfViewerScreen(
 
         // the visual metronome: the border of the page flashes on the beats
         if (metronomeOn && metronome.mode != MetronomeMode.SOUND) BeatFlash(metronomeTick)
+        // and over the music, while the metronome is switched on in the playback band; with it off,
+        // the count-in is still seen
+        val countingIn = (playTick?.bar ?: 0) < 0
+        val flashOverMusic = if (playClicking) metronome.mode != MetronomeMode.SOUND else countingIn
+        if (playState == PlayState.PLAYING && flashOverMusic) BeatFlash(playTick)
 
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).
@@ -1355,7 +1372,7 @@ fun PdfViewerScreen(
                             menu.dismiss()
                             if (item != open) {
                                 openMenuEntry(
-                                    item, menu, metronomeVm, playbackVm, editing,
+                                    item, menu, editing,
                                     onOpenLibrary, onOpenPreferences, { toggleEditing() }, { navVisible = true },
                                 )
                             }
@@ -1491,7 +1508,6 @@ fun PdfViewerScreen(
                     metronome = metronome,
                     metronomeOn = metronomeOn,
                     metronomeTick = metronomeTick,
-                    metronomeShown = metronomeShown,
                     pageSource = pageSource,
                     pageCount = pageCount,
                     currentPage = currentPage,

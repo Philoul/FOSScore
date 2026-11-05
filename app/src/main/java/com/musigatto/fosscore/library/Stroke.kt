@@ -31,7 +31,8 @@ data class Stroke(
      * What the stroke is: [INK] free ink, [SHAPE] a shape's outline (generated, drawn with its own
      * width or per-kind fill), [SHAPE_FILLED] a shape drawn filled (a solid: the eraser deletes it
      * whole, and it stays in the sidecar — it is not exported to /Annots), [SHAPE_STAFF] a staff:
-     * its points come in pairs, each pair one line of the staff, so one stroke draws N lines.
+     * its points come in pairs, each pair one line of the staff, so one stroke draws N lines,
+     * [HIGHLIGHTER] free ink drawn translucent (selected and erased like ink, never grouped in words).
      */
     val kind: Int = 0,
 ) {
@@ -40,9 +41,11 @@ data class Stroke(
         const val SHAPE = 1
         const val SHAPE_FILLED = 2
         const val SHAPE_STAFF = 3
+        const val HIGHLIGHTER = 4
 
         /** The shapes' column default in old rows: everything that was here before is ink. */
-        fun isShape(kind: Int): Boolean = kind != INK
+        fun isShape(kind: Int): Boolean = kind == SHAPE || kind == SHAPE_FILLED || kind == SHAPE_STAFF
         fun isFilled(kind: Int): Boolean = kind == SHAPE_FILLED
+        fun isHighlight(kind: Int): Boolean = kind == HIGHLIGHTER
     }
 }

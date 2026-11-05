@@ -154,7 +154,7 @@ internal data class HalfCut(val page: Int, val layout: Int, val split: HalfSplit
 // neutral one and the only one that selects and moves; every other tool acts on what it creates and
 // keeps itself in hand until another tool is chosen.
 internal enum class AnnotationTool {
-    SELECT, PEN, SHAPE, ERASER, STAMP, TEXT;
+    SELECT, PEN, HIGHLIGHTER, SHAPE, ERASER, STAMP, TEXT;
 
     /** The arrow has no settings: tapping it again does nothing. */
     val hasPanel: Boolean get() = this != SELECT
@@ -175,6 +175,17 @@ private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): Lis
             kind = st.kind
         )
     }
+
+/** What the Metronome key does to the band. */
+internal enum class MetronomeKey { TOGGLE_CLICKS, START_STOP }
+
+/**
+ * The Metronome key does what the band's own button does: over a MusicXML score, the clicks over
+ * the music on or off (the band's metronome button); on a PDF, the metronome alone starts or stops
+ * (the band's ▶).
+ */
+internal fun metronomeKey(isMusicXml: Boolean): MetronomeKey =
+    if (isMusicXml) MetronomeKey.TOGGLE_CLICKS else MetronomeKey.START_STOP
 
 @Composable
 fun PdfViewerScreen(
@@ -221,6 +232,8 @@ fun PdfViewerScreen(
         factory = PlaybackViewModel.factory(context, pdfUri.toString()),
     )
     val playState by playbackVm.state.collectAsState()
+    val playClicking by playbackVm.clicking.collectAsState()
+    val playTick by playbackVm.tick.collectAsState()
     val loop by playbackVm.loop.collectAsState()
     val cursorNotes by playbackVm.cursor.collectAsState()
     val tempoFactor by playbackVm.tempo.collectAsState()
@@ -244,8 +257,10 @@ fun PdfViewerScreen(
         factory = MetronomeViewModel.factory(context, pdfUri.toString()),
     )
     val metronome by metronomeVm.settings.collectAsState()
+    LaunchedEffect(metronome) { playbackVm.setMetronome(metronome) }
     val metronomeOn by metronomeVm.running.collectAsState()
-    val metronomeShown by metronomeVm.shown.collectAsState()
+    // leaving the score stops its metronome, as it stops its music
+    DisposableEffect(metronomeVm) { onDispose { metronomeVm.stop() } }
     val metronomeTick by metronomeVm.tick.collectAsState()
     val meterFromScore by metronomeVm.meterFromScore.collectAsState()
 
@@ -387,6 +402,9 @@ fun PdfViewerScreen(
     var stampColor by rememberSaveable { mutableStateOf<Int?>(null) }
     var textColor by rememberSaveable { mutableStateOf<Int?>(null) }  // text tool color
     var shapeColor by rememberSaveable { mutableStateOf<Int?>(null) } // shapes' own tine (#56)
+    // the highlighter carries its own tint and width; yellow is what a marker starts as
+    var highlighterColor by rememberSaveable { mutableStateOf<Int?>(0xFFFFEB3B.toInt()) }
+    var highlighterPx by rememberSaveable { mutableFloatStateOf(DEFAULT_HIGHLIGHTER_PX) }
     // whether the next shape draws filled (the solid box that covers a line: white flips black in
     // negative mode, painted through inkTint like any other ink)
     var shapeFilled by rememberSaveable { mutableStateOf(false) }
@@ -397,6 +415,13 @@ fun PdfViewerScreen(
     var penWidthPx by remember { mutableFloatStateOf(DEFAULT_PEN_PX) }  // ink thickness (px at zoom 1)
     var textPx by rememberSaveable { mutableFloatStateOf(Settings.textPx(context)) }  // next new text's font size (px at zoom 1)
     var defaultTextPx by remember { mutableFloatStateOf(Settings.textPx(context)) }
+    // the typeface of the next new text (or of the one being edited); saved with its size
+    var textFont by rememberSaveable { mutableStateOf(Settings.textFont(context)) }
+    var textBold by rememberSaveable { mutableStateOf(Settings.textBold(context)) }
+    var textItalic by rememberSaveable { mutableStateOf(Settings.textItalic(context)) }
+    var defaultTextFont by remember { mutableStateOf(Settings.textFont(context)) }
+    var defaultTextBold by remember { mutableStateOf(Settings.textBold(context)) }
+    var defaultTextItalic by remember { mutableStateOf(Settings.textItalic(context)) }
     val inkPreview = remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
     // double-tap animation in flight: any new touch cancels it
@@ -496,6 +521,30 @@ fun PdfViewerScreen(
     val textMeasurer = rememberTextMeasurer()
     val measureDensity = LocalDensity.current
     val measureStyle = LocalTextStyle.current
+    // a text's box as the page draws it ([TextStampView]): the same style and wrapping width.
+    // A text with a width of its own gets the whole width as its box (the right handle moves that
+    // edge); one from before widths existed keeps the measured text as its box.
+    fun measureText(
+        text: String,
+        sizeFrac: Float,
+        width: Float?,
+        font: TextFont?,
+        bold: Boolean,
+        italic: Boolean,
+    ): Pair<Float, Float> {
+        val wrap = textWrapWidthPx(width, hitFit)
+        val layout = textMeasurer.measure(
+            text,
+            textStampStyle(
+                measureStyle, textFontPx(sizeFrac, hitFit), measureDensity,
+                font = font ?: TextFont.SANS, bold = bold, italic = italic,
+            ),
+            overflow = TextOverflow.Clip,
+            softWrap = true,
+            constraints = Constraints(maxWidth = wrap.roundToInt().coerceAtLeast(1)),
+        )
+        return textBoxWidthPx(width, layout.size.width.toFloat(), wrap) to layout.size.height.toFloat()
+    }
     val textRects = remember(
         pageStamps, companionStamps, editor.dragStamp, hitFit, textMeasurer, measureDensity, measureStyle
     ) {
@@ -505,30 +554,12 @@ fun PdfViewerScreen(
             }
             for (st in measuredStamps + companionStamps) {
                 if (!st.isTextStamp()) continue
-                val layout = textMeasurer.measure(
-                    st.text.orEmpty(),
-                    textStampStyle(measureStyle, textFontPx(st.size, hitFit), measureDensity),
-                    overflow = TextOverflow.Clip,
-                    softWrap = true,
-                    constraints = Constraints(
-                        maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)
-                    ),
+                val (w, h) = measureText(
+                    st.text.orEmpty(), st.size, st.textWidth, st.font?.let { TextFont.of(it) }, st.bold, st.italic
                 )
-                put(st.id, textBoxRect(st, layout.size.width.toFloat(), layout.size.height.toFloat(), hitFit))
+                put(st.id, textBoxRect(st, w, h, hitFit))
             }
         }
-    }
-    // a text's box as the page draws it ([TextStampView]): the same style and wrapping width as the
-    // measured boxes above
-    fun measureText(text: String, sizeFrac: Float): Pair<Float, Float> {
-        val layout = textMeasurer.measure(
-            text,
-            textStampStyle(measureStyle, textFontPx(sizeFrac, hitFit), measureDensity),
-            overflow = TextOverflow.Clip,
-            softWrap = true,
-            constraints = Constraints(maxWidth = (hitFit.width * TEXT_MAX_WRAP - 16f).roundToInt().coerceAtLeast(1)),
-        )
-        return layout.size.width.toFloat() to layout.size.height.toFloat()
     }
     // the text being typed (#35) is written once it is over: placed, edited or deleted as it stands
     fun finishTyping() {
@@ -537,7 +568,7 @@ fun PdfViewerScreen(
             editor.dropTyping()
             return
         }
-        val (w, h) = measureText(draft.text, draft.size)
+        val (w, h) = measureText(draft.text, draft.size, draft.width, draft.font, draft.bold, draft.italic)
         val typed = draftStamp(draft, sheetId, w, h, hitFit)
         editor.endTyping(draft.page, typingOutcome(draft, typed), PageEdit(pageStamps, pageStrokes))
     }
@@ -970,7 +1001,10 @@ fun PdfViewerScreen(
             }
             KeyAction.RESTART -> if (format.isMusicXml) playbackVm.restart()
             KeyAction.LOOP -> if (format.isMusicXml) playbackVm.toggleLoop()
-            KeyAction.METRONOME -> startStopMetronome()
+            KeyAction.METRONOME -> when (metronomeKey(format.isMusicXml)) {
+                MetronomeKey.TOGGLE_CLICKS -> playbackVm.toggleClicks()
+                MetronomeKey.START_STOP -> startStopMetronome()
+            }
             KeyAction.TAP_TEMPO -> metronomeVm.tap()?.let { bpm ->
                 if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
             }
@@ -1033,12 +1067,6 @@ fun PdfViewerScreen(
     val chromeInset = with(LocalDensity.current) {
         (if (editing && canEdit) annBarPx else 0).toDp()
     }
-    // With the metronome band, the bars stay on screen: a PDF page fits between the bar at the top
-    // and the bottom chrome, which hid its first and last staves. (A MusicXML page is laid out
-    // with that room already.)
-    val bandShown = metronomeShown && !format.isMusicXml && !editing
-    val bandInset = with(LocalDensity.current) { (if (bandShown) bottomChromePx else 0).toDp() }
-    val bandTopInset = with(LocalDensity.current) { (if (bandShown) chromeTop else 0).toDp() }
     // a different page area is a different clamp: entering edit mode must not leave a zoomed page
     // parked outside its bounds
     LaunchedEffect(viewport) { zoom.set(zoomFrameNow(), zoom.transform) }
@@ -1074,7 +1102,10 @@ fun PdfViewerScreen(
         val textRoomBottom = if (barY < barDragY) screenTop + annotationBarOffsetPx(barY, statusTopPx) else visibleBottom.toFloat()
         val lift = if (typingNow == null || hitFit.height <= 0f) 0f else {
             val k = zoom.transform.scale
-            val (_, h) = measureText(typingNow.text.ifEmpty { " " }, typingNow.size)
+            val (_, h) = measureText(
+                typingNow.text.ifEmpty { " " }, typingNow.size,
+                typingNow.width, typingNow.font, typingNow.bold, typingNow.italic,
+            )
             val line = textFontPx(typingNow.size, hitFit) * 1.3f
             val textBottom = viewportTop + pageFit.top + zoom.transform.offset.y +
                 (typingNow.top * hitFit.height + h + line) * k
@@ -1086,7 +1117,7 @@ fun PdfViewerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = chromeInset + bandTopInset, bottom = bandInset)
+                .padding(top = chromeInset)
                 .onSizeChanged { viewport = it }
                 .onGloballyPositioned { viewportTop = it.positionInWindow().y }
                 // the touches follow the page up: the layer moves them with it
@@ -1134,8 +1165,13 @@ fun PdfViewerScreen(
                     tool = tool,
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
-                    // each tool carries its own tint (#56); the shapes draw with theirs
-                    activeColor = if (tool == AnnotationTool.SHAPE) shapeColor else penColor,
+                    // each tool carries its own tint (#56); the shapes and the highlighter draw with theirs
+                    activeColor = when (tool) {
+                        AnnotationTool.SHAPE -> shapeColor
+                        AnnotationTool.HIGHLIGHTER -> highlighterColor
+                        else -> penColor
+                    },
+                    highlighterWidthPx = highlighterPx,
                     shapeKind = shapeType,
                     shapeWidthPx = shapeWidthPx,
                     shapeFilled = shapeFilled,
@@ -1194,6 +1230,20 @@ fun PdfViewerScreen(
                             )
                         }
                     },
+                    // a tap on a stamp/shape already on the page picks it and goes back to the
+                    // arrow, so the next drag moves it instead of drawing another one
+                    onStampPicked = { st ->
+                        if (tool != AnnotationTool.SELECT) chooseTool(AnnotationTool.SELECT)
+                        editor.selectedId = st.id
+                        editor.selectedStrokeIds = emptySet()
+                        editor.dragStamp = null
+                    },
+                    onShapePicked = { shape ->
+                        if (tool != AnnotationTool.SELECT) chooseTool(AnnotationTool.SELECT)
+                        editor.selectedStrokeIds = setOf(shape.id)
+                        editor.selectedId = null
+                        editor.dragStrokes = null
+                    },
                     // TEXT tool (#35): the measured rects (draw = hit = selection) go straight
                     // from the shared map, so the gesture never diverges from the draw.
                     textRects = textRects,
@@ -1215,14 +1265,26 @@ fun PdfViewerScreen(
                                             color = stamp.color,
                                             left = box.left / hitFit.width,
                                             top = box.top / hitFit.height,
+                                            width = stamp.textWidth,
+                                            font = stamp.font?.let { TextFont.of(it) },
+                                            bold = stamp.bold,
+                                            italic = stamp.italic,
                                         )
                                     )
                                 }
                                 typing != null -> finishTyping()
                                 else -> {
                                     val size = textSizePxToFrac(textPx, hitFit)
-                                    val (_, lineH) = measureText(" ", size)
+                                    val width = DEFAULT_TEXT_WIDTH
+                                    val (_, lineH) = measureText(
+                                        " ", size, width, textFont, textBold, textItalic
+                                    )
                                     val corner = newTextCorner(norm, lineH, hitFit)
+                                    // the box lands whole on the page: no half a text off the edge
+                                    val wrap = textWrapWidthPx(width, hitFit)
+                                    val left = corner.x.coerceIn(
+                                        0f, ((hitFit.width - wrap) / hitFit.width).coerceAtLeast(0f)
+                                    )
                                     editor.startTyping(
                                         TextDraft(
                                             page = currentPage,
@@ -1230,8 +1292,12 @@ fun PdfViewerScreen(
                                             text = "",
                                             size = size,
                                             color = textColor,
-                                            left = corner.x,
-                                            top = corner.y,
+                                            left = left,
+                                            top = corner.y.coerceIn(0f, 1f),
+                                            width = width,
+                                            font = textFont,
+                                            bold = textBold,
+                                            italic = textItalic,
                                         )
                                     )
                                 }
@@ -1244,6 +1310,7 @@ fun PdfViewerScreen(
                 val (liveColor, liveWidth) = when (tool) {
                     AnnotationTool.ERASER -> Color.Red.copy(alpha = 0.4f) to eraserPx * 2f
                     AnnotationTool.SHAPE -> inkTint(shapeColor, invert) to shapeWidthPx
+                    AnnotationTool.HIGHLIGHTER -> inkTint(highlighterColor, invert) to highlighterPx
                     else -> inkTint(penColor, invert) to penWidthPx
                 }
                 PageCanvas(
@@ -1275,10 +1342,10 @@ fun PdfViewerScreen(
                     previewWidthPx = liveWidth,
                     // the same rule the commit uses: fill is only for the closures. A filled
                     // line's preview would be a Fill of its 2-point path — nothing on screen
-                    previewKind = if (tool == AnnotationTool.SHAPE) {
-                        strokeKindOf(shapeType, shapeFilled)
-                    } else {
-                        Stroke.INK
+                    previewKind = when (tool) {
+                        AnnotationTool.SHAPE -> strokeKindOf(shapeType, shapeFilled)
+                        AnnotationTool.HIGHLIGHTER -> Stroke.HIGHLIGHTER
+                        else -> Stroke.INK
                     },
                     pageStamps = shownStamps,
                     dragStamp = editor.dragStamp,
@@ -1298,7 +1365,10 @@ fun PdfViewerScreen(
                 // page draws it, in the same transform as the stamps (so at any zoom too)
                 val draft = editor.typing
                 if (draft != null && draft.page == currentPage && !spread && sheetId != null) {
-                    val (w, h) = measureText(draft.text.ifEmpty { " " }, draft.size)
+                    val (w, h) = measureText(
+                        draft.text.ifEmpty { " " }, draft.size,
+                        draft.width, draft.font, draft.bold, draft.italic,
+                    )
                     val box = textBoxRect(draftStamp(draft, sheetId, w, h, hitFit), w, h, hitFit)
                     Box(
                         modifier = Modifier
@@ -1316,10 +1386,29 @@ fun PdfViewerScreen(
                             initial = draft.text,
                             topLeft = Offset(box.left, box.top),
                             fontPx = textFontPx(draft.size, hitFit),
-                            maxWidthPx = hitFit.width * TEXT_MAX_WRAP - 16f,
+                            maxWidthPx = textWrapWidthPx(draft.width, hitFit),
                             color = inkTint(draft.color, invert),
+                            font = draft.font ?: TextFont.SANS,
+                            bold = draft.bold,
+                            italic = draft.italic,
                             onText = { typed -> editor.retype { it.copy(text = typed) } },
                             onDone = { finishTyping() },
+                        )
+                        // the two circles of a text being typed: left moves the box, right changes
+                        // its width with the left edge fixed (the height follows the wrapping)
+                        TextBoxHandles(
+                            box = box,
+                            onMove = { d ->
+                                val corner = movedTextCorner(
+                                    draft, d.x, d.y, box.width, box.height, hitFit
+                                )
+                                editor.retype { it.copy(left = corner.x, top = corner.y) }
+                            },
+                            onResize = { dx ->
+                                editor.retype {
+                                    it.copy(width = resizedTextWidth(it, box.width, dx, hitFit))
+                                }
+                            },
                         )
                     }
                 }
@@ -1338,6 +1427,11 @@ fun PdfViewerScreen(
 
         // the visual metronome: the border of the page flashes on the beats
         if (metronomeOn && metronome.mode != MetronomeMode.SOUND) BeatFlash(metronomeTick)
+        // and over the music, while the metronome is switched on in the playback band; with it off,
+        // the count-in is still seen
+        val countingIn = (playTick?.bar ?: 0) < 0
+        val flashOverMusic = if (playClicking) metronome.mode != MetronomeMode.SOUND else countingIn
+        if (playState == PlayState.PLAYING && flashOverMusic) BeatFlash(playTick)
 
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).
@@ -1389,7 +1483,7 @@ fun PdfViewerScreen(
                             menu.dismiss()
                             if (item != open) {
                                 openMenuEntry(
-                                    item, menu, metronomeVm, playbackVm, editing,
+                                    item, menu, editing,
                                     onOpenLibrary, onOpenSetlist, onOpenPreferences, { toggleEditing() }, { navVisible = true },
                                 )
                             }
@@ -1405,8 +1499,9 @@ fun PdfViewerScreen(
             }
 
             if (editing && canEdit) {
-                val textPanel = textPanelValues(editor.typing, textPx, textColor, hitFit)
-                    .let { it.copy(px = it.px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
+                val textPanel = textPanelValues(
+                    editor.typing, textPx, textColor, textFont, textBold, textItalic, hitFit
+                ).let { it.copy(px = it.px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
                 AnnotationBar(
                     tool = tool,
                     stampSymbol = stampSymbol,
@@ -1415,6 +1510,11 @@ fun PdfViewerScreen(
                     penColor = penColor,
                     stampColor = stampColor,
                     textColor = textPanel.color,
+                    textFont = textPanel.font,
+                    textBold = textPanel.bold,
+                    textItalic = textPanel.italic,
+                    highlighterColor = highlighterColor,
+                    highlighterPx = highlighterPx,
                     shapeKind = shapeType,
                     shapeColor = shapeColor,
                     shapeFilled = shapeFilled,
@@ -1423,7 +1523,10 @@ fun PdfViewerScreen(
                     penWidthPx = penWidthPx,
                     eraserPx = eraserPx,
                     textPx = textPanel.px,
-                    defaultTextPx = defaultTextPx,
+                    textDefault = textPanel.px.roundToInt() == defaultTextPx.roundToInt() &&
+                        textPanel.font == defaultTextFont &&
+                        textPanel.bold == defaultTextBold &&
+                        textPanel.italic == defaultTextItalic,
                     placePx = placePx,
                     defaultStampPx = defaultStampPx,
                     pageTouched = pageTouched,
@@ -1449,16 +1552,39 @@ fun PdfViewerScreen(
                     },
                     onPenWidth = { penWidthPx = it },
                     onEraserPx = { eraserPx = it },
+                    onHighlighterPx = { highlighterPx = it },
+                    onHighlighterColor = { highlighterColor = it },
                     onPenColor = { penColor = it },
                     // a text being edited takes the size and the colour; the next new one keeps its own
                     onTextPx = { px ->
                         if (editor.typing?.origin == null) textPx = px
                         editor.retype { it.copy(size = textSizePxToFrac(px, hitFit)) }
                     },
+                    onTextFont = { font ->
+                        if (editor.typing?.origin == null) textFont = font
+                        editor.retype { it.copy(font = font) }
+                    },
+                    onTextBold = { bold ->
+                        if (editor.typing?.origin == null) textBold = bold
+                        editor.retype { it.copy(bold = bold) }
+                    },
+                    onTextItalic = { italic ->
+                        if (editor.typing?.origin == null) textItalic = italic
+                        editor.retype { it.copy(italic = italic) }
+                    },
                     onSaveTextDefault = {
                         Settings.setTextPx(context, textPanel.px)
+                        Settings.setTextFont(context, textPanel.font)
+                        Settings.setTextBold(context, textPanel.bold)
+                        Settings.setTextItalic(context, textPanel.italic)
                         defaultTextPx = textPanel.px
+                        defaultTextFont = textPanel.font
+                        defaultTextBold = textPanel.bold
+                        defaultTextItalic = textPanel.italic
                         textPx = textPanel.px
+                        textFont = textPanel.font
+                        textBold = textPanel.bold
+                        textItalic = textPanel.italic
                     },
                     onTextColor = { argb ->
                         if (editor.typing?.origin == null) textColor = argb
@@ -1525,7 +1651,6 @@ fun PdfViewerScreen(
                     metronome = metronome,
                     metronomeOn = metronomeOn,
                     metronomeTick = metronomeTick,
-                    metronomeShown = metronomeShown,
                     pageSource = pageSource,
                     pageCount = pageCount,
                     currentPage = currentPage,

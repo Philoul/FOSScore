@@ -45,10 +45,6 @@ class MetronomeViewModel(app: Application, private val score: String) : AndroidV
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running.asStateFlow()
 
-    // the band in the bottom bar, from "Metronome" in the menu until closed
-    private val _shown = MutableStateFlow(false)
-    val shown: StateFlow<Boolean> = _shown.asStateFlow()
-
     // the time signature comes from the score, not from the user
     private val _meterFromScore = MutableStateFlow(false)
     val meterFromScore: StateFlow<Boolean> = _meterFromScore.asStateFlow()
@@ -58,10 +54,6 @@ class MetronomeViewModel(app: Application, private val score: String) : AndroidV
     // the bar of the piece where the counting started: the first bar of the page on screen
     private var startBar = 0
 
-    fun show(shown: Boolean) {
-        _shown.value = shown
-        if (!shown) stop()
-    }
 
     fun start(fromBar: Int) {
         startBar = fromBar

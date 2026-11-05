@@ -17,7 +17,9 @@ class Playback internal constructor(
     private val audioQuarters: DoubleArray,
     val onsets: List<Onset>,
     /** Score positions, in quarter notes, where the measures start. */
-    val bars: List<Double> = emptyList()
+    val bars: List<Double> = emptyList(),
+    /** The MIDI tracks of each part, by part id (one track per staff, counted from 1). */
+    val partTracks: Map<String, List<Int>> = emptyMap(),
 ) {
     /** Score position, in quarter notes, at [ms] of audio. */
     fun quartersAt(ms: Long): Double {
@@ -73,9 +75,14 @@ class Playback internal constructor(
          * The playback of [midi], timed by its own tempos, with the [onsets] and the [bars] of the
          * score shown.
          */
-        fun of(midi: ByteArray, onsets: List<Onset>, bars: List<Double> = emptyList()): Playback {
+        fun of(
+            midi: ByteArray,
+            onsets: List<Onset>,
+            bars: List<Double> = emptyList(),
+            partTracks: Map<String, List<Int>> = emptyMap(),
+        ): Playback {
             val (ms, quarters) = MidiEdit.timing(midi)
-            return Playback(midi, ms, quarters, onsets, bars)
+            return Playback(midi, ms, quarters, onsets, bars, partTracks)
         }
 
         /** Where the measures start in a Verovio timemap made with "includeMeasures". */

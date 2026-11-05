@@ -2,8 +2,12 @@ package com.musigatto.fosscore.ui.viewer
 
 import android.graphics.Rect
 import android.view.ViewTreeObserver
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.LocalTextStyle
@@ -16,7 +20,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -24,6 +30,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
@@ -33,9 +41,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import android.view.inputmethod.InputMethodManager
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -53,6 +63,15 @@ internal data class TextDraft(
     val color: Int?,
     val left: Float,
     val top: Float,
+    // where the box was when the typing started: moving it from there is what the handle changed
+    val originLeft: Float = left,
+    val originTop: Float = top,
+    // wrapping width as a share of the page width; null = a text from before widths existed
+    val width: Float? = null,
+    // null = the stamp keeps the font it had (old texts stored none)
+    val font: TextFont? = null,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
 )
 
 /** What the end of a typing does to the library. */
@@ -81,34 +100,102 @@ internal fun draftStamp(draft: TextDraft, sheetId: Long, width: Float, height: F
     val base = draft.origin
         ?: Stamp(sheetId = sheetId, page = draft.page, symbol = Stamp.TEXT_SYMBOL, x = 0f, y = 0f, size = draft.size)
     return base
-        .copy(x = centre.x, y = centre.y, size = draft.size, color = draft.color, text = draft.text)
+        .copy(
+            x = centre.x,
+            y = centre.y,
+            size = draft.size,
+            color = draft.color,
+            text = draft.text,
+            textWidth = draft.width,
+            font = draft.font?.name,
+            bold = draft.bold,
+            italic = draft.italic,
+        )
 }
 
-/**
- * What the typing of [draft] leaves: [typed] is [draftStamp]. The spaces and empty lines left at
+/** What the typing of [draft] leaves: [typed] is [draftStamp]. The spaces and empty lines left at
  * the end take room for nothing and go; a text left empty is no text at all.
+ *
+ * The place and the width count too: the handles move the box and the right one changes its width,
+ * so a text left where it was found writes nothing while one moved or resized does.
  */
 internal fun typingOutcome(draft: TextDraft, typed: Stamp): TypingOutcome {
     val text = typed.text.orEmpty().trimEnd()
     val origin = draft.origin
+    val moved = origin != null &&
+        (abs(draft.left - draft.originLeft) > TEXT_MOVE_EPSILON ||
+            abs(draft.top - draft.originTop) > TEXT_MOVE_EPSILON)
     return when {
         origin == null && text.isBlank() -> TypingOutcome.Nothing
         origin == null -> TypingOutcome.Insert(typed.copy(text = text))
         text.isBlank() -> TypingOutcome.Delete(origin)
-        origin.text == text && origin.size == typed.size && origin.color == typed.color -> TypingOutcome.Nothing
+        origin.text == text && origin.size == typed.size && origin.color == typed.color &&
+            origin.textWidth == typed.textWidth && origin.font == typed.font &&
+            origin.bold == typed.bold && origin.italic == typed.italic && !moved ->
+            TypingOutcome.Nothing
         else -> TypingOutcome.Update(origin, typed.copy(text = text))
     }
 }
 
-/** The size (px at zoom 1) and the colour the text panel shows. */
-internal data class TextPanelValues(val px: Float, val color: Int?)
+// how far a text may move before it counts as a change (page shares; the handles do not jitter)
+internal const val TEXT_MOVE_EPSILON = 1e-4f
 
 /**
- * What the text panel shows: the size and the colour of the text being typed, so that editing a
- * text shows its own; [nextPx] and [nextColor] (those of the next new text) the rest of the time.
+ * The top-left corner after dragging the left handle by [dx]/[dy] px: the whole box moves and stops
+ * at the page's edge.
  */
-internal fun textPanelValues(typing: TextDraft?, nextPx: Float, nextColor: Int?, fit: RectPx): TextPanelValues =
-    typing?.let { TextPanelValues(textFontPx(it.size, fit), it.color) } ?: TextPanelValues(nextPx, nextColor)
+internal fun movedTextCorner(
+    draft: TextDraft,
+    dx: Float,
+    dy: Float,
+    boxW: Float,
+    boxH: Float,
+    fit: RectPx,
+): Offset {
+    val w = fit.width.coerceAtLeast(1f)
+    val h = fit.height.coerceAtLeast(1f)
+    val left = (draft.left * w + dx).coerceIn(0f, (w - boxW).coerceAtLeast(0f))
+    val top = (draft.top * h + dy).coerceIn(0f, (h - boxH).coerceAtLeast(0f))
+    return Offset(left / w, top / h)
+}
+
+/**
+ * The width (page share) after dragging the right handle by [dx] px: the left edge does not move,
+ * and the box neither leaves the page nor goes under [MIN_TEXT_WIDTH].
+ */
+internal fun resizedTextWidth(draft: TextDraft, boxW: Float, dx: Float, fit: RectPx): Float {
+    val w = fit.width.coerceAtLeast(1f)
+    val left = draft.left * w
+    val max = (w - left).coerceAtMost(w * MAX_TEXT_WIDTH)
+    val min = (w * MIN_TEXT_WIDTH).coerceAtMost(max)
+    return ((boxW + dx).coerceIn(min, max) / w).coerceIn(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH)
+}
+
+/** The size (px at zoom 1), the colour and the typeface the text panel shows. */
+internal data class TextPanelValues(
+    val px: Float,
+    val color: Int?,
+    val font: TextFont,
+    val bold: Boolean,
+    val italic: Boolean,
+)
+
+/**
+ * What the text panel shows: the size, colour and typeface of the text being typed, so that editing
+ * a text shows its own; [nextPx], [nextColor], [nextFont], [nextBold] and [nextItalic] (those of the
+ * next new text) the rest of the time.
+ */
+internal fun textPanelValues(
+    typing: TextDraft?,
+    nextPx: Float,
+    nextColor: Int?,
+    nextFont: TextFont,
+    nextBold: Boolean,
+    nextItalic: Boolean,
+    fit: RectPx,
+): TextPanelValues = typing?.let {
+    TextPanelValues(textFontPx(it.size, fit), it.color, it.font ?: TextFont.SANS, it.bold, it.italic)
+} ?: TextPanelValues(nextPx, nextColor, nextFont, nextBold, nextItalic)
 
 /**
  * The top left corner where a new text starts, from the point tapped ([tap], page fractions): the
@@ -157,6 +244,9 @@ internal fun TypingField(
     color: Color,
     onText: (String) -> Unit,
     onDone: () -> Unit,
+    font: TextFont = TextFont.SANS,
+    bold: Boolean = false,
+    italic: Boolean = false,
 ) {
     var value by remember(key) { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     val focus = remember { FocusRequester() }
@@ -174,7 +264,7 @@ internal fun TypingField(
             value = it
             if (changed) onText(it.text)
         },
-        textStyle = textStampStyle(LocalTextStyle.current, fontPx, density, color),
+        textStyle = textStampStyle(LocalTextStyle.current, fontPx, density, color, font, bold, italic),
         cursorBrush = SolidColor(color),
         // an empty new text shows its size and colour, faintly, until the first letter
         decorationBox = { inner ->
@@ -182,7 +272,10 @@ internal fun TypingField(
                 if (value.text.isEmpty()) {
                     Text(
                         stringResource(R.string.text_placeholder),
-                        style = textStampStyle(LocalTextStyle.current, fontPx, density, color.copy(alpha = 0.4f)),
+                        style = textStampStyle(
+                            LocalTextStyle.current, fontPx, density, color.copy(alpha = 0.4f),
+                            font, bold, italic,
+                        ),
                     )
                 }
                 inner()
@@ -208,6 +301,54 @@ internal fun TypingField(
         onDispose {
             keyboard?.hide()
             view.context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(view.windowToken, 0)
+        }
+    }
+}
+
+/**
+ * The two white circles of a text being typed, as forScore shows them: the left one moves the whole
+ * box, the right one changes its width with the left edge fixed (the height follows the wrapping).
+ * They sit in the page's coordinates, in the same layer as the field, so they stay on the box at any
+ * zoom.
+ */
+@Composable
+internal fun TextBoxHandles(
+    box: RectPx,
+    onMove: (Offset) -> Unit,
+    onResize: (Float) -> Unit,
+) {
+    val move = rememberUpdatedState(onMove)
+    val resize = rememberUpdatedState(onResize)
+    val moveLabel = stringResource(R.string.text_move_handle)
+    val widthLabel = stringResource(R.string.text_width_handle)
+
+    val gap = with(LocalDensity.current) { 14.dp.toPx() }
+
+    HandleDot(Offset(box.left - gap, box.center().y), moveLabel) { move.value(it) }
+    HandleDot(Offset(box.right, box.center().y), widthLabel) { resize.value(it.x) }
+}
+
+@Composable
+private fun HandleDot(center: Offset, label: String, onDrag: (Offset) -> Unit) {
+    val density = LocalDensity.current
+    val radius = with(density) { 10.dp.toPx() }
+    val drag = rememberUpdatedState(onDrag)
+    Box(
+        modifier = Modifier
+            .offset { IntOffset((center.x - radius).roundToInt(), (center.y - radius).roundToInt()) }
+            .size(20.dp)
+            .pointerInput(Unit) {
+                detectDragGestures { change, amount ->
+                    change.consume()
+                    drag.value(amount)
+                }
+            }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawCircle(Color.White)
+            drawCircle(Color.Black, style = DrawStroke(width = 2.dp.toPx()))
         }
     }
 }

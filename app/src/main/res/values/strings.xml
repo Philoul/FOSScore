@@ -12,6 +12,7 @@
     <string name="action_undo">Undo</string>
     <string name="action_redo">Redo</string>
     <string name="tool_pen">Pen</string>
+    <string name="tool_highlighter">Highlighter</string>
     <string name="tool_eraser">Eraser</string>
     <string name="tool_select">Select</string>
     <string name="tool_stamp">Stamp</string>
@@ -28,6 +29,16 @@
     <string name="shape_arrow">Arrow</string>
     <string name="shape_fill">Filled</string>
   <string name="text_placeholder">Aa</string>
+    <string name="text_font_sans">Sans</string>
+    <string name="text_font_serif">Serif</string>
+    <string name="text_font_mono">Mono</string>
+    <string name="text_font_sample">Aa</string>
+    <string name="text_bold">Bold</string>
+    <string name="text_italic">Italic</string>
+    <string name="text_bold_sample">B</string>
+    <string name="text_italic_sample">I</string>
+    <string name="text_move_handle">Move text</string>
+    <string name="text_width_handle">Text width</string>
     <string name="search_label">Search</string>
     <string name="library_title">Library</string>
     <string name="empty_library">No sheets yet. Import one with the Import button.</string>
@@ -137,6 +148,8 @@
     <string name="transpose_none">As written</string>
     <string name="transpose_value">%1$+d</string>
     <string name="transpose_down">Down a semitone</string>
+    <string name="playback_transpose_label">Transposition heard</string>
+    <string name="playback_transpose_apply">Apply to the score</string>
     <string name="transpose_up">Up a semitone</string>
     <string name="lyrics_section_label">Lyrics</string>
     <string name="lyrics_file">As in the file</string>
@@ -219,11 +232,7 @@
     <string name="backup_check_files_ok">All PDF files included</string>
     <string name="backup_check_files_missing">%1$d PDF files were missing when this export was made.</string>
     <!-- metronome -->
-    <string name="metronome_start">Start the metronome</string>
-    <string name="metronome_stop">Stop the metronome</string>
     <string name="metronome_tap">TAP</string>
-    <string name="metronome_settings">Metronome settings</string>
-    <string name="metronome_close">Close the metronome</string>
     <string name="metronome_time_signature">Time signature</string>
     <string name="metronome_meter_from_score">%1$s (score)</string>
     <string name="metronome_fewer">Fewer</string>
@@ -245,10 +254,59 @@
     <string name="metronome_bars_range">bars %1$d–%2$d</string>
     <string name="metronome_copy_bars">Same count for the next pages</string>
     <string name="metronome_mode_label">Given by</string>
-    <string name="metronome_bar">Bar %1$d</string>
     <string name="tempo_as_written_short">As written</string>
     <string name="metronome_previous_page">Previous page</string>
     <string name="metronome_next_page">Next page</string>
+    <string name="prefs_midi">MIDI</string>
+    <string name="prefs_midi_summary">Sound banks for playback</string>
+    <string name="sound_banks_hint">SoundFont banks (SF2 or SF3) give playback its instruments. The default bank plays every part that has no sound of its own. A bank in SF3 is prepared once when it is added (a few minutes on an old tablet), by itself: it can be chosen once its sounds are ready, and they then play at once.</string>
+    <string name="sound_bank_default">Default bank</string>
+    <string name="sound_bank_built_in">Comes with the app</string>
+    <string name="sound_bank_add">Add a sound bank…</string>
+    <string name="sound_bank_adding">Adding the bank…</string>
+    <string name="sound_bank_not_read">This file is not a SoundFont bank (SF2 or SF3).</string>
+    <string name="sound_bank_delete">Delete</string>
+    <string name="sound_bank_delete_title">Delete %1$s?</string>
+    <string name="sound_bank_delete_text">Parts that play it go back to the default bank.</string>
+    <string name="part_sound_title">Sound of %1$s</string>
+    <string name="part_sound_bank">Bank</string>
+    <string name="part_sound_drums">Drum kits</string>
+    <string name="part_sound_from_score">from the score</string>
+    <!-- the 16 families of General MIDI, 8 programs each, in order -->
+    <string-array name="gm_families">
+        <item>Pianos</item>
+        <item>Chromatic percussion</item>
+        <item>Organs</item>
+        <item>Guitars</item>
+        <item>Basses</item>
+        <item>Strings</item>
+        <item>Ensembles</item>
+        <item>Brass</item>
+        <item>Reeds</item>
+        <item>Pipes</item>
+        <item>Synth leads</item>
+        <item>Synth pads</item>
+        <item>Synth effects</item>
+        <item>Ethnic</item>
+        <item>Percussive</item>
+        <item>Sound effects</item>
+    </string-array>
+    <string name="part_sound_original">Original</string>
+    <string name="sound_bank_found_title">Sound banks in %1$s</string>
+    <string name="sound_bank_none_found">No SF2 or SF3 file in this folder.</string>
+    <string name="sound_bank_other_folder">Another folder…</string>
+    <string name="sound_bank_folder_title">The folder of your sound banks</string>
+    <string name="sound_bank_folder_text">Android cannot show only the SF2 and SF3 files. In the next screen, open the folder that holds your banks (for example Download), without touching the files, which stay greyed out, then tap the button at the bottom (\"Select\" or \"Use this folder\"). FOSScore then lists the banks it holds, and remembers the folder for next time.</string>
+    <string name="sound_bank_folder_choose">Choose the folder</string>
+    <string name="part_sound_variants">Variants (%1$d)</string>
+    <string name="playback_clicks_on">Metronome on</string>
+    <string name="playback_clicks_off">Metronome off</string>
+    <string name="sound_bank_preparing">Preparing its sounds… %1$d %% (it can be chosen once ready)</string>
+    <string name="sound_bank_waiting">Its sounds will be prepared (it can be chosen once ready)</string>
+    <string name="part_sound_bank_preparing">%1$s (preparing its sounds… %2$d %%)</string>
+    <string name="part_sound_bank_waiting">%1$s (its sounds will be prepared)</string>
+    <string name="playback_bar">Bar %1$d</string>
+    <string name="playback_music_off">Mute the music (the metronome alone)</string>
     <string name="prefs_viewer">Score screen</string>
     <string name="chrome_menu">Menu ☰: every function in one list</string>
     <string name="chrome_icons">Icon bar: one icon per function</string>

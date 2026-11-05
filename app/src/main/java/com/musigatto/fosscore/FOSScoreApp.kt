@@ -5,6 +5,7 @@ import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.StampRepository
 import com.musigatto.fosscore.library.StrokeRepository
 import com.musigatto.fosscore.score.ScorePrecompute
+import com.musigatto.fosscore.sound.SoundBank
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,5 +23,7 @@ class FOSScoreApp : Application() {
         super.onCreate()
         // MusicXML scores laid out and drawn ahead, whenever the user leaves the tablet alone
         ScorePrecompute.start(this, applicationScope, repository.sheets())
+        // a sound bank whose preparation was cut short when the app closed goes on by itself
+        SoundBank.prepareAll(this)
     }
 }

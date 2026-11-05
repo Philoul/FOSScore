@@ -30,6 +30,8 @@ data class Stamp(
     val font: String? = null,
     val bold: Boolean = false,
     val italic: Boolean = false,
+    // wrapped width of a text stamp as a share of the page width; null = old texts (full page wrap)
+    val textWidth: Float? = null,
     // on a MusicXML score, the measure (its number in the file) and the staff the mark hangs on;
     // null = x/y are a place on the page, as on a PDF
     val measure: Int? = null,

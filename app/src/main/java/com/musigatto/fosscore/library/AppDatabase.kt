@@ -202,16 +202,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7: a text stamp keeps the width it was wrapped at (a share of the page width). Old texts
+         * have null and keep wrapping at the page width.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stamps` ADD COLUMN `textWidth` REAL")
+            }
+        }
+
         const val NAME = "fosscore.db"
 
         /**
          * Schema version. When it changes: add the migration to [MIGRATIONS] (or an automatic
          * migration), commit the new file in `app/schemas/`, and extend `MigrationTest`.
          */
-        const val VERSION = 6
+        const val VERSION = 7
 
         /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         private var instance: AppDatabase? = null
 

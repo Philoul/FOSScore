@@ -3,6 +3,7 @@ package com.musigatto.fosscore.ui.viewer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.musigatto.fosscore.library.Stamp
+import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.library.isTextStamp
 import kotlin.math.abs
 import kotlin.math.max
@@ -72,6 +73,24 @@ const val MAX_TEXT_FRAC = 0.08f
 const val TEXT_LINE_EM = 1.2f
 // the text wraps at this share of the page's width (1f would touch the edge)
 const val TEXT_MAX_WRAP = 0.98f
+// a text that got a width (the right handle) wraps at that share of the page and keeps it; a text
+// from before widths existed has null and wraps at the page's width.
+const val DEFAULT_TEXT_WIDTH = 0.15f
+const val MIN_TEXT_WIDTH = 0.08f
+const val MAX_TEXT_WIDTH = 1f
+const val TEXT_WRAP_PAD = 16f
+
+/** The wrapping width of a text (px): its own, or the page's for a text that never got one. */
+fun textWrapWidthPx(width: Float?, fit: RectPx): Float =
+    if (width == null) (fit.width * TEXT_MAX_WRAP - TEXT_WRAP_PAD).coerceAtLeast(1f)
+    else (fit.width * width.coerceIn(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH)).coerceAtLeast(1f)
+
+/**
+ * The box of a text is as wide as its wrapping width once it has one (the right handle moved it);
+ * without a width it is the measured text, so old texts keep the box they always had.
+ */
+fun textBoxWidthPx(width: Float?, measuredW: Float, wrapW: Float): Float =
+    if (width == null) measuredW else wrapW
 
 fun textSizePxToFrac(px: Float, fit: RectPx): Float =
     (px / max(1f, fit.height)).coerceIn(MIN_TEXT_FRAC, MAX_TEXT_FRAC)
@@ -99,6 +118,15 @@ fun textBoxRect(stamp: Stamp, textW: Float, textH: Float, fit: RectPx): RectPx {
 
 fun hitTextStamp(pos: Offset, stamps: List<Stamp>, rects: Map<Long, RectPx>): Stamp? =
     stamps.lastOrNull { it.isTextStamp() && rects[it.id]?.contains(pos) == true }
+
+/** The shape under the finger: its outline, or anywhere inside a filled one. */
+fun hitShape(pos: Offset, strokes: List<Stroke>, fit: RectPx): Stroke? =
+    strokes.lastOrNull { st ->
+        Stroke.isShape(st.kind) && (
+            (Stroke.isFilled(st.kind) && strokeBounds(strokePointsPx(st, fit)).contains(pos)) ||
+                hitStroke(pos, listOf(st), fit) != null
+            )
+    }
 
 /**
  * Stamps the eraser trail takes with it. The eraser is a circle of [radiusPx] around the trail, so a

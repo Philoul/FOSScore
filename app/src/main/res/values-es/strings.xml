@@ -11,6 +11,7 @@
     <string name="action_undo">Deshacer</string>
     <string name="action_redo">Rehacer</string>
     <string name="tool_pen">Lápiz</string>
+    <string name="tool_highlighter">Subrayador</string>
     <string name="tool_eraser">Goma</string>
     <string name="tool_select">Seleccionar</string>
     <string name="tool_stamp">Sello</string>
@@ -27,6 +28,16 @@
     <string name="shape_arrow">Flecha</string>
     <string name="shape_fill">Relleno</string>
   <string name="text_placeholder">Aa</string>
+    <string name="text_font_sans">Sans</string>
+    <string name="text_font_serif">Serif</string>
+    <string name="text_font_mono">Mono</string>
+    <string name="text_font_sample">Aa</string>
+    <string name="text_bold">Negrita</string>
+    <string name="text_italic">Cursiva</string>
+    <string name="text_bold_sample">N</string>
+    <string name="text_italic_sample">C</string>
+    <string name="text_move_handle">Mover texto</string>
+    <string name="text_width_handle">Ancho del texto</string>
     <string name="search_label">Buscar</string>
     <string name="library_title">Biblioteca</string>
     <string name="empty_library">Aún no hay partituras. Usa el botón Importar.</string>

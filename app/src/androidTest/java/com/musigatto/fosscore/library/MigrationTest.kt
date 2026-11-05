@@ -72,6 +72,8 @@ class MigrationTest {
                         put("bold", 0)
                         put("italic", 0)
                     }
+                    // v7: a text stamp keeps the width it wraps at
+                    if (version >= 7) put("textWidth", 0.5f)
                 }
             )
         }
@@ -118,6 +120,8 @@ class MigrationTest {
                     assertEquals("v$version: stamp sheetId", sheet.id, stamps[0].sheetId)
                     // Version 2 had no colour: the theme colour (null) after the migration.
                     if (version >= 3) assertEquals(RED, stamps[0].color) else assertNull(stamps[0].color)
+                    // v7: a width written on v7 stays; old texts keep null (full-page wrap)
+                    if (version >= 7) assertEquals(0.5f, stamps[0].textWidth) else assertNull(stamps[0].textWidth)
                 }
 
                 val strokes = db.strokeDao().observePage(sheet.id, 2).first()

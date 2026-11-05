@@ -10,6 +10,7 @@
     <string name="action_undo">Annuler</string>
     <string name="action_redo">Rétablir</string>
     <string name="tool_pen">Stylo</string>
+    <string name="tool_highlighter">Surligneur</string>
     <string name="tool_eraser">Gomme</string>
     <string name="tool_select">Sélection</string>
     <string name="tool_stamp">Tampon</string>
@@ -26,6 +27,16 @@
     <string name="shape_arrow">Flèche</string>
     <string name="shape_fill">Rempli</string>
   <string name="text_placeholder">Aa</string>
+    <string name="text_font_sans">Sans</string>
+    <string name="text_font_serif">Serif</string>
+    <string name="text_font_mono">Mono</string>
+    <string name="text_font_sample">Aa</string>
+    <string name="text_bold">Gras</string>
+    <string name="text_italic">Italique</string>
+    <string name="text_bold_sample">G</string>
+    <string name="text_italic_sample">I</string>
+    <string name="text_move_handle">Déplacer le texte</string>
+    <string name="text_width_handle">Largeur du texte</string>
     <string name="search_label">Rechercher</string>
     <string name="library_title">Bibliothèque</string>
     <string name="empty_library">Aucune partition pour l’instant. Ajoutez-en une avec le bouton Importer.</string>

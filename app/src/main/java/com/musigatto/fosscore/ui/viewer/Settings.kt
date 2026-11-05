@@ -93,6 +93,9 @@ object Settings {
     const val LAST_PAGE_KEPT_MS = 30 * 60 * 1000L
     private const val KEY_STAMP_PX = "stamp_px"
     private const val KEY_TEXT_PX = "text_px"
+    private const val KEY_TEXT_FONT = "text_font"
+    private const val KEY_TEXT_BOLD = "text_bold"
+    private const val KEY_TEXT_ITALIC = "text_italic"
     private const val KEY_SHAPE_PX = "shape_px"
     private const val KEY_ANNOTATION_TOOL = "annotation_tool"
     private const val KEY_MUSIC_SIZE = "music_size_"
@@ -246,6 +249,28 @@ object Settings {
 
     fun setTextPx(context: Context, px: Float) {
         context.prefs().edit { putFloat(KEY_TEXT_PX, px.coerceIn(MIN_TEXT_PX, MAX_TEXT_PX)) }
+    }
+
+    /** The typeface a new text starts with, saved from the text panel with its size. */
+    fun textFont(context: Context): TextFont =
+        TextFont.of(context.prefs().getString(KEY_TEXT_FONT, null))
+
+    fun setTextFont(context: Context, font: TextFont) {
+        context.prefs().edit { putString(KEY_TEXT_FONT, font.name) }
+    }
+
+    fun textBold(context: Context): Boolean =
+        context.prefs().getBoolean(KEY_TEXT_BOLD, false)
+
+    fun setTextBold(context: Context, bold: Boolean) {
+        context.prefs().edit { putBoolean(KEY_TEXT_BOLD, bold) }
+    }
+
+    fun textItalic(context: Context): Boolean =
+        context.prefs().getBoolean(KEY_TEXT_ITALIC, false)
+
+    fun setTextItalic(context: Context, italic: Boolean) {
+        context.prefs().edit { putBoolean(KEY_TEXT_ITALIC, italic) }
     }
 
     // thickness a new shape starts with, saved from the shapes panel

@@ -57,6 +57,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
@@ -138,6 +140,11 @@ internal fun AnnotationBar(
     penColor: Int?,
     stampColor: Int?,
     textColor: Int?,
+    textFont: TextFont,
+    textBold: Boolean,
+    textItalic: Boolean,
+    highlighterColor: Int?,
+    highlighterPx: Float,
     shapeKind: ShapeKind,
     shapeColor: Int?,
     shapeFilled: Boolean,
@@ -146,7 +153,7 @@ internal fun AnnotationBar(
     penWidthPx: Float,
     eraserPx: Float,
     textPx: Float,
-    defaultTextPx: Float,
+    textDefault: Boolean,
     placePx: Float,
     defaultStampPx: Float,
     pageTouched: Boolean,
@@ -166,11 +173,16 @@ internal fun AnnotationBar(
     onSaveDefault: () -> Unit,
     onPenWidth: (Float) -> Unit,
     onEraserPx: (Float) -> Unit,
+    onHighlighterPx: (Float) -> Unit,
+    onHighlighterColor: (Int?) -> Unit,
     onTextPx: (Float) -> Unit,
     onSaveTextDefault: () -> Unit,
     onPenColor: (Int?) -> Unit,
     onStampColor: (Int?) -> Unit,
     onTextColor: (Int?) -> Unit,
+    onTextFont: (TextFont) -> Unit,
+    onTextBold: (Boolean) -> Unit,
+    onTextItalic: (Boolean) -> Unit,
     onShapeKind: (ShapeKind) -> Unit,
     onShapeColor: (Int?) -> Unit,
     onShapeFilled: (Boolean) -> Unit,
@@ -203,6 +215,7 @@ internal fun AnnotationBar(
         // the tools are drawn glyphs now, with no text of their own: the names come from here
         val selectLabel = stringResource(R.string.tool_select)
         val penLabel = stringResource(R.string.tool_pen)
+        val highlighterLabel = stringResource(R.string.tool_highlighter)
         val shapeLabel = stringResource(R.string.tool_shapes)
         val eraserLabel = stringResource(R.string.tool_eraser)
         val stampLabel = stringResource(R.string.tool_stamp)
@@ -250,6 +263,16 @@ internal fun AnnotationBar(
                             toolX[AnnotationTool.PEN] = it.positionInWindow().x
                         },
                     ) { ToolIcon(ICON_PENCIL) }
+                    Spacer(Modifier.width(4.dp))
+                    ToolButton(
+                        active = tool == AnnotationTool.HIGHLIGHTER,
+                        panelOpen = openPanel == AnnotationTool.HIGHLIGHTER,
+                        label = highlighterLabel,
+                        onClick = { onTool(AnnotationTool.HIGHLIGHTER) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.HIGHLIGHTER] = it.positionInWindow().x
+                        },
+                    ) { ToolIcon(ICON_HIGHLIGHTER) }
                     Spacer(Modifier.width(4.dp))
                     // like the stamp, the shapes button shows the shape in hand
                     ToolButton(
@@ -432,6 +455,14 @@ internal fun AnnotationBar(
                             lead = { ColorChoices(active = penColor, invert = invert, onPick = onPenColor) },
                         )
 
+                        AnnotationTool.HIGHLIGHTER -> ToolSizePanel(
+                            label = stringResource(R.string.thickness_label),
+                            value = highlighterPx,
+                            range = MIN_HIGHLIGHTER_PX..MAX_HIGHLIGHTER_PX,
+                            onValue = onHighlighterPx,
+                            lead = { ColorChoices(active = highlighterColor, invert = invert, onPick = onHighlighterColor, defaultColor = 0xFFFFEB3B.toInt()) },
+                        )
+
                         AnnotationTool.SHAPE -> ToolSizePanel(
                             label = stringResource(R.string.thickness_label),
                             value = shapeWidthPx,
@@ -480,15 +511,109 @@ internal fun AnnotationBar(
                             value = textPx,
                             range = MIN_TEXT_PX..MAX_TEXT_PX,
                             onValue = onTextPx,
-                            lead = { ColorChoices(active = textColor, invert = invert, onPick = onTextColor) },
+                            lead = {
+                                TextFontChoices(
+                                    font = textFont,
+                                    bold = textBold,
+                                    italic = textItalic,
+                                    onFont = onTextFont,
+                                    onBold = onTextBold,
+                                    onItalic = onTextItalic,
+                                )
+                                ColorChoices(active = textColor, invert = invert, onPick = onTextColor)
+                            },
                             onSaveDefault = onSaveTextDefault,
-                            isDefault = textPx.roundToInt() == defaultTextPx.roundToInt(),
+                            isDefault = textDefault,
                         )
 
                         else -> Unit
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The typeface of a text (the text stamps' three families) and bold/italic. The families are one
+ * choice — announced as radio buttons like the tools; bold and italic are two toggles.
+ */
+@Composable
+private fun TextFontChoices(
+    font: TextFont,
+    bold: Boolean,
+    italic: Boolean,
+    onFont: (TextFont) -> Unit,
+    onBold: (Boolean) -> Unit,
+    onItalic: (Boolean) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextFont.entries.forEach { choice ->
+            ToolButton(
+                active = font == choice,
+                panelOpen = false,
+                label = stringResource(choice.labelRes),
+                onClick = { onFont(choice) },
+            ) {
+                Text(
+                    stringResource(R.string.text_font_sample),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontFamily = choice.family,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        StyleToggle(
+            active = bold,
+            label = stringResource(R.string.text_bold),
+            onClick = { onBold(!bold) },
+        ) {
+            Text(
+                stringResource(R.string.text_bold_sample),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        StyleToggle(
+            active = italic,
+            label = stringResource(R.string.text_italic),
+            onClick = { onItalic(!italic) },
+        ) {
+            Text(
+                stringResource(R.string.text_italic_sample),
+                style = MaterialTheme.typography.titleSmall,
+                fontStyle = FontStyle.Italic,
+            )
+        }
+    }
+}
+
+/** A toggle of the text panel (bold, italic): a checkbox look, not a radio one. */
+@Composable
+private fun StyleToggle(
+    active: Boolean,
+    label: String,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        color = if (active) scheme.primary else Color.Transparent,
+        shape = RoundedCornerShape(10.dp),
+        border = if (active) null else BorderStroke(1.dp, scheme.outlineVariant),
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = label
+                role = Role.Checkbox
+                selected = active
+            },
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides if (active) scheme.onPrimary else scheme.onSurfaceVariant
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
         }
     }
 }

@@ -85,7 +85,8 @@ fun PreferencesScreen(onDone: () -> Unit) {
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        // on the left, as the other screens: centred, a wide screen left a blank strip on each side
+        horizontalAlignment = Alignment.Start,
     ) {
         Column(modifier = Modifier.widthIn(max = MAX_WIDTH_DP.dp).fillMaxWidth()) {
             Text(stringResource(R.string.menu_settings), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 8.dp))

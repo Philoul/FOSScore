@@ -68,6 +68,8 @@ internal fun Modifier.pageGestures(
     penWidthPx: Float,
     eraserPx: Float,
     activeColor: Int?,
+    // HIGHLIGHTER: its own width (px at zoom 1); its translucency is the drawing's business
+    highlighterWidthPx: Float = DEFAULT_PEN_PX,
     // SHAPE: the kind in hand and the width of the next shape (px at zoom 1)
     shapeKind: ShapeKind,
     shapeWidthPx: Float,
@@ -86,6 +88,9 @@ internal fun Modifier.pageGestures(
     onInkPreview: (List<Offset>) -> Unit,
     onToolsDown: () -> Unit,
     onPlaceStamp: (Offset) -> Unit,
+    // STAMP/SHAPE tap on something already on the page: it selects it and stands the tool down
+    onStampPicked: (Stamp) -> Unit = {},
+    onShapePicked: (Stroke) -> Unit = {},
     // TEXT tool (issue #35): a tap on empty page creates a box; a tap on a box edits it.
     // The measured rects (draw = hit = selection) come from the shared map.
     textRects: Map<Long, RectPx> = emptyMap(),
@@ -123,6 +128,7 @@ internal fun Modifier.pageGestures(
     val currentLoupeAt by rememberUpdatedState(loupeAt)
     val currentEraserPx by rememberUpdatedState(eraserPx)
     val currentPenWidth by rememberUpdatedState(penWidthPx)
+    val currentHighlighterWidth by rememberUpdatedState(highlighterWidthPx)
     val currentActiveColor by rememberUpdatedState(activeColor)
     val currentShapeKind by rememberUpdatedState(shapeKind)
     val currentShapeWidth by rememberUpdatedState(shapeWidthPx)
@@ -190,6 +196,7 @@ internal fun Modifier.pageGestures(
             // release branch does not re-hit against a stale map or moved fingers
             var pickedText: Stamp? = null
             var inkActive = false
+            var inkKind = Stroke.INK
             var inkPts = mutableListOf<Offset>()
             // SHAPE: the drag's two ends make the shape, so only the start point is captured on
             // down; the live end is tracked in the move loop and the points come out on release
@@ -280,8 +287,11 @@ internal fun Modifier.pageGestures(
             }
             // a stroke that starts on the matte is no stroke at all: nothing is drawn, and the
             // release branch stands the pen down (it reads as a tap on the matte)
-            if (currentEditing && currentCanEdit && currentTool == AnnotationTool.PEN && !onMatte) {
+            if (currentEditing && currentCanEdit &&
+                (currentTool == AnnotationTool.PEN || currentTool == AnnotationTool.HIGHLIGHTER) && !onMatte
+            ) {
                 inkActive = true
+                inkKind = if (currentTool == AnnotationTool.HIGHLIGHTER) Stroke.HIGHLIGHTER else Stroke.INK
                 inkPts.add(downF)
                 InkPerfMetrics.beginStroke()
                 onInkPreview(listOf(downF))
@@ -371,14 +381,23 @@ internal fun Modifier.pageGestures(
                                     points = encodePoints(
                                         pts.map { pxToNormalized(it, currentHitFit) }
                                     ),
-                                    width = penWidthPxToFrac(currentPenWidth, currentHitFit),
-                                    color = currentActiveColor
+                                    width = if (inkKind == Stroke.HIGHLIGHTER)
+                                        highlighterWidthPxToFrac(currentHighlighterWidth, currentHitFit)
+                                    else
+                                        penWidthPxToFrac(currentPenWidth, currentHitFit),
+                                    color = currentActiveColor,
+                                    kind = inkKind,
                                 )
                                 // the word the stroke belongs to is decided now, once: the next
                                 // letter of what was just written joins it, anything else starts
                                 // a new one. Dragging one word next to another later must not
                                 // merge them, so the distance is not consulted again at selection.
-                                val grouped = stroke.copy(
+                                // A highlighter is never a letter: each pass is its own group.
+                                val grouped = if (inkKind == Stroke.HIGHLIGHTER) {
+                                    stroke.copy(
+                                        groupId = (currentInkStrokes.maxOfOrNull { it.groupId } ?: 0L) + 1L
+                                    )
+                                } else stroke.copy(
                                     groupId = groupForStroke(
                                         previous = editor.pendingInk.lastOrNull { it.page == currentPage }
                                             ?: currentInkStrokes.maxByOrNull { it.id },
@@ -418,6 +437,10 @@ internal fun Modifier.pageGestures(
                                     ),
                                     PageEdit(currentPageStamps, currentPageStrokes),
                                 )
+                            } else if (dragPx < touchSlopPx && !onMatte) {
+                                // a tap (not a drag) on a shape picks it, as the arrow would;
+                                // an empty tap draws nothing, as before
+                                hitShape(downF, currentPageStrokes, currentHitFit)?.let(onShapePicked)
                             }
                         } else if (eraserActive) {
                             val path = eraserPath
@@ -534,11 +557,14 @@ internal fun Modifier.pageGestures(
                                     (aimed || totalPan.getDistance() <= touchSlopPx)
                                 ) {
                                     // a drag is a pan and must not drop a stamp; the loupe is
-                                    // the way to aim a placement that is not a plain tap. One
-                                    // stamp per arming: the viewer stands the tool down as soon
-                                    // as it is used, so the next tap outside the new stamp
-                                    // deselects instead of stamping again.
-                                    onPlaceStamp(pxToNormalized(fitPoint(lastPlacePos), currentHitFit))
+                                    // the way to aim a placement that is not a plain tap. A tap
+                                    // on a stamp already on the page picks it instead of placing
+                                    // a second copy.
+                                    val at = pxToNormalized(fitPoint(lastPlacePos), currentHitFit)
+                                    val picked = hitStamp(
+                                        fitPoint(lastPlacePos), committedStamps, currentHitFit, currentTextRects
+                                    )
+                                    if (picked != null) onStampPicked(picked) else onPlaceStamp(at)
                                 }
                             } else {
                                 val isSwipe = zoom.transform.scale <= 1f &&

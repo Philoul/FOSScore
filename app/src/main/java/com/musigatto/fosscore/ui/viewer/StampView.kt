@@ -39,6 +39,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -135,8 +138,33 @@ fun textFontSp(fontPx: Float, density: Density): TextUnit = (fontPx / density.de
  * [TEXT_LINE_EM] of that font high. The theme's line height is a fixed 24 sp: a big text's lines
  * ran into each other and a small one's were far apart. Draw, measure and typing all take it.
  */
-fun textStampStyle(base: TextStyle, fontPx: Float, density: Density, color: Color = Color.Unspecified): TextStyle =
-    base.copy(fontSize = textFontSp(fontPx, density), lineHeight = TEXT_LINE_EM.em, color = color)
+fun textStampStyle(
+    base: TextStyle,
+    fontPx: Float,
+    density: Density,
+    color: Color = Color.Unspecified,
+    font: TextFont = TextFont.SANS,
+    bold: Boolean = false,
+    italic: Boolean = false,
+): TextStyle = base.copy(
+    fontSize = textFontSp(fontPx, density),
+    lineHeight = TEXT_LINE_EM.em,
+    color = color,
+    fontFamily = font.family,
+    fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+    fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
+)
+
+/** The fonts a text stamp can use; the name saved in `stamps.font` is the enum's name. */
+enum class TextFont(@param:StringRes val labelRes: Int, val family: FontFamily) {
+    SANS(R.string.text_font_sans, FontFamily.SansSerif),
+    SERIF(R.string.text_font_serif, FontFamily.Serif),
+    MONO(R.string.text_font_mono, FontFamily.Monospace);
+
+    companion object {
+        fun of(name: String?): TextFont = entries.firstOrNull { it.name == name } ?: SANS
+    }
+}
 
 /** The words of a text stamp, wrapped at the page's width and tinted like the other ink. */
 @Composable
@@ -146,11 +174,14 @@ internal fun TextStampView(
     maxWidthPx: Float,
     color: Color,
     modifier: Modifier = Modifier,
+    font: TextFont = TextFont.SANS,
+    bold: Boolean = false,
+    italic: Boolean = false,
 ) {
     val density = LocalDensity.current
     Text(
         text = text,
-        style = textStampStyle(LocalTextStyle.current, fontPx, density, color),
+        style = textStampStyle(LocalTextStyle.current, fontPx, density, color, font, bold, italic),
         modifier = modifier.widthIn(max = with(density) { maxWidthPx.toDp() })
     )
 }

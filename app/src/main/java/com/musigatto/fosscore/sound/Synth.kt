@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.sound
 
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -41,14 +42,24 @@ private const val MASTER_GAIN = 0.8f
 // above this level the mix is bent down gently instead of clipping (a hard clip crackles)
 private const val SOFT_LIMIT = 0.8f
 
+// the threads that read a piece's samples ahead: a slow tablet has two cores
+private const val WARM_THREADS = 2
+
 // what the reverb sends get when a MIDI file says nothing (General MIDI's CC 91 default)
 private const val DEFAULT_REVERB_CC = 40
+
+/**
+ * The instrument a channel plays whatever its MIDI file says: [program] (0-127) of [bank] in
+ * [font], which can be another bank than the synth's own.
+ */
+class ChannelSound(val font: SoundFont, val bank: Int, val program: Int)
 
 /**
  * A SoundFont synthesizer: the notes of the 16 MIDI channels played from [font], mixed into
  * stereo frames by [render]. It follows the SoundFont 2 model (sample loops, volume and
  * modulation envelopes, LFOs, a resonant low-pass filter, modulators from velocity and the
- * channel controllers) with a small reverb, in plain Kotlin.
+ * channel controllers) with a small reverb, in plain Kotlin. A channel can be given its own
+ * instrument ([setSound]), from [font] or from another bank.
  *
  * Not thread-safe: one thread renders and sends the MIDI events (the player's audio thread).
  */
@@ -74,6 +85,8 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
             this[91] = DEFAULT_REVERB_CC
         }
         var sustain = false
+        // the instrument chosen by the user, over the file's program and bank
+        var sound: ChannelSound? = null
     }
 
     private val channels = Array(16) { Channel().apply { if (it == DRUM_CHANNEL) bank = SoundFont.DRUM_BANK } }
@@ -89,11 +102,15 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         if (velocity == 0) return noteOff(channel, key)
         val ch = channels[channel]
         noteCount++
-        for (region in font.regions(ch.bank, ch.program, key, velocity)) {
+        val sound = ch.sound
+        val from = sound?.font ?: font
+        for (region in from.regions(sound?.bank ?: ch.bank, sound?.program ?: ch.program, key, velocity)) {
             val exclusive = region.gens[Gen.EXCLUSIVE_CLASS]
             if (exclusive != 0) voices.forEach { if (it.channel == channel && it.exclusive == exclusive) it.cut() }
+            // a sample still being decoded is left out: the music must not wait for it (see [warm])
+            val data = from.readyValuesOf(region.sample) ?: continue
             if (sounding() >= voiceLimit) steal()
-            voices += Voice(region, channel, key, velocity, noteCount, ch)
+            voices += Voice(region, data, channel, key, velocity, noteCount, ch)
         }
     }
 
@@ -104,6 +121,11 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
 
     fun programChange(channel: Int, program: Int) {
         channels[channel].program = program
+    }
+
+    /** [channel] plays [sound] from its next notes on, or the file's instrument again (null). */
+    fun setSound(channel: Int, sound: ChannelSound?) {
+        channels[channel].sound = sound
     }
 
     fun controlChange(channel: Int, controller: Int, value: Int) {
@@ -124,23 +146,42 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
     }
 
     /**
-     * Reads ahead every sample [song] plays, so the first notes do not wait for them on the audio
-     * thread. Safe on any thread.
+     * Reads ahead every sample [song] plays with the channels' [sounds] (by channel, null for the
+     * file's instrument): the audio thread plays only the samples read. Safe on any thread; it
+     * gives up as soon as [cancelled] says so. Returns how many samples it read.
      */
-    fun warm(song: MidiSong) {
+    fun warm(song: MidiSong, sounds: List<ChannelSound?> = emptyList(), cancelled: () -> Boolean = { false }): Int {
+        val wanted = LinkedHashSet<Pair<SoundFont, SoundFont.Sample>>()
         val program = IntArray(16)
         val bank = IntArray(16) { if (it == DRUM_CHANNEL) SoundFont.DRUM_BANK else 0 }
-        val seen = HashSet<Long>()
+        val seen = HashSet<Pair<SoundFont, Long>>()
         for (e in song.events) {
+            if (cancelled()) break
             when (e.type) {
                 MidiSong.PROGRAM -> program[e.channel] = e.data1
                 MidiSong.CONTROL -> if (e.data1 == 0 && e.channel != DRUM_CHANNEL) bank[e.channel] = e.data2
                 MidiSong.NOTE_ON -> if (e.data2 > 0) {
-                    val key = (bank[e.channel].toLong() shl 24) or (program[e.channel].toLong() shl 16) or (e.data1.toLong() shl 8) or e.data2.toLong()
-                    if (seen.add(key)) font.regions(bank[e.channel], program[e.channel], e.data1, e.data2).forEach { samplesOf(it.sample) }
+                    val sound = sounds.getOrNull(e.channel)
+                    val from = sound?.font ?: font
+                    val b = sound?.bank ?: bank[e.channel]
+                    val p = sound?.program ?: program[e.channel]
+                    val key = (b.toLong() shl 24) or (p.toLong() shl 16) or (e.data1.toLong() shl 8) or e.data2.toLong()
+                    if (seen.add(from to key)) from.regions(b, p, e.data1, e.data2).forEach { wanted += from to it.sample }
                 }
             }
         }
+        // in the order the music needs them, by a few threads: decoding is most of the time
+        val queue = ConcurrentLinkedQueue(wanted)
+        val readers = List(WARM_THREADS) {
+            Thread {
+                while (!cancelled()) {
+                    val (font, sample) = queue.poll() ?: break
+                    font.valuesOf(sample)
+                }
+            }.apply { start() }
+        }
+        readers.forEach { it.join() }
+        return wanted.size
     }
 
     /** Every note released at once (a pause, a jump): they fade out in their release time. */
@@ -234,11 +275,10 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         }
     }
 
-    // read once by the bank, ahead by [warm] off the audio thread
-    private fun samplesOf(sample: SoundFont.Sample): ShortArray = font.valuesOf(sample)
-
     private inner class Voice(
         private val region: SoundFont.Region,
+        // the sample's values, read once by its bank, ahead by [warm] off the audio thread
+        private val data: ShortArray,
         val channel: Int,
         val key: Int,
         private val velocity: Int,
@@ -246,7 +286,6 @@ class Synth(private val font: SoundFont, val sampleRate: Int, private val maxVoi
         private val ch: Channel,
     ) {
         private val gens = region.gens
-        private val data = samplesOf(region.sample)
         val exclusive = gens[Gen.EXCLUSIVE_CLASS]
         var released = false
             private set

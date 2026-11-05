@@ -13,6 +13,11 @@ class MidiSong private constructor(
     private val tempoMicros: IntArray,
     /** Where the last event is, in quarter notes. */
     val length: Double,
+    /**
+     * The channels each track of the file plays on, by track (counted from 0, in the file's
+     * order): a part of a score is one or more tracks, and its instrument is set on their channels.
+     */
+    val trackChannels: List<Set<Int>> = emptyList(),
 ) {
     /**
      * One channel event: a note on (velocity 0 is a note off), a note off, a program change or a
@@ -64,9 +69,11 @@ class MidiSong private constructor(
             var chunk = 8 + i32(midi, 4)
             var order = 0
             var lastTick = 0L
+            val trackChannels = ArrayList<MutableSet<Int>>()
             while (chunk + 8 <= midi.size) {
                 val end = minOf(chunk + 8 + i32(midi, chunk + 4), midi.size)
                 if (String(midi, chunk, 4, Charsets.ISO_8859_1) == "MTrk") {
+                    val channels = HashSet<Int>().also { trackChannels += it }
                     var i = chunk + 8
                     var tick = 0L
                     var running = 0
@@ -102,6 +109,7 @@ class MidiSong private constructor(
                             val d2 = if (size == 2) midi[i + 1].toInt() and 0x7F else 0
                             if (type == NOTE_ON || type == NOTE_OFF || type == PROGRAM || type == CONTROL) {
                                 raws += Raw(tick, order++, type, status and 0x0F, d1, d2)
+                                channels += status and 0x0F
                             }
                             i += size
                         }
@@ -126,6 +134,7 @@ class MidiSong private constructor(
                 DoubleArray(at.size) { at[it].toDouble() / perQuarter },
                 micros.toIntArray(),
                 lastTick.toDouble() / perQuarter,
+                trackChannels,
             )
         }
 

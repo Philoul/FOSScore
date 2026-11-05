@@ -98,11 +98,15 @@ internal fun inkPath(pts: List<Offset>, kind: Int = Stroke.INK): Path {
     return path
 }
 
+// the highlighter lies over the music, so its ink is translucent (forScore's highlighter does the
+// same); the colour itself is the tool's
+private const val HIGHLIGHTER_ALPHA = 0.35f
+
 // the one place that decides how a stroke looks: a filled solid, or a round-capped line
 private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, kind: Int = Stroke.INK) =
     drawPath(
         path,
-        color,
+        if (Stroke.isHighlight(kind)) color.copy(alpha = color.alpha * HIGHLIGHTER_ALPHA) else color,
         style = if (Stroke.isFilled(kind)) Fill
         else DrawStroke(width = max(1f, widthPx), cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
@@ -668,6 +672,8 @@ internal fun PageCanvas(
 private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: Boolean, density: Density) {
     val fontPx = textFontPx(stamp.size, fit)
     val color = inkTint(stamp.color, invert)
+    val wrap = textWrapWidthPx(stamp.textWidth, fit)
+    val font = TextFont.of(stamp.font)
     // the rect follows the LIVE stamp: while it is dragged x/y move, the measured SIZE stays,
     // so textBoxRect re-clamps it at the edge instead of replaying a stale rect
     val rect = measured?.let { textBoxRect(stamp, it.width, it.height, fit) }
@@ -675,14 +681,17 @@ private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: 
         TextStampView(
             text = stamp.text.orEmpty(),
             fontPx = fontPx,
-            maxWidthPx = fit.width * TEXT_MAX_WRAP - 16f,
+            maxWidthPx = wrap,
             color = color,
             modifier = Modifier
                 .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
                 .requiredSize(
                     with(density) { rect.width.toDp() },
                     with(density) { rect.height.toDp() }
-                )
+                ),
+            font = font,
+            bold = stamp.bold,
+            italic = stamp.italic,
         )
     } else {
         val c = normalizedToPx(
@@ -696,8 +705,11 @@ private fun TextStampDraw(stamp: Stamp, measured: RectPx?, fit: RectPx, invert: 
             TextStampView(
                 text = stamp.text.orEmpty(),
                 fontPx = fontPx,
-                maxWidthPx = fit.width * TEXT_MAX_WRAP - 16f,
+                maxWidthPx = wrap,
                 color = color,
+                font = font,
+                bold = stamp.bold,
+                italic = stamp.italic,
             )
         }
     }

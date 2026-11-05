@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -56,10 +57,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.metronome.BarPages
+import com.musigatto.fosscore.metronome.MAX_BPM
+import com.musigatto.fosscore.metronome.MIN_BPM
 import com.musigatto.fosscore.metronome.MetronomeSettings
 import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.score.MusicXmlPages
@@ -135,6 +140,11 @@ internal fun AnnotationBar(
     penColor: Int?,
     stampColor: Int?,
     textColor: Int?,
+    textFont: TextFont,
+    textBold: Boolean,
+    textItalic: Boolean,
+    highlighterColor: Int?,
+    highlighterPx: Float,
     shapeKind: ShapeKind,
     shapeColor: Int?,
     shapeFilled: Boolean,
@@ -143,7 +153,7 @@ internal fun AnnotationBar(
     penWidthPx: Float,
     eraserPx: Float,
     textPx: Float,
-    defaultTextPx: Float,
+    textDefault: Boolean,
     placePx: Float,
     defaultStampPx: Float,
     pageTouched: Boolean,
@@ -163,11 +173,16 @@ internal fun AnnotationBar(
     onSaveDefault: () -> Unit,
     onPenWidth: (Float) -> Unit,
     onEraserPx: (Float) -> Unit,
+    onHighlighterPx: (Float) -> Unit,
+    onHighlighterColor: (Int?) -> Unit,
     onTextPx: (Float) -> Unit,
     onSaveTextDefault: () -> Unit,
     onPenColor: (Int?) -> Unit,
     onStampColor: (Int?) -> Unit,
     onTextColor: (Int?) -> Unit,
+    onTextFont: (TextFont) -> Unit,
+    onTextBold: (Boolean) -> Unit,
+    onTextItalic: (Boolean) -> Unit,
     onShapeKind: (ShapeKind) -> Unit,
     onShapeColor: (Int?) -> Unit,
     onShapeFilled: (Boolean) -> Unit,
@@ -200,6 +215,7 @@ internal fun AnnotationBar(
         // the tools are drawn glyphs now, with no text of their own: the names come from here
         val selectLabel = stringResource(R.string.tool_select)
         val penLabel = stringResource(R.string.tool_pen)
+        val highlighterLabel = stringResource(R.string.tool_highlighter)
         val shapeLabel = stringResource(R.string.tool_shapes)
         val eraserLabel = stringResource(R.string.tool_eraser)
         val stampLabel = stringResource(R.string.tool_stamp)
@@ -247,6 +263,16 @@ internal fun AnnotationBar(
                             toolX[AnnotationTool.PEN] = it.positionInWindow().x
                         },
                     ) { ToolIcon(ICON_PENCIL) }
+                    Spacer(Modifier.width(4.dp))
+                    ToolButton(
+                        active = tool == AnnotationTool.HIGHLIGHTER,
+                        panelOpen = openPanel == AnnotationTool.HIGHLIGHTER,
+                        label = highlighterLabel,
+                        onClick = { onTool(AnnotationTool.HIGHLIGHTER) },
+                        modifier = Modifier.onGloballyPositioned {
+                            toolX[AnnotationTool.HIGHLIGHTER] = it.positionInWindow().x
+                        },
+                    ) { ToolIcon(ICON_HIGHLIGHTER) }
                     Spacer(Modifier.width(4.dp))
                     // like the stamp, the shapes button shows the shape in hand
                     ToolButton(
@@ -429,6 +455,14 @@ internal fun AnnotationBar(
                             lead = { ColorChoices(active = penColor, invert = invert, onPick = onPenColor) },
                         )
 
+                        AnnotationTool.HIGHLIGHTER -> ToolSizePanel(
+                            label = stringResource(R.string.thickness_label),
+                            value = highlighterPx,
+                            range = MIN_HIGHLIGHTER_PX..MAX_HIGHLIGHTER_PX,
+                            onValue = onHighlighterPx,
+                            lead = { ColorChoices(active = highlighterColor, invert = invert, onPick = onHighlighterColor, defaultColor = 0xFFFFEB3B.toInt()) },
+                        )
+
                         AnnotationTool.SHAPE -> ToolSizePanel(
                             label = stringResource(R.string.thickness_label),
                             value = shapeWidthPx,
@@ -477,15 +511,109 @@ internal fun AnnotationBar(
                             value = textPx,
                             range = MIN_TEXT_PX..MAX_TEXT_PX,
                             onValue = onTextPx,
-                            lead = { ColorChoices(active = textColor, invert = invert, onPick = onTextColor) },
+                            lead = {
+                                TextFontChoices(
+                                    font = textFont,
+                                    bold = textBold,
+                                    italic = textItalic,
+                                    onFont = onTextFont,
+                                    onBold = onTextBold,
+                                    onItalic = onTextItalic,
+                                )
+                                ColorChoices(active = textColor, invert = invert, onPick = onTextColor)
+                            },
                             onSaveDefault = onSaveTextDefault,
-                            isDefault = textPx.roundToInt() == defaultTextPx.roundToInt(),
+                            isDefault = textDefault,
                         )
 
                         else -> Unit
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The typeface of a text (the text stamps' three families) and bold/italic. The families are one
+ * choice — announced as radio buttons like the tools; bold and italic are two toggles.
+ */
+@Composable
+private fun TextFontChoices(
+    font: TextFont,
+    bold: Boolean,
+    italic: Boolean,
+    onFont: (TextFont) -> Unit,
+    onBold: (Boolean) -> Unit,
+    onItalic: (Boolean) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextFont.entries.forEach { choice ->
+            ToolButton(
+                active = font == choice,
+                panelOpen = false,
+                label = stringResource(choice.labelRes),
+                onClick = { onFont(choice) },
+            ) {
+                Text(
+                    stringResource(R.string.text_font_sample),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontFamily = choice.family,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        StyleToggle(
+            active = bold,
+            label = stringResource(R.string.text_bold),
+            onClick = { onBold(!bold) },
+        ) {
+            Text(
+                stringResource(R.string.text_bold_sample),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        StyleToggle(
+            active = italic,
+            label = stringResource(R.string.text_italic),
+            onClick = { onItalic(!italic) },
+        ) {
+            Text(
+                stringResource(R.string.text_italic_sample),
+                style = MaterialTheme.typography.titleSmall,
+                fontStyle = FontStyle.Italic,
+            )
+        }
+    }
+}
+
+/** A toggle of the text panel (bold, italic): a checkbox look, not a radio one. */
+@Composable
+private fun StyleToggle(
+    active: Boolean,
+    label: String,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        color = if (active) scheme.primary else Color.Transparent,
+        shape = RoundedCornerShape(10.dp),
+        border = if (active) null else BorderStroke(1.dp, scheme.outlineVariant),
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = label
+                role = Role.Checkbox
+                selected = active
+            },
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides if (active) scheme.onPrimary else scheme.onSurfaceVariant
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
         }
     }
 }
@@ -602,7 +730,6 @@ internal fun BottomChrome(
     metronome: MetronomeSettings,
     metronomeOn: Boolean,
     metronomeTick: Tick?,
-    metronomeShown: Boolean,
     pageSource: PageSource?,
     pageCount: Int,
     currentPage: Int,
@@ -626,55 +753,32 @@ internal fun BottomChrome(
             // edge-to-edge: the knob was sitting in the navigation gesture area
             .navigationBarsPadding()
     ) {
-        if (metronomeShown) {
-            // the bar heard, counted from the start of the piece as the score numbers
-            // its bars; a PDF score knows them once the bars of its pages are counted
-            val barText = metronomeVm.barHeard(metronomeTick)
-                ?.takeIf { format.isMusicXml || BarPages(metronome.barCounts, pageCount).known }
-                ?.let { stringResource(R.string.metronome_bar, it + 1) }
+        if (format.isMusicXml) {
+            // the music, the metronome clicking over it on demand: the same band
             val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
-            MetronomeBand(
-                running = metronomeOn,
-                tick = metronomeTick,
-                settings = metronome,
-                barText = barText,
-                onStartStop = onStartStop,
-                // a MusicXML score has one tempo, the one of playback
-                onBpm = { bpm ->
-                    if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm)) else metronomeVm.setBpm(bpm)
-                },
-                onTap = {
-                    metronomeVm.tap()?.let { bpm ->
-                        if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
-                    }
-                },
-                onSettings = { onShowSurface(ViewerSurface.METRONOME) },
-                onClose = { metronomeVm.show(false) },
-                // a MusicXML score: the same button switches back to the playback band
-                onPlayback = if (format.isMusicXml) ({ metronomeVm.show(false) }) else null,
-            )
-        } else if (format.isMusicXml) {
-            val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+            val clicking by playbackVm.clicking.collectAsState()
+            val tick by playbackVm.tick.collectAsState()
+            val bar by playbackVm.bar.collectAsState()
             PlaybackBand(
+                barText = bar?.let { stringResource(R.string.playback_bar, it + 1) },
                 state = playState,
                 loop = loop,
                 bpm = bpmOf(tempoFactor, writtenBpm),
                 minBpm = bpmOf(MIN_TEMPO_FACTOR, writtenBpm),
                 maxBpm = bpmOf(MAX_TEMPO_FACTOR, writtenBpm),
-                onPlayPause = {
-                    metronomeVm.stop()
-                    playbackVm.playPause(notesOnScreen())
-                },
+                clicking = clicking,
+                tick = tick,
+                pulses = metronome.meter.pulses,
+                onPlayPause = { playbackVm.playPause(notesOnScreen()) },
                 onRestart = playbackVm::restart,
                 onLoop = playbackVm::toggleLoop,
                 onA = playbackVm::tapA,
                 onB = playbackVm::tapB,
                 onTempo = { playbackVm.setTempo(factorOf(it, writtenBpm)) },
                 onOptions = { onShowSurface(ViewerSurface.PLAYBACK) },
-                onMetronome = {
-                    playbackVm.stop()
-                    metronomeVm.show(true)
-                },
+                onMetronome = playbackVm::toggleClicks,
+                // a MusicXML score has one tempo, the one of playback
+                onTap = { metronomeVm.tap()?.let { bpm -> playbackVm.setTempo(factorOf(bpm, writtenBpm)) } },
             )
             if (playbackFailed) {
                 Text(
@@ -684,6 +788,37 @@ internal fun BottomChrome(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
+        } else {
+            // a PDF has no music: the same band drives the metronome alone, its beats turning
+            // the pages; it has no loop. It shows with the bars, as over the music
+            PlaybackBand(
+                // the bar heard, counted from the start of the piece as the score numbers its
+                // bars, once the bars of the pages are counted
+                barText = metronomeVm.barHeard(metronomeTick)
+                    ?.takeIf { BarPages(metronome.barCounts, pageCount).known }
+                    ?.let { stringResource(R.string.playback_bar, it + 1) },
+                state = if (metronomeOn) PlayState.PLAYING else PlayState.STOPPED,
+                loop = null,
+                bpm = metronome.bpm,
+                minBpm = MIN_BPM,
+                maxBpm = MAX_BPM,
+                // the metronome alone: its beats always show, its settings say what is heard
+                clicking = true,
+                tick = metronomeTick,
+                pulses = metronome.meter.pulses,
+                onPlayPause = onStartStop,
+                onRestart = {
+                    metronomeVm.stop()
+                    onJump(0)
+                },
+                onLoop = {},
+                onA = {},
+                onB = {},
+                onTempo = metronomeVm::setBpm,
+                onOptions = { onShowSurface(ViewerSurface.METRONOME) },
+                onMetronome = null,
+                onTap = { metronomeVm.tap() },
+            )
         }
         PageSelector(
             pageCount = pageCount,
@@ -695,7 +830,7 @@ internal fun BottomChrome(
                 start = 24.dp,
                 end = 24.dp,
                 // under a band, the dots need no air above them
-                top = if (format.isMusicXml || metronomeShown) 0.dp else 10.dp,
+                top = 0.dp,
                 bottom = 10.dp,
             ),
         )

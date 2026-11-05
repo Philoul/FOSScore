@@ -5,8 +5,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import com.musigatto.fosscore.library.Stamp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Typing a text in place (#35): where the typed text lands, and what the end of the typing writes. */
@@ -77,9 +80,61 @@ class TextTypingTest {
 
     @Test
     fun aTextOpenedAndLeftAsItWasWritesNothing() {
-        val origin = stamp("cresc.")
+        // the origin sits where the draft's box is: opening a text and pressing Done changes nothing
+        val origin = stamp("cresc.").copy(x = 230f / 1000f, y = 215f / 2000f)
         val d = draft("cresc.", origin = origin)
         assertEquals(TypingOutcome.Nothing, typingOutcome(d, draftStamp(d, 1, 60f, 30f, fit)))
+    }
+
+    @Test
+    fun aTextMovedByItsHandleWritesTheNewPlace() {
+        val origin = stamp("cresc.")
+        // the draft starts where the text is, then the left handle moves it
+        val d = draft("cresc.", origin = origin).copy(left = 0.5f)
+        assertTrue(typingOutcome(d, draftStamp(d, 1, 60f, 30f, fit)) is TypingOutcome.Update)
+    }
+
+    @Test
+    fun aTextKeepsItsWidthTypefaceAndWeight() {
+        val d = draft("a longer line").copy(width = 0.6f, font = TextFont.SERIF, bold = true, italic = true)
+        val typed = draftStamp(d, 1, textWrapWidthPx(0.6f, fit), 30f, fit)
+        assertEquals(0.6f, typed.textWidth)
+        assertEquals("SERIF", typed.font)
+        assertTrue(typed.bold)
+        assertTrue(typed.italic)
+    }
+
+    @Test
+    fun anOldTextKeepsWrappingAtThePageWidth() {
+        // texts from before widths existed: the same wrap the editor always used
+        assertEquals(1000f * TEXT_MAX_WRAP - TEXT_WRAP_PAD, textWrapWidthPx(null, fit), 0f)
+        // a text with its own width wraps there, and its box is that width
+        assertEquals(450f, textWrapWidthPx(0.45f, fit), 0f)
+        assertEquals(450f, textBoxWidthPx(0.45f, measuredW = 200f, wrapW = 450f), 0f)
+        assertEquals(200f, textBoxWidthPx(null, measuredW = 200f, wrapW = 450f), 0f)
+    }
+
+    @Test
+    fun theRightHandleChangesTheWidthWithTheLeftEdgeFixed() {
+        val d = draft("x").copy(width = 0.4f)
+        // 400 px wide, dragged 100 px to the right: 500 px, left still at 0.2 of the page
+        assertEquals(0.5f, resizedTextWidth(d, boxW = 400f, dx = 100f, fit = fit), 1e-6f)
+        // it stops at the page's right edge
+        assertEquals(0.8f, resizedTextWidth(d, boxW = 400f, dx = 4000f, fit = fit), 1e-6f)
+        // and never collapses under the minimum
+        assertEquals(MIN_TEXT_WIDTH, resizedTextWidth(d, boxW = 400f, dx = -4000f, fit = fit), 1e-6f)
+    }
+
+    @Test
+    fun movingTheLeftHandleMovesTheWholeBoxInsideThePage() {
+        val d = draft("x").copy(left = 0.2f, top = 0.1f)
+        val moved = movedTextCorner(d, dx = 100f, dy = 50f, boxW = 100f, boxH = 30f, fit = fit)
+        assertEquals(0.3f, moved.x, 1e-6f)
+        assertEquals(0.125f, moved.y, 1e-6f)
+        // it stops at the top left instead of leaving the sheet
+        val stuck = movedTextCorner(d, dx = -500f, dy = -500f, boxW = 100f, boxH = 30f, fit = fit)
+        assertEquals(0f, stuck.x, 0f)
+        assertEquals(0f, stuck.y, 0f)
     }
 
     @Test
@@ -106,10 +161,34 @@ class TextTypingTest {
     fun theTextPanelShowsTheTextBeingEdited() {
         val edited = draft("pp", origin = stamp("pp")).copy(size = 0.03f, color = 0xFFFF0000.toInt())
         // 0.03 of a page 2000 px high: 60 px, red, not the 24 px black of the next new text
-        assertEquals(TextPanelValues(60f, 0xFFFF0000.toInt()), textPanelValues(edited, 24f, null, fit))
+        assertEquals(
+            TextPanelValues(60f, 0xFFFF0000.toInt(), TextFont.SANS, false, false),
+            textPanelValues(edited, 24f, null, TextFont.SERIF, true, true, fit),
+        )
         // a new text being typed shows its own too (the panel changed it)
-        assertEquals(TextPanelValues(24f, null), textPanelValues(draft("").copy(size = 0.012f), 40f, 7, fit))
+        assertEquals(
+            TextPanelValues(24f, null, TextFont.SANS, false, false),
+            textPanelValues(draft("").copy(size = 0.012f), 40f, 7, TextFont.SERIF, true, true, fit),
+        )
         // nothing typed: the next new text's
-        assertEquals(TextPanelValues(40f, 7), textPanelValues(null, 40f, 7, fit))
+        assertEquals(
+            TextPanelValues(40f, 7, TextFont.SERIF, true, true),
+            textPanelValues(null, 40f, 7, TextFont.SERIF, true, true, fit),
+        )
+    }
+
+    @Test
+    fun theTypefaceReachesTheTextStyle() {
+        val serif = textStampStyle(
+            TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
+            fontPx = 24f,
+            density = Density(2f),
+            font = TextFont.MONO,
+            bold = true,
+            italic = true,
+        )
+        assertEquals(TextFont.MONO.family, serif.fontFamily)
+        assertEquals(FontWeight.Bold, serif.fontWeight)
+        assertEquals(FontStyle.Italic, serif.fontStyle)
     }
 }

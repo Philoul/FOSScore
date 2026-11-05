@@ -368,7 +368,7 @@ private fun FOSScoreNav(
                 )
             }
         }
-        // over everything, with its own back handling
+        // over everything, with its own back handling (its sub-menus first)
         if (s.preferences) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 PreferencesScreen(onDone = { nav = nav.copy(preferences = false) })

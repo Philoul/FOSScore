@@ -45,8 +45,9 @@ import kotlinx.coroutines.launch
 /**
  * The side menu, opened by the ☰ button of the library or setlists header or by swiping from the
  * left edge. It holds what concerns the whole app: the views (the library, the setlists, then,
- * greyed out until they are built, tags and practice), the preferences (language, the export and
- * import of the library) and "About" (roadmap 3.6). [current] is the view shown, marked in the menu.
+ * greyed out until they are built, tags and practice), the preferences (language, keyboard and
+ * pedals, MIDI, the export and import of the library) and "About" (roadmap 3.6). [current] is the
+ * view shown, marked in the menu.
  */
 @Composable
 fun LibraryMenuDrawer(

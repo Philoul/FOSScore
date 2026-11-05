@@ -22,7 +22,10 @@ class SynthTest {
 
     // A SoundFont 2 bank of one piano, built here: a looped 440 Hz tone with its root on A4.
     // Android's Vorbis decoder, which the app's SF3 bank needs, is not on the JVM.
-    private val font: SoundFont by lazy {
+    private val font: SoundFont by lazy { tone(program = 0) }
+
+    // a bank whose only instrument, the same tone, is [program] of bank 0
+    private fun tone(program: Int): SoundFont {
         val frames = 4410
         val tone = ShortArray(frames + SoundFont.GUARD_FRAMES) { (sin(2 * PI * 440 * it / 44100) * 16000).toInt().toShort() }
         fun chunk(tag: String, body: ByteArray): ByteArray =
@@ -33,7 +36,7 @@ class SynthTest {
         val smpl = ByteBuffer.allocate(tone.size * 2).order(ByteOrder.LITTLE_ENDIAN).apply { asShortBuffer().put(tone) }.array()
         val pdta = list(
             "pdta",
-            chunk("phdr", record(38) { put(name("Piano")); putShort(0); putShort(0); putShort(0) } + record(38) { put(name("EOP")); putShort(0); putShort(0); putShort(1) }),
+            chunk("phdr", record(38) { put(name("Piano")); putShort(program.toShort()); putShort(0); putShort(0) } + record(38) { put(name("EOP")); putShort(0); putShort(0); putShort(1) }),
             chunk("pbag", record(4) { putShort(0); putShort(0) } + record(4) { putShort(1); putShort(0) }),
             chunk("pmod", ByteArray(10)),
             chunk("pgen", record(4) { putShort(Gen.INSTRUMENT.toShort()); putShort(0) } + ByteArray(4)),
@@ -47,8 +50,9 @@ class SynthTest {
                 put(69.toByte()); put(0); putShort(0); putShort(1)
             } + ByteArray(46)),
         )
-        val body = "sfbk".toByteArray() + list("INFO", chunk("ifil", record(4) { putShort(2); putShort(1) })) + list("sdta", chunk("smpl", smpl)) + pdta
-        SoundFont.read(ByteBuffer.wrap(chunk("RIFF", body)))
+        val info = list("INFO", chunk("ifil", record(4) { putShort(2); putShort(1) }), chunk("INAM", "Test tone".toByteArray().copyOf(10)))
+        val body = "sfbk".toByteArray() + info + list("sdta", chunk("smpl", smpl)) + pdta
+        return SoundFont.read(ByteBuffer.wrap(chunk("RIFF", body)))
     }
 
     private fun peak(out: FloatArray) = out.maxOf { abs(it) }
@@ -64,6 +68,33 @@ class SynthTest {
         assertTrue(bank.regions(SoundFont.DRUM_BANK, 0, 38, 100).isNotEmpty())
         // without a decoder (Android's) a compressed sample is silent, not a crash
         assertEquals(SoundFont.GUARD_FRAMES, bank.read(piano.first().sample).size)
+    }
+
+    @Test
+    fun aBankNamesItselfAndItsInstruments() {
+        assertEquals("Test tone", font.name)
+        assertEquals(listOf(SoundFont.Instrument(0, 0, "Piano")), font.instruments)
+        assertTrue(bank.name.startsWith("GeneralUser GS"))
+        assertTrue(bank.compressed)
+        assertTrue(bank.instruments.any { it.bank == 0 && it.program == 0 })
+        assertTrue(bank.instruments.any { it.bank == SoundFont.DRUM_BANK })
+        // its General MIDI 2 kits are kits, not pianos
+        assertTrue(bank.instruments.filter { it.bank == 120 }.all { it.kit })
+    }
+
+    @Test
+    fun aChannelPlaysTheSoundChosenForIt() {
+        // the synth's bank has program 9 only: program 0, the file's, plays nothing
+        val other = tone(program = 5)
+        val synth = Synth(tone(program = 9), 44100)
+        val out = FloatArray(8820 * 2)
+        synth.noteOn(0, 69, 100)
+        synth.render(out, 0, 8820)
+        assertEquals("program 0 is not in the synth's bank", 0f, peak(out))
+        synth.setSound(0, ChannelSound(other, 0, 5))
+        synth.noteOn(0, 69, 100)
+        synth.render(out, 0, 8820)
+        assertTrue("the chosen sound, from another bank, is heard", peak(out) > 0.02f)
     }
 
     @Test
@@ -147,5 +178,6 @@ class SynthTest {
         assertEquals(listOf(0.0, 0.0, 1.0, 2.0, 3.0), song.events.map { it.quarters })
         assertEquals(3.0, song.length, 1e-9)
         assertEquals(3, song.firstEventAt(1.5))
+        assertEquals(listOf(setOf(0)), song.trackChannels)
     }
 }

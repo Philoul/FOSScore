@@ -72,6 +72,8 @@ class MigrationTest {
                         put("bold", 0)
                         put("italic", 0)
                     }
+                    // v7: a text stamp keeps the width it wraps at
+                    if (version >= 7) put("textWidth", 0.5f)
                 }
             )
         }
@@ -89,7 +91,7 @@ class MigrationTest {
                 }
             )
         }
-        if (version >= 7) {
+        if (version >= 8) {
             db.insert("setlists", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
                 put("name", "Concert")
                 put("createdAt", 1L)
@@ -132,6 +134,8 @@ class MigrationTest {
                     assertEquals("v$version: stamp sheetId", sheet.id, stamps[0].sheetId)
                     // Version 2 had no colour: the theme colour (null) after the migration.
                     if (version >= 3) assertEquals(RED, stamps[0].color) else assertNull(stamps[0].color)
+                    // v7: a width written on v7 stays; old texts keep null (full-page wrap)
+                    if (version >= 7) assertEquals(0.5f, stamps[0].textWidth) else assertNull(stamps[0].textWidth)
                 }
 
                 val strokes = db.strokeDao().observePage(sheet.id, 2).first()
@@ -145,7 +149,7 @@ class MigrationTest {
                     assertEquals("v$version: stroke kind", if (version >= 6) 1 else 0, strokes[0].kind)
                 }
 
-                // v7: the setlists come in empty
+                // v8: the setlists come in empty
                 assertEquals("v$version: setlists", emptyList<SetlistSummary>(), db.setlistDao().observeSummaries().first())
 
                 // v5 (from an older version): the free text becomes tags, the genre as a genre

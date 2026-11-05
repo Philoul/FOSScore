@@ -704,14 +704,23 @@ fun ToolSizePanel(
  * really lands on the page: the same inkTint the ink takes, so in negative mode the swatches are
  * shown inverted (the white swatch shows black, the default shows white) — the square never lies
  * about the ink (issue #35).
+ * [defaultColor] is the ARGB to show for the "default" (null) swatch; if null, uses theme color.
  */
 @Composable
-fun ColorChoices(active: Int?, invert: Boolean, onPick: (Int?) -> Unit, perRow: Int = SWATCHES_PER_ROW) {
-    (listOf<Int?>(null) + SWATCH_COLORS.map { it.toArgb() }).chunked(perRow).forEach { row ->
+fun ColorChoices(
+    active: Int?,
+    invert: Boolean,
+    onPick: (Int?) -> Unit,
+    perRow: Int = SWATCHES_PER_ROW,
+    defaultColor: Int? = null,
+) {
+    val defaultSwatch = defaultColor ?: inkTint(null, invert).toArgb()
+    (listOf<Int?>(defaultColor) + SWATCH_COLORS.map { it.toArgb() }).chunked(perRow).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             row.forEach { argb ->
+                val swatchColor = if (argb == null) Color(defaultSwatch) else inkTint(argb, invert)
                 ColorSwatchButton(
-                    color = inkTint(argb, invert),
+                    color = swatchColor,
                     selected = active == argb,
                     onClick = { onPick(argb) }
                 )

@@ -26,8 +26,17 @@ const val DEFAULT_PEN_PX = 4f
 const val MIN_PEN_PX = 1f
 const val MAX_PEN_PX = 20f
 
+// the highlighter is a wide, translucent marker: same px space as the pen, wider by default
+const val DEFAULT_HIGHLIGHTER_PX = 16f
+const val MIN_HIGHLIGHTER_PX = 20f
+const val MAX_HIGHLIGHTER_PX = 80f
+
 fun penWidthPxToFrac(px: Float, fit: RectPx): Float =
     (px / max(1f, fit.height)).coerceIn(MIN_STROKE_WIDTH, MAX_STROKE_WIDTH)
+
+// highlighter is much wider than a pen; skip the pen's 2% cap
+fun highlighterWidthPxToFrac(px: Float, fit: RectPx): Float =
+    (px / max(1f, fit.height)).coerceIn(MIN_STROKE_WIDTH, 0.1f)
 
 // eraser radius in px at fit (same space as the pen width): the panel sets it
 const val MIN_ERASER_PX = 6f

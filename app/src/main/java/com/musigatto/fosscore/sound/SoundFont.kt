@@ -18,7 +18,21 @@ class SoundFont private constructor(
     // the smpl chunk: 16-bit values, or Ogg Vorbis streams one after the other (SF3)
     private val data: ByteBuffer,
     private val presets: Map<Int, Preset>,
+    /** The bank's name, as its author wrote it (empty when the file has none). */
+    val name: String,
+    /** Its instruments, by bank then program, each with the name the bank gives it. */
+    val instruments: List<Instrument>,
+    /** Whether its samples are Ogg Vorbis streams (SF3) rather than 16-bit values (SoundFont 2). */
+    val compressed: Boolean,
+    /** Every sample of the bank, in the file's order. */
+    val samples: List<Sample> = emptyList(),
 ) {
+    /** One instrument of the bank: [program] (0-127) of [bank] (128 for drum kits). */
+    data class Instrument(val bank: Int, val program: Int, val name: String) {
+        /** Whether it is a drum kit rather than a melodic instrument. */
+        val kit: Boolean get() = isKitBank(bank)
+    }
+
     /**
      * Turns sample [index]'s Ogg Vorbis stream into 16-bit values (SF3 banks); without it, their
      * notes are silent. Called from any thread.
@@ -45,8 +59,18 @@ class SoundFont private constructor(
     // the samples read so far, for every synth playing the bank
     private val values = ConcurrentHashMap<Sample, ShortArray>()
 
-    /** [sample]'s values ([read]), read once and kept. Safe on any thread. */
-    fun valuesOf(sample: Sample): ShortArray = values.getOrPut(sample) { read(sample) }
+    /**
+     * [sample]'s values ([read]), read once and kept. Safe on any thread: two threads asking for
+     * the same sample decode it once, the second one waits for the first.
+     */
+    fun valuesOf(sample: Sample): ShortArray =
+        values[sample] ?: synchronized(sample) { values[sample] ?: read(sample).also { values[sample] = it } }
+
+    /**
+     * [sample]'s values when they are ready, without waiting: for the audio thread, which must never
+     * decode. A sample of 16-bit values is copied at once; a compressed one not read yet is null.
+     */
+    fun readyValuesOf(sample: Sample): ShortArray? = values[sample] ?: if (sample.compressed) null else valuesOf(sample)
 
     /**
      * [sample]'s values, followed by [GUARD_FRAMES] frames for the interpolation past its end (the
@@ -92,12 +116,12 @@ class SoundFont private constructor(
         val set: BooleanArray,
         val modulators: List<Modulator>,
         val sample: Sample?,
-        val instrument: Instrument?,
+        val instrument: InstrumentZones?,
     ) {
         fun covers(key: Int, velocity: Int) = key in keyLo..keyHi && velocity in velLo..velHi
     }
 
-    private class Instrument(val global: Zone?, val zones: List<Zone>)
+    private class InstrumentZones(val global: Zone?, val zones: List<Zone>)
 
     private class Preset(val global: Zone?, val zones: List<Zone>)
 
@@ -150,6 +174,12 @@ class SoundFont private constructor(
     companion object {
         /** The drums: bank 128, as General MIDI channel 10 plays. */
         const val DRUM_BANK = 128
+
+        // General MIDI 2's bank of drum kits, which banks made for it (GeneralUser GS) have too
+        private const val GM2_KIT_BANK = 120
+
+        /** Whether [bank] holds drum kits: 128, as SoundFont 2 says, or General MIDI 2's 120. */
+        fun isKitBank(bank: Int) = bank == DRUM_BANK || bank == GM2_KIT_BANK
 
         /** The frames kept after every sample's end. */
         const val GUARD_FRAMES = 46
@@ -260,7 +290,7 @@ class SoundFont private constructor(
                         }
                     }
                     val mods = (bagList[bag].second until bagList[bag + 1].second).mapNotNull { modList.getOrNull(it) }
-                    val zone = Zone(keyLo, keyHi, velLo, velHi, values, set, mods, linked as? Sample, linked as? Instrument)
+                    val zone = Zone(keyLo, keyHi, velLo, velHi, values, set, mods, linked as? Sample, linked as? InstrumentZones)
                     // a first zone that plays nothing is the global one: the others start from it
                     if (linked == null) {
                         if (bag == firstBag) global = zone
@@ -280,7 +310,7 @@ class SoundFont private constructor(
                 val from = b.getShort(r + 20).toInt() and 0xFFFF
                 val to = b.getShort(r + 42).toInt() and 0xFFFF
                 val (global, zones) = zones(ibag, igen, imod, from, to, Gen.SAMPLE_ID) { sampleList.getOrNull(it) }
-                Instrument(global, zones)
+                InstrumentZones(global, zones)
             }
 
             val pbag = bags("pbag")
@@ -288,20 +318,32 @@ class SoundFont private constructor(
             val pmod = mods("pmod")
             val phdr = chunk("phdr")
             val presets = HashMap<Int, Preset>()
+            val names = HashMap<Int, String>()
             for (i in 0 until phdr.second / 38 - 1) {
                 val r = phdr.first + i * 38
                 val program = b.getShort(r + 20).toInt() and 0xFFFF
                 val bank = b.getShort(r + 22).toInt() and 0xFFFF
+                names.getOrPut(bank shl 7 or program) { text(b, r, 20) }
                 val from = b.getShort(r + 24).toInt() and 0xFFFF
                 val to = b.getShort(r + 38 + 24).toInt() and 0xFFFF
                 val (global, zones) = zones(pbag, pgen, pmod, from, to, Gen.INSTRUMENT) { instruments.getOrNull(it) }
                 // the first preset of a bank and program wins (HashMap.putIfAbsent needs API 24)
                 presets.getOrPut(bank shl 7 or program) { Preset(global, zones) }
             }
-            return SoundFont(data, presets)
+            val name = chunks["INAM"]?.let { (start, size) -> text(b, start, size) }.orEmpty()
+            val offered = names.entries.sortedBy { it.key }
+                .map { (key, text) -> Instrument(key shr 7, key and 0x7F, text) }
+            return SoundFont(data, presets, name, offered, sampleList.any { it.compressed }, sampleList)
         }
 
         private fun tag(b: ByteBuffer, at: Int) = String(ByteArray(4) { b.get(at + it) }, Charsets.ISO_8859_1)
+
+        // a text field of the file: up to its first zero, its spaces trimmed
+        private fun text(b: ByteBuffer, at: Int, size: Int): String {
+            val bytes = ByteArray(size) { b.get(at + it) }
+            val end = bytes.indexOf(0).let { if (it < 0) size else it }
+            return String(bytes, 0, end, Charsets.ISO_8859_1).trim()
+        }
     }
 }
 

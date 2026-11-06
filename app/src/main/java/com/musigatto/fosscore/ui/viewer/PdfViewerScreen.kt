@@ -112,6 +112,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -165,16 +166,61 @@ internal enum class AnnotationTool {
 // [kind] is `strokes.kind`: it decides the fill and the staff's several lines, at draw time.
 internal class InkDraw(val id: Long, val path: Path, val color: Color, val width: Float, val kind: Int)
 
-private fun inkDrawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): List<InkDraw> =
-    strokes.map { st ->
-        InkDraw(
-            id = st.id,
-            path = inkPath(strokePointsPx(st, fit), st.kind),
-            color = inkTint(st.color, invert),
-            width = st.width * fit.height,
-            kind = st.kind
-        )
+/**
+ * The strokes prepared for drawing, kept between changes: committing a stroke only builds that
+ * one, instead of decoding every point of the page again. A new fit or a flip rebuilds them all.
+ */
+internal class InkDrawCache {
+    private var fit: RectPx? = null
+    private var invert = false
+    private val draws = HashMap<Long, Pair<Stroke, InkDraw>>()
+
+    fun drawsOf(strokes: List<Stroke>, fit: RectPx, invert: Boolean): List<InkDraw> {
+        if (fit != this.fit || invert != this.invert) {
+            draws.clear()
+            this.fit = fit
+            this.invert = invert
+        }
+        return reuse(strokes, draws) { st ->
+            InkDraw(
+                id = st.id,
+                path = inkPath(strokePointsPx(st, fit), st.kind),
+                color = inkTint(st.color, invert),
+                width = st.width * fit.height,
+                kind = st.kind
+            )
+        }
     }
+}
+
+/**
+ * [page]'s drawing cache, dropping the pages that are no longer its neighbours (the viewer never
+ * shows more than the page and the two beside it).
+ */
+internal fun inkCacheFor(caches: MutableMap<Int, InkDrawCache>, page: Int): InkDrawCache =
+    caches.getOrPut(page) {
+        caches.keys.removeAll { abs(it - page) > 1 }
+        InkDrawCache()
+    }
+
+/** [build]s only the strokes that changed; the rest come back from [cache] as they were. */
+internal fun <T> reuse(
+    strokes: List<Stroke>,
+    cache: MutableMap<Long, Pair<Stroke, T>>,
+    build: (Stroke) -> T,
+): List<T> {
+    val out = ArrayList<T>(strokes.size)
+    for (st in strokes) {
+        val old = cache[st.id]
+        if (old != null && old.first == st) {
+            out += old.second
+        } else {
+            out += build(st).also { cache[st.id] = st to it }
+        }
+    }
+    cache.keys.retainAll(strokes.mapTo(HashSet<Long>(strokes.size)) { it.id })
+    return out
+}
 
 /** What the Metronome key does to the band. */
 internal enum class MetronomeKey { TOGGLE_CLICKS, START_STOP }
@@ -342,17 +388,22 @@ fun PdfViewerScreen(
     val strokeStore: StrokeStore = marks?.strokes ?: app.strokeRepository
     LaunchedEffect(stampStore, strokeStore) { editor.useStores(stampStore, strokeStore) }
 
-    // one page's rows: the viewer draws one page, and re-reading the whole score on every stroke
-    // made each stroke cost grow with the score
-    val stampsFlow = remember(sheetId, currentPage, stampStore) {
-        sheetId?.let { stampStore.observe(it, currentPage) } ?: flowOf(emptyList())
+    // the page in view and its neighbours in one query: a turn finds the new page's marks already
+    // in hand, so it draws them on its first frame instead of after Room's round trip. The collected
+    // state survives the range changing (it is remembered without keys), so the last snapshot keeps
+    // covering the page just turned to.
+    val nearPages = (currentPage - 1).coerceAtLeast(0)..(currentPage + 1).coerceAtMost(
+        (pageCount - 1).coerceAtLeast(0)
+    )
+    val stampsFlow = remember(sheetId, nearPages, stampStore) {
+        sheetId?.let { stampStore.observe(it, nearPages) } ?: flowOf(emptyMap<Int, List<Stamp>>())
     }
-    val stamps by stampsFlow.collectAsState(initial = emptyList())
+    val stampsByPage by stampsFlow.collectAsState(initial = emptyMap())
 
-    val strokesFlow = remember(sheetId, currentPage, strokeStore) {
-        sheetId?.let { strokeStore.observe(it, currentPage) } ?: flowOf(emptyList())
+    val strokesFlow = remember(sheetId, nearPages, strokeStore) {
+        sheetId?.let { strokeStore.observe(it, nearPages) } ?: flowOf(emptyMap<Int, List<Stroke>>())
     }
-    val strokes by strokesFlow.collectAsState(initial = emptyList())
+    val strokesByPage by strokesFlow.collectAsState(initial = emptyMap())
 
     // height of the annotation bar, measured: while annotating it is the top bar, and the page keeps
     // clear of it. Hoisted out of the chrome block because the bar is removed while the loupe is up
@@ -460,19 +511,10 @@ fun PdfViewerScreen(
 
     // the second page of a spread. The viewer is reading, not editing, there, but its ink and its
     // stamps are drawn too: half of a two-up (or the top of a turned half page) would come out bare.
+    // Both come from the same range as the current page, already in hand.
     val companion = if (spread && currentPage + 1 < pageCount) currentPage + 1 else null
-    val companionStampsFlow = remember(sheetId, companion, stampStore) {
-        if (sheetId != null && companion != null) {
-            stampStore.observe(sheetId, companion)
-        } else flowOf(emptyList())
-    }
-    val companionStamps by companionStampsFlow.collectAsState(initial = emptyList())
-    val companionStrokesFlow = remember(sheetId, companion, strokeStore) {
-        if (sheetId != null && companion != null) {
-            strokeStore.observe(sheetId, companion)
-        } else flowOf(emptyList())
-    }
-    val companionStrokes by companionStrokesFlow.collectAsState(initial = emptyList())
+    val companionStamps = companion?.let { stampsByPage[it] }.orEmpty()
+    val companionStrokes = companion?.let { strokesByPage[it] }.orEmpty()
 
     // a MusicXML score is annotated too: its marks hang on its measures (MusicXmlMarks)
     val canEdit = sheetId != null && !branch.showTwoUp &&
@@ -494,9 +536,11 @@ fun PdfViewerScreen(
     // Keep an inserted stamp visible while Room's page flow catches up; settle() removes its
     // optimistic copy after the inserted row appears.
     val pageStamps = (
-        stamps + editor.pendingStamps.filter { it.page == currentPage }
+        stampsByPage[currentPage].orEmpty() + editor.pendingStamps.filter { it.page == currentPage }
     ).distinctBy { it.id }.filter { it.id !in editor.hiddenStampIds }
-    val pageStrokes = remember(strokes, editor.hiddenStrokeIds) { strokes.filter { it.id !in editor.hiddenStrokeIds } }
+    val pageStrokes = remember(strokesByPage, currentPage, editor.hiddenStrokeIds) {
+        strokesByPage[currentPage].orEmpty().filter { it.id !in editor.hiddenStrokeIds }
+    }
     val pageFit = if (pageBox != null && pageBox.height > 0f) {
         fitRect(
             viewport.width.toFloat(),
@@ -512,8 +556,13 @@ fun PdfViewerScreen(
     val inkStrokes = (
         editor.pendingInk.filter { it.page == currentPage } + pageStrokes
     ).distinctBy { it.id }
-    // the same ink, ready to draw: decode + Path once per change, not once per frame
-    val inkDraws = remember(inkStrokes, hitFit, invert) { inkDrawsOf(inkStrokes, hitFit, invert) }
+    // the same ink, ready to draw: decode + Path once per stroke. One cache per page, the page in
+    // view and its neighbours, so a turn draws stored paths instead of rebuilding every one of them
+    // on the frame it lands.
+    val inkCaches = remember(hitFit, invert) { HashMap<Int, InkDrawCache>() }
+    val inkDraws = remember(inkStrokes, inkCaches) {
+        inkCacheFor(inkCaches, currentPage).drawsOf(inkStrokes, hitFit, invert)
+    }
     // the MEASURED boxes of the visible TEXT stamps: one layout per change, the same box feeds the
     // draw (PageCanvas), the gesture's hit test and the selection frame, so they cannot diverge.
     // The style here must stay identical to the one TextStampView draws with, bar the color (the
@@ -576,8 +625,8 @@ fun PdfViewerScreen(
     val shownStamps = editor.typing?.origin?.let { o -> pageStamps.filter { it.id != o.id } } ?: pageStamps
     // the next page's ink, same fit: its path only has to land on the paper that page takes, and
     // PageOverlay stretches it there
-    val companionInkDraws = remember(companionStrokes, hitFit, invert) {
-        inkDrawsOf(companionStrokes, hitFit, invert)
+    val companionInkDraws = remember(companionStrokes, inkCaches, companion) {
+        companion?.let { inkCacheFor(inkCaches, it).drawsOf(companionStrokes, hitFit, invert) }.orEmpty()
     }
     // the zoom frame reads these through rememberUpdatedState: the gesture that calls it captured
     // it when it started, and must see the live page
@@ -808,7 +857,9 @@ fun PdfViewerScreen(
     }
 
     // the DB no longer has what we hid: clear the optimistic delete (and the drag preview)
-    LaunchedEffect(stamps, strokes) { editor.settle(stamps, strokes) }
+    val dbStamps = stampsByPage[currentPage].orEmpty()
+    val dbStrokes = strokesByPage[currentPage].orEmpty()
+    LaunchedEffect(dbStamps, dbStrokes) { editor.settle(dbStamps, dbStrokes) }
 
     // MuPDF (prebuilt AAR, AGPL-3.0: see LICENSE). Opens and works out sizes in the background:
     // opening parses the PDF index and must not touch the main thread.

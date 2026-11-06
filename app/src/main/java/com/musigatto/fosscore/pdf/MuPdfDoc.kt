@@ -59,8 +59,9 @@ data class PageBox(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
  * must take a mutex, the same way the old `PdfRenderer` code did.
  */
 class MuPdfDoc private constructor(
-    private val fd: ParcelFileDescriptor,
-    private val stream: FdSeekable,
+    // null when the document was opened from its path: MuPDF owns the file stream then
+    private val fd: ParcelFileDescriptor?,
+    private val stream: FdSeekable?,
     private val doc: Document
 ) : PageSource {
     override val pageCount: Int = doc.countPages()
@@ -227,30 +228,43 @@ class MuPdfDoc private constructor(
         bitmaps.values.forEach { runCatching { it.recycle() } }
         bitmaps.clear()
         runCatching { doc.destroy() }
-        runCatching { stream.close() }
-        runCatching { fd.close() }
+        runCatching { stream?.close() }
+        runCatching { fd?.close() }
     }
 
     companion object {
         private var initialized = false
 
-        /** Opens a PDF from a SAF Uri. Blocking: call it from a background dispatcher. */
+        /**
+         * Opens a PDF from a local file or a SAF Uri. Blocking: call it from a background
+         * dispatcher. A local file goes straight to MuPDF (mmap, no descriptor plumbing); anything
+         * else goes through the content resolver.
+         */
         fun open(context: AndroidContext, uri: Uri): MuPdfDoc {
             if (!initialized) {
                 Context.init()
                 initialized = true
             }
-            val fd = context.contentResolver.openFileDescriptor(uri, "r")
-                ?: throw IOException(context.getString(R.string.err_open_file))
-            val stream = FdSeekable(fd)
-            val doc = try {
-                Document.openDocument(stream, "application/pdf")
-            } catch (e: Exception) {
-                runCatching { stream.close() }
-                runCatching { fd.close() }
-                throw e
-            }
-            return MuPdfDoc(fd, stream, doc).also { mupdf ->
+            val path = uri.path
+            val opened: Triple<ParcelFileDescriptor?, FdSeekable?, Document> =
+                if (uri.scheme == "file" && path != null) {
+                    // one arg only: on Android the (path, magic) overload feeds the magic string
+                    // to the native Archive field and aborts the process (mupdf 1.28.5 binding).
+                    // The magic is optional; MuPDF detects the format itself.
+                    Triple(null, null, Document.openDocument(path))
+                } else {
+                    val fd = context.contentResolver.openFileDescriptor(uri, "r")
+                        ?: throw IOException(context.getString(R.string.err_open_file))
+                    val stream = FdSeekable(fd)
+                    try {
+                        Triple(fd, stream, Document.openDocument(stream, "application/pdf"))
+                    } catch (e: Exception) {
+                        runCatching { stream.close() }
+                        runCatching { fd.close() }
+                        throw e
+                    }
+                }
+            return MuPdfDoc(opened.first, opened.second, opened.third).also { mupdf ->
                 // sizes up front: the UI can lay out without waiting for the first draw
                 for (i in 0 until PRELOAD_SIZES) {
                     if (i >= mupdf.pageCount) break

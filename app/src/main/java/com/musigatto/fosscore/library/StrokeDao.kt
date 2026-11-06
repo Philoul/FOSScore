@@ -14,6 +14,11 @@ interface StrokeDao {
     @Query("SELECT * FROM strokes WHERE sheetId = :sheetId AND page = :page ORDER BY id")
     fun observePage(sheetId: Long, page: Int): Flow<List<Stroke>>
 
+    // the viewer's page and its neighbours in one query: a turn is drawn with the ink already in
+    // hand, instead of waiting for the page's own query to come back (index: sheetId, page)
+    @Query("SELECT * FROM strokes WHERE sheetId = :sheetId AND page BETWEEN :from AND :to ORDER BY id")
+    fun observeRange(sheetId: Long, from: Int, to: Int): Flow<List<Stroke>>
+
     @Query("SELECT * FROM strokes WHERE sheetId = :sheetId ORDER BY page, id")
     suspend fun listBySheet(sheetId: Long): List<Stroke>
 
@@ -32,6 +37,9 @@ interface StrokeDao {
 
     @Update
     suspend fun update(stroke: Stroke)
+
+    @Update
+    suspend fun updateAll(strokes: List<Stroke>)
 
     @Delete
     suspend fun delete(stroke: Stroke)

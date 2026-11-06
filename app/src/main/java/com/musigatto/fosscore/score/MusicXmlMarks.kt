@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.score
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.musigatto.fosscore.library.AppDatabase
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.StampStore
@@ -16,8 +17,9 @@ import kotlinx.coroutines.flow.combine
  * known; a mark written on a page hangs on the staff it is over.
  */
 class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
-    private val stampDao = AppDatabase.get(context).stampDao()
-    private val strokeDao = AppDatabase.get(context).strokeDao()
+    private val db = AppDatabase.get(context)
+    private val stampDao = db.stampDao()
+    private val strokeDao = db.strokeDao()
 
     private fun slots(page: Int): List<StaffSlot> = pages.geometry(page)?.let(MeasureAnchors::slotsOf).orEmpty()
 
@@ -34,10 +36,15 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
     private fun measures(slots: List<StaffSlot>): List<Int> = slots.map { it.measure }.distinct()
 
     val stamps: StampStore = object : StampStore {
-        override fun observe(sheetId: Long, page: Int): Flow<List<Stamp>> =
-            combine(stampDao.observeAnchored(sheetId), pages.geometryVersion) { rows, _ ->
-                val slots = slots(page)
-                rows.mapNotNull { MeasureAnchors.project(it, slots, page) }
+        override fun observe(sheetId: Long, pages: IntRange): Flow<Map<Int, List<Stamp>>> =
+            combine(
+                stampDao.observeAnchored(sheetId),
+                this@MusicXmlMarks.pages.geometryVersion,
+            ) { rows, _ ->
+                pages.associateWith { page ->
+                    val slots = slots(page)
+                    rows.mapNotNull { MeasureAnchors.project(it, slots, page) }
+                }
             }
 
         override suspend fun insert(stamp: Stamp): Long =
@@ -55,16 +62,24 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
         override suspend fun restorePage(sheetId: Long, page: Int, stamps: List<Stamp>) {
             val slots = slots(page)
             if (slots.isEmpty()) return
-            stampDao.deleteMeasures(sheetId, measures(slots))
-            stampDao.insertAll(stamps.mapNotNull { anchorOf(it, page) })
+            val rows = stamps.mapNotNull { anchorOf(it, page) }
+            db.withTransaction {
+                stampDao.deleteMeasures(sheetId, measures(slots))
+                stampDao.insertAll(rows)
+            }
         }
     }
 
     val strokes: StrokeStore = object : StrokeStore {
-        override fun observe(sheetId: Long, page: Int): Flow<List<Stroke>> =
-            combine(strokeDao.observeAnchored(sheetId), pages.geometryVersion) { rows, _ ->
-                val slots = slots(page)
-                rows.mapNotNull { MeasureAnchors.project(it, slots, page) }
+        override fun observe(sheetId: Long, pages: IntRange): Flow<Map<Int, List<Stroke>>> =
+            combine(
+                strokeDao.observeAnchored(sheetId),
+                this@MusicXmlMarks.pages.geometryVersion,
+            ) { rows, _ ->
+                pages.associateWith { page ->
+                    val slots = slots(page)
+                    rows.mapNotNull { MeasureAnchors.project(it, slots, page) }
+                }
             }
 
         override suspend fun insert(stroke: Stroke): Long =
@@ -78,6 +93,10 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
             anchorOf(stroke)?.let { strokeDao.update(it) }
         }
 
+        override suspend fun updateAll(strokes: List<Stroke>) {
+            strokeDao.updateAll(strokes.mapNotNull { anchorOf(it) })
+        }
+
         override suspend fun delete(stroke: Stroke) = strokeDao.delete(stroke)
 
         override suspend fun deleteAll(strokes: List<Stroke>) = strokeDao.deleteAll(strokes)
@@ -85,8 +104,11 @@ class MusicXmlMarks(context: Context, private val pages: MusicXmlPages) {
         override suspend fun restorePage(sheetId: Long, page: Int, strokes: List<Stroke>) {
             val slots = slots(page)
             if (slots.isEmpty()) return
-            strokeDao.deleteMeasures(sheetId, measures(slots))
-            strokeDao.insertAll(strokes.mapNotNull { anchorOf(it, page) })
+            val rows = strokes.mapNotNull { anchorOf(it, page) }
+            db.withTransaction {
+                strokeDao.deleteMeasures(sheetId, measures(slots))
+                strokeDao.insertAll(rows)
+            }
         }
     }
 }

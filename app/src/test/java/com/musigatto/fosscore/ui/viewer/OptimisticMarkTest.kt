@@ -22,7 +22,7 @@ import org.junit.Test
 class OptimisticMarkTest {
 
     private class DelayedStamps(private val insertedId: CompletableDeferred<Long>) : StampStore {
-        override fun observe(sheetId: Long, page: Int): Flow<List<Stamp>> = emptyFlow()
+        override fun observe(sheetId: Long, pages: IntRange): Flow<Map<Int, List<Stamp>>> = emptyFlow()
         override suspend fun insert(stamp: Stamp): Long = insertedId.await()
         override suspend fun update(stamp: Stamp) = Unit
         override suspend fun delete(stamp: Stamp) = Unit
@@ -31,10 +31,11 @@ class OptimisticMarkTest {
     }
 
     private class DelayedStrokes(private val insertedId: CompletableDeferred<Long>) : StrokeStore {
-        override fun observe(sheetId: Long, page: Int): Flow<List<Stroke>> = emptyFlow()
+        override fun observe(sheetId: Long, pages: IntRange): Flow<Map<Int, List<Stroke>>> = emptyFlow()
         override suspend fun insert(stroke: Stroke): Long = insertedId.await()
         override suspend fun insertAll(strokes: List<Stroke>) = Unit
         override suspend fun update(stroke: Stroke) = Unit
+        override suspend fun updateAll(strokes: List<Stroke>) = Unit
         override suspend fun delete(stroke: Stroke) = Unit
         override suspend fun deleteAll(strokes: List<Stroke>) = Unit
         override suspend fun restorePage(sheetId: Long, page: Int, strokes: List<Stroke>) = Unit

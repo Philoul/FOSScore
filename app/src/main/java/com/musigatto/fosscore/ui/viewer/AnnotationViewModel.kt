@@ -309,7 +309,8 @@ internal class AnnotationViewModel(
     /** Moved or stretched ink: the same rows, new points and width. */
     fun updateStrokes(page: Int, updated: List<Stroke>, current: PageEdit) {
         pushUndo(current, page)
-        viewModelScope.launch { updated.forEach { strokes.update(it) } }
+        // one transaction for the whole word, not one write per stroke
+        viewModelScope.launch { strokes.updateAll(updated) }
     }
 
     /** A moved stamp: the old position is the undo snapshot, only when it actually moved. */

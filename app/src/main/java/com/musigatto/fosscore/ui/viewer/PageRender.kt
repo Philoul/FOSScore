@@ -48,6 +48,11 @@ private const val LOG_TAG = "FOSScore-PDF"
 private const val RENDER_DURING_ZOOM_MS = 150L
 private const val RENDER_SETTLE_MS = 250L
 
+// How much the zoom has to grow before the bitmap is drawn again mid-pinch. A draw costs a full
+// page (up to 16 MB): drawing at every 10% step churned memory and GC for a sharpness the eye
+// cannot see yet. The final step is still drawn exactly, after RENDER_SETTLE_MS.
+private const val RENDER_UPGRADE_RATIO = 1.25f
+
 /**
  * The paper on screen: the document, its bitmaps at the current zoom step, the last one drawn (so a
  * page turn does not flash a spinner), the cut of a half page, and the mutex MuPDF needs.
@@ -89,7 +94,9 @@ internal class PagePaper(private val pdfUri: Uri) {
     // the blank bands of a page, read from its picture once
     private val blankBands = WeakHashMap<Bitmap, List<Band>>()
 
-    // guards against an older, non-cancellable render landing after a newer one
+    // guards against an older, non-cancellable render landing after a newer one. Volatile: the
+    // newer draw bumps it from the main thread while an older one is still inside the lock.
+    @Volatile
     private var generation = 0
 
     /**
@@ -159,6 +166,8 @@ internal class PagePaper(private val pdfUri: Uri) {
         try {
             val session = lock.withLock {
                 withContext(Dispatchers.Default) {
+                    // a newer draw is already waiting for the lock: leave the whole render to it
+                    if (gen != generation) return@withContext emptyMap()
                     // Single page: the draw slot is the fit × zoom step (the bitmap is shown 1:1 on
                     // screen, the GPU rescales nothing). Reading modes (two-up, half page): the slot
                     // is the viewport and the layer keeps scaling.
@@ -173,7 +182,12 @@ internal class PagePaper(private val pdfUri: Uri) {
                         ZoomMath.renderSlot(fitRect(vpW, vpH, box.width / box.height), scale)
                     }
                     val out = mutableMapOf<Int, Bitmap>()
-                    for (idx in needed) out[idx] = doc.render(idx, slot.first, slot.second) ?: fallback[idx] ?: continue
+                    for (idx in needed) {
+                        // the second page of a spread must not be drawn if a turn already
+                        // superseded this draw
+                        if (gen != generation) return@withContext emptyMap()
+                        out[idx] = doc.render(idx, slot.first, slot.second) ?: fallback[idx] ?: continue
+                    }
                     out
                 }
             }
@@ -202,7 +216,8 @@ internal class PagePaper(private val pdfUri: Uri) {
     /**
      * Prefetches both neighbours, so a turn is a cache hit in MuPdfDoc (same page, same width key),
      * and works out the cut of the next half page from this page and the next one just drawn.
-     * Returns at once when a turn supersedes it, instead of holding the lock for nothing.
+     * The lock is taken one page at a time: a turn during the prefetch waits for one render, not
+     * for both. Returns at once when a turn supersedes it.
      */
     suspend fun prefetch(
         doc: PageSource,
@@ -214,32 +229,37 @@ internal class PagePaper(private val pdfUri: Uri) {
         val vpW = viewport.width.toFloat()
         val vpH = viewport.height.toFloat()
         val shown = bitmaps[page]
-        halfCut = lock.withLock {
-            withContext(Dispatchers.Default) {
-                val job = coroutineContext[Job]
-                fun draw(index: Int) = doc.ensurePageSize(index)?.takeIf { it.height > 0f }?.let { box ->
-                    val slot = ZoomMath.renderSlot(fitRect(vpW, vpH, box.width / box.height), 1f)
-                    doc.render(index, slot.first, slot.second)
-                }
-                for (next in listOf(page + 1, page - 1)) {
-                    if (next !in 0 until pageCount) continue
-                    // a turn supersedes this prefetch: drop the rest instead of holding the lock
-                    if (job?.isActive == false) return@withContext null
-                    draw(next)
-                }
-                // in half page, the cut of the next turn, from this page and the next one just drawn
-                shown?.takeIf { showHalf && page + 1 < pageCount }?.let { here ->
-                    draw(page + 1)?.let { next ->
-                        val bands = here.blankBands()
-                        val split = HalfSplit.of(bands, next.blankBands())
-                        // the line goes through the middle of the blank band the cut is in, clear of
-                        // the staves above and below: anywhere in it, the turn hides only paper
-                        val mark = bands.firstOrNull { split.lower in it.start..it.end }?.let { (it.start + it.end) / 2 }
-                        HalfCut(page, layoutVersion, split, mark ?: split.lower)
+        val job = coroutineContext[Job]
+
+        suspend fun draw(index: Int): Bitmap? {
+            if (index !in 0 until pageCount || job?.isActive == false) return null
+            return lock.withLock {
+                withContext(Dispatchers.Default) {
+                    doc.ensurePageSize(index)?.takeIf { it.height > 0f }?.let { box ->
+                        val slot = ZoomMath.renderSlot(fitRect(vpW, vpH, box.width / box.height), 1f)
+                        doc.render(index, slot.first, slot.second)
                     }
                 }
             }
         }
+
+        // next page first: in half page the cut is worked out from this one and the next
+        val ahead = draw(page + 1)
+        draw(page - 1)
+        // in half page, the cut of the next turn, from this page and the next one just drawn.
+        // Under the lock: close() recycles those bitmaps, and reading one as it is freed crashes.
+        halfCut = if (showHalf && shown != null && ahead != null) {
+            lock.withLock {
+                withContext(Dispatchers.Default) {
+                    val bands = shown.blankBands()
+                    val split = HalfSplit.of(bands, ahead.blankBands())
+                    // the line goes through the middle of the blank band the cut is in, clear of
+                    // the staves above and below: anywhere in it, the turn hides only paper
+                    val mark = bands.firstOrNull { split.lower in it.start..it.end }?.let { (it.start + it.end) / 2 }
+                    HalfCut(page, layoutVersion, split, mark ?: split.lower)
+                }
+            }
+        } else null
     }
 
     /** Where a turned half page cuts: the cut worked out for this layout, or read from the pictures. */
@@ -287,14 +307,15 @@ internal fun PageRenderEffects(
 
     // Redraw at the current zoom (steps of 10% of the fit, ZoomMath.renderBucket): like reference
     // viewers, the bitmap follows the zoom so the GPU never rescales it. During a pinch it only
-    // goes UP a step, with a 150 ms minimum between draws; once it settles (no scale change for
-    // 250 ms) the final step is tuned in, which can also go DOWN after zooming out.
+    // goes UP, and only once the zoom grew by RENDER_UPGRADE_RATIO, with a 150 ms minimum between
+    // draws; once it settles (no scale change for 250 ms) the final step is tuned in, which can
+    // also go DOWN after zooming out.
     LaunchedEffect(doc, viewport) {
         var lastUpgradeMs = 0L
         snapshotFlow { zoom.transform.scale }.collectLatest { s ->
             val target = ZoomMath.renderBucket(s)
             val now = System.currentTimeMillis()
-            if (target > paper.renderScale && now - lastUpgradeMs >= RENDER_DURING_ZOOM_MS) {
+            if (target >= paper.renderScale * RENDER_UPGRADE_RATIO && now - lastUpgradeMs >= RENDER_DURING_ZOOM_MS) {
                 lastUpgradeMs = now
                 paper.renderScale = target
                 return@collectLatest

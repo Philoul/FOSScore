@@ -9,7 +9,11 @@ import kotlinx.coroutines.flow.Flow
  * texts, selection, undo) is the same for both.
  */
 interface StampStore {
-    fun observe(sheetId: Long, page: Int): Flow<List<Stamp>>
+    /**
+     * The stamps of [pages], by page. The viewer asks for the page it shows plus its neighbours:
+     * by the time the page is turned, its stamps are already in hand.
+     */
+    fun observe(sheetId: Long, pages: IntRange): Flow<Map<Int, List<Stamp>>>
 
     /** The new row's id; -1 when the stamp has nowhere to go (off the music of a MusicXML page). */
     suspend fun insert(stamp: Stamp): Long
@@ -23,12 +27,13 @@ interface StampStore {
 
 /** The same as [StampStore], for the ink. */
 interface StrokeStore {
-    fun observe(sheetId: Long, page: Int): Flow<List<Stroke>>
+    fun observe(sheetId: Long, pages: IntRange): Flow<Map<Int, List<Stroke>>>
 
     /** The new row's id; -1 when the stroke has nowhere to go (off the music of a MusicXML page). */
     suspend fun insert(stroke: Stroke): Long
     suspend fun insertAll(strokes: List<Stroke>)
     suspend fun update(stroke: Stroke)
+    suspend fun updateAll(strokes: List<Stroke>)
     suspend fun delete(stroke: Stroke)
     suspend fun deleteAll(strokes: List<Stroke>)
 

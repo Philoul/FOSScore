@@ -13,6 +13,10 @@ interface StampDao {
     @Query("SELECT * FROM stamps WHERE sheetId = :sheetId AND page = :page ORDER BY id")
     fun observePage(sheetId: Long, page: Int): Flow<List<Stamp>>
 
+    // one page and its neighbours: see StrokeDao.observeRange
+    @Query("SELECT * FROM stamps WHERE sheetId = :sheetId AND page BETWEEN :from AND :to ORDER BY id")
+    fun observeRange(sheetId: Long, from: Int, to: Int): Flow<List<Stamp>>
+
     // the stamps of a MusicXML score: they hang on measures, not on pages (score.MeasureAnchors)
     @Query("SELECT * FROM stamps WHERE sheetId = :sheetId AND measure IS NOT NULL ORDER BY id")
     fun observeAnchored(sheetId: Long): Flow<List<Stamp>>

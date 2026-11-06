@@ -257,6 +257,9 @@
     <string name="tempo_as_written_short">As written</string>
     <string name="metronome_previous_page">Previous page</string>
     <string name="metronome_next_page">Next page</string>
+    <string name="prefs_main">Main screen</string>
+    <string name="main_menu">Menu ☰: the views in the side menu</string>
+    <string name="main_icons">Icon bar: one icon per view</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Sound banks for playback</string>
     <string name="sound_banks_hint">SoundFont banks (SF2 or SF3) give playback its instruments. The default bank plays every part that has no sound of its own. A bank in SF3 is prepared once when it is added (a few minutes on an old tablet), by itself: it can be chosen once its sounds are ready, and they then play at once.</string>

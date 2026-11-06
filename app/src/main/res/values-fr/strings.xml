@@ -261,6 +261,9 @@
     <string name="tempo_as_written_short">Comme écrit</string>
     <string name="metronome_previous_page">Page précédente</string>
     <string name="metronome_next_page">Page suivante</string>
+    <string name="prefs_main">Écran principal</string>
+    <string name="main_menu">Menu ☰ : les vues dans le menu latéral</string>
+    <string name="main_icons">Barre d’icônes : une icône par vue</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Banques de sons de la lecture</string>
     <string name="sound_banks_hint">Les banques SoundFont (SF2 ou SF3) donnent ses instruments à la lecture. La banque par défaut joue toutes les parties qui n’ont pas de son à elles. Une banque SF3 est préparée une fois, à l’ajout, d’elle-même (quelques minutes sur une tablette ancienne) : elle est disponible une fois ses sons prêts, et ils se jouent alors tout de suite.</string>

@@ -259,6 +259,9 @@
     <string name="tempo_as_written_short">Como está escrito</string>
     <string name="metronome_previous_page">Página anterior</string>
     <string name="metronome_next_page">Página siguiente</string>
+    <string name="prefs_main">Pantalla principal</string>
+    <string name="main_menu">Menú ☰: las vistas en el menú lateral</string>
+    <string name="main_icons">Barra de iconos: un icono por vista</string>
     <string name="prefs_midi">MIDI</string>
     <string name="prefs_midi_summary">Bancos de sonidos de la reproducción</string>
     <string name="sound_banks_hint">Los bancos SoundFont (SF2 o SF3) dan sus instrumentos a la reproducción. El banco predeterminado toca todas las partes que no tienen un sonido propio. Un banco SF3 se prepara una vez, al añadirlo, por sí solo (unos minutos en una tableta antigua): está disponible cuando sus sonidos están listos, y entonces se tocan enseguida.</string>

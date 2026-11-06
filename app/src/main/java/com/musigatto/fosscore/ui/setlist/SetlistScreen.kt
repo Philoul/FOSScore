@@ -63,6 +63,8 @@ import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.library.dragStep
 import com.musigatto.fosscore.library.moved
 import com.musigatto.fosscore.ui.library.IndexedList
+import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
+import com.musigatto.fosscore.ui.viewer.LineIcon
 import com.musigatto.fosscore.ui.library.SheetText
 import kotlinx.coroutines.launch
 
@@ -81,10 +83,11 @@ fun SetlistsScreen(
     onShow: (Long?) -> Unit,
     onPlay: (setlistId: Long, entry: SetlistEntry) -> Unit,
     onClose: () -> Unit,
-    onOpenMenu: () -> Unit,
+    /** The left of the header of the list: ☰ and the name, or the views' icons (MainNavigation). */
+    navigation: @Composable () -> Unit,
 ) {
     if (shownId == null) {
-        SetlistList(setlists, onShow, onClose, onOpenMenu)
+        SetlistList(setlists, onShow, onClose, navigation)
     } else {
         SetlistDetail(setlists, library, shownId, playingItemId, onBack = { onShow(null) }, onPlay = { onPlay(shownId, it) })
     }
@@ -117,20 +120,25 @@ private fun Header(
 }
 
 @Composable
-private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, onClose: () -> Unit, onOpenMenu: () -> Unit) {
+private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, onClose: () -> Unit, navigation: @Composable () -> Unit) {
     val all by remember { setlists.setlists() }.collectAsState(initial = null)
     var naming by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
-        // ☰ on the left and ✕ on the right, like the library: the side menu goes to the other views
-        Header(stringResource(R.string.library_menu_setlists), onOpenMenu, stringResource(R.string.menu_open), backSymbol = "☰") {
+        // as the library (same margins, so the icon bar stays in place from one view to the other):
+        // ☰ and the name (or the views' icons) on the left, ✕ on the right
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) { navigation() }
             Button(onClick = { naming = true }, modifier = Modifier.padding(end = 8.dp)) {
                 Text(stringResource(R.string.setlist_new))
             }
             val closeLabel = stringResource(R.string.action_close)
             TextButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = closeLabel }) {
-                Text("✕", style = MaterialTheme.typography.headlineSmall)
+                LineIcon(LINE_CLOSE)
             }
         }
         val list = all

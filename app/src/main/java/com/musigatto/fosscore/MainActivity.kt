@@ -27,6 +27,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ import com.musigatto.fosscore.library.neighbour
 import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.score.SheetFormat
 import com.musigatto.fosscore.ui.library.LibraryMenuDrawer
+import com.musigatto.fosscore.ui.library.MainNavigation
 import com.musigatto.fosscore.ui.library.MenuView
 import com.musigatto.fosscore.ui.library.LibraryScreen
 import com.musigatto.fosscore.ui.library.SheetDetailScreen
@@ -262,6 +264,21 @@ private fun FOSScoreNav(
     val place = playingIds.indexOf(s.playItem).takeIf { it >= 0 }?.let { at ->
         playingName?.let { name -> SetlistPlace(name, at + 1, playingIds.size) }
     }
+    // the main views' header: ☰ and the name, or the views' icons (preferences, Main screen)
+    var mainStyle by remember { mutableStateOf(Settings.mainStyle(context)) }
+    DisposableEffect(Unit) {
+        val stop = Settings.onMainStyleChange(context) { mainStyle = it }
+        onDispose { stop() }
+    }
+    val mainNavigation: @Composable (MenuView) -> Unit = { view ->
+        MainNavigation(
+            current = view,
+            style = mainStyle,
+            onOpenMenu = { scope.launch { drawerState.open() } },
+            onOpenView = { nav = nav.toView(it) },
+            onOpenPreferences = { nav = nav.copy(preferences = true) },
+        )
+    }
     fun openPlace(itemId: Long?, start: StartPage): ((Boolean) -> Unit)? {
         val entry = playing.find { it.itemId == itemId } ?: return null
         return { chromeShown -> nav = nav.toPlace(entry.sheet, entry.itemId, start, chromeShown) }
@@ -320,7 +337,8 @@ private fun FOSScoreNav(
                             onEdit = { nav = nav.copy(detail = it) },
                             onImport = { picker.launch(SheetFormat.PICKER_TYPES) },
                             onClose = if (s.sheet != null) ({ nav = nav.copy(libraryOpen = false) }) else null,
-                            onOpenMenu = { scope.launch { drawerState.open() } }
+                            onOpenMenu = { scope.launch { drawerState.open() } },
+                            navigation = { mainNavigation(MenuView.LIBRARY) },
                         )
                         // the setlists, over the library or the score. Their back is registered
                         // before the screens, so a setlist's own back (to the list) goes first
@@ -340,7 +358,7 @@ private fun FOSScoreNav(
                                         )
                                     },
                                     onClose = { nav = nav.copy(setlistsOpen = false) },
-                                    onOpenMenu = { scope.launch { drawerState.open() } },
+                                    navigation = { mainNavigation(MenuView.SETLISTS) },
                                 )
                             }
                         }

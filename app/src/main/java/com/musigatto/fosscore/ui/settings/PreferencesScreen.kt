@@ -64,7 +64,7 @@ private const val FOUND_HEIGHT_DP = 320
 private const val MAX_WIDTH_DP = 640
 
 /** The sections of the preferences, in their order. Each one opens under its title. */
-private enum class Section { LANGUAGE, VIEWER, KEYBOARD, MIDI, LIBRARY }
+private enum class Section { LANGUAGE, MAIN, VIEWER, KEYBOARD, MIDI, LIBRARY }
 
 /**
  * The app's preferences, over the screen it was opened from: what applies to every score. A list
@@ -78,6 +78,7 @@ fun PreferencesScreen(onDone: () -> Unit) {
     // the section open, by name (kept when the screen turns, and when a new language recreates it)
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var chromeStyle by remember { mutableStateOf(Settings.chromeStyle(context)) }
+    var mainStyle by remember { mutableStateOf(Settings.mainStyle(context)) }
     BackHandler(onBack = onDone)
     Column(
         modifier = Modifier
@@ -92,12 +93,16 @@ fun PreferencesScreen(onDone: () -> Unit) {
             Text(stringResource(R.string.menu_settings), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 8.dp))
             Section.entries.forEach { section ->
                 val isOpen = open == section.name
-                SectionTitle(section.title(), section.summary(chromeStyle), isOpen) { open = if (isOpen) null else section.name }
+                SectionTitle(section.title(), section.summary(chromeStyle, mainStyle), isOpen) { open = if (isOpen) null else section.name }
                 if (isOpen) {
                     Column(modifier = Modifier.padding(start = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         when (section) {
                             Section.LANGUAGE -> LanguageSection()
-                            Section.VIEWER -> ViewerSection(chromeStyle) {
+                            Section.MAIN -> StyleSection(mainStyle, { it.mainLabel() }) {
+                                mainStyle = it
+                                Settings.setMainStyle(context, it)
+                            }
+                            Section.VIEWER -> StyleSection(chromeStyle, { it.label() }) {
                                 chromeStyle = it
                                 Settings.setChromeStyle(context, it)
                             }
@@ -118,6 +123,7 @@ fun PreferencesScreen(onDone: () -> Unit) {
 private fun Section.title(): String = stringResource(
     when (this) {
         Section.LANGUAGE -> R.string.language_label
+        Section.MAIN -> R.string.prefs_main
         Section.VIEWER -> R.string.prefs_viewer
         Section.KEYBOARD -> R.string.prefs_keyboard
         Section.MIDI -> R.string.prefs_midi
@@ -126,8 +132,9 @@ private fun Section.title(): String = stringResource(
 )
 
 @Composable
-private fun Section.summary(chromeStyle: ChromeStyle): String = when (this) {
+private fun Section.summary(chromeStyle: ChromeStyle, mainStyle: ChromeStyle): String = when (this) {
     Section.LANGUAGE -> Settings.language(LocalContext.current).displayName.ifEmpty { stringResource(R.string.language_system) }
+    Section.MAIN -> mainStyle.mainLabel()
     Section.VIEWER -> chromeStyle.label()
     Section.KEYBOARD -> stringResource(R.string.prefs_keyboard_summary)
     Section.MIDI -> stringResource(R.string.prefs_midi_summary)
@@ -136,7 +143,7 @@ private fun Section.summary(chromeStyle: ChromeStyle): String = when (this) {
 
 /** The top of the score screen: the ☰ menu (as before) or the icon bar. A score on screen follows at once. */
 @Composable
-private fun ViewerSection(current: ChromeStyle, onPick: (ChromeStyle) -> Unit) {
+private fun StyleSection(current: ChromeStyle, label: @Composable (ChromeStyle) -> String, onPick: (ChromeStyle) -> Unit) {
     ChromeStyle.entries.forEach { style ->
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -146,10 +153,19 @@ private fun ViewerSection(current: ChromeStyle, onPick: (ChromeStyle) -> Unit) {
                 .selectable(selected = style == current, role = Role.RadioButton) { onPick(style) },
         ) {
             RadioButton(selected = style == current, onClick = null)
-            Text(style.label(), modifier = Modifier.padding(start = 12.dp))
+            Text(label(style), modifier = Modifier.padding(start = 12.dp))
         }
     }
 }
+
+// the main views' header: the views in the side menu, or an icon each
+@Composable
+private fun ChromeStyle.mainLabel(): String = stringResource(
+    when (this) {
+        ChromeStyle.MENU -> R.string.main_menu
+        ChromeStyle.ICONS -> R.string.main_icons
+    }
+)
 
 @Composable
 private fun ChromeStyle.label(): String = stringResource(

@@ -72,7 +72,9 @@ fun LibraryScreen(
     /** ✕ is shown only when the library floats over a score, where it means "back to the page". */
     onClose: (() -> Unit)? = null,
     /** ☰ opens the side menu with what concerns the whole app (export / import of the library...). */
-    onOpenMenu: () -> Unit = {}
+    onOpenMenu: () -> Unit = {},
+    /** The left of the header, ☰ and the name or the views' icons (MainNavigation); ☰ alone when none. */
+    navigation: (@Composable () -> Unit)? = null,
 ) {
     val sheets by repository.sheets().collectAsState(initial = emptyList())
     var query by rememberSaveable { mutableStateOf("") }
@@ -126,6 +128,9 @@ fun LibraryScreen(
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = { confirmDelete = true }) { Text(stringResource(R.string.action_delete)) }
                 }
+            } else if (navigation != null) {
+                Box(Modifier.weight(1f)) { navigation() }
+                LibraryActions(onClose, onImport)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     val menuDescription = stringResource(R.string.menu_open)
@@ -139,17 +144,7 @@ fun LibraryScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    onClose?.let { close ->
-                        val closeLabel = stringResource(R.string.action_close)
-                        TextButton(
-                            onClick = close,
-                            modifier = Modifier.semantics { contentDescription = closeLabel }
-                        ) { LineIcon(LINE_CLOSE) }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Button(onClick = onImport) { Text(stringResource(R.string.action_import)) }
-                }
+                LibraryActions(onClose, onImport)
             }
         }
 
@@ -253,6 +248,22 @@ fun LibraryScreen(
                 }
             }
         )
+    }
+}
+
+// the right of the header: ✕ over a score, and Import
+@Composable
+private fun LibraryActions(onClose: (() -> Unit)?, onImport: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        onClose?.let { close ->
+            val closeLabel = stringResource(R.string.action_close)
+            TextButton(
+                onClick = close,
+                modifier = Modifier.semantics { contentDescription = closeLabel }
+            ) { LineIcon(LINE_CLOSE) }
+            Spacer(Modifier.width(8.dp))
+        }
+        Button(onClick = onImport) { Text(stringResource(R.string.action_import)) }
     }
 }
 

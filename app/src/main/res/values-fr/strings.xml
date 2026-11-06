@@ -343,4 +343,23 @@
     <string name="key_shift">Maj</string>
     <string name="prefs_library">Bibliothèque</string>
     <string name="prefs_library_summary">Exporter ou importer une copie de toute la bibliothèque</string>
+    <string name="setlist_new">Nouvelle set list</string>
+    <string name="setlist_name">Nom</string>
+    <string name="setlist_none">Aucune set list pour l’instant. Créez-en une avec Nouvelle set list.</string>
+    <string name="setlist_empty">Cette set list est vide. Ajoutez des partitions avec Éditer.</string>
+    <string name="setlist_edit">Éditer</string>
+    <string name="setlist_move">Glisser pour déplacer</string>
+    <string name="setlist_times">×%1$d</string>
+    <string name="setlist_done">Terminé</string>
+    <string name="setlist_rename">Renommer</string>
+    <string name="setlist_delete_title">Supprimer la set list « %1$s » ?</string>
+    <string name="setlist_delete_text">Ses partitions restent dans la bibliothèque.</string>
+    <string name="setlist_move_up">Monter</string>
+    <string name="setlist_move_down">Descendre</string>
+    <string name="setlist_remove">Retirer de la set list</string>
+    <plurals name="setlist_size">
+        <item quantity="one">%1$d partition</item>
+        <item quantity="many">%1$d partitions</item>
+        <item quantity="other">%1$d partitions</item>
+    </plurals>
 </resources>

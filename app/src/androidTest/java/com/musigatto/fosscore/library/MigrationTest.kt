@@ -91,6 +91,20 @@ class MigrationTest {
                 }
             )
         }
+        if (version >= 8) {
+            db.insert("setlists", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                put("name", "Concert")
+                put("createdAt", 1L)
+            })
+            // the same score twice: a setlist may play a piece again
+            for (position in 0..1) {
+                db.insert("setlist_items", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                    put("setlistId", 1L)
+                    put("position", position)
+                    put("sheetId", 1L)
+                })
+            }
+        }
     }
 
     @Test
@@ -135,7 +149,11 @@ class MigrationTest {
                     assertEquals("v$version: stroke kind", if (version >= 6) 1 else 0, strokes[0].kind)
                 }
 
-                // v5: the free text becomes tags, the genre as a genre
+                // v8: the setlists come in empty
+                assertEquals("v$version: setlists", emptyList<SetlistSummary>(), db.setlistDao().observeSummaries().first())
+
+                // v5 (from an older version): the free text becomes tags, the genre as a genre
+                if (version >= 5) return@withRoom
                 val tags = db.openHelper.readableDatabase
                     .query("SELECT `name`, `kind` FROM `tags` ORDER BY `name`").use { c ->
                         buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
@@ -158,6 +176,8 @@ class MigrationTest {
             val stroke = db.strokeDao().observePage(1L, 2).first().single()
             assertEquals(1, db.strokeDao().observePage(1L, 2).first().size)
             assertEquals("v6 keeps a shape's kind", Stroke.SHAPE, stroke.kind)
+            assertEquals(listOf(SetlistSummary(1L, "Concert", 2)), db.setlistDao().observeSummaries().first())
+            assertEquals(listOf(1L, 1L), db.setlistDao().observeEntries(1L).first().map { it.sheet.id })
         }
     }
 

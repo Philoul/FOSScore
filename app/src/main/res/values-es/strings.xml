@@ -341,4 +341,23 @@
     <string name="key_shift">Mayús</string>
     <string name="prefs_library">Biblioteca</string>
     <string name="prefs_library_summary">Exportar o importar una copia de toda la biblioteca</string>
+    <string name="setlist_new">Nueva setlist</string>
+    <string name="setlist_name">Nombre</string>
+    <string name="setlist_none">Todavía no hay setlists. Crea una con Nueva setlist.</string>
+    <string name="setlist_empty">Esta setlist está vacía. Añade partituras con Editar.</string>
+    <string name="setlist_edit">Editar</string>
+    <string name="setlist_move">Arrastrar para mover</string>
+    <string name="setlist_times">×%1$d</string>
+    <string name="setlist_done">Hecho</string>
+    <string name="setlist_rename">Renombrar</string>
+    <string name="setlist_delete_title">¿Eliminar la setlist «%1$s»?</string>
+    <string name="setlist_delete_text">Sus partituras se quedan en la biblioteca.</string>
+    <string name="setlist_move_up">Subir</string>
+    <string name="setlist_move_down">Bajar</string>
+    <string name="setlist_remove">Quitar de la setlist</string>
+    <plurals name="setlist_size">
+        <item quantity="one">%1$d partitura</item>
+        <item quantity="many">%1$d partituras</item>
+        <item quantity="other">%1$d partituras</item>
+    </plurals>
 </resources>

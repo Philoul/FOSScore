@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.LaunchedEffect
@@ -64,8 +62,8 @@ import com.musigatto.fosscore.library.SetlistRepository
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.library.dragStep
 import com.musigatto.fosscore.library.moved
-import com.musigatto.fosscore.ui.library.IndexedRow
-import com.musigatto.fosscore.ui.library.alphabetIndex
+import com.musigatto.fosscore.ui.library.IndexedList
+import com.musigatto.fosscore.ui.library.SheetText
 import kotlinx.coroutines.launch
 
 /**
@@ -143,18 +141,16 @@ private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, on
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyLarge,
             )
-            else -> LazyColumn(Modifier.fillMaxSize()) {
-                items(list, key = { it.id }) { setlist ->
-                    Column(
-                        Modifier.fillMaxWidth().clickable { onShow(setlist.id) }.padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Text(setlist.name, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            pluralStringResource(R.plurals.setlist_size, setlist.size, setlist.size),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    HorizontalDivider()
+            // as every list: by name under a bar for each letter, the letters on the right
+            else -> IndexedList(list, name = { it.name }, key = { it.id }, modifier = Modifier.fillMaxSize()) { setlist ->
+                Column(
+                    Modifier.fillMaxWidth().clickable { onShow(setlist.id) }.padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(setlist.name, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        pluralStringResource(R.plurals.setlist_size, setlist.size, setlist.size),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             }
         }
@@ -222,7 +218,7 @@ private fun SetlistDetail(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.widthIn(min = 32.dp),
                     )
-                    SheetLines(entry.sheet, bold = playing, modifier = Modifier.weight(1f))
+                    SheetText(entry.sheet, Modifier.weight(1f), bold = playing)
                 }
                 HorizontalDivider()
             }
@@ -254,23 +250,6 @@ private fun SetlistDetail(
             },
             dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
-    }
-}
-
-// title, and the composer under it when there is one
-@Composable
-private fun SheetLines(sheet: Sheet, bold: Boolean = false, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(
-            sheet.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = if (bold) FontWeight.Bold else null,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (sheet.composer.isNotBlank()) {
-            Text(sheet.composer, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
     }
 }
 
@@ -425,7 +404,7 @@ private fun EditedOrder(
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     )
-                    SheetLines(entry.sheet, modifier = Modifier.weight(1f).padding(vertical = 6.dp))
+                    SheetText(entry.sheet, Modifier.weight(1f).padding(vertical = 6.dp))
                     TextButton(
                         onClick = { onRemove(entry.itemId) },
                         modifier = Modifier.semantics { contentDescription = removeLabel },
@@ -438,98 +417,41 @@ private fun EditedOrder(
 }
 
 /**
- * The library to pick from: sorted by title, a narrow bar for each letter, and on the right the
- * letters there are, to tap or slide along. A score already in the setlist is on pale blue, with
- * how many times it is in it ([present]: times by score id).
+ * The library to pick from, as the library shows it (IndexedList). A score already in the setlist
+ * is on pale blue, with how many times it is in it ([present]: times by score id).
  */
 @Composable
 private fun LibraryPicker(library: LibraryRepository, present: Map<Long, Int>, onAdd: (Sheet) -> Unit, modifier: Modifier) {
     val sheets by remember { library.sheets() }.collectAsState(initial = emptyList())
-    val index = remember(sheets) { alphabetIndex(sheets) { it.title } }
-    val state = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val inSetlist = if (dark) Color(0xFF1E3A5C) else Color(0xFFDCEBFF)
 
-    fun jump(letter: Int) {
-        val row = index.letters.getOrNull(letter)?.let { index.rowOf(it) } ?: return
-        scope.launch { state.scrollToItem(row) }
-    }
-
     Column(modifier) {
         ColumnTitle(stringResource(R.string.library_title))
-        Row(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.weight(1f).fillMaxHeight(), state = state) {
-                items(index.rows, key = { row ->
-                    when (row) {
-                        is IndexedRow.Letter -> "letter:" + row.letter
-                        is IndexedRow.Item -> "sheet:" + row.item.id
-                    }
-                }) { row ->
-                    when (row) {
-                        is IndexedRow.Letter -> Text(
-                            row.letter,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 12.dp, vertical = 2.dp),
-                        )
-                        is IndexedRow.Item -> {
-                            val times = present[row.item.id] ?: 0
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(if (times > 0) inSetlist else MaterialTheme.colorScheme.surface)
-                                    .clickable { onAdd(row.item) },
-                            ) {
-                                SheetLines(row.item, modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 40.dp, top = 8.dp, bottom = 8.dp))
-                                // how many times it is in the setlist, in the top right corner: a
-                                // score played twice shows at a glance
-                                if (times > 0) {
-                                    Text(
-                                        stringResource(R.string.setlist_times, times),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp),
-                                    )
-                                }
-                            }
-                            HorizontalDivider()
-                        }
-                    }
-                }
-            }
-            // the index: from the top, level with the first letter's bar, one letter under the other
-            // at a fixed spacing, whatever their number or the orientation; it scrolls on its own
-            // when they do not all fit
-            Column(
+        IndexedList(sheets, name = { it.title }, key = { it.id }, modifier = Modifier.fillMaxSize()) { sheet ->
+            val times = present[sheet.id] ?: 0
+            Box(
                 Modifier
-                    .fillMaxHeight()
-                    .width(INDEX_WIDTH)
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxWidth()
+                    .background(if (times > 0) inSetlist else MaterialTheme.colorScheme.surface)
+                    .clickable { onAdd(sheet) },
             ) {
-                index.letters.forEachIndexed { at, letter ->
-                    Box(
-                        Modifier
-                            .height(INDEX_ROW)
-                            .fillMaxWidth()
-                            .clickable { jump(at) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(letter, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    }
+                SheetText(sheet, Modifier.fillMaxWidth().padding(start = 16.dp, end = 40.dp, top = 8.dp, bottom = 8.dp))
+                // how many times it is in the setlist, in the top right corner: a score played
+                // twice shows at a glance
+                if (times > 0) {
+                    Text(
+                        stringResource(R.string.setlist_times, times),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp),
+                    )
                 }
             }
         }
     }
 }
-
-// a letter of the index: high enough to tap without missing it, low enough to show many at once
-private val INDEX_ROW = 32.dp
-private val INDEX_WIDTH = 32.dp
 
 // the small title over each side of the editor
 @Composable

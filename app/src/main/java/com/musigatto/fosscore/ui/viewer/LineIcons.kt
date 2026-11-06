@@ -47,6 +47,10 @@ internal val LINE_MORE = circle(5f, 12f, 1f) + circle(12f, 12f, 1f) + circle(19f
 internal val LINE_LIBRARY = "M8,3h11v15h-11zM5,7v14h11M15,7v6.5" + circle(13.5f, 13.5f, 1.5f)
 // a numbered list: dots and lines
 internal const val LINE_SETLIST = "M9,6h11M9,12h11M9,18h11M4.5,6h0.01M4.5,12h0.01M4.5,18h0.01"
+// the side menu: a tag with its hole, a stopwatch for practice, "i" for about
+internal val LINE_TAG = "M3,3h8l10,10l-8,8l-10,-10z" + circle(7.5f, 7.5f, 1.5f)
+internal val LINE_PRACTICE = circle(12f, 13.5f, 7.5f) + "M12,13.5v-4M10,2.5h4M12,2.5v3.5M18,6l1.5,-1.5"
+internal val LINE_ABOUT = circle(12f, 12f, 9f) + "M12,11v6M12,7.5v0.01"
 internal const val LINE_BOOKMARK = "M7,3h10v18l-5,-4l-5,4z"
 // two pages side by side, the page modes
 internal const val LINE_DISPLAY = "M3,5h8v14h-8zM13,5h8v14h-8z"

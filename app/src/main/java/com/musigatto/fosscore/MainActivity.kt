@@ -132,6 +132,13 @@ internal data class NavState(
     /** The score opens with its top bar shown: the one before in the setlist was left with it. */
     val chromeShown: Boolean = false,
 ) {
+    /** A view chosen in the side menu (or its icon bar); one not built yet changes nothing. */
+    fun toView(view: MenuView) = when (view) {
+        MenuView.LIBRARY -> toLibrary()
+        MenuView.SETLISTS -> toSetlists()
+        MenuView.TAGS, MenuView.PRACTICE -> this
+    }
+
     /**
      * Another place of the setlist playing, turned to from the score open: [chromeShown] is
      * whether that score's top bar showed, and the next one opens the same way.
@@ -301,8 +308,7 @@ private fun FOSScoreNav(
                 drawerState,
                 current = if (s.setlistsOpen) MenuView.SETLISTS else MenuView.LIBRARY,
                 onOpenPreferences = { nav = nav.copy(preferences = true) },
-                onOpenLibrary = { nav = nav.toLibrary() },
-                onOpenSetlists = { nav = nav.toSetlists() },
+                onOpenView = { view -> nav = nav.toView(view) },
             ) {
                 Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
                     Box(modifier = Modifier.fillMaxSize().padding(padding)) {

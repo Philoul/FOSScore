@@ -49,6 +49,7 @@
     <string name="field_tags">Étiquettes</string>
     <string name="tag_hint">Saisissez une étiquette puis appuyez sur espace</string>
     <string name="tag_remove">Retirer l’étiquette</string>
+    <string name="tag_add">Ajouter l’étiquette %1$s</string>
     <string name="bulk_edit_title">Modifier %1$d partitions</string>
     <string name="bulk_edit_hint">Seuls les champs remplis changent.</string>
     <string name="neg_label">Négatif</string>

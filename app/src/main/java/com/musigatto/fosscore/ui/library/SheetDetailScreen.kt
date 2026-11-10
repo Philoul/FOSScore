@@ -17,8 +17,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -41,10 +44,17 @@ fun SheetDetailScreen(
     var composer by rememberSaveable(sheet.id) { mutableStateOf(sheet.composer) }
     var genre by rememberSaveable(sheet.id) { mutableStateOf(sheet.genre) }
     var musicalKey by rememberSaveable(sheet.id) { mutableStateOf(sheet.musicalKey) }
-    var tags by rememberSaveable(sheet.id) { mutableStateOf(sheet.tags) }
+    // null until the score's tags are read from their table (once: a rotation keeps the edits)
+    var tags by rememberSaveable(sheet.id, stateSaver = TagListSaver) { mutableStateOf<List<String>?>(null) }
     var tagDraft by rememberSaveable(sheet.id) { mutableStateOf("") }
     var confirmDelete by rememberSaveable(sheet.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val knownFlow = remember(repository) { repository.tags() }
+    val known by knownFlow.collectAsState(initial = emptyList())
+
+    LaunchedEffect(sheet.id) {
+        if (tags == null) tags = repository.tagNamesOf(sheet.id)
+    }
 
     Column(
         modifier = Modifier
@@ -59,8 +69,9 @@ fun SheetDetailScreen(
         OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text(stringResource(R.string.field_genre)) }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = musicalKey, onValueChange = { musicalKey = it }, label = { Text(stringResource(R.string.field_key)) }, modifier = Modifier.fillMaxWidth())
         TagField(
-            tags = tags,
+            tags = tags.orEmpty(),
             draft = tagDraft,
+            known = known.map { it.name },
             onTagsChange = { tags = it },
             onDraftChange = { tagDraft = it },
             modifier = Modifier.fillMaxWidth()
@@ -76,9 +87,10 @@ fun SheetDetailScreen(
                                 composer = composer,
                                 genre = genre,
                                 musicalKey = musicalKey,
-                                tags = mergeTags(tags, tagDraft)
                             )
                         )
+                        // not read yet: the score keeps the tags it has
+                        tags?.let { repository.setTags(sheet.id, withTags(it, tagDraft)) }
                         onDone()
                     }
                 }

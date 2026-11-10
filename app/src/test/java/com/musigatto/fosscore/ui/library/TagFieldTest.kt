@@ -7,18 +7,28 @@ class TagFieldTest {
 
     @Test
     fun spaceCommaAndSemicolonSeparateTags() {
-        assertEquals(listOf("tango", "vals", "rock"), parseTags(" tango  vals,rock; "))
+        assertEquals(listOf("tango", "vals", "rock"), withTags(emptyList(), " tango  vals,rock; "))
     }
 
     @Test
-    fun mergingAddsWithoutRepeatsIgnoringCaseAndAccents() {
-        assertEquals("Tángo vals", mergeTags("Tángo", "tango vals"))
-        assertEquals("vals", mergeTags("", "vals"))
-        assertEquals("rock", mergeTags("rock", ""))
+    fun addingKeepsEachTagOnceIgnoringCaseAndAccents() {
+        assertEquals(listOf("Tángo", "vals"), withTags(listOf("Tángo"), "tango vals"))
+        assertEquals(listOf("vals"), withTags(emptyList(), "vals"))
+        assertEquals(listOf("rock"), withTags(listOf("rock"), ""))
     }
 
     @Test
-    fun legacyTextWithCommasBecomesSpacedTags() {
-        assertEquals("tango vals", mergeTags("tango, vals", "vals"))
+    fun typingASpaceFinishesTheTag() {
+        assertEquals(listOf("duo") to "", typedTags(emptyList(), "duo "))
+        assertEquals(listOf("duo") to "pra", typedTags(emptyList(), "duo pra"))
+        assertEquals(emptyList<String>() to "duo", typedTags(emptyList(), "duo"))
+    }
+
+    @Test
+    fun theLibrarysOtherTagsAreOffered() {
+        val known = listOf("duo", "Practice", "rock")
+        assertEquals(listOf("Practice", "rock"), suggestTags(known, listOf("Duo"), ""))
+        assertEquals(listOf("Practice"), suggestTags(known, emptyList(), "prá"))
+        assertEquals(emptyList<String>(), suggestTags(known, listOf("rock"), "ro"))
     }
 }

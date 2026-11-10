@@ -3,6 +3,7 @@ package com.musigatto.fosscore.library
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.room.withTransaction
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.MusicXmlScore
 import com.musigatto.fosscore.score.ScorePrecompute
@@ -12,6 +13,7 @@ import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 sealed class ImportResult {
@@ -26,8 +28,39 @@ class LibraryRepository(context: Context) {
     private val dao = db.sheetDao()
     private val stampDao = db.stampDao()
     private val strokeDao = db.strokeDao()
+    private val tagDao = db.tagDao()
 
     fun sheets(): Flow<List<Sheet>> = dao.observeAll()
+
+    /** Every tag of the library, used or not: what the tag field offers. */
+    fun tags(): Flow<List<Tag>> = tagDao.observeFree()
+
+    /** The tags of each score, by score id, in name order: the search looks in them. */
+    fun tagsBySheet(): Flow<Map<Long, List<String>>> =
+        tagDao.observeSheetTags().map { rows -> rows.groupBy({ it.sheetId }, { it.name }) }
+
+    suspend fun tagNamesOf(sheetId: Long): List<String> = tagDao.tagsOf(sheetId).map { it.name }
+
+    /** [sheetId] gets exactly [names]: a tag already in the library is reused, a new one is created. */
+    suspend fun setTags(sheetId: Long, names: List<String>) = db.withTransaction {
+        val ids = tagIdsFor(names)
+        tagDao.unlinkFree(sheetId)
+        tagDao.link(ids.map { SheetTag(sheetId, it) })
+    }
+
+    /** [names] are added to each of [sheetIds], next to the tags it already has. */
+    suspend fun addTags(sheetIds: List<Long>, names: List<String>) = db.withTransaction {
+        val ids = tagIdsFor(names)
+        tagDao.link(sheetIds.flatMap { sheetId -> ids.map { SheetTag(sheetId, it) } })
+    }
+
+    // one id per tag named, an existing spelling ("Rock" for "rock") before a new row
+    private suspend fun tagIdsFor(names: List<String>): List<Long> {
+        val known = tagDao.free()
+        return distinctTagNames(names).map { name ->
+            known.firstOrNull { sameTag(it.name, name) }?.id ?: tagDao.insert(Tag(name = name, kind = TagKind.FREE))
+        }
+    }
 
     suspend fun byHash(hash: String): Sheet? = dao.byHash(hash)
 

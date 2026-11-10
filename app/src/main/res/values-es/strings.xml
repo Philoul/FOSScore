@@ -50,6 +50,7 @@
     <string name="field_tags">Etiquetas</string>
     <string name="tag_hint">Escribe una etiqueta y pulsa espacio</string>
     <string name="tag_remove">Quitar etiqueta</string>
+    <string name="tag_add">Añadir la etiqueta %1$s</string>
     <string name="bulk_edit_title">Editar %1$d partituras</string>
     <string name="bulk_edit_hint">Solo cambian los campos que rellenes.</string>
     <string name="page_section_label">Página</string>

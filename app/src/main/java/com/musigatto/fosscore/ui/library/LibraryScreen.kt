@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -77,8 +78,12 @@ fun LibraryScreen(
     navigation: (@Composable () -> Unit)? = null,
 ) {
     val sheets by repository.sheets().collectAsState(initial = emptyList())
+    val tagsFlow = remember(repository) { repository.tagsBySheet() }
+    val tagsBySheet by tagsFlow.collectAsState(initial = emptyMap())
+    val knownFlow = remember(repository) { repository.tags() }
+    val knownTags by knownFlow.collectAsState(initial = emptyList())
     var query by rememberSaveable { mutableStateOf("") }
-    val visible = filterSheets(sheets, query)
+    val visible = filterSheets(sheets, query, tagsBySheet)
     // ids of the rows ticked; empty = not selecting
     var selected by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     val chosen = sheets.filter { it.id in selected }
@@ -230,6 +235,7 @@ fun LibraryScreen(
     if (bulkEdit && chosen.isNotEmpty()) {
         BulkEditDialog(
             count = chosen.size,
+            known = knownTags.map { it.name },
             onDismiss = { bulkEdit = false },
             onApply = { composer, genre, musicalKey, tags ->
                 bulkEdit = false
@@ -241,10 +247,10 @@ fun LibraryScreen(
                                 composer = composer.ifBlank { sheet.composer },
                                 genre = genre.ifBlank { sheet.genre },
                                 musicalKey = musicalKey.ifBlank { sheet.musicalKey },
-                                tags = if (tags.isBlank()) sheet.tags else mergeTags(sheet.tags, tags)
                             )
                         )
                     }
+                    if (tags.isNotEmpty()) repository.addTags(chosen.map { it.id }, tags)
                 }
             }
         )
@@ -274,13 +280,14 @@ private fun LibraryActions(onClose: (() -> Unit)?, onImport: () -> Unit) {
 @Composable
 private fun BulkEditDialog(
     count: Int,
+    known: List<String>,
     onDismiss: () -> Unit,
-    onApply: (composer: String, genre: String, musicalKey: String, tags: String) -> Unit
+    onApply: (composer: String, genre: String, musicalKey: String, tags: List<String>) -> Unit
 ) {
     var composer by rememberSaveable { mutableStateOf("") }
     var genre by rememberSaveable { mutableStateOf("") }
     var musicalKey by rememberSaveable { mutableStateOf("") }
-    var tags by rememberSaveable { mutableStateOf("") }
+    var tags by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
     var tagDraft by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
@@ -311,8 +318,9 @@ private fun BulkEditDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 TagField(
-                    tags = tags,
+                    tags = tags.orEmpty(),
                     draft = tagDraft,
+                    known = known,
                     onTagsChange = { tags = it },
                     onDraftChange = { tagDraft = it },
                     modifier = Modifier.fillMaxWidth()
@@ -320,7 +328,7 @@ private fun BulkEditDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onApply(composer, genre, musicalKey, mergeTags(tags, tagDraft)) }) {
+            TextButton(onClick = { onApply(composer, genre, musicalKey, withTags(tags.orEmpty(), tagDraft)) }) {
                 Text(stringResource(R.string.action_save))
             }
         },

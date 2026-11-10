@@ -21,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun stampDao(): StampDao
     abstract fun strokeDao(): StrokeDao
     abstract fun setlistDao(): SetlistDao
+    abstract fun tagDao(): TagDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -238,16 +239,49 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9: the tags live in their table, no longer in `sheets.tags`. Since v5 the table was a
+         * copy taken once, and the tag field went on writing the text: it is built again from the
+         * text, which is what every score shows today. A tag written on several scores, or spelled
+         * several ways ("Rock", "rock"), becomes one tag. The genre stays text for now: its rows,
+         * copied at v5 and never read, go, and come back when the genre gets its own field.
+         * The text column stays (dropping it rebuilds `sheets`), emptied.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val sheets = mutableListOf<Pair<Long, String>>()
+                db.query("SELECT `id`, `tags` FROM `sheets` ORDER BY `id`").use { c ->
+                    while (c.moveToNext()) sheets += c.getLong(0) to c.getString(1)
+                }
+                db.execSQL("DELETE FROM `sheet_tags`")
+                db.execSQL("DELETE FROM `tags`")
+                val plan = TagBackfill.of(sheets)
+                plan.names.forEachIndexed { i, name ->
+                    db.execSQL(
+                        "INSERT INTO `tags` (`id`, `name`, `kind`) VALUES (?, ?, ?)",
+                        arrayOf<Any>(i + 1L, name, TagKind.FREE.name)
+                    )
+                }
+                for ((sheetId, index) in plan.links) {
+                    db.execSQL(
+                        "INSERT INTO `sheet_tags` (`sheetId`, `tagId`) VALUES (?, ?)",
+                        arrayOf<Any>(sheetId, index + 1L)
+                    )
+                }
+                db.execSQL("UPDATE `sheets` SET `tags` = ''")
+            }
+        }
+
         const val NAME = "fosscore.db"
 
         /**
          * Schema version. When it changes: add the migration to [MIGRATIONS] (or an automatic
          * migration), commit the new file in `app/schemas/`, and extend `MigrationTest`.
          */
-        const val VERSION = 8
+        const val VERSION = 9
 
         /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
 
         private var instance: AppDatabase? = null
 

@@ -122,7 +122,8 @@ class MigrationTest {
                 val sheet = db.sheetDao().byHash(HASH)
                 assertNotNull("v$version: sheet lost", sheet)
                 assertEquals("v$version", "Song", sheet!!.title)
-                assertEquals("v$version", "duo, practice", sheet.tags)
+                // v9: the tags left the text for their table (checked below)
+                assertEquals("v$version", "", sheet.tags)
                 // v5: the format stops being the extension
                 assertEquals("v$version", SheetFormat.PDF, sheet.format)
 
@@ -149,17 +150,54 @@ class MigrationTest {
                     assertEquals("v$version: stroke kind", if (version >= 6) 1 else 0, strokes[0].kind)
                 }
 
-                // v8: the setlists come in empty
-                assertEquals("v$version: setlists", emptyList<SetlistSummary>(), db.setlistDao().observeSummaries().first())
+                // v8: the setlists come in empty from an older version; a v8 setlist stays
+                assertEquals(
+                    "v$version: setlists",
+                    if (version >= 8) listOf(SetlistSummary(1L, "Concert", 2)) else emptyList(),
+                    db.setlistDao().observeSummaries().first()
+                )
 
-                // v5 (from an older version): the free text becomes tags, the genre as a genre
-                if (version >= 5) return@withRoom
+                // v9: the score's text "duo, practice" is its tags, whatever the table held; the
+                // genre stays text until its own field (its v5 copy goes)
                 val tags = db.openHelper.readableDatabase
                     .query("SELECT `name`, `kind` FROM `tags` ORDER BY `name`").use { c ->
                         buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
                     }
-                assertEquals("v$version: tags", listOf("Folk" to "GENRE", "duo" to "FREE", "practice" to "FREE"), tags)
+                assertEquals("v$version: tags", listOf("duo" to "FREE", "practice" to "FREE"), tags)
+                assertEquals("v$version: the score's tags", listOf("duo", "practice"), db.tagDao().tagsOf(sheet.id).map { it.name })
+                assertEquals("v$version: genre", "Folk", sheet.genre)
             }
+        }
+    }
+
+    @Test
+    fun aTagWrittenOnSeveralScoresOrSeveralWaysBecomesOneTag() {
+        context.deleteDatabase(testDb)
+        helper.createDatabase(testDb, 8).apply {
+            for ((id, tags) in listOf(1L to "Rock duo", 2L to "rock", 3L to "", 4L to "film music, Rôck")) {
+                insert("sheets", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                    put("id", id)
+                    put("fileName", "song$id.pdf")
+                    put("path", "/data/sheets/song$id.pdf")
+                    put("hash", "hash$id")
+                    put("title", "Song $id")
+                    put("composer", "")
+                    put("format", "PDF")
+                    put("genre", "")
+                    put("musicalKey", "")
+                    put("tags", tags)
+                })
+            }
+            close()
+        }
+        helper.runMigrationsAndValidate(testDb, 9, true, *AppDatabase.MIGRATIONS).close()
+        withRoom { db ->
+            // the first spelling met names the tag: "Rock" (score 1), not "rock" or "Rôck"
+            assertEquals(listOf("Rock", "duo", "film music"), db.tagDao().free().map { it.name }.sorted())
+            assertEquals(listOf("duo", "Rock"), db.tagDao().tagsOf(1L).map { it.name })
+            assertEquals(listOf("Rock"), db.tagDao().tagsOf(2L).map { it.name })
+            assertEquals(emptyList<String>(), db.tagDao().tagsOf(3L).map { it.name })
+            assertEquals(listOf("film music", "Rock"), db.tagDao().tagsOf(4L).map { it.name })
         }
     }
 

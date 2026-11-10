@@ -126,7 +126,7 @@ private const val SHAPE_COLUMNS = 5
 internal fun annotationBarFitsOneRow(widthDp: Float): Boolean = widthDp >= ONE_ROW_MIN_DP
 
 /**
- * The annotation bar: the title bar's own row while annotating (spec §5: forScore replaces it).
+ * The annotation bar: the title bar's own row while annotating (spec §5: the reference implementation replaces it).
  * ✕ leaves at the leading edge, ✓ and the grip at the trailing one, and the tools scroll between them when
  * they do not fit. Each tool's options drop from the tool itself, not from the bar's edge.
  * It only draws and reports taps; the viewer decides what each tool does.
@@ -405,7 +405,7 @@ internal fun AnnotationBar(
             }
         }
         // one tool panel at a time drops from the bar (spec §5). They all step aside
-        // while a finger is on the page, like forScore's panels. The panel hangs from its own
+        // while a finger is on the page, like the reference implementation's panels. The panel hangs from its own
         // tool and stays inside the bar's width (colour, at the right, would overflow).
         val panel = openPanel
         if (panel != null && !pageTouched) {

@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * A SoundFont bank, read from its bytes: the presets (one per General MIDI program and bank),
  * their instruments, and the samples, read in place (a mapped file is never copied). SoundFont 2
- * keeps its samples as 16-bit values; SF3 (MuseScore's) keeps each one as an Ogg Vorbis stream, a
+ * keeps its samples as 16-bit values; SF3 keeps each one as an Ogg Vorbis stream, a
  * few times smaller, which [decoder] turns back into values the first time a note plays it.
  *
  * [regions] gives what one note plays: each sample zone of the preset that covers the key and

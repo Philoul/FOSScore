@@ -57,7 +57,7 @@ internal fun pageIndexAt(x: Float, width: Int, pageCount: Int): Int =
  * `inverseSurface`/`inverseOnSurface` pair — neither can vanish in either theme.
  *
  * ponytail: no thumbnail in the tooltip and no fine control (vertical drag) yet — both documented
- * in forScore (§2) and pending. A tap on the track does nothing: forScore documents the drag only.
+ * as pending (spec §2). A tap on the track does nothing: the reference implementation documents the drag only.
  */
 @Composable
 fun PageSelector(

@@ -15,7 +15,7 @@ class MusicXmlScoreTest {
         javaClass.classLoader!!.getResourceAsStream("au-clair-de-la-lune.musicxml")!!.readBytes()
 
     /**
-     * Two parts as MuseScore writes a song: a vocal line hidden by its author (staff marked
+     * Two parts as a common notation app writes a song: a vocal line hidden by its author (staff marked
      * invisible, notes without head or stem, kept only for the lyrics and the tempo mark) and
      * a two-staff piano.
      */
@@ -104,7 +104,7 @@ class MusicXmlScoreTest {
 
     @Test
     fun everyMeasureIsKnownByItsPlaceInTheFile() {
-        // the number of a measure is free text ("X1" for a measure MuseScore leaves out of the
+        // the number of a measure is free text ("X1" for a measure its exporter leaves out of the
         // count, "12a"): the measure's place in the file is its key, and the number stays as written
         val xml = String(song).replace("""<measure number="1">""", """<measure number="X1">""")
             .replace("</part>", """<measure number="12a"/></part>""")

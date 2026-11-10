@@ -651,8 +651,8 @@ fun PdfViewerScreen(
     // while a drag or a stretch is in progress we draw the object at its live position, not the box
     val showSelection = selectionRect != null && editing && canEdit &&
         tool == AnnotationTool.SELECT
-    // corner handles belong to an INK selection: a stamp's size is the palette slider, and forScore
-    // moves a placed stamp with the selection tool instead of resizing it by its corners (spec §5)
+    // corner handles belong to an INK selection: a stamp's size is the palette slider, and the
+    // reference implementation moves a placed stamp with the selection tool instead of resizing it by its corners (spec §5)
     val strokeSelection = selectedStamp == null && (selectedStrokes.isNotEmpty() || editor.dragStrokes != null)
 
     // what Annotate (menu) and Done (pill) do. Leaving edit mode must not leave anything armed or
@@ -1489,7 +1489,7 @@ fun PdfViewerScreen(
         if ((navVisible || editing) && loupeAt == null) {
 
             // while annotating there is ONE bar: the annotation bar takes the top of the screen
-            // and the title bar (or the icon bar) steps aside (spec §5: forScore replaces it).
+            // and the title bar (or the icon bar) steps aside (spec §5: the reference implementation replaces it).
             // ✕ / ✓ are its ends.
             if (!(editing && canEdit)) {
                 val topBarModifier = Modifier

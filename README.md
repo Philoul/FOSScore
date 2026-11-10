@@ -25,8 +25,8 @@ Pending (detailed roadmap in the GitHub issues):
 - [ ] **Links and buttons** — repeats, programmable actions on the page
 - [ ] **Reorder pages** — insert, duplicate, delete, split files
 - [ ] **Performance mode, practice dashboard**
-- [ ] **100% offline first** — your music always with you
-- [ ] **No telemetry, no ads, no mandatory accounts**
+- [x] **100% offline first** — your music always with you
+- [x] **No telemetry, no ads, no mandatory accounts**
 
 ## Compatibility
 

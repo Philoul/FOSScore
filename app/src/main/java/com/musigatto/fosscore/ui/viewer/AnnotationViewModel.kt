@@ -343,7 +343,7 @@ internal class AnnotationViewModel(
         }
     }
 
-    /** The colour panel recolours the selected stamp too, as forScore's selection tool does. */
+    /** The colour panel recolours the selected stamp too, as the reference implementation's selection tool does. */
     fun recolorStamp(page: Int, stamp: Stamp, color: Int?, current: PageEdit) {
         if (stamp.color == color) return
         pushUndo(current, page)

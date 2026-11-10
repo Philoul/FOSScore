@@ -64,7 +64,7 @@ private const val CLICK_LEVEL = 0.6f
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
 /**
- * The loop, as in common players (forScore, MuseScore, media players): [on] repeats a section,
+ * The loop, as in common players (media players and notation tools): [on] repeats a section,
  * from [a] to [b] in quarter notes. A marker left unset is the start or the end of the piece, so
  * with none the whole piece loops. The markers stay when the loop is turned off.
  */

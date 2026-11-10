@@ -13,7 +13,7 @@ the app decides how scores are stored, shown and played.
 |---|---|
 | Read `.musicxml`, `.xml` and compressed `.mxl` files, and recognize MusicXML among other files | `MusicXmlFiles` |
 | Read the parts (name, instrument, hidden by the author) and the score details (title, composer, lyricist, arranger, key, time signature, tempo, number of measures) | `MusicXmlScore.parts`, `MusicXmlScore.info` |
-| Clean up the notes the author hid (MuseScore voice lines kept only for their lyrics) | `MusicXmlScore.parse` |
+| Clean up the notes the author hid (voice lines kept only for their lyrics) | `MusicXmlScore.parse` |
 | Show only some parts, keeping the tempo marks of the hidden ones | `ScoreFilter.parts` |
 | Place lyrics as in the file, above or below the staff, or under the system | `ScoreFilter.lyrics` |
 | Change the instrument of a part (General MIDI program) | `ScoreFilter.programs`, `SoundSpec.programs` |

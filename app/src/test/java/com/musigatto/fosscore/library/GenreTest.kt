@@ -21,6 +21,8 @@ class GenreTest {
         assertEquals(Genre.SOUL_FUNK, Genre.matching("Rhythm & Blues"))
         assertEquals(Genre.HIP_HOP, Genre.matching("Hip-Hop"))
         assertEquals(Genre.JAZZ_BLUES, Genre.matching("jazz & blues"))
+        // as the test tablet had it
+        assertEquals(Genre.ROCK_METAL, Genre.matching("Rock'n Roll"))
         assertNull(Genre.matching("Bal musette"))
         assertNull(Genre.matching(""))
     }

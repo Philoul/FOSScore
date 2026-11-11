@@ -19,7 +19,7 @@ enum class Genre(@StringRes val label: Int, val english: String, val aliases: Li
     OPERA(R.string.genre_opera, "Opera & vocal", listOf("opera", "lyrique", "art lyrique", "lirica", "lied", "melodie", "vocal", "chant")),
     SACRED(R.string.genre_sacred, "Sacred & gospel", listOf("sacre", "musique sacree", "religieux", "religious", "religiosa", "musica sacra", "sacred", "gospel", "spiritual", "negro spiritual", "liturgique", "cantique")),
     JAZZ_BLUES(R.string.genre_jazz_blues, "Jazz & blues", listOf("jazz", "blues", "swing", "bebop", "ragtime", "jazz manouche", "dixieland")),
-    ROCK_METAL(R.string.genre_rock_metal, "Rock & metal", listOf("rock", "metal", "hard rock", "heavy metal", "punk", "grunge", "rock and roll", "rock'n'roll")),
+    ROCK_METAL(R.string.genre_rock_metal, "Rock & metal", listOf("rock", "metal", "hard rock", "heavy metal", "punk", "grunge", "rock and roll", "rock'n'roll", "rock'n roll", "rock 'n' roll", "rock n roll", "rock & roll")),
     POP(R.string.genre_pop, "Pop", listOf("pop", "pop music", "musique pop")),
     CHANSON(R.string.genre_chanson, "Chanson & variety", listOf("chanson", "chanson francaise", "variete", "varietes", "variete francaise", "variety", "cancion", "variedades", "cantautor")),
     FOLK_COUNTRY(R.string.genre_folk_country, "Folk & country", listOf("folk", "country", "bluegrass", "folk song")),

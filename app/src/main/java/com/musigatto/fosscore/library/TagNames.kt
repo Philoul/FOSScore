@@ -8,6 +8,11 @@ private val MARKS = Regex("\\p{M}")
 fun normalize(s: String): String =
     Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARKS, "").lowercase()
 
+private val SPACES = Regex("\\s+")
+
+/** A tag name as typed: trimmed, a run of spaces inside it made one. */
+fun tagName(typed: String): String = typed.trim().replace(SPACES, " ")
+
 /** Two spellings of one tag ("Rock", "rock", "rôck") name the same tag. */
 fun sameTag(a: String, b: String): Boolean = normalize(a.trim()) == normalize(b.trim())
 

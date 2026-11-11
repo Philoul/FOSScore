@@ -365,6 +365,16 @@
     <string name="setlist_move_up">Monter</string>
     <string name="setlist_move_down">Descendre</string>
     <string name="setlist_remove">Retirer de la set list</string>
+    <string name="setlist_in">Dans la set list</string>
+    <string name="group_name_taken">Ce nom est déjà pris.</string>
+    <string name="tag_new">Nouvelle étiquette</string>
+    <string name="tag_list_none">Aucune étiquette pour l’instant. Créez-en une avec Nouvelle étiquette, ou depuis la fiche d’une partition.</string>
+    <string name="tag_empty">Aucune partition ne porte cette étiquette. Ajoutez-en avec Éditer.</string>
+    <string name="tag_delete_title">Supprimer l’étiquette « %1$s » ?</string>
+    <string name="tag_delete_text">Elle est retirée de ses partitions, qui restent dans la bibliothèque.</string>
+    <string name="tag_remove_score">Retirer l’étiquette de cette partition</string>
+    <string name="tag_name_taken">Une étiquette porte déjà ce nom.</string>
+    <string name="tag_on_score">Porte l’étiquette</string>
     <plurals name="setlist_size">
         <item quantity="one">%1$d partition</item>
         <item quantity="many">%1$d partitions</item>

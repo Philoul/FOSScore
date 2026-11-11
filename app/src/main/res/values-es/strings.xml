@@ -363,6 +363,16 @@
     <string name="setlist_move_up">Subir</string>
     <string name="setlist_move_down">Bajar</string>
     <string name="setlist_remove">Quitar de la setlist</string>
+    <string name="setlist_in">En la setlist</string>
+    <string name="group_name_taken">Este nombre ya está en uso.</string>
+    <string name="tag_new">Nueva etiqueta</string>
+    <string name="tag_list_none">Todavía no hay etiquetas. Crea una con Nueva etiqueta, o desde la ficha de una partitura.</string>
+    <string name="tag_empty">Ninguna partitura tiene esta etiqueta. Añade algunas con Editar.</string>
+    <string name="tag_delete_title">¿Eliminar la etiqueta «%1$s»?</string>
+    <string name="tag_delete_text">Se quita de sus partituras, que se quedan en la biblioteca.</string>
+    <string name="tag_remove_score">Quitar la etiqueta de esta partitura</string>
+    <string name="tag_name_taken">Ya hay una etiqueta con este nombre.</string>
+    <string name="tag_on_score">Tiene la etiqueta</string>
     <plurals name="setlist_size">
         <item quantity="one">%1$d partitura</item>
         <item quantity="many">%1$d partituras</item>

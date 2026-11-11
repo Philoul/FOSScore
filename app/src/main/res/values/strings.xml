@@ -361,6 +361,16 @@
     <string name="setlist_move_up">Move up</string>
     <string name="setlist_move_down">Move down</string>
     <string name="setlist_remove">Remove from the setlist</string>
+    <string name="setlist_in">In the setlist</string>
+    <string name="group_name_taken">This name is already taken.</string>
+    <string name="tag_new">New tag</string>
+    <string name="tag_list_none">No tags yet. Create one with New tag, or from a score’s details.</string>
+    <string name="tag_empty">No score has this tag. Add some with Edit.</string>
+    <string name="tag_delete_title">Delete the tag “%1$s”?</string>
+    <string name="tag_delete_text">It is taken off its scores, which stay in the library.</string>
+    <string name="tag_remove_score">Take the tag off this score</string>
+    <string name="tag_name_taken">A tag already has this name.</string>
+    <string name="tag_on_score">Has the tag</string>
     <plurals name="setlist_size">
         <item quantity="one">%1$d score</item>
         <item quantity="other">%1$d scores</item>

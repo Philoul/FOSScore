@@ -1,36 +1,22 @@
-package com.musigatto.fosscore.ui.setlist
+package com.musigatto.fosscore.ui.groups
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.VerticalDivider
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -38,9 +24,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,48 +38,97 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.musigatto.fosscore.R
+import com.musigatto.fosscore.library.GroupEntry
+import com.musigatto.fosscore.library.GroupKind
 import com.musigatto.fosscore.library.LibraryRepository
-import com.musigatto.fosscore.library.SetlistEntry
-import com.musigatto.fosscore.library.SetlistRepository
+import com.musigatto.fosscore.library.ScoreGroups
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.library.dragStep
+import com.musigatto.fosscore.library.move
 import com.musigatto.fosscore.library.moved
 import com.musigatto.fosscore.ui.library.IndexedList
+import com.musigatto.fosscore.ui.library.SheetText
 import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
 import com.musigatto.fosscore.ui.viewer.LineIcon
-import com.musigatto.fosscore.ui.library.SheetText
 import kotlinx.coroutines.launch
 
+/** What the groups screen says for one kind of group; the rest of its words are shared. */
+class GroupTexts(
+    @StringRes val new: Int,
+    @StringRes val none: Int,
+    @StringRes val empty: Int,
+    @StringRes val deleteTitle: Int,
+    @StringRes val deleteText: Int,
+    @StringRes val remove: Int,
+    @StringRes val nameTaken: Int,
+    @StringRes val inGroup: Int,
+)
+
+/** The words of the screen of [this] kind of group. */
+fun GroupKind.texts(): GroupTexts = when (this) {
+    GroupKind.SETLIST -> GroupTexts(
+        new = R.string.setlist_new,
+        none = R.string.setlist_none,
+        empty = R.string.setlist_empty,
+        deleteTitle = R.string.setlist_delete_title,
+        deleteText = R.string.setlist_delete_text,
+        remove = R.string.setlist_remove,
+        nameTaken = R.string.group_name_taken,
+        inGroup = R.string.setlist_in,
+    )
+    GroupKind.TAG -> GroupTexts(
+        new = R.string.tag_new,
+        none = R.string.tag_list_none,
+        empty = R.string.tag_empty,
+        deleteTitle = R.string.tag_delete_title,
+        deleteText = R.string.tag_delete_text,
+        remove = R.string.tag_remove_score,
+        nameTaken = R.string.tag_name_taken,
+        inGroup = R.string.tag_on_score,
+    )
+}
+
 /**
- * The setlists: their list, or one of them ([shownId]) with its scores in order. A tap on a score
- * opens it in the setlist: turning the page past its end opens the next one.
+ * Groups of scores (the setlists, the tags): their list, or one of them ([shownId]) with its
+ * scores, in its order for a setlist ([ScoreGroups.ordered]), by title under the letters for a
+ * tag. A tap on a score opens it in the group: turning the page past its end opens the next one.
  *
- * [playingItemId] is the place open in the viewer, marked in the list.
+ * [playingKey] is the entry open in the viewer, marked in the list.
  */
 @Composable
-fun SetlistsScreen(
-    setlists: SetlistRepository,
+fun ScoreGroupsScreen(
+    groups: ScoreGroups,
+    texts: GroupTexts,
     library: LibraryRepository,
     shownId: Long?,
-    playingItemId: Long?,
+    playingKey: Long?,
     onShow: (Long?) -> Unit,
-    onPlay: (setlistId: Long, entry: SetlistEntry) -> Unit,
+    onPlay: (groupId: Long, entry: GroupEntry) -> Unit,
     onClose: () -> Unit,
     /** The left of the header of the list: ☰ and the name, or the views' icons (MainNavigation). */
     navigation: @Composable () -> Unit,
 ) {
     if (shownId == null) {
-        SetlistList(setlists, onShow, onClose, navigation)
+        GroupList(groups, texts, onShow, onClose, navigation)
     } else {
-        SetlistDetail(setlists, library, shownId, playingItemId, onBack = { onShow(null) }, onPlay = { onPlay(shownId, it) })
+        GroupDetail(groups, texts, library, shownId, playingKey, onBack = { onShow(null) }, onPlay = { onPlay(shownId, it) })
     }
 }
 
@@ -120,8 +159,14 @@ private fun Header(
 }
 
 @Composable
-private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, onClose: () -> Unit, navigation: @Composable () -> Unit) {
-    val all by remember { setlists.setlists() }.collectAsState(initial = null)
+private fun GroupList(
+    groups: ScoreGroups,
+    texts: GroupTexts,
+    onShow: (Long?) -> Unit,
+    onClose: () -> Unit,
+    navigation: @Composable () -> Unit,
+) {
+    val all by remember(groups) { groups.groups() }.collectAsState(initial = null)
     var naming by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -134,7 +179,7 @@ private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, on
         ) {
             Box(Modifier.weight(1f)) { navigation() }
             Button(onClick = { naming = true }, modifier = Modifier.padding(end = 8.dp)) {
-                Text(stringResource(R.string.setlist_new))
+                Text(stringResource(texts.new))
             }
             val closeLabel = stringResource(R.string.action_close)
             TextButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = closeLabel }) {
@@ -145,18 +190,18 @@ private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, on
         when {
             list == null -> Unit
             list.isEmpty() -> Text(
-                stringResource(R.string.setlist_none),
+                stringResource(texts.none),
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyLarge,
             )
             // as every list: by name under a bar for each letter, the letters on the right
-            else -> IndexedList(list, name = { it.name }, key = { it.id }, modifier = Modifier.fillMaxSize()) { setlist ->
+            else -> IndexedList(list, name = { it.name }, key = { it.id }, modifier = Modifier.fillMaxSize()) { group ->
                 Column(
-                    Modifier.fillMaxWidth().clickable { onShow(setlist.id) }.padding(horizontal = 16.dp, vertical = 12.dp)
+                    Modifier.fillMaxWidth().clickable { onShow(group.id) }.padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Text(setlist.name, style = MaterialTheme.typography.titleMedium)
+                    Text(group.name, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        pluralStringResource(R.plurals.setlist_size, setlist.size, setlist.size),
+                        pluralStringResource(R.plurals.setlist_size, group.size, group.size),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -166,41 +211,48 @@ private fun SetlistList(setlists: SetlistRepository, onShow: (Long?) -> Unit, on
 
     if (naming) {
         NameDialog(
-            title = stringResource(R.string.setlist_new),
+            title = stringResource(texts.new),
             initial = "",
+            takenMessage = stringResource(texts.nameTaken),
             onDismiss = { naming = false },
             onDone = { name ->
-                naming = false
-                scope.launch { onShow(setlists.create(name)) }
+                if (groups.nameTaken(name, null)) {
+                    false
+                } else {
+                    naming = false
+                    scope.launch { onShow(groups.create(name)) }
+                    true
+                }
             },
         )
     }
 }
 
 @Composable
-private fun SetlistDetail(
-    setlists: SetlistRepository,
+private fun GroupDetail(
+    groups: ScoreGroups,
+    texts: GroupTexts,
     library: LibraryRepository,
     id: Long,
-    playingItemId: Long?,
+    playingKey: Long?,
     onBack: () -> Unit,
-    onPlay: (SetlistEntry) -> Unit,
+    onPlay: (GroupEntry) -> Unit,
 ) {
-    val setlist by remember(id) { setlists.setlist(id) }.collectAsState(initial = null)
-    val entries by remember(id) { setlists.entries(id) }.collectAsState(initial = emptyList())
+    val name by remember(groups, id) { groups.name(id) }.collectAsState(initial = null)
+    val entries by remember(groups, id) { groups.entries(id) }.collectAsState(initial = emptyList())
     var editing by rememberSaveable { mutableStateOf(false) }
     var renaming by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     if (editing) {
-        SetlistEditor(setlists, library, id, setlist?.name.orEmpty(), entries, onDone = { editing = false })
+        GroupEditor(groups, texts, library, id, name.orEmpty(), entries, onDone = { editing = false })
         return
     }
 
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        Header(setlist?.name.orEmpty(), onBack, stringResource(R.string.action_back)) {
+        Header(name.orEmpty(), onBack, stringResource(R.string.action_back)) {
             TextButton(onClick = { renaming = true }) { Text(stringResource(R.string.setlist_rename)) }
             TextButton(onClick = { deleting = true }) { Text(stringResource(R.string.action_delete)) }
             Button(onClick = { editing = true }, modifier = Modifier.padding(end = 8.dp)) {
@@ -208,27 +260,35 @@ private fun SetlistDetail(
             }
         }
         if (entries.isEmpty()) {
-            Text(stringResource(R.string.setlist_empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(texts.empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
         }
-        LazyColumn(Modifier.fillMaxSize()) {
-            itemsIndexed(entries, key = { _, e -> e.itemId }) { index, entry ->
-                val playing = entry.itemId == playingItemId
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (playing) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
-                        .clickable { onPlay(entry) }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${index + 1}.",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.widthIn(min = 32.dp),
-                    )
-                    SheetText(entry.sheet, Modifier.weight(1f), bold = playing)
+        val row: @Composable (Int?, GroupEntry) -> Unit = { number, entry ->
+            val playing = entry.entryKey == playingKey
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (playing) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
+                    .clickable { onPlay(entry) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                number?.let {
+                    Text("$it.", style = MaterialTheme.typography.titleMedium, modifier = Modifier.widthIn(min = 32.dp))
                 }
-                HorizontalDivider()
+                SheetText(entry.sheet, Modifier.weight(1f), bold = playing)
+            }
+        }
+        if (groups.ordered) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(entries, key = { _, e -> e.entryKey }) { index, entry ->
+                    row(index + 1, entry)
+                    HorizontalDivider()
+                }
+            }
+        } else {
+            // each score once: by title under the letters, as the library
+            IndexedList(entries, name = { it.sheet.title }, key = { it.entryKey }, modifier = Modifier.fillMaxSize()) { entry ->
+                row(null, entry)
             }
         }
     }
@@ -236,24 +296,31 @@ private fun SetlistDetail(
     if (renaming) {
         NameDialog(
             title = stringResource(R.string.setlist_rename),
-            initial = setlist?.name.orEmpty(),
+            initial = name.orEmpty(),
+            takenMessage = stringResource(texts.nameTaken),
             onDismiss = { renaming = false },
-            onDone = { name ->
-                renaming = false
-                scope.launch { setlists.rename(id, name) }
+            onDone = { newName ->
+                if (groups.nameTaken(newName, id)) {
+                    false
+                } else {
+                    // renamed before the dialog goes: its scope ends with it
+                    groups.rename(id, newName)
+                    renaming = false
+                    true
+                }
             },
         )
     }
     if (deleting) {
         AlertDialog(
             onDismissRequest = { deleting = false },
-            title = { Text(stringResource(R.string.setlist_delete_title, setlist?.name.orEmpty())) },
-            text = { Text(stringResource(R.string.setlist_delete_text)) },
+            title = { Text(stringResource(texts.deleteTitle, name.orEmpty())) },
+            text = { Text(stringResource(texts.deleteText)) },
             confirmButton = {
                 TextButton(onClick = {
                     deleting = false
                     onBack()
-                    scope.launch { setlists.delete(id) }
+                    scope.launch { groups.delete(id) }
                 }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.action_cancel)) } },
@@ -262,18 +329,20 @@ private fun SetlistDetail(
 }
 
 /**
- * Editing a setlist, with both sides in sight: the setlist in its order (drag ≡ to move a score,
- * ✕ to take it out) and the library, grouped by letter with an index to jump. A tap on a score of
- * the library puts it at the end of the setlist, even if it is already in it; the scores already
- * in it show on a pale blue background. Side by side on a tablet, one above the other on a phone.
+ * Editing a group, with both sides in sight: the group (for a setlist in its order, drag ≡ to move
+ * a score; for a tag by title) with ✕ to take a score out, and the library, grouped by letter with
+ * an index to jump. A tap on a score of the library puts it in a setlist, at the end even if it is
+ * already in it; for a tag it puts the tag on the score, or takes it off. The scores already in the
+ * group show on a pale blue background. Side by side on a tablet, one above the other on a phone.
  */
 @Composable
-private fun SetlistEditor(
-    setlists: SetlistRepository,
+private fun GroupEditor(
+    groups: ScoreGroups,
+    texts: GroupTexts,
     library: LibraryRepository,
     id: Long,
     name: String,
-    entries: List<SetlistEntry>,
+    entries: List<GroupEntry>,
     onDone: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -283,33 +352,48 @@ private fun SetlistEditor(
             Button(onClick = onDone, modifier = Modifier.padding(end = 8.dp)) { Text(stringResource(R.string.setlist_done)) }
         }
         HorizontalDivider()
-        val order: @Composable (Modifier) -> Unit = { modifier ->
-            EditedOrder(
-                entries,
-                onReorder = { ids -> scope.launch { setlists.reorder(ids) } },
-                onMove = { from, to -> scope.launch { setlists.move(entries, from, to) } },
-                onRemove = { itemId -> scope.launch { setlists.remove(itemId) } },
-                modifier = modifier,
-            )
+        val members: @Composable (Modifier) -> Unit = { modifier ->
+            val onRemove: (Long) -> Unit = { key -> scope.launch { groups.remove(id, key) } }
+            if (groups.ordered) {
+                EditedOrder(
+                    entries,
+                    texts,
+                    onReorder = { keys -> scope.launch { groups.reorder(keys) } },
+                    onMove = { from, to -> scope.launch { groups.move(entries, from, to) } },
+                    onRemove = onRemove,
+                    modifier = modifier,
+                )
+            } else {
+                EditedMembers(entries, texts, onRemove, modifier)
+            }
         }
         val picker: @Composable (Modifier) -> Unit = { modifier ->
+            val times = entries.groupingBy { it.sheet.id }.eachCount()
             LibraryPicker(
                 library,
-                present = entries.groupingBy { it.sheet.id }.eachCount(),
-                onAdd = { sheet -> scope.launch { setlists.append(id, sheet.id) } },
+                present = times,
+                mark = { count -> if (groups.ordered) "×$count" else "✓" },
+                inGroup = stringResource(texts.inGroup),
+                onTap = { sheet ->
+                    scope.launch {
+                        // a tag is on a score or not: a second tap takes it off
+                        if (!groups.ordered && (times[sheet.id] ?: 0) > 0) groups.remove(id, sheet.id)
+                        else groups.add(id, sheet.id)
+                    }
+                },
                 modifier = modifier,
             )
         }
         BoxWithConstraints(Modifier.fillMaxSize()) {
             if (maxWidth >= TWO_COLUMNS) {
                 Row(Modifier.fillMaxSize()) {
-                    order(Modifier.weight(1f).fillMaxHeight())
+                    members(Modifier.weight(1f).fillMaxHeight())
                     VerticalDivider()
                     picker(Modifier.weight(1f).fillMaxHeight())
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    order(Modifier.weight(1f).fillMaxWidth())
+                    members(Modifier.weight(1f).fillMaxWidth())
                     HorizontalDivider(thickness = 2.dp)
                     picker(Modifier.weight(1f).fillMaxWidth())
                 }
@@ -318,16 +402,17 @@ private fun SetlistEditor(
     }
 }
 
-// from this width the setlist and the library stand side by side
+// from this width the group and the library stand side by side
 private val TWO_COLUMNS = 560.dp
 
 /** The setlist being edited: number, ≡ to drag, title and composer, ✕ to take the score out. */
 @Composable
 private fun EditedOrder(
-    entries: List<SetlistEntry>,
+    entries: List<GroupEntry>,
+    texts: GroupTexts,
     onReorder: (List<Long>) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
-    onRemove: (itemId: Long) -> Unit,
+    onRemove: (entryKey: Long) -> Unit,
     modifier: Modifier,
 ) {
     // the order on screen: follows the setlist, except while a row is dragged
@@ -345,8 +430,8 @@ private fun EditedOrder(
     }
 
     fun drop() {
-        val ids = order.map { it.itemId }
-        if (dragged != null && ids != entries.map { it.itemId }) onReorder(ids)
+        val keys = order.map { it.entryKey }
+        if (dragged != null && keys != entries.map { it.entryKey }) onReorder(keys)
         dragged = null
         offset = 0f
     }
@@ -354,15 +439,15 @@ private fun EditedOrder(
     Column(modifier) {
         ColumnTitle(pluralStringResource(R.plurals.setlist_size, entries.size, entries.size))
         if (entries.isEmpty()) {
-            Text(stringResource(R.string.setlist_empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(texts.empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
         }
         val moveUp = stringResource(R.string.setlist_move_up)
         val moveDown = stringResource(R.string.setlist_move_down)
         val moveLabel = stringResource(R.string.setlist_move)
-        val removeLabel = stringResource(R.string.setlist_remove)
+        val removeLabel = stringResource(texts.remove)
         LazyColumn(Modifier.fillMaxSize(), state = state) {
-            itemsIndexed(order, key = { _, e -> e.itemId }) { index, entry ->
-                val isDragged = entry.itemId == dragged
+            itemsIndexed(order, key = { _, e -> e.entryKey }) { index, entry ->
+                val isDragged = entry.entryKey == dragged
                 var height by remember { mutableIntStateOf(0) }
                 Row(
                     modifier = Modifier
@@ -391,10 +476,10 @@ private fun EditedOrder(
                         style = MaterialTheme.typography.headlineSmall,
                         modifier = Modifier
                             .semantics { contentDescription = moveLabel }
-                            .pointerInput(entry.itemId) {
+                            .pointerInput(entry.entryKey) {
                                 detectDragGestures(
                                     onDragStart = {
-                                        dragged = entry.itemId
+                                        dragged = entry.entryKey
                                         offset = 0f
                                     },
                                     onDragEnd = { drop() },
@@ -402,7 +487,7 @@ private fun EditedOrder(
                                 ) { change, amount ->
                                     change.consume()
                                     offset += amount.y
-                                    val at = order.indexOfFirst { it.itemId == entry.itemId }
+                                    val at = order.indexOfFirst { it.entryKey == entry.entryKey }
                                     val step = dragStep(offset, height.toFloat())
                                     if (step != 0 && at + step in order.indices) {
                                         order = order.moved(at, at + step)
@@ -413,10 +498,7 @@ private fun EditedOrder(
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     )
                     SheetText(entry.sheet, Modifier.weight(1f).padding(vertical = 6.dp))
-                    TextButton(
-                        onClick = { onRemove(entry.itemId) },
-                        modifier = Modifier.semantics { contentDescription = removeLabel },
-                    ) { Text("✕", style = MaterialTheme.typography.titleLarge) }
+                    RemoveButton(removeLabel) { onRemove(entry.entryKey) }
                 }
                 HorizontalDivider()
             }
@@ -424,15 +506,48 @@ private fun EditedOrder(
     }
 }
 
+/** The scores of a group with no order (a tag), by title under the letters, ✕ to take one out. */
+@Composable
+private fun EditedMembers(entries: List<GroupEntry>, texts: GroupTexts, onRemove: (entryKey: Long) -> Unit, modifier: Modifier) {
+    Column(modifier) {
+        ColumnTitle(pluralStringResource(R.plurals.setlist_size, entries.size, entries.size))
+        if (entries.isEmpty()) {
+            Text(stringResource(texts.empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+        }
+        val removeLabel = stringResource(texts.remove)
+        IndexedList(entries, name = { it.sheet.title }, key = { it.entryKey }, modifier = Modifier.fillMaxSize()) { entry ->
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                SheetText(entry.sheet, Modifier.weight(1f).padding(vertical = 6.dp))
+                RemoveButton(removeLabel) { onRemove(entry.entryKey) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoveButton(label: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = label }) {
+        Text("✕", style = MaterialTheme.typography.titleLarge)
+    }
+}
+
 /**
- * The library to pick from, as the library shows it (IndexedList). A score already in the setlist
- * is on pale blue, with how many times it is in it ([present]: times by score id).
+ * The library to pick from, as the library shows it (IndexedList). A score already in the group is
+ * on pale blue, marked in its top right corner ([mark] of how many times it is in it, [present]:
+ * times by score id; [inGroup] says it to a screen reader).
  */
 @Composable
-private fun LibraryPicker(library: LibraryRepository, present: Map<Long, Int>, onAdd: (Sheet) -> Unit, modifier: Modifier) {
+private fun LibraryPicker(
+    library: LibraryRepository,
+    present: Map<Long, Int>,
+    mark: (Int) -> String,
+    inGroup: String,
+    onTap: (Sheet) -> Unit,
+    modifier: Modifier,
+) {
     val sheets by remember { library.sheets() }.collectAsState(initial = emptyList())
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val inSetlist = if (dark) Color(0xFF1E3A5C) else Color(0xFFDCEBFF)
+    val inGroupColor = if (dark) Color(0xFF1E3A5C) else Color(0xFFDCEBFF)
 
     Column(modifier) {
         ColumnTitle(stringResource(R.string.library_title))
@@ -441,15 +556,15 @@ private fun LibraryPicker(library: LibraryRepository, present: Map<Long, Int>, o
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .background(if (times > 0) inSetlist else MaterialTheme.colorScheme.surface)
-                    .clickable { onAdd(sheet) },
+                    .background(if (times > 0) inGroupColor else MaterialTheme.colorScheme.surface)
+                    .clickable { onTap(sheet) }
+                    .semantics { if (times > 0) stateDescription = inGroup },
             ) {
                 SheetText(sheet, Modifier.fillMaxWidth().padding(start = 16.dp, end = 40.dp, top = 8.dp, bottom = 8.dp))
-                // how many times it is in the setlist, in the top right corner: a score played
-                // twice shows at a glance
+                // a score played twice in a setlist, a score with the tag: seen at a glance
                 if (times > 0) {
                     Text(
-                        stringResource(R.string.setlist_times, times),
+                        mark(times),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -472,22 +587,42 @@ private fun ColumnTitle(text: String) {
     )
 }
 
+/**
+ * The name of a new group, or a new name. [onDone] says whether the name is taken: then the dialog
+ * stays, with [takenMessage] under the field.
+ */
 @Composable
-private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onDone: (String) -> Unit) {
+private fun NameDialog(
+    title: String,
+    initial: String,
+    takenMessage: String,
+    onDismiss: () -> Unit,
+    onDone: suspend (String) -> Boolean,
+) {
     var name by rememberSaveable { mutableStateOf(initial) }
+    var taken by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = {
+                    name = it
+                    taken = false
+                },
                 label = { Text(stringResource(R.string.setlist_name)) },
                 singleLine = true,
+                isError = taken,
+                supportingText = if (taken) ({ Text(takenMessage) }) else null,
             )
         },
         confirmButton = {
-            TextButton(onClick = { onDone(name) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_save)) }
+            TextButton(
+                onClick = { scope.launch { taken = !onDone(name) } },
+                enabled = name.isNotBlank(),
+            ) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )

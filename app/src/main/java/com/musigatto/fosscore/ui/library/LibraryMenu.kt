@@ -97,7 +97,7 @@ fun LibraryMenuDrawer(
 enum class MenuView(@StringRes val label: Int, val icon: String, val ready: Boolean) {
     LIBRARY(R.string.library_title, LINE_LIBRARY, true),
     SETLISTS(R.string.library_menu_setlists, LINE_SETLIST, true),
-    TAGS(R.string.library_menu_tags, LINE_TAG, false),
+    TAGS(R.string.library_menu_tags, LINE_TAG, true),
     PRACTICE(R.string.library_menu_practice, LINE_PRACTICE, false),
 }
 

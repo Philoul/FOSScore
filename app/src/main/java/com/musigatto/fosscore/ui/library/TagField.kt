@@ -58,6 +58,7 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.distinctTagNames
 import com.musigatto.fosscore.library.normalize
 import com.musigatto.fosscore.library.sameTag
+import com.musigatto.fosscore.library.tagName
 import com.musigatto.fosscore.ui.viewer.LINE_ADD
 import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
 import com.musigatto.fosscore.ui.viewer.LineIcon
@@ -72,11 +73,6 @@ private val TagNamesSaver = Saver<List<String>, ArrayList<String>>(
     save = { ArrayList(it) },
     restore = { it }
 )
-
-private val SPACES = Regex("\\s+")
-
-/** A tag name as typed in the picker: trimmed, a run of spaces inside it made one. */
-internal fun tagName(typed: String): String = typed.trim().replace(SPACES, " ")
 
 /** What the picker lists: the library's tags and the score's, each once. */
 internal fun pickerTags(known: List<String>, chosen: List<String>): List<String> = distinctTagNames(known + chosen)

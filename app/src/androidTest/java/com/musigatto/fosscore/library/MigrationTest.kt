@@ -153,7 +153,7 @@ class MigrationTest {
                 // v8: the setlists come in empty from an older version; a v8 setlist stays
                 assertEquals(
                     "v$version: setlists",
-                    if (version >= 8) listOf(SetlistSummary(1L, "Concert", 2)) else emptyList(),
+                    if (version >= 8) listOf(GroupSummary(1L, "Concert", 2)) else emptyList(),
                     db.setlistDao().observeSummaries().first()
                 )
 
@@ -214,7 +214,7 @@ class MigrationTest {
             val stroke = db.strokeDao().observePage(1L, 2).first().single()
             assertEquals(1, db.strokeDao().observePage(1L, 2).first().size)
             assertEquals("v6 keeps a shape's kind", Stroke.SHAPE, stroke.kind)
-            assertEquals(listOf(SetlistSummary(1L, "Concert", 2)), db.setlistDao().observeSummaries().first())
+            assertEquals(listOf(GroupSummary(1L, "Concert", 2)), db.setlistDao().observeSummaries().first())
             assertEquals(listOf(1L, 1L), db.setlistDao().observeEntries(1L).first().map { it.sheet.id })
         }
     }

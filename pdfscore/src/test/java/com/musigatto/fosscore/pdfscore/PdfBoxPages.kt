@@ -132,28 +132,12 @@ object PdfBoxPages {
         override fun fillPath(windingRule: Int) {
             subpaths().filter { it.size >= 3 }.forEach { points ->
                 val shape = DrawnShape(points, curved)
-                // A thin filled rectangle is a line (a stem or a staff line some programs fill):
-                // read it as one, the way a scan's lines are.
-                if (!curved && points.size in 4..5 && isAxisRectangle(points)) {
-                    val box = shape.box
-                    if (box.height < 0.25 * box.width) {
-                        lines += DrawnLine(box.left, box.centerY, box.right, box.centerY, box.height)
-                        return@forEach
-                    }
-                    if (box.width < 0.25 * box.height) {
-                        lines += DrawnLine(box.centerX, box.top, box.centerX, box.bottom, box.width)
-                        return@forEach
-                    }
-                }
-                shapes += shape
+                shape.asLine()?.let { lines += it } ?: run { shapes += shape }
             }
             reset()
         }
 
         override fun fillAndStrokePath(windingRule: Int) = fillPath(windingRule)
-
-        private fun isAxisRectangle(points: List<Point>): Boolean =
-            points.zipWithNext().all { (a, b) -> abs(a.x - b.x) < 0.01 || abs(a.y - b.y) < 0.01 }
 
         private fun reset() {
             path.reset()

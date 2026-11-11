@@ -396,6 +396,11 @@
     <string name="person_delete_title">¿Eliminar a «%1$s»?</string>
     <string name="person_delete_text">Esta persona se quita de todas sus partituras, como autor/compositor y como intérprete. Las partituras se quedan en la biblioteca.</string>
     <string name="person_name_taken">Ya hay una persona con este nombre.</string>
+    <string name="person_merge">Fusionar</string>
+    <string name="person_merge_pick">Fusionar «%1$s» con…</string>
+    <string name="person_merge_title">¿Fusionar «%1$s» y «%2$s»?</string>
+    <string name="person_merge_text">Sus partituras se juntan, cada una en su papel, bajo un solo nombre:</string>
+    <string name="person_merge_none">No hay nadie más con quien fusionar.</string>
     <plurals name="setlist_size">
         <item quantity="one">%1$d partitura</item>
         <item quantity="many">%1$d partituras</item>

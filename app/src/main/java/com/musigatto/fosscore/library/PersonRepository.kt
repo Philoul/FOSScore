@@ -50,4 +50,18 @@ class PersonRepository(context: Context, private val role: PersonRole? = null) :
         dao.all().any { it.id != id && sameTag(it.name, name) }
 
     override suspend fun reorder(entryKeys: List<Long>) = Unit
+
+    override val canMerge = true
+
+    // [from]'s scores go to [into] in their roles (a score both were on in one role, once); [from]
+    // goes before [into] takes the name, which may be [from]'s (the names are unique)
+    override suspend fun merge(into: Long, from: Long, name: String) {
+        if (into == from) return
+        db.withTransaction {
+            dao.relink(from = from, into = into)
+            dao.unlinkAll(from)
+            dao.delete(from)
+            dao.rename(into, tagName(name))
+        }
+    }
 }

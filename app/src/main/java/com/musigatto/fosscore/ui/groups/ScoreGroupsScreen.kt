@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -49,6 +52,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -57,6 +61,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.GroupEntry
 import com.musigatto.fosscore.library.GroupKind
@@ -79,6 +85,16 @@ class GroupTexts(
     @StringRes val deleteTitle: Int,
     @StringRes val deleteText: Int,
     @StringRes val nameTaken: Int,
+    /** What merging two groups says, for a kind that can ([ScoreGroups.canMerge]). */
+    val merge: MergeTexts? = null,
+)
+
+class MergeTexts(
+    @StringRes val action: Int,
+    @StringRes val pick: Int,
+    @StringRes val title: Int,
+    @StringRes val text: Int,
+    @StringRes val none: Int,
 )
 
 /** The words of the screen of [this] kind of group. */
@@ -103,6 +119,13 @@ fun GroupKind.texts(): GroupTexts = when (this) {
         deleteTitle = R.string.person_delete_title,
         deleteText = R.string.person_delete_text,
         nameTaken = R.string.person_name_taken,
+        merge = MergeTexts(
+            action = R.string.person_merge,
+            pick = R.string.person_merge_pick,
+            title = R.string.person_merge_title,
+            text = R.string.person_merge_text,
+            none = R.string.person_merge_none,
+        ),
     )
 }
 
@@ -297,7 +320,11 @@ private fun GroupDetail(
     var editing by rememberSaveable { mutableStateOf(false) }
     var renaming by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
+    // merging: picking the other group, then the other group picked (0: none yet)
+    var mergePicking by rememberSaveable { mutableStateOf(false) }
+    var mergeWith by rememberSaveable { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val merge = texts.merge?.takeIf { groups.canMerge }
 
     if (editing) {
         GroupEditor(facets, facet, library, id, name.orEmpty(), entries, onFacet = onFacet, onDone = { editing = false })
@@ -308,6 +335,7 @@ private fun GroupDetail(
     Column(Modifier.fillMaxSize()) {
         Header(name.orEmpty(), onBack, stringResource(R.string.action_back)) {
             TextButton(onClick = { renaming = true }) { Text(stringResource(R.string.setlist_rename)) }
+            merge?.let { TextButton(onClick = { mergePicking = true }) { Text(stringResource(it.action)) } }
             TextButton(onClick = { deleting = true }) { Text(stringResource(R.string.action_delete)) }
             Button(onClick = { editing = true }, modifier = Modifier.padding(end = 8.dp)) {
                 Text(stringResource(R.string.setlist_edit))
@@ -381,6 +409,108 @@ private fun GroupDetail(
             dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
+    merge?.let { words ->
+        if (mergePicking) {
+            MergePickDialog(groups, words, id, name.orEmpty(), onDismiss = { mergePicking = false }) { other ->
+                mergePicking = false
+                mergeWith = other
+            }
+        }
+        if (mergeWith != 0L) {
+            MergeConfirmDialog(groups, words, id, name.orEmpty(), mergeWith, onDismiss = { mergeWith = 0L }) { keptName ->
+                val other = mergeWith
+                mergeWith = 0L
+                // this group stays (the screen shows it), with the name chosen; the other joins it
+                scope.launch { groups.merge(into = id, from = other, name = keptName) }
+            }
+        }
+    }
+}
+
+/** The other groups to merge [name] ([id]) with, as every list: by name under the letters. */
+@Composable
+private fun MergePickDialog(
+    groups: ScoreGroups,
+    texts: MergeTexts,
+    id: Long,
+    name: String,
+    onDismiss: () -> Unit,
+    onPick: (Long) -> Unit,
+) {
+    val all by remember(groups) { groups.groups() }.collectAsState(initial = emptyList())
+    val others = all.filter { it.id != id }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth(0.9f).widthIn(max = 560.dp).fillMaxHeight(0.85f),
+        ) {
+            Column(Modifier.padding(vertical = 16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(texts.pick, name),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+                }
+                if (others.isEmpty()) {
+                    Text(stringResource(texts.none), modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
+                } else {
+                    IndexedList(others, name = { it.name }, key = { it.id }, modifier = Modifier.weight(1f).fillMaxWidth()) { group ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(group.id) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(group.name, style = MaterialTheme.typography.titleMedium)
+                            Text(pluralStringResource(R.plurals.setlist_size, group.size, group.size), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Merging [name] ([id]) and the group [other]: which of the two names stays. */
+@Composable
+private fun MergeConfirmDialog(
+    groups: ScoreGroups,
+    texts: MergeTexts,
+    id: Long,
+    name: String,
+    other: Long,
+    onDismiss: () -> Unit,
+    onConfirm: (keptName: String) -> Unit,
+) {
+    val otherName by remember(groups, other) { groups.name(other) }.collectAsState(initial = null)
+    val names = listOfNotNull(name, otherName)
+    var kept by rememberSaveable { mutableStateOf(0) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(texts.title, name, otherName.orEmpty())) },
+        text = {
+            Column {
+                Text(stringResource(texts.text))
+                names.forEachIndexed { index, candidate ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .selectable(selected = kept == index, role = Role.RadioButton, onClick = { kept = index })
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = kept == index, onClick = null)
+                        Text(candidate, modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { names.getOrNull(kept)?.let(onConfirm) },
+                enabled = otherName != null,
+            ) { Text(stringResource(texts.action)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 /**

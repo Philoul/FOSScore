@@ -398,6 +398,11 @@
     <string name="person_delete_title">Supprimer « %1$s » ?</string>
     <string name="person_delete_text">Cette personne est retirée de toutes ses partitions, comme auteur/compositeur et comme interprète. Les partitions restent dans la bibliothèque.</string>
     <string name="person_name_taken">Une personne porte déjà ce nom.</string>
+    <string name="person_merge">Fusionner</string>
+    <string name="person_merge_pick">Fusionner « %1$s » avec…</string>
+    <string name="person_merge_title">Fusionner « %1$s » et « %2$s » ?</string>
+    <string name="person_merge_text">Leurs partitions sont réunies, chacune dans son rôle, sous un seul nom :</string>
+    <string name="person_merge_none">Personne d’autre avec qui fusionner.</string>
     <plurals name="setlist_size">
         <item quantity="one">%1$d partition</item>
         <item quantity="many">%1$d partitions</item>

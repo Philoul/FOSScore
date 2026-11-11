@@ -58,6 +58,15 @@ interface ScoreGroups {
 
     /** The entries [entryKeys] of an ordered group, in this order. */
     suspend fun reorder(entryKeys: List<Long>)
+
+    /** Whether two groups can become one ([merge]): two spellings of one person. */
+    val canMerge: Boolean get() = false
+
+    /**
+     * The group [from] joins [into], which takes every score of both and the name [name]; [from]
+     * goes. Does nothing where [canMerge] is false.
+     */
+    suspend fun merge(into: Long, from: Long, name: String) = Unit
 }
 
 /** Moves the entry at [from] to [to] in [entries], the ordered group as shown. */

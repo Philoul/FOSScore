@@ -73,6 +73,13 @@ interface PersonDao {
     @Query("DELETE FROM sheet_people WHERE personId = :personId")
     suspend fun unlinkAll(personId: Long)
 
+    /** [from]'s scores, each in its role, given to [into] too (a link [into] already has stays once). */
+    @Query(
+        "INSERT OR IGNORE INTO sheet_people (sheetId, personId, role) " +
+            "SELECT sheetId, :into, role FROM sheet_people WHERE personId = :from"
+    )
+    suspend fun relink(from: Long, into: Long)
+
     // a person sorts by their name as written, until a sort name of their own is asked for
     @Query("UPDATE people SET name = :name, sortName = :name WHERE id = :id")
     suspend fun rename(id: Long, name: String)

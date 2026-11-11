@@ -77,6 +77,26 @@ class PersonRepositoryTest {
     }
 
     @Test
+    fun twoSpellingsOfOnePersonMergeKeepingTheirScoresAndRoles() = runBlocking {
+        val a = score("Alpha")
+        val b = score("Bravo")
+        val c = score("Charlie")
+        val cohen = people.create("Leonard Cohen")
+        val cohen2 = people.create("Cohen, Léonard")
+        composers.add(cohen, a)
+        composers.add(cohen2, a) // the same score in the same role: once after the merge
+        performers.add(cohen2, b)
+        composers.add(cohen2, c)
+
+        // the one shown stays, with the other's spelling
+        people.merge(into = cohen, from = cohen2, name = "Léonard Cohen")
+
+        assertEquals(listOf(GroupSummary(cohen, "Léonard Cohen", 3)), people.groups().first())
+        assertEquals(listOf(a, c), composers.entries(cohen).first().map { it.sheet.id })
+        assertEquals(listOf(b), performers.entries(cohen).first().map { it.sheet.id })
+    }
+
+    @Test
     fun aNameIsTakenWhateverItsSpelling() = runBlocking {
         people.create("Léo Ferré")
         assertTrue(people.nameTaken("leo ferre", null))

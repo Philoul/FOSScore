@@ -394,6 +394,11 @@
     <string name="person_delete_title">Delete “%1$s”?</string>
     <string name="person_delete_text">This person is taken off all their scores, as author/composer and as performer. The scores stay in the library.</string>
     <string name="person_name_taken">Someone already has this name.</string>
+    <string name="person_merge">Merge</string>
+    <string name="person_merge_pick">Merge “%1$s” with…</string>
+    <string name="person_merge_title">Merge “%1$s” and “%2$s”?</string>
+    <string name="person_merge_text">Their scores come together, each in its role, under one name:</string>
+    <string name="person_merge_none">No one else to merge with.</string>
     <plurals name="setlist_size">
         <item quantity="one">%1$d score</item>
         <item quantity="other">%1$d scores</item>

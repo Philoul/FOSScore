@@ -7,6 +7,7 @@
     <string name="action_save">Guardar</string>
     <string name="action_delete">Eliminar</string>
     <string name="action_cancel">Cancelar</string>
+    <string name="action_ok">Aceptar</string>
     <string name="action_close">Cerrar</string>
     <string name="action_undo">Deshacer</string>
     <string name="action_redo">Rehacer</string>
@@ -48,9 +49,12 @@
     <string name="field_genre">Género</string>
     <string name="field_key">Tonalidad</string>
     <string name="field_tags">Etiquetas</string>
-    <string name="tag_hint">Escribe una etiqueta y pulsa espacio</string>
+    <string name="tag_hint">Buscar o crear una etiqueta</string>
     <string name="tag_remove">Quitar etiqueta</string>
-    <string name="tag_add">Añadir la etiqueta %1$s</string>
+    <string name="tag_choose">Elegir las etiquetas</string>
+    <string name="tag_create">Crear la etiqueta %1$s</string>
+    <string name="tags_none">Aún no hay etiquetas: escribe una arriba y pulsa +.</string>
+    <string name="tags_no_match">Ninguna etiqueta contiene este texto: + la crea.</string>
     <string name="bulk_edit_title">Editar %1$d partituras</string>
     <string name="bulk_edit_hint">Solo cambian los campos que rellenes.</string>
     <string name="page_section_label">Página</string>

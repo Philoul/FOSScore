@@ -288,7 +288,6 @@ private fun BulkEditDialog(
     var genre by rememberSaveable { mutableStateOf("") }
     var musicalKey by rememberSaveable { mutableStateOf("") }
     var tags by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
-    var tagDraft by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -319,16 +318,14 @@ private fun BulkEditDialog(
                 )
                 TagField(
                     tags = tags.orEmpty(),
-                    draft = tagDraft,
                     known = known,
                     onTagsChange = { tags = it },
-                    onDraftChange = { tagDraft = it },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onApply(composer, genre, musicalKey, withTags(tags.orEmpty(), tagDraft)) }) {
+            TextButton(onClick = { onApply(composer, genre, musicalKey, tags.orEmpty()) }) {
                 Text(stringResource(R.string.action_save))
             }
         },

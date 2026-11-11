@@ -46,7 +46,6 @@ fun SheetDetailScreen(
     var musicalKey by rememberSaveable(sheet.id) { mutableStateOf(sheet.musicalKey) }
     // null until the score's tags are read from their table (once: a rotation keeps the edits)
     var tags by rememberSaveable(sheet.id, stateSaver = TagListSaver) { mutableStateOf<List<String>?>(null) }
-    var tagDraft by rememberSaveable(sheet.id) { mutableStateOf("") }
     var confirmDelete by rememberSaveable(sheet.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val knownFlow = remember(repository) { repository.tags() }
@@ -70,10 +69,8 @@ fun SheetDetailScreen(
         OutlinedTextField(value = musicalKey, onValueChange = { musicalKey = it }, label = { Text(stringResource(R.string.field_key)) }, modifier = Modifier.fillMaxWidth())
         TagField(
             tags = tags.orEmpty(),
-            draft = tagDraft,
             known = known.map { it.name },
             onTagsChange = { tags = it },
-            onDraftChange = { tagDraft = it },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -90,7 +87,7 @@ fun SheetDetailScreen(
                             )
                         )
                         // not read yet: the score keeps the tags it has
-                        tags?.let { repository.setTags(sheet.id, withTags(it, tagDraft)) }
+                        tags?.let { repository.setTags(sheet.id, it) }
                         onDone()
                     }
                 }

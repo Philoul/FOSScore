@@ -1,34 +1,36 @@
 package com.musigatto.fosscore.ui.library
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TagFieldTest {
 
     @Test
-    fun spaceCommaAndSemicolonSeparateTags() {
-        assertEquals(listOf("tango", "vals", "rock"), withTags(emptyList(), " tango  vals,rock; "))
+    fun thePickerListsTheLibrarysTagsAndTheScoresOnce() {
+        assertEquals(listOf("duo", "Rock", "film music"), pickerTags(listOf("duo", "Rock"), listOf("rock", "film music")))
     }
 
     @Test
-    fun addingKeepsEachTagOnceIgnoringCaseAndAccents() {
-        assertEquals(listOf("Tángo", "vals"), withTags(listOf("Tángo"), "tango vals"))
-        assertEquals(listOf("vals"), withTags(emptyList(), "vals"))
-        assertEquals(listOf("rock"), withTags(listOf("rock"), ""))
+    fun typingFindsTheTagsHoldingItIgnoringCaseAndAccents() {
+        val all = listOf("duo", "Practice", "rock", "Prélude")
+        assertEquals(all, filterTags(all, "  "))
+        assertEquals(listOf("Practice"), filterTags(all, "prá"))
+        assertEquals(listOf("Practice", "Prélude"), filterTags(all, "PR"))
+        assertEquals(emptyList<String>(), filterTags(all, "jazz"))
     }
 
     @Test
-    fun typingASpaceFinishesTheTag() {
-        assertEquals(listOf("duo") to "", typedTags(emptyList(), "duo "))
-        assertEquals(listOf("duo") to "pra", typedTags(emptyList(), "duo pra"))
-        assertEquals(emptyList<String>() to "duo", typedTags(emptyList(), "duo"))
+    fun creatingATagThatExistsChecksItInsteadOfMakingASecondOne() {
+        val all = listOf("Rock", "duo")
+        assertEquals("Rock", tagToCreate(all, " rôck "))
+        assertEquals("film music", tagToCreate(all, " film   music "))
+        assertNull(tagToCreate(all, "   "))
     }
 
     @Test
-    fun theLibrarysOtherTagsAreOffered() {
-        val known = listOf("duo", "Practice", "rock")
-        assertEquals(listOf("Practice", "rock"), suggestTags(known, listOf("Duo"), ""))
-        assertEquals(listOf("Practice"), suggestTags(known, emptyList(), "prá"))
-        assertEquals(emptyList<String>(), suggestTags(known, listOf("rock"), "ro"))
+    fun aTapChecksOrUnchecks() {
+        assertEquals(listOf("duo", "rock"), toggleTag(listOf("duo"), "rock"))
+        assertEquals(listOf("duo"), toggleTag(listOf("duo", "rock"), "rock"))
     }
 }

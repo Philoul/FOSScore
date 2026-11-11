@@ -11,6 +11,8 @@ coroutines = "1.10.2"
 # the version Compose already brings in
 lifecycle = "2.9.4"
 orgJson = "20240303"
+# reads PDFs in the pdfscore tests (Apache-2.0)
+pdfbox = "3.0.4"
 androidxTestRunner = "1.6.2"
 androidxTestJunit = "1.2.1"   
 
@@ -35,6 +37,7 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 # Android ships org.json; plain JVM unit tests need the real implementation.
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
+pdfbox = { group = "org.apache.pdfbox", name = "pdfbox", version.ref = "pdfbox" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

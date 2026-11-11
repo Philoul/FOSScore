@@ -27,3 +27,4 @@ dependencyResolutionManagement {
 rootProject.name = "FOSScore"
 include(":app")
 include(":musicxml")
+include(":pdfscore")

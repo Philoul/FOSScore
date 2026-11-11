@@ -166,7 +166,50 @@ class MigrationTest {
                 assertEquals("v$version: tags", listOf("duo" to "FREE", "practice" to "FREE"), tags)
                 assertEquals("v$version: the score's tags", listOf("duo", "practice"), db.tagDao().tagsOf(sheet.id).map { it.name })
                 assertEquals("v$version: genre", "Folk", sheet.genre)
+
+                // v9: the composer text is a person, as author/composer; the text is emptied
+                assertEquals("v$version: people", listOf("Composer"), db.personDao().all().map { it.name })
+                assertEquals(
+                    "v$version: the score's composers",
+                    listOf("Composer"),
+                    db.personDao().peopleOf(sheet.id, PersonRole.COMPOSER.name).map { it.name },
+                )
+                assertEquals("v$version: composer text", "", sheet.composer)
+                // v9: a comment, empty for every score that came before it
+                assertEquals("v$version: comment", "", sheet.comment)
             }
+        }
+    }
+
+    @Test
+    fun aComposerTextBecomesPeopleOncePerName() {
+        context.deleteDatabase(testDb)
+        helper.createDatabase(testDb, 8).apply {
+            for ((id, composer) in listOf(1L to "Léonard Cohen / Kyle Landry", 2L to "léonard cohen", 3L to "")) {
+                insert("sheets", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                    put("id", id)
+                    put("fileName", "song$id.pdf")
+                    put("path", "/data/sheets/song$id.pdf")
+                    put("hash", "hash$id")
+                    put("title", "Song $id")
+                    put("composer", composer)
+                    put("format", "PDF")
+                    put("genre", "")
+                    put("musicalKey", "")
+                    put("tags", "")
+                })
+            }
+            close()
+        }
+        helper.runMigrationsAndValidate(testDb, 9, true, *AppDatabase.MIGRATIONS).close()
+        withRoom { db ->
+            val composers = { id: Long -> runBlocking { db.personDao().peopleOf(id, PersonRole.COMPOSER.name).map { it.name } } }
+            // the first spelling met names the person
+            assertEquals(listOf("Kyle Landry", "Léonard Cohen"), db.personDao().all().map { it.name }.sorted())
+            assertEquals(listOf("Kyle Landry", "Léonard Cohen"), composers(1L))
+            assertEquals(listOf("Léonard Cohen"), composers(2L))
+            assertEquals(emptyList<String>(), composers(3L))
+            assertEquals(emptyList<String>(), db.personDao().peopleOf(1L, PersonRole.PERFORMER.name).map { it.name })
         }
     }
 

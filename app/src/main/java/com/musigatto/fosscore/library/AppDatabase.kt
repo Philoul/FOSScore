@@ -22,6 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun strokeDao(): StrokeDao
     abstract fun setlistDao(): SetlistDao
     abstract fun tagDao(): TagDao
+    abstract fun personDao(): PersonDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -249,13 +250,16 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                // the user's own words on each score
+                db.execSQL("ALTER TABLE `sheets` ADD COLUMN `comment` TEXT NOT NULL DEFAULT ''")
+
                 val sheets = mutableListOf<Pair<Long, String>>()
                 db.query("SELECT `id`, `tags` FROM `sheets` ORDER BY `id`").use { c ->
                     while (c.moveToNext()) sheets += c.getLong(0) to c.getString(1)
                 }
                 db.execSQL("DELETE FROM `sheet_tags`")
                 db.execSQL("DELETE FROM `tags`")
-                val plan = TagBackfill.of(sheets)
+                val plan = NameBackfill.of(sheets, ::splitTagText)
                 plan.names.forEachIndexed { i, name ->
                     db.execSQL(
                         "INSERT INTO `tags` (`id`, `name`, `kind`) VALUES (?, ?, ?)",
@@ -269,6 +273,28 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 }
                 db.execSQL("UPDATE `sheets` SET `tags` = ''")
+
+                // the composer text becomes people (empty until now), as authors/composers
+                val composers = mutableListOf<Pair<Long, String>>()
+                db.query("SELECT `id`, `composer` FROM `sheets` ORDER BY `id`").use { c ->
+                    while (c.moveToNext()) composers += c.getLong(0) to c.getString(1)
+                }
+                db.execSQL("DELETE FROM `sheet_people`")
+                db.execSQL("DELETE FROM `people`")
+                val people = NameBackfill.of(composers, ::splitPeopleText)
+                people.names.forEachIndexed { i, name ->
+                    db.execSQL(
+                        "INSERT INTO `people` (`id`, `name`, `sortName`) VALUES (?, ?, ?)",
+                        arrayOf<Any>(i + 1L, name, name)
+                    )
+                }
+                for ((sheetId, index) in people.links) {
+                    db.execSQL(
+                        "INSERT INTO `sheet_people` (`sheetId`, `personId`, `role`) VALUES (?, ?, ?)",
+                        arrayOf<Any>(sheetId, index + 1L, PersonRole.COMPOSER.name)
+                    )
+                }
+                db.execSQL("UPDATE `sheets` SET `composer` = ''")
             }
         }
 

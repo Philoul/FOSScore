@@ -4,10 +4,10 @@ import androidx.room.Embedded
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The named groups of scores the app shows and edits the same way: the setlists, the tags (and
- * later the artists). One screen serves them all (ScoreGroupsScreen).
+ * The named groups of scores the app shows and edits the same way: the setlists, the tags, the
+ * people. One screen serves them all (ScoreGroupsScreen); a person's scores show by role.
  */
-enum class GroupKind { SETLIST, TAG }
+enum class GroupKind { SETLIST, TAG, PERSON }
 
 /** A group as the list of groups shows it: its name and how many scores it holds. */
 data class GroupSummary(

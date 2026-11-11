@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "963a8083df0a80fc9b164a7c9f05658b",
+    "identityHash": "05870f65d7a5df9013d328d90e1bf4d6",
     "entities": [
       {
         "tableName": "sheets",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fileName` TEXT NOT NULL, `path` TEXT NOT NULL, `hash` TEXT NOT NULL, `title` TEXT NOT NULL, `composer` TEXT NOT NULL, `genre` TEXT NOT NULL, `musicalKey` TEXT NOT NULL, `tags` TEXT NOT NULL, `format` TEXT, `tempoBpm` REAL, `beatUnit` INTEGER, `timeSignature` TEXT, `durationS` REAL, `openedAt` INTEGER, `openCount` INTEGER, `addedAt` INTEGER)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fileName` TEXT NOT NULL, `path` TEXT NOT NULL, `hash` TEXT NOT NULL, `title` TEXT NOT NULL, `composer` TEXT NOT NULL, `genre` TEXT NOT NULL, `musicalKey` TEXT NOT NULL, `tags` TEXT NOT NULL, `format` TEXT, `tempoBpm` REAL, `beatUnit` INTEGER, `timeSignature` TEXT, `durationS` REAL, `openedAt` INTEGER, `openCount` INTEGER, `addedAt` INTEGER, `comment` TEXT NOT NULL DEFAULT '')",
         "fields": [
           {
             "fieldPath": "id",
@@ -101,6 +101,13 @@
             "fieldPath": "addedAt",
             "columnName": "addedAt",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "comment",
+            "columnName": "comment",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
           }
         ],
         "primaryKey": {
@@ -763,7 +770,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '963a8083df0a80fc9b164a7c9f05658b')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '05870f65d7a5df9013d328d90e1bf4d6')"
     ]
   }
 }

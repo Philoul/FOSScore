@@ -49,6 +49,7 @@ import com.musigatto.fosscore.ui.viewer.LINE_MENU
 import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
 import com.musigatto.fosscore.ui.viewer.LineIcon
 import com.musigatto.fosscore.library.LibraryRepository
+import com.musigatto.fosscore.library.PersonRole
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.score.SheetFormat
 import kotlinx.coroutines.launch
@@ -82,8 +83,10 @@ fun LibraryScreen(
     val tagsBySheet by tagsFlow.collectAsState(initial = emptyMap())
     val knownFlow = remember(repository) { repository.tags() }
     val knownTags by knownFlow.collectAsState(initial = emptyList())
+    val knownPeople by remember(repository) { repository.people() }.collectAsState(initial = emptyList())
+    val credits = LocalSheetCredits.current
     var query by rememberSaveable { mutableStateOf("") }
-    val visible = filterSheets(sheets, query, tagsBySheet)
+    val visible = filterSheets(sheets, query, tagsBySheet, credits)
     // ids of the rows ticked; empty = not selecting
     var selected by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     val chosen = sheets.filter { it.id in selected }
@@ -235,22 +238,25 @@ fun LibraryScreen(
     if (bulkEdit && chosen.isNotEmpty()) {
         BulkEditDialog(
             count = chosen.size,
-            known = knownTags.map { it.name },
+            knownTags = knownTags.map { it.name },
+            knownPeople = knownPeople.map { it.name },
             onDismiss = { bulkEdit = false },
-            onApply = { composer, genre, musicalKey, tags ->
+            onApply = { edit ->
                 bulkEdit = false
                 selected = emptyList()
                 scope.launch {
                     chosen.forEach { sheet ->
                         repository.save(
                             sheet.copy(
-                                composer = composer.ifBlank { sheet.composer },
-                                genre = genre.ifBlank { sheet.genre },
-                                musicalKey = musicalKey.ifBlank { sheet.musicalKey },
+                                genre = edit.genre.ifBlank { sheet.genre },
+                                musicalKey = edit.musicalKey.ifBlank { sheet.musicalKey },
                             )
                         )
                     }
-                    if (tags.isNotEmpty()) repository.addTags(chosen.map { it.id }, tags)
+                    val ids = chosen.map { it.id }
+                    if (edit.composers.isNotEmpty()) repository.addPeople(ids, PersonRole.COMPOSER, edit.composers)
+                    if (edit.performers.isNotEmpty()) repository.addPeople(ids, PersonRole.PERFORMER, edit.performers)
+                    if (edit.tags.isNotEmpty()) repository.addTags(ids, edit.tags)
                 }
             }
         )
@@ -273,18 +279,30 @@ private fun LibraryActions(onClose: (() -> Unit)?, onImport: () -> Unit) {
     }
 }
 
+/** What the bulk edit applies to the scores chosen. */
+private class BulkEdit(
+    val composers: List<String>,
+    val performers: List<String>,
+    val genre: String,
+    val musicalKey: String,
+    val tags: List<String>,
+)
+
 /**
- * What several scores can share. The title stays out (it is each score's own), and an empty field
- * means "leave it as it is"; tags are added to the ones each score already has.
+ * What several scores can share. The title and the comment stay out (they are each score's own),
+ * and an empty field means "leave it as it is"; people and tags are added to the ones each score
+ * already has.
  */
 @Composable
 private fun BulkEditDialog(
     count: Int,
-    known: List<String>,
+    knownTags: List<String>,
+    knownPeople: List<String>,
     onDismiss: () -> Unit,
-    onApply: (composer: String, genre: String, musicalKey: String, tags: List<String>) -> Unit
+    onApply: (BulkEdit) -> Unit
 ) {
-    var composer by rememberSaveable { mutableStateOf("") }
+    var composers by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
+    var performers by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
     var genre by rememberSaveable { mutableStateOf("") }
     var musicalKey by rememberSaveable { mutableStateOf("") }
     var tags by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
@@ -298,10 +316,18 @@ private fun BulkEditDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(stringResource(R.string.bulk_edit_hint), style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(
-                    value = composer,
-                    onValueChange = { composer = it },
-                    label = { Text(stringResource(R.string.field_composer)) },
+                NamesField(
+                    COMPOSER_NAMES,
+                    tags = composers.orEmpty(),
+                    known = knownPeople,
+                    onTagsChange = { composers = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                NamesField(
+                    PERFORMER_NAMES,
+                    tags = performers.orEmpty(),
+                    known = knownPeople,
+                    onTagsChange = { performers = it },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -316,16 +342,17 @@ private fun BulkEditDialog(
                     label = { Text(stringResource(R.string.field_key)) },
                     modifier = Modifier.fillMaxWidth()
                 )
-                TagField(
+                NamesField(
+                    TAG_NAMES,
                     tags = tags.orEmpty(),
-                    known = known,
+                    known = knownTags,
                     onTagsChange = { tags = it },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onApply(composer, genre, musicalKey, tags.orEmpty()) }) {
+            TextButton(onClick = { onApply(BulkEdit(composers.orEmpty(), performers.orEmpty(), genre, musicalKey, tags.orEmpty())) }) {
                 Text(stringResource(R.string.action_save))
             }
         },

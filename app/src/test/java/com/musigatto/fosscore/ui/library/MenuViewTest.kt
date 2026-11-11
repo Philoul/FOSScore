@@ -5,8 +5,11 @@ import org.junit.Test
 
 class MenuViewTest {
     @Test
-    fun theLibraryTheSetlistsAndTheTagsAreBuiltPracticeIsNotYet() {
-        assertEquals(listOf(MenuView.LIBRARY, MenuView.SETLISTS, MenuView.TAGS), MenuView.entries.filter { it.ready })
+    fun everyViewButPracticeIsBuilt() {
+        assertEquals(
+            listOf(MenuView.LIBRARY, MenuView.SETLISTS, MenuView.TAGS, MenuView.PEOPLE),
+            MenuView.entries.filter { it.ready },
+        )
     }
 
     @Test

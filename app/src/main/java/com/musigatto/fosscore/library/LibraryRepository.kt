@@ -29,6 +29,7 @@ class LibraryRepository(context: Context) {
     private val stampDao = db.stampDao()
     private val strokeDao = db.strokeDao()
     private val tagDao = db.tagDao()
+    private val personDao = db.personDao()
 
     fun sheets(): Flow<List<Sheet>> = dao.observeAll()
 
@@ -59,6 +60,35 @@ class LibraryRepository(context: Context) {
         val known = tagDao.free()
         return distinctTagNames(names).map { name ->
             known.firstOrNull { sameTag(it.name, name) }?.id ?: tagDao.insert(Tag(name = name, kind = TagKind.FREE))
+        }
+    }
+
+    /** Every person of the library, in either role: what the people fields offer. */
+    fun people(): Flow<List<Person>> = personDao.observeAll()
+
+    /** Who each score is by, by score id: shown under its title and searched. */
+    fun creditsBySheet(): Flow<Map<Long, Credits>> = personDao.observeSheetPeople().map(Credits::bySheet)
+
+    suspend fun peopleOf(sheetId: Long, role: PersonRole): List<String> = personDao.peopleOf(sheetId, role.name).map { it.name }
+
+    /** [sheetId] gets exactly [names] in [role]: a person already in the library is reused, a new one is created. */
+    suspend fun setPeople(sheetId: Long, role: PersonRole, names: List<String>) = db.withTransaction {
+        val ids = personIdsFor(names)
+        personDao.unlinkRole(sheetId, role.name)
+        personDao.link(ids.map { SheetPerson(sheetId, it, role.name) })
+    }
+
+    /** [names] are added in [role] to each of [sheetIds], next to the people it already has. */
+    suspend fun addPeople(sheetIds: List<Long>, role: PersonRole, names: List<String>) = db.withTransaction {
+        val ids = personIdsFor(names)
+        personDao.link(sheetIds.flatMap { sheetId -> ids.map { SheetPerson(sheetId, it, role.name) } })
+    }
+
+    // one id per person named, an existing spelling before a new row
+    private suspend fun personIdsFor(names: List<String>): List<Long> {
+        val known = personDao.all()
+        return distinctTagNames(names.map(::tagName)).map { name ->
+            known.firstOrNull { sameTag(it.name, name) }?.id ?: personDao.insert(Person(name = name, sortName = name))
         }
     }
 
@@ -113,7 +143,8 @@ class LibraryRepository(context: Context) {
                 path = destination.absolutePath,
                 hash = hash,
                 title = title,
-                composer = composer,
+                // the people are in their table (below), not in the text
+                composer = "",
                 genre = "",
                 musicalKey = "",
                 tags = "",
@@ -121,6 +152,8 @@ class LibraryRepository(context: Context) {
                 addedAt = System.currentTimeMillis()
             )
             val saved = sheet.copy(id = dao.insert(sheet))
+            // the composer a MusicXML file names, split as the old text was
+            if (composer.isNotBlank()) setPeople(saved.id, PersonRole.COMPOSER, splitPeopleText(composer))
             // a MusicXML score is laid out and drawn ahead while the user looks at its details
             if (format.isMusicXml) ScorePrecompute.changed()
             ImportResult.Ok(saved)

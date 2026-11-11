@@ -31,19 +31,28 @@ fun splitTagText(text: String): List<String> {
 }
 
 /**
- * The tags table built from every score's text (v9): one tag per name however many scores carry
- * it or however it is spelled, the first spelling met (scores in [sheets] order) as its name.
+ * The people a `sheets.composer` text names: "Léonard Cohen / Kyle Landry" is two people. `/`, `;`,
+ * `,` and `&` split it, so "Simon & Garfunkel" and "Bach, Johann Sebastian" come out as two too
+ * (the user's choice: such a name is rare, and put back together in the people screen).
  */
-object TagBackfill {
-    /** [names] become tags 1..n; each link is a score's id and the index of its tag in [names]. */
+fun splitPeopleText(text: String): List<String> = distinctTagNames(text.split('/', ';', ',', '&').map(::tagName))
+
+/**
+ * A table of names built from every score's text (v9): the tags from `sheets.tags`, the people
+ * from `sheets.composer`. One row per name however many scores carry it or however it is
+ * spelled, the first spelling met (scores in [sheets] order) as its name.
+ */
+object NameBackfill {
+    /** [names] become rows 1..n; each link is a score's id and the index of its name in [names]. */
     data class Plan(val names: List<String>, val links: List<Pair<Long, Int>>)
 
-    fun of(sheets: List<Pair<Long, String>>): Plan {
+    /** [split] tells the names a score's text holds ([splitTagText], [splitPeopleText]). */
+    fun of(sheets: List<Pair<Long, String>>, split: (String) -> List<String>): Plan {
         val names = mutableListOf<String>()
         val index = HashMap<String, Int>()
         val links = mutableListOf<Pair<Long, Int>>()
         for ((sheetId, text) in sheets) {
-            for (name in splitTagText(text)) {
+            for (name in split(text)) {
                 val at = index.getOrPut(normalize(name)) { names.add(name); names.size - 1 }
                 links += sheetId to at
             }

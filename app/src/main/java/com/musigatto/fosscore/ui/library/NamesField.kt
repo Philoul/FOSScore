@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.ui.library
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -97,20 +98,48 @@ internal fun tagToCreate(all: List<String>, typed: String): String? {
 internal fun toggleTag(checked: List<String>, tag: String): List<String> =
     if (tag in checked) checked - tag else checked + tag
 
+/** What a field of names says: its label (the picker's title too), and the picker's words. */
+class NamesTexts(
+    @StringRes val label: Int,
+    @StringRes val choose: Int,
+    @StringRes val hint: Int,
+    @StringRes val create: Int,
+    @StringRes val none: Int,
+    @StringRes val noMatch: Int,
+    @StringRes val remove: Int,
+)
+
+val TAG_NAMES = NamesTexts(
+    R.string.field_tags, R.string.tag_choose, R.string.tag_hint, R.string.tag_create,
+    R.string.tags_none, R.string.tags_no_match, R.string.tag_remove,
+)
+
+val COMPOSER_NAMES = NamesTexts(
+    R.string.field_composer, R.string.composer_choose, R.string.person_hint, R.string.person_create,
+    R.string.people_none_typed, R.string.people_no_match, R.string.person_remove,
+)
+
+val PERFORMER_NAMES = NamesTexts(
+    R.string.field_performer, R.string.performer_choose, R.string.person_hint, R.string.person_create,
+    R.string.people_none_typed, R.string.people_no_match, R.string.person_remove,
+)
+
 /**
- * The score's tags in an outlined box, labelled like the other fields, each with ✕ to remove it.
- * The + on the right (or a tap on the box) opens the picker, where the library's tags are checked
- * or unchecked and a new one is created.
+ * The score's names (its tags, its authors/composers, its performers) in an outlined box,
+ * labelled like the other fields, each with ✕ to remove it. The + on the right (or a tap on the
+ * box) opens the picker, where the library's names ([known]) are checked or unchecked and a new
+ * one is created.
  */
 @Composable
-fun TagField(
+fun NamesField(
+    texts: NamesTexts,
     tags: List<String>,
     known: List<String>,
     onTagsChange: (List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var picking by rememberSaveable { mutableStateOf(false) }
-    val chooseLabel = stringResource(R.string.tag_choose)
+    val chooseLabel = stringResource(texts.choose)
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(
@@ -128,14 +157,14 @@ fun TagField(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    tags.forEach { tag -> TagChip(tag) { onTagsChange(tags - tag) } }
+                    tags.forEach { tag -> TagChip(tag, texts.remove) { onTagsChange(tags - tag) } }
                 }
             },
             enabled = true,
             singleLine = false,
             visualTransformation = VisualTransformation.None,
             interactionSource = interactionSource,
-            label = { Text(stringResource(R.string.field_tags)) },
+            label = { Text(stringResource(texts.label)) },
             trailingIcon = {
                 IconButton(
                     onClick = { picking = true },
@@ -147,6 +176,7 @@ fun TagField(
 
     if (picking) {
         TagPickerDialog(
+            texts = texts,
             chosen = tags,
             known = known,
             onDismiss = { picking = false },
@@ -165,6 +195,7 @@ fun TagField(
  */
 @Composable
 private fun TagPickerDialog(
+    texts: NamesTexts,
     chosen: List<String>,
     known: List<String>,
     onDismiss: () -> Unit,
@@ -208,7 +239,7 @@ private fun TagPickerDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        stringResource(R.string.field_tags),
+                        stringResource(texts.label),
                         style = MaterialTheme.typography.headlineSmall,
                         modifier = Modifier.weight(1f)
                     )
@@ -219,11 +250,11 @@ private fun TagPickerDialog(
                         onConfirm(create().sortedWith { a, b -> collator.compare(a, b) })
                     }) { Text(stringResource(R.string.action_ok)) }
                 }
-                val createLabel = stringResource(R.string.tag_create, tagName(draft))
+                val createLabel = stringResource(texts.create, tagName(draft))
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
-                    placeholder = { Text(stringResource(R.string.tag_hint)) },
+                    placeholder = { Text(stringResource(texts.hint)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { create() }),
@@ -249,7 +280,7 @@ private fun TagPickerDialog(
                 val shown = filterTags(all, draft)
                 if (shown.isEmpty()) {
                     Text(
-                        stringResource(if (draft.isBlank()) R.string.tags_none else R.string.tags_no_match),
+                        stringResource(if (draft.isBlank()) texts.none else texts.noMatch),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier
                             .weight(1f)
@@ -290,14 +321,14 @@ private fun TagRow(tag: String, checked: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun TagChip(tag: String, onRemove: () -> Unit) {
+private fun TagChip(tag: String, @StringRes remove: Int, onRemove: () -> Unit) {
     Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
         Row(
             modifier = Modifier.padding(start = 12.dp, end = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(tag, style = MaterialTheme.typography.labelLarge)
-            val removeLabel = stringResource(R.string.tag_remove)
+            val removeLabel = stringResource(remove)
             IconButton(
                 onClick = onRemove,
                 modifier = Modifier

@@ -92,6 +92,24 @@ class NavStateTest {
         assertEquals(nav.toLibrary(), nav.toView(MenuView.LIBRARY))
         assertEquals(nav.toGroups(GroupKind.SETLIST), nav.toView(MenuView.SETLISTS))
         assertEquals(nav.toGroups(GroupKind.TAG), nav.toView(MenuView.TAGS))
+        assertEquals(nav.toGroups(GroupKind.PERSON), nav.toView(MenuView.PEOPLE))
+    }
+
+    @Test
+    fun backFromAScoreOfAPersonGoesBackToTheListItWasOpenedFrom() {
+        // opened from a person's scores as performer (facet 1): back shows that list again
+        val nav = NavState(sheet = score, playKind = GroupKind.PERSON, playGroup = 5, playFacet = 1, playItem = 1).leaveScore()
+
+        assertEquals(GroupKind.PERSON, nav.groups)
+        assertEquals(5L, nav.groupShown)
+        assertEquals(1, nav.groupFacet)
+    }
+
+    @Test
+    fun anotherViewShowsItsFirstFacet() {
+        val nav = NavState(groups = GroupKind.PERSON, groupShown = 5, groupFacet = 1).toView(MenuView.TAGS)
+
+        assertEquals(0, nav.groupFacet)
     }
 
     @Test

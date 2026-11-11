@@ -27,6 +27,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,6 +45,8 @@ import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.library.GroupKind
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
+import com.musigatto.fosscore.library.PersonRepository
+import com.musigatto.fosscore.library.PersonRole
 import com.musigatto.fosscore.library.ScoreGroups
 import com.musigatto.fosscore.library.SetlistRepository
 import com.musigatto.fosscore.library.Sheet
@@ -52,8 +55,12 @@ import com.musigatto.fosscore.library.neighbour
 import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.score.SheetFormat
 import com.musigatto.fosscore.ui.groups.ScoreGroupsScreen
+import com.musigatto.fosscore.ui.groups.personFacets
+import com.musigatto.fosscore.ui.groups.setlistFacets
+import com.musigatto.fosscore.ui.groups.tagFacets
 import com.musigatto.fosscore.ui.groups.texts
 import com.musigatto.fosscore.ui.library.LibraryMenuDrawer
+import com.musigatto.fosscore.ui.library.LocalSheetCredits
 import com.musigatto.fosscore.ui.library.alphabetical
 import com.musigatto.fosscore.ui.library.MainNavigation
 import com.musigatto.fosscore.ui.library.MenuView
@@ -131,12 +138,16 @@ internal data class NavState(
     /** The groups shown over everything (the setlists, the tags), and which one (0: their list). */
     val groups: GroupKind? = null,
     val groupShown: Long = 0,
+    /** Which of the group's facets shows: a person's scores as author/composer (0) or as performer (1). */
+    val groupFacet: Int = 0,
     /**
      * The score open is this entry of this group (0: opened from the library): a setlist's place,
      * or the score itself in a tag.
      */
     val playKind: GroupKind = GroupKind.SETLIST,
     val playGroup: Long = 0,
+    /** The facet the score was opened from: the next score is the next one of that list. */
+    val playFacet: Int = 0,
     val playItem: Long = 0,
     /** The page the score opens on. */
     val start: StartPage = StartPage.REMEMBERED,
@@ -148,6 +159,7 @@ internal data class NavState(
         MenuView.LIBRARY -> toLibrary()
         MenuView.SETLISTS -> toGroups(GroupKind.SETLIST)
         MenuView.TAGS -> toGroups(GroupKind.TAG)
+        MenuView.PEOPLE -> toGroups(GroupKind.PERSON)
         MenuView.PRACTICE -> this
     }
 
@@ -162,14 +174,15 @@ internal data class NavState(
     fun toLibrary() = copy(libraryOpen = true, groups = null)
 
     /** The groups of [kind], chosen in the side menu or from a score: [shown] (0: their list). */
-    fun toGroups(kind: GroupKind, shown: Long = 0) = copy(groups = kind, groupShown = shown, libraryOpen = false)
+    fun toGroups(kind: GroupKind, shown: Long = 0, facet: Int = 0) =
+        copy(groups = kind, groupShown = shown, groupFacet = facet, libraryOpen = false)
 
     /**
      * Back from the score: to where it was opened from. A score of a setlist or a tag goes back
      * to it, where the entry just left stays marked; any other score goes back to the library.
      */
     fun leaveScore() =
-        if (playGroup != 0L) copy(sheet = null, libraryOpen = false, groups = playKind, groupShown = playGroup)
+        if (playGroup != 0L) copy(sheet = null, libraryOpen = false, groups = playKind, groupShown = playGroup, groupFacet = playFacet)
         else copy(sheet = null, libraryOpen = false)
 }
 
@@ -188,6 +201,8 @@ private val NavSaver = listSaver(
             it.playItem,
             it.start.name,
             it.playKind.name,
+            it.groupFacet,
+            it.playFacet,
         )
     },
     restore = { v ->
@@ -205,6 +220,8 @@ private val NavSaver = listSaver(
             playItem = v.getOrNull(7) as? Long ?: 0L,
             start = (v.getOrNull(8) as? String)?.let { StartPage.valueOf(it) } ?: StartPage.REMEMBERED,
             playKind = (v.getOrNull(9) as? String)?.let { GroupKind.valueOf(it) } ?: GroupKind.SETLIST,
+            groupFacet = v.getOrNull(10) as? Int ?: 0,
+            playFacet = v.getOrNull(11) as? Int ?: 0,
         )
     }
 )
@@ -215,7 +232,7 @@ private val NavSaver = listSaver(
 internal fun Sheet.toSaveable(): List<Any> = listOf(
     id, fileName, path, hash, title, composer, genre, musicalKey, tags,
     format?.name.orEmpty(), tempoBpm ?: 0.0, beatUnit ?: 0, timeSignature.orEmpty(),
-    durationS ?: 0.0, openedAt ?: 0L, openCount ?: 0, addedAt ?: 0L,
+    durationS ?: 0.0, openedAt ?: 0L, openCount ?: 0, addedAt ?: 0L, comment,
 )
 
 internal fun sheetFromSaveable(v: List<Any>) = Sheet(
@@ -236,6 +253,7 @@ internal fun sheetFromSaveable(v: List<Any>) = Sheet(
     openedAt = (v[14] as Long).takeIf { it != 0L },
     openCount = (v[15] as Int).takeIf { it != 0 },
     addedAt = (v[16] as Long).takeIf { it != 0L },
+    comment = v.getOrNull(17) as? String ?: "",
 )
 
 @Composable
@@ -268,12 +286,24 @@ private fun FOSScoreNav(
     val context = LocalContext.current
     val setlists = remember { SetlistRepository(context) }
     val tags = remember { TagRepository(context) }
+    val people = remember { PersonRepository(context) }
+    val composers = remember { PersonRepository(context, PersonRole.COMPOSER) }
+    val performers = remember { PersonRepository(context, PersonRole.PERFORMER) }
     fun groupsOf(kind: GroupKind): ScoreGroups = when (kind) {
         GroupKind.SETLIST -> setlists
         GroupKind.TAG -> tags
+        GroupKind.PERSON -> people
     }
-    val playing by remember(s.playKind, s.playGroup) {
-        val groups = groupsOf(s.playKind)
+    fun facetsOf(kind: GroupKind) = when (kind) {
+        GroupKind.SETLIST -> setlistFacets(setlists)
+        GroupKind.TAG -> tagFacets(tags)
+        GroupKind.PERSON -> personFacets(composers, performers)
+    }
+    // who each score is by, shown under its title in every list and in the viewer
+    val credits by remember(repository) { repository.creditsBySheet() }.collectAsState(initial = emptyMap())
+    val playing by remember(s.playKind, s.playGroup, s.playFacet) {
+        // the scores of the facet the score was opened from (a person's as performer, say)
+        val groups = facetsOf(s.playKind).getOrNull(s.playFacet)?.groups ?: groupsOf(s.playKind)
         if (s.playGroup == 0L) flowOf(emptyList())
         else groups.entries(s.playGroup).map { entries ->
             if (groups.ordered) entries else alphabetical(entries) { it.sheet.title }
@@ -308,6 +338,7 @@ private fun FOSScoreNav(
     // The window background is always light (Theme.FOSScore extends Theme.Material.Light), and a
     // composable that paints nothing shows it: that is why the page matte was white even in dark
     // mode. Painting the app background here covers every screen.
+    CompositionLocalProvider(LocalSheetCredits provides credits) {
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // the score stays composed under the library: opening the menu must not reload the PDF
         s.sheet?.let { sheet ->
@@ -319,7 +350,7 @@ private fun FOSScoreNav(
                 PdfViewerScreen(
                     pdfUri = Uri.fromFile(File(sheet.path)),
                     title = sheet.title,
-                    composer = sheet.composer,
+                    composer = credits[sheet.id]?.line.orEmpty(),
                     // back leaves the score for where it came from: score -> setlist or library -> exit
                     onBack = { nav = nav.leaveScore() },
                     // ♪ opens the library over the live page instead
@@ -328,7 +359,7 @@ private fun FOSScoreNav(
                     onToggleTheme = toggleTheme,
                     onOpenPreferences = { nav = nav.copy(preferences = true) },
                     sheetId = sheet.id,
-                    onOpenSetlist = { nav = nav.toGroups(s.playKind, s.playGroup) },
+                    onOpenSetlist = { nav = nav.toGroups(s.playKind, s.playGroup, s.playFacet) },
                     onPastEnd = openPlace(neighbour(playingIds, s.playItem, 1), StartPage.FIRST),
                     onBeforeStart = openPlace(neighbour(playingIds, s.playItem, -1), StartPage.LAST),
                     start = s.start,
@@ -372,18 +403,23 @@ private fun FOSScoreNav(
                                     ScoreGroupsScreen(
                                         groups = groupsOf(kind),
                                         texts = kind.texts(),
+                                        facets = facetsOf(kind),
+                                        facet = s.groupFacet,
                                         library = repository,
                                         shownId = s.groupShown.takeIf { it != 0L },
                                         // marked only in its own group: a tag's entry is a score id, a
                                         // setlist's a place id
                                         playingKey = s.playItem.takeIf {
-                                            it != 0L && s.playKind == kind && s.playGroup == s.groupShown
+                                            it != 0L && s.playKind == kind && s.playGroup == s.groupShown &&
+                                                s.playFacet == s.groupFacet
                                         },
                                         onShow = { nav = nav.copy(groupShown = it ?: 0L) },
+                                        onFacet = { nav = nav.copy(groupFacet = it) },
                                         onPlay = { groupId, entry ->
                                             nav = nav.copy(
                                                 sheet = entry.sheet, libraryOpen = false, groups = null,
-                                                playKind = kind, playGroup = groupId, playItem = entry.entryKey,
+                                                playKind = kind, playGroup = groupId, playFacet = s.groupFacet,
+                                                playItem = entry.entryKey,
                                                 start = StartPage.FIRST, chromeShown = false,
                                             )
                                         },
@@ -434,9 +470,11 @@ private fun FOSScoreNav(
         // Volver), not the layer underneath it
         if (s.detail != null) BackHandler { nav = nav.copy(detail = null) }
     }
+    }
 }
 /** The view of the side menu showing the groups of [this] kind. */
 private fun GroupKind.view(): MenuView = when (this) {
     GroupKind.SETLIST -> MenuView.SETLISTS
     GroupKind.TAG -> MenuView.TAGS
+    GroupKind.PERSON -> MenuView.PEOPLE
 }

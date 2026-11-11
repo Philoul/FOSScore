@@ -24,14 +24,28 @@ class TagNamesTest {
 
     @Test
     fun aTagWrittenOnSeveralScoresBecomesOneTag() {
-        val plan = TagBackfill.of(listOf(1L to "Rock duo", 2L to "rock", 3L to "", 4L to "Duo, rôck"))
+        val plan = NameBackfill.of(listOf(1L to "Rock duo", 2L to "rock", 3L to "", 4L to "Duo, rôck"), ::splitTagText)
         assertEquals(listOf("Rock", "duo"), plan.names)
         assertEquals(listOf(1L to 0, 1L to 1, 2L to 0, 4L to 1, 4L to 0), plan.links)
     }
 
     @Test
+    fun theComposerTextSplitsIntoPeople() {
+        assertEquals(listOf("Léonard Cohen", "Kyle Landry"), splitPeopleText(" Léonard Cohen  / Kyle Landry"))
+        assertEquals(listOf("Simon", "Garfunkel", "Bach", "Johann Sebastian"), splitPeopleText("Simon & Garfunkel; Bach, Johann Sebastian"))
+        assertEquals(emptyList<String>(), splitPeopleText(" / "))
+    }
+
+    @Test
+    fun aPersonNamedOnSeveralScoresBecomesOnePerson() {
+        val plan = NameBackfill.of(listOf(1L to "Patrick Bruel", 2L to "", 3L to "patrick bruel / Il était une fois"), ::splitPeopleText)
+        assertEquals(listOf("Patrick Bruel", "Il était une fois"), plan.names)
+        assertEquals(listOf(1L to 0, 3L to 0, 3L to 1), plan.links)
+    }
+
+    @Test
     fun aScoreGetsATagOnceEvenIfItsTextRepeatsIt() {
-        val plan = TagBackfill.of(listOf(1L to "duo Duo dúo"))
+        val plan = NameBackfill.of(listOf(1L to "duo Duo dúo"), ::splitTagText)
         assertEquals(listOf("duo"), plan.names)
         assertEquals(listOf(1L to 0), plan.links)
     }

@@ -22,6 +22,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -69,16 +72,13 @@ import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
 import com.musigatto.fosscore.ui.viewer.LineIcon
 import kotlinx.coroutines.launch
 
-/** What the groups screen says for one kind of group; the rest of its words are shared. */
+/** What the groups screen says about the groups of one kind; what it says on their scores is in [GroupFacet]. */
 class GroupTexts(
     @StringRes val new: Int,
     @StringRes val none: Int,
-    @StringRes val empty: Int,
     @StringRes val deleteTitle: Int,
     @StringRes val deleteText: Int,
-    @StringRes val remove: Int,
     @StringRes val nameTaken: Int,
-    @StringRes val inGroup: Int,
 )
 
 /** The words of the screen of [this] kind of group. */
@@ -86,29 +86,58 @@ fun GroupKind.texts(): GroupTexts = when (this) {
     GroupKind.SETLIST -> GroupTexts(
         new = R.string.setlist_new,
         none = R.string.setlist_none,
-        empty = R.string.setlist_empty,
         deleteTitle = R.string.setlist_delete_title,
         deleteText = R.string.setlist_delete_text,
-        remove = R.string.setlist_remove,
         nameTaken = R.string.group_name_taken,
-        inGroup = R.string.setlist_in,
     )
     GroupKind.TAG -> GroupTexts(
         new = R.string.tag_new,
         none = R.string.tag_list_none,
-        empty = R.string.tag_empty,
         deleteTitle = R.string.tag_delete_title,
         deleteText = R.string.tag_delete_text,
-        remove = R.string.tag_remove_score,
         nameTaken = R.string.tag_name_taken,
-        inGroup = R.string.tag_on_score,
+    )
+    GroupKind.PERSON -> GroupTexts(
+        new = R.string.person_new,
+        none = R.string.people_none,
+        deleteTitle = R.string.person_delete_title,
+        deleteText = R.string.person_delete_text,
+        nameTaken = R.string.person_name_taken,
     )
 }
 
 /**
- * Groups of scores (the setlists, the tags): their list, or one of them ([shownId]) with its
- * scores, in its order for a setlist ([ScoreGroups.ordered]), by title under the letters for a
- * tag. A tap on a score opens it in the group: turning the page past its end opens the next one.
+ * One way of looking at a group's scores, and of adding to them: a setlist or a tag has one; a
+ * person has two, as author/composer and as performer, each its own [groups] (the scores in that
+ * role). [label] names it on the switch (null: a single facet, no switch); [empty], [remove] and
+ * [inGroup] are what the screen says on its scores.
+ */
+class GroupFacet(
+    @StringRes val label: Int?,
+    val groups: ScoreGroups,
+    @StringRes val empty: Int,
+    @StringRes val remove: Int,
+    @StringRes val inGroup: Int,
+)
+
+fun setlistFacets(setlists: ScoreGroups) =
+    listOf(GroupFacet(null, setlists, R.string.setlist_empty, R.string.setlist_remove, R.string.setlist_in))
+
+fun tagFacets(tags: ScoreGroups) =
+    listOf(GroupFacet(null, tags, R.string.tag_empty, R.string.tag_remove_score, R.string.tag_on_score))
+
+/** A person's scores as author/composer (facet 0) and as performer (facet 1). */
+fun personFacets(composers: ScoreGroups, performers: ScoreGroups) = listOf(
+    GroupFacet(R.string.person_as_composer, composers, R.string.composer_empty, R.string.composer_remove, R.string.composer_on_score),
+    GroupFacet(R.string.person_as_performer, performers, R.string.performer_empty, R.string.performer_remove, R.string.performer_on_score),
+)
+
+/**
+ * Groups of scores (the setlists, the tags, the people): their list ([groups]), or one of them
+ * ([shownId]) with its scores, in its order for a setlist ([ScoreGroups.ordered]), by title under
+ * the letters otherwise. A person's scores show in one of its [facets] ([facet]: as
+ * author/composer or as performer), two buttons switching. A tap on a score opens it in the group:
+ * turning the page past its end opens the next one.
  *
  * [playingKey] is the entry open in the viewer, marked in the list.
  */
@@ -116,10 +145,13 @@ fun GroupKind.texts(): GroupTexts = when (this) {
 fun ScoreGroupsScreen(
     groups: ScoreGroups,
     texts: GroupTexts,
+    facets: List<GroupFacet>,
+    facet: Int,
     library: LibraryRepository,
     shownId: Long?,
     playingKey: Long?,
     onShow: (Long?) -> Unit,
+    onFacet: (Int) -> Unit,
     onPlay: (groupId: Long, entry: GroupEntry) -> Unit,
     onClose: () -> Unit,
     /** The left of the header of the list: ☰ and the name, or the views' icons (MainNavigation). */
@@ -128,7 +160,25 @@ fun ScoreGroupsScreen(
     if (shownId == null) {
         GroupList(groups, texts, onShow, onClose, navigation)
     } else {
-        GroupDetail(groups, texts, library, shownId, playingKey, onBack = { onShow(null) }, onPlay = { onPlay(shownId, it) })
+        GroupDetail(
+            groups, texts, facets, facet.coerceIn(facets.indices), library, shownId, playingKey,
+            onFacet = onFacet, onBack = { onShow(null) }, onPlay = { onPlay(shownId, it) },
+        )
+    }
+}
+
+/** The buttons between the facets of a group (a person: as author/composer, as performer); none for one facet. */
+@Composable
+private fun FacetSwitch(facets: List<GroupFacet>, facet: Int, onFacet: (Int) -> Unit) {
+    if (facets.size < 2) return
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        facets.forEachIndexed { index, f ->
+            SegmentedButton(
+                selected = index == facet,
+                onClick = { onFacet(index) },
+                shape = SegmentedButtonDefaults.itemShape(index, facets.size),
+            ) { Text(f.label?.let { stringResource(it) }.orEmpty()) }
+        }
     }
 }
 
@@ -232,21 +282,25 @@ private fun GroupList(
 private fun GroupDetail(
     groups: ScoreGroups,
     texts: GroupTexts,
+    facets: List<GroupFacet>,
+    facet: Int,
     library: LibraryRepository,
     id: Long,
     playingKey: Long?,
+    onFacet: (Int) -> Unit,
     onBack: () -> Unit,
     onPlay: (GroupEntry) -> Unit,
 ) {
+    val shown = facets[facet]
     val name by remember(groups, id) { groups.name(id) }.collectAsState(initial = null)
-    val entries by remember(groups, id) { groups.entries(id) }.collectAsState(initial = emptyList())
+    val entries by remember(shown, id) { shown.groups.entries(id) }.collectAsState(initial = emptyList())
     var editing by rememberSaveable { mutableStateOf(false) }
     var renaming by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     if (editing) {
-        GroupEditor(groups, texts, library, id, name.orEmpty(), entries, onDone = { editing = false })
+        GroupEditor(facets, facet, library, id, name.orEmpty(), entries, onFacet = onFacet, onDone = { editing = false })
         return
     }
 
@@ -259,8 +313,9 @@ private fun GroupDetail(
                 Text(stringResource(R.string.setlist_edit))
             }
         }
+        FacetSwitch(facets, facet, onFacet)
         if (entries.isEmpty()) {
-            Text(stringResource(texts.empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(shown.empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
         }
         val row: @Composable (Int?, GroupEntry) -> Unit = { number, entry ->
             val playing = entry.entryKey == playingKey
@@ -278,7 +333,7 @@ private fun GroupDetail(
                 SheetText(entry.sheet, Modifier.weight(1f), bold = playing)
             }
         }
-        if (groups.ordered) {
+        if (shown.groups.ordered) {
             LazyColumn(Modifier.fillMaxSize()) {
                 itemsIndexed(entries, key = { _, e -> e.entryKey }) { index, entry ->
                     row(index + 1, entry)
@@ -332,39 +387,45 @@ private fun GroupDetail(
  * Editing a group, with both sides in sight: the group (for a setlist in its order, drag ≡ to move
  * a score; for a tag by title) with ✕ to take a score out, and the library, grouped by letter with
  * an index to jump. A tap on a score of the library puts it in a setlist, at the end even if it is
- * already in it; for a tag it puts the tag on the score, or takes it off. The scores already in the
- * group show on a pale blue background. Side by side on a tablet, one above the other on a phone.
+ * already in it; for a tag it puts the tag on the score, or takes it off; for a person, the same
+ * in the role chosen with the two buttons on top (as author/composer, as performer). The scores
+ * already in the group show on a pale blue background. Side by side on a tablet, one above the
+ * other on a phone.
  */
 @Composable
 private fun GroupEditor(
-    groups: ScoreGroups,
-    texts: GroupTexts,
+    facets: List<GroupFacet>,
+    facet: Int,
     library: LibraryRepository,
     id: Long,
     name: String,
     entries: List<GroupEntry>,
+    onFacet: (Int) -> Unit,
     onDone: () -> Unit,
 ) {
+    val shown = facets[facet]
+    val groups = shown.groups
     val scope = rememberCoroutineScope()
     BackHandler(onBack = onDone)
     Column(Modifier.fillMaxSize()) {
         Header(name, onDone, stringResource(R.string.action_back)) {
             Button(onClick = onDone, modifier = Modifier.padding(end = 8.dp)) { Text(stringResource(R.string.setlist_done)) }
         }
+        FacetSwitch(facets, facet, onFacet)
         HorizontalDivider()
         val members: @Composable (Modifier) -> Unit = { modifier ->
             val onRemove: (Long) -> Unit = { key -> scope.launch { groups.remove(id, key) } }
             if (groups.ordered) {
                 EditedOrder(
                     entries,
-                    texts,
+                    shown,
                     onReorder = { keys -> scope.launch { groups.reorder(keys) } },
                     onMove = { from, to -> scope.launch { groups.move(entries, from, to) } },
                     onRemove = onRemove,
                     modifier = modifier,
                 )
             } else {
-                EditedMembers(entries, texts, onRemove, modifier)
+                EditedMembers(entries, shown, onRemove, modifier)
             }
         }
         val picker: @Composable (Modifier) -> Unit = { modifier ->
@@ -373,7 +434,7 @@ private fun GroupEditor(
                 library,
                 present = times,
                 mark = { count -> if (groups.ordered) "×$count" else "✓" },
-                inGroup = stringResource(texts.inGroup),
+                inGroup = stringResource(shown.inGroup),
                 onTap = { sheet ->
                     scope.launch {
                         // a tag is on a score or not: a second tap takes it off
@@ -409,7 +470,7 @@ private val TWO_COLUMNS = 560.dp
 @Composable
 private fun EditedOrder(
     entries: List<GroupEntry>,
-    texts: GroupTexts,
+    texts: GroupFacet,
     onReorder: (List<Long>) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
     onRemove: (entryKey: Long) -> Unit,
@@ -508,7 +569,7 @@ private fun EditedOrder(
 
 /** The scores of a group with no order (a tag), by title under the letters, ✕ to take one out. */
 @Composable
-private fun EditedMembers(entries: List<GroupEntry>, texts: GroupTexts, onRemove: (entryKey: Long) -> Unit, modifier: Modifier) {
+private fun EditedMembers(entries: List<GroupEntry>, texts: GroupFacet, onRemove: (entryKey: Long) -> Unit, modifier: Modifier) {
     Column(modifier) {
         ColumnTitle(pluralStringResource(R.plurals.setlist_size, entries.size, entries.size))
         if (entries.isEmpty()) {

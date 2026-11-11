@@ -98,12 +98,18 @@ enum class PersonRole { COMPOSER, PERFORMER }
 /** A genre is a tag too: one mechanism, and the genre filter is [kind]. */
 enum class TagKind { GENRE, FREE }
 
-@Entity(tableName = "tags", indices = [Index("name", unique = true)])
+/**
+ * A tag or a genre ([kind]). A name is unique within its kind (v9): the genre "Pop" and a tag "Pop"
+ * are two rows. [code] is the [Genre] a default genre is, shown in the app's language; null for
+ * every name the user wrote.
+ */
+@Entity(tableName = "tags", indices = [Index(value = ["kind", "name"], unique = true)])
 data class Tag(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val color: Int? = null,
     val kind: TagKind = TagKind.FREE,
+    val code: String? = null,
 )
 
 @Entity(

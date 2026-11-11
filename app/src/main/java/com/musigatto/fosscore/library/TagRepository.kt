@@ -32,10 +32,10 @@ class TagRepository(context: Context) : ScoreGroups {
     // a tag's entry is the score itself
     override suspend fun remove(id: Long, entryKey: Long) = dao.unlink(sheetId = entryKey, tagId = id)
 
-    // one tag per name, whatever its spelling: "rock" cannot be made beside "Rock". Every kind is
-    // checked, the table's names being unique across kinds
+    // one tag per name, whatever its spelling: "rock" cannot be made beside "Rock"; a genre "Rock"
+    // is another kind, and may be
     override suspend fun nameTaken(name: String, id: Long?): Boolean =
-        dao.all().any { it.id != id && sameTag(it.name, name) }
+        dao.free().any { it.id != id && sameTag(it.name, name) }
 
     override suspend fun reorder(entryKeys: List<Long>) = Unit
 }

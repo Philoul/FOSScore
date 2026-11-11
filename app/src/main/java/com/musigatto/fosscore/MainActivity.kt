@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.library.GroupKind
+import com.musigatto.fosscore.library.GenreRepository
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.library.PersonRepository
@@ -55,12 +56,14 @@ import com.musigatto.fosscore.library.neighbour
 import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.score.SheetFormat
 import com.musigatto.fosscore.ui.groups.ScoreGroupsScreen
+import com.musigatto.fosscore.ui.groups.genreFacets
 import com.musigatto.fosscore.ui.groups.personFacets
 import com.musigatto.fosscore.ui.groups.setlistFacets
 import com.musigatto.fosscore.ui.groups.tagFacets
 import com.musigatto.fosscore.ui.groups.texts
 import com.musigatto.fosscore.ui.library.LibraryMenuDrawer
 import com.musigatto.fosscore.ui.library.LocalSheetCredits
+import com.musigatto.fosscore.ui.library.rememberGenreLabels
 import com.musigatto.fosscore.ui.library.alphabetical
 import com.musigatto.fosscore.ui.library.MainNavigation
 import com.musigatto.fosscore.ui.library.MenuView
@@ -160,6 +163,7 @@ internal data class NavState(
         MenuView.SETLISTS -> toGroups(GroupKind.SETLIST)
         MenuView.TAGS -> toGroups(GroupKind.TAG)
         MenuView.PEOPLE -> toGroups(GroupKind.PERSON)
+        MenuView.GENRES -> toGroups(GroupKind.GENRE)
         MenuView.PRACTICE -> this
     }
 
@@ -289,15 +293,20 @@ private fun FOSScoreNav(
     val people = remember { PersonRepository(context) }
     val composers = remember { PersonRepository(context, PersonRole.COMPOSER) }
     val performers = remember { PersonRepository(context, PersonRole.PERFORMER) }
+    // the default genres in the app's language (the activity is recreated when it changes)
+    val genreLabels = rememberGenreLabels()
+    val genres = remember(genreLabels) { GenreRepository(context, genreLabels) }
     fun groupsOf(kind: GroupKind): ScoreGroups = when (kind) {
         GroupKind.SETLIST -> setlists
         GroupKind.TAG -> tags
         GroupKind.PERSON -> people
+        GroupKind.GENRE -> genres
     }
     fun facetsOf(kind: GroupKind) = when (kind) {
         GroupKind.SETLIST -> setlistFacets(setlists)
         GroupKind.TAG -> tagFacets(tags)
         GroupKind.PERSON -> personFacets(composers, performers)
+        GroupKind.GENRE -> genreFacets(genres)
     }
     // who each score is by, shown under its title in every list and in the viewer
     val credits by remember(repository) { repository.creditsBySheet() }.collectAsState(initial = emptyMap())
@@ -477,4 +486,5 @@ private fun GroupKind.view(): MenuView = when (this) {
     GroupKind.SETLIST -> MenuView.SETLISTS
     GroupKind.TAG -> MenuView.TAGS
     GroupKind.PERSON -> MenuView.PEOPLE
+    GroupKind.GENRE -> MenuView.GENRES
 }

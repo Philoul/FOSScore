@@ -93,6 +93,7 @@ class NavStateTest {
         assertEquals(nav.toGroups(GroupKind.SETLIST), nav.toView(MenuView.SETLISTS))
         assertEquals(nav.toGroups(GroupKind.TAG), nav.toView(MenuView.TAGS))
         assertEquals(nav.toGroups(GroupKind.PERSON), nav.toView(MenuView.PEOPLE))
+        assertEquals(nav.toGroups(GroupKind.GENRE), nav.toView(MenuView.GENRES))
     }
 
     @Test

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "05870f65d7a5df9013d328d90e1bf4d6",
+    "identityHash": "cb000c3b10d6d10613147f43ff1c6671",
     "entities": [
       {
         "tableName": "sheets",
@@ -497,7 +497,7 @@
       },
       {
         "tableName": "tags",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `color` INTEGER, `kind` TEXT NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `color` INTEGER, `kind` TEXT NOT NULL, `code` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
@@ -521,6 +521,11 @@
             "columnName": "kind",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -531,13 +536,14 @@
         },
         "indices": [
           {
-            "name": "index_tags_name",
+            "name": "index_tags_kind_name",
             "unique": true,
             "columnNames": [
+              "kind",
               "name"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `${TABLE_NAME}` (`name`)"
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_kind_name` ON `${TABLE_NAME}` (`kind`, `name`)"
           }
         ]
       },
@@ -770,7 +776,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '05870f65d7a5df9013d328d90e1bf4d6')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cb000c3b10d6d10613147f43ff1c6671')"
     ]
   }
 }

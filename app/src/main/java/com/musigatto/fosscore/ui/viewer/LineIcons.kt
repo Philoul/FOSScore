@@ -52,6 +52,8 @@ internal const val LINE_SETLIST = "M9,6h11M9,12h11M9,18h11M4.5,6h0.01M4.5,12h0.0
 internal val LINE_TAG = "M3,3h8l10,10l-8,8l-10,-10z" + circle(7.5f, 7.5f, 1.5f)
 // a head and shoulders: the people (authors, composers, performers)
 internal val LINE_PEOPLE = circle(12f, 8f, 3.5f) + "M5,20a7,7 0 0,1 14,0"
+// two notes beamed: the genres of music
+internal val LINE_GENRE = "M9,17V5l10,-2v12" + circle(6.5f, 17f, 2.5f) + circle(16.5f, 15f, 2.5f)
 internal val LINE_PRACTICE = circle(12f, 13.5f, 7.5f) + "M12,13.5v-4M10,2.5h4M12,2.5v3.5M18,6l1.5,-1.5"
 internal val LINE_ABOUT = circle(12f, 12f, 9f) + "M12,11v6M12,7.5v0.01"
 internal const val LINE_BOOKMARK = "M7,3h10v18l-5,-4l-5,4z"

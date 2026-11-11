@@ -7,7 +7,7 @@ class MenuViewTest {
     @Test
     fun everyViewButPracticeIsBuilt() {
         assertEquals(
-            listOf(MenuView.LIBRARY, MenuView.SETLISTS, MenuView.TAGS, MenuView.PEOPLE),
+            listOf(MenuView.LIBRARY, MenuView.SETLISTS, MenuView.TAGS, MenuView.PEOPLE, MenuView.GENRES),
             MenuView.entries.filter { it.ready },
         )
     }

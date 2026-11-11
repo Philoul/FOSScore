@@ -127,6 +127,13 @@ fun GroupKind.texts(): GroupTexts = when (this) {
             none = R.string.person_merge_none,
         ),
     )
+    GroupKind.GENRE -> GroupTexts(
+        new = R.string.genre_new,
+        none = R.string.genre_list_none,
+        deleteTitle = R.string.genre_delete_title,
+        deleteText = R.string.genre_delete_text,
+        nameTaken = R.string.genre_name_taken,
+    )
 }
 
 /**
@@ -148,6 +155,9 @@ fun setlistFacets(setlists: ScoreGroups) =
 
 fun tagFacets(tags: ScoreGroups) =
     listOf(GroupFacet(null, tags, R.string.tag_empty, R.string.tag_remove_score, R.string.tag_on_score))
+
+fun genreFacets(genres: ScoreGroups) =
+    listOf(GroupFacet(null, genres, R.string.genre_empty, R.string.genre_remove_score, R.string.genre_on_score))
 
 /** A person's scores as author/composer (facet 0) and as performer (facet 1). */
 fun personFacets(composers: ScoreGroups, performers: ScoreGroups) = listOf(

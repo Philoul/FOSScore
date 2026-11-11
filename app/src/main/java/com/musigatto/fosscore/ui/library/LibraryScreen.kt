@@ -49,6 +49,8 @@ import com.musigatto.fosscore.ui.viewer.LINE_MENU
 import com.musigatto.fosscore.ui.viewer.LINE_CLOSE
 import com.musigatto.fosscore.ui.viewer.LineIcon
 import com.musigatto.fosscore.library.LibraryRepository
+import com.musigatto.fosscore.library.MusicalKey
+import com.musigatto.fosscore.library.genreLabel
 import com.musigatto.fosscore.library.PersonRole
 import com.musigatto.fosscore.library.Sheet
 import com.musigatto.fosscore.score.SheetFormat
@@ -84,9 +86,19 @@ fun LibraryScreen(
     val knownFlow = remember(repository) { repository.tags() }
     val knownTags by knownFlow.collectAsState(initial = emptyList())
     val knownPeople by remember(repository) { repository.people() }.collectAsState(initial = emptyList())
+    val knownGenres by remember(repository) { repository.genres() }.collectAsState(initial = emptyList())
+    val genresBySheet by remember(repository) { repository.genresBySheet() }.collectAsState(initial = emptyMap())
+    val keysBySheet by remember(repository) { repository.keysBySheet() }.collectAsState(initial = emptyMap())
+    val genreLabels = rememberGenreLabels()
+    val keyLabels = rememberKeyLabels()
     val credits = LocalSheetCredits.current
     var query by rememberSaveable { mutableStateOf("") }
-    val visible = filterSheets(sheets, query, tagsBySheet, credits)
+    // the search finds a score by its tags, genres and keys as shown (in the app's language)
+    val words = remember(tagsBySheet, genresBySheet, keysBySheet, genreLabels, keyLabels) {
+        wordsBySheet(tagsBySheet, genresBySheet.mapValues { (_, g) -> g.map { it.genreLabel(genreLabels) } },
+            keysBySheet.mapValues { (_, k) -> k.mapNotNull { keyLabels[it] } })
+    }
+    val visible = filterSheets(sheets, query, words, credits)
     // ids of the rows ticked; empty = not selecting
     var selected by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     val chosen = sheets.filter { it.id in selected }
@@ -240,20 +252,16 @@ fun LibraryScreen(
             count = chosen.size,
             knownTags = knownTags.map { it.name },
             knownPeople = knownPeople.map { it.name },
+            knownGenres = knownGenres.map { it.genreLabel(genreLabels) },
+            knownKeys = MusicalKey.entries.mapNotNull { keyLabels[it] },
             onDismiss = { bulkEdit = false },
             onApply = { edit ->
                 bulkEdit = false
                 selected = emptyList()
                 scope.launch {
-                    chosen.forEach { sheet ->
-                        repository.save(
-                            sheet.copy(
-                                genre = edit.genre.ifBlank { sheet.genre },
-                                musicalKey = edit.musicalKey.ifBlank { sheet.musicalKey },
-                            )
-                        )
-                    }
                     val ids = chosen.map { it.id }
+                    if (edit.genres.isNotEmpty()) repository.addGenres(ids, edit.genres, genreLabels)
+                    if (edit.keys.isNotEmpty()) repository.addKeys(ids, edit.keys.mapNotNull { keyOf(it, keyLabels) })
                     if (edit.composers.isNotEmpty()) repository.addPeople(ids, PersonRole.COMPOSER, edit.composers)
                     if (edit.performers.isNotEmpty()) repository.addPeople(ids, PersonRole.PERFORMER, edit.performers)
                     if (edit.tags.isNotEmpty()) repository.addTags(ids, edit.tags)
@@ -283,28 +291,30 @@ private fun LibraryActions(onClose: (() -> Unit)?, onImport: () -> Unit) {
 private class BulkEdit(
     val composers: List<String>,
     val performers: List<String>,
-    val genre: String,
-    val musicalKey: String,
+    val genres: List<String>,
+    val keys: List<String>,
     val tags: List<String>,
 )
 
 /**
  * What several scores can share. The title and the comment stay out (they are each score's own),
- * and an empty field means "leave it as it is"; people and tags are added to the ones each score
- * already has.
+ * and an empty field means "leave it as it is"; people, genres, keys and tags are added to the
+ * ones each score already has.
  */
 @Composable
 private fun BulkEditDialog(
     count: Int,
     knownTags: List<String>,
     knownPeople: List<String>,
+    knownGenres: List<String>,
+    knownKeys: List<String>,
     onDismiss: () -> Unit,
     onApply: (BulkEdit) -> Unit
 ) {
     var composers by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
     var performers by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
-    var genre by rememberSaveable { mutableStateOf("") }
-    var musicalKey by rememberSaveable { mutableStateOf("") }
+    var genres by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
+    var keys by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
     var tags by rememberSaveable(stateSaver = TagListSaver) { mutableStateOf<List<String>?>(emptyList()) }
 
     AlertDialog(
@@ -330,17 +340,20 @@ private fun BulkEditDialog(
                     onTagsChange = { performers = it },
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = genre,
-                    onValueChange = { genre = it },
-                    label = { Text(stringResource(R.string.field_genre)) },
+                NamesField(
+                    GENRE_NAMES,
+                    tags = genres.orEmpty(),
+                    known = knownGenres,
+                    onTagsChange = { genres = it },
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = musicalKey,
-                    onValueChange = { musicalKey = it },
-                    label = { Text(stringResource(R.string.field_key)) },
-                    modifier = Modifier.fillMaxWidth()
+                NamesField(
+                    KEY_NAMES,
+                    tags = keys.orEmpty(),
+                    known = knownKeys,
+                    onTagsChange = { keys = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    sorted = false,
                 )
                 NamesField(
                     TAG_NAMES,
@@ -352,7 +365,7 @@ private fun BulkEditDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onApply(BulkEdit(composers.orEmpty(), performers.orEmpty(), genre, musicalKey, tags.orEmpty())) }) {
+            TextButton(onClick = { onApply(BulkEdit(composers.orEmpty(), performers.orEmpty(), genres.orEmpty(), keys.orEmpty(), tags.orEmpty())) }) {
                 Text(stringResource(R.string.action_save))
             }
         },

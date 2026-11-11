@@ -75,4 +75,50 @@ interface TagDao {
 
     @Query("DELETE FROM sheet_tags WHERE sheetId = :sheetId AND tagId IN (SELECT id FROM tags WHERE kind = 'FREE')")
     suspend fun unlinkFree(sheetId: Long)
+
+    // --- the genres: tags of kind GENRE, a default one shown by its code ---
+
+    @Query("SELECT * FROM tags WHERE kind = 'GENRE' ORDER BY name COLLATE NOCASE, id")
+    fun observeGenres(): Flow<List<Tag>>
+
+    @Query("SELECT * FROM tags WHERE kind = 'GENRE'")
+    suspend fun genres(): List<Tag>
+
+    @Query("SELECT * FROM tags WHERE id = :id")
+    fun observe(id: Long): Flow<Tag?>
+
+    /** Every genre with how many scores it is on, as the genres screen lists them. */
+    @Query(
+        "SELECT t.id AS id, t.name AS name, t.code AS code, COUNT(st.sheetId) AS size FROM tags t " +
+            "LEFT JOIN sheet_tags st ON st.tagId = t.id WHERE t.kind = 'GENRE' GROUP BY t.id"
+    )
+    fun observeGenreCounts(): Flow<List<GenreCount>>
+
+    @Query(
+        "SELECT st.sheetId AS sheetId, t.id AS tagId, t.name AS name, t.code AS code FROM sheet_tags st " +
+            "JOIN tags t ON t.id = st.tagId WHERE t.kind = 'GENRE'"
+    )
+    fun observeSheetGenres(): Flow<List<SheetGenre>>
+
+    @Query(
+        "SELECT t.* FROM tags t JOIN sheet_tags st ON st.tagId = t.id " +
+            "WHERE st.sheetId = :sheetId AND t.kind = 'GENRE' ORDER BY t.name COLLATE NOCASE, t.id"
+    )
+    suspend fun genresOf(sheetId: Long): List<Tag>
+
+    @Query("DELETE FROM sheet_tags WHERE sheetId = :sheetId AND tagId IN (SELECT id FROM tags WHERE kind = 'GENRE')")
+    suspend fun unlinkGenres(sheetId: Long)
+
+    // a default genre renamed is the user's text from then on, in no language
+    @Query("UPDATE tags SET name = :name, code = NULL WHERE id = :id")
+    suspend fun renameGenre(id: Long, name: String)
+
+    @Query("UPDATE tags SET code = :code WHERE id = :id")
+    suspend fun setCode(id: Long, code: String)
 }
+
+/** A genre and how many scores it is on. */
+data class GenreCount(val id: Long, val name: String, val code: String?, val size: Int)
+
+/** A genre on a score: which score, which genre, its name and its default's code. */
+data class SheetGenre(val sheetId: Long, val tagId: Long, val name: String, val code: String?)

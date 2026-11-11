@@ -157,15 +157,21 @@ class MigrationTest {
                     db.setlistDao().observeSummaries().first()
                 )
 
-                // v9: the score's text "duo, practice" is its tags, whatever the table held; the
-                // genre stays text until its own field (its v5 copy goes)
+                // v9: the score's text "duo, practice" is its tags, whatever the table held
                 val tags = db.openHelper.readableDatabase
-                    .query("SELECT `name`, `kind` FROM `tags` ORDER BY `name`").use { c ->
-                        buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+                    .query("SELECT `name` FROM `tags` WHERE `kind` = 'FREE' ORDER BY `name`").use { c ->
+                        buildList { while (c.moveToNext()) add(c.getString(0)) }
                     }
-                assertEquals("v$version: tags", listOf("duo" to "FREE", "practice" to "FREE"), tags)
+                assertEquals("v$version: tags", listOf("duo", "practice"), tags)
                 assertEquals("v$version: the score's tags", listOf("duo", "practice"), db.tagDao().tagsOf(sheet.id).map { it.name })
-                assertEquals("v$version: genre", "Folk", sheet.genre)
+
+                // v9: the 15 default genres; the text "Folk" is the default "Folk & country"
+                assertEquals("v$version: genres", Genre.entries.map { it.name }, db.tagDao().genres().mapNotNull { it.code }.sortedBy { Genre.valueOf(it).ordinal })
+                assertEquals("v$version: the score's genre", listOf(Genre.FOLK_COUNTRY.name), db.tagDao().genresOf(sheet.id).map { it.code })
+                assertEquals("v$version: genre text", "", sheet.genre)
+                // v9: the key text "F" is the key F
+                assertEquals("v$version: keys", listOf("F"), db.keyDao().keysOf(sheet.id).map { it.key })
+                assertEquals("v$version: key text", "", sheet.musicalKey)
 
                 // v9: the composer text is a person, as author/composer; the text is emptied
                 assertEquals("v$version: people", listOf("Composer"), db.personDao().all().map { it.name })
@@ -178,6 +184,41 @@ class MigrationTest {
                 // v9: a comment, empty for every score that came before it
                 assertEquals("v$version: comment", "", sheet.comment)
             }
+        }
+    }
+
+    @Test
+    fun aGenreOrAKeyTextNotRecognisedIsKept() {
+        context.deleteDatabase(testDb)
+        helper.createDatabase(testDb, 8).apply {
+            for ((id, genreAndKey) in listOf(1L to ("Bal musette, Rock" to "Do M, coucou"), 2L to ("bal musette" to "F#m / Bb"))) {
+                insert("sheets", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                    put("id", id)
+                    put("fileName", "song$id.pdf")
+                    put("path", "/data/sheets/song$id.pdf")
+                    put("hash", "hash$id")
+                    put("title", "Song $id")
+                    put("composer", "")
+                    put("format", "PDF")
+                    put("genre", genreAndKey.first)
+                    put("musicalKey", genreAndKey.second)
+                    put("tags", "")
+                })
+            }
+            close()
+        }
+        helper.runMigrationsAndValidate(testDb, 9, true, *AppDatabase.MIGRATIONS).close()
+        withRoom { db ->
+            // "Bal musette" is a genre of its own, once; "Rock" the default
+            val own = db.tagDao().genres().filter { it.code == null }.map { it.name }
+            assertEquals(listOf("Bal musette"), own)
+            assertEquals(listOf(null, Genre.ROCK_METAL.name), db.tagDao().genresOf(1L).map { it.code }.sortedBy { it ?: "" })
+            assertEquals(listOf("Bal musette"), db.tagDao().genresOf(2L).map { it.name })
+            // the keys in their order; what names no key goes to the comment
+            assertEquals(listOf("C"), db.keyDao().keysOf(1L).map { it.key })
+            assertEquals(listOf("F#m", "Bb"), db.keyDao().keysOf(2L).map { it.key })
+            assertEquals("Key: coucou", db.sheetDao().byHash("hash1")?.comment)
+            assertEquals("", db.sheetDao().byHash("hash2")?.comment)
         }
     }
 

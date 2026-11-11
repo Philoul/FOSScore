@@ -30,6 +30,7 @@ class LibraryRepository(context: Context) {
     private val strokeDao = db.strokeDao()
     private val tagDao = db.tagDao()
     private val personDao = db.personDao()
+    private val keyDao = db.keyDao()
 
     fun sheets(): Flow<List<Sheet>> = dao.observeAll()
 
@@ -89,6 +90,79 @@ class LibraryRepository(context: Context) {
         val known = personDao.all()
         return distinctTagNames(names.map(::tagName)).map { name ->
             known.firstOrNull { sameTag(it.name, name) }?.id ?: personDao.insert(Person(name = name, sortName = name))
+        }
+    }
+
+    /** Every genre of the library, a default one shown in the app's language ([genreLabel]). */
+    fun genres(): Flow<List<Tag>> = tagDao.observeGenres()
+
+    /** The genres of each score, by score id. */
+    fun genresBySheet(): Flow<Map<Long, List<Tag>>> = tagDao.observeSheetGenres().map { rows ->
+        rows.groupBy({ it.sheetId }, { Tag(id = it.tagId, name = it.name, kind = TagKind.GENRE, code = it.code) })
+    }
+
+    suspend fun genresOf(sheetId: Long): List<Tag> = tagDao.genresOf(sheetId)
+
+    /**
+     * [sheetId] gets exactly the genres [names], as shown ([labels]: the default genres' names in
+     * the app's language): a genre already in the library is reused, a new one is created.
+     */
+    suspend fun setGenres(sheetId: Long, names: List<String>, labels: Map<String, String>) = db.withTransaction {
+        val ids = genreIdsFor(names, labels)
+        tagDao.unlinkGenres(sheetId)
+        tagDao.link(ids.map { SheetTag(sheetId, it) })
+    }
+
+    /** The genres [names] are added to each of [sheetIds], next to the ones it has. */
+    suspend fun addGenres(sheetIds: List<Long>, names: List<String>, labels: Map<String, String>) = db.withTransaction {
+        val ids = genreIdsFor(names, labels)
+        tagDao.link(sheetIds.flatMap { sheetId -> ids.map { SheetTag(sheetId, it) } })
+    }
+
+    // a genre named as shown or as stored, before a new row
+    private suspend fun genreIdsFor(names: List<String>, labels: Map<String, String>): List<Long> {
+        val known = tagDao.genres()
+        return distinctTagNames(names.map(::tagName)).map { name ->
+            known.firstOrNull { sameTag(it.genreLabel(labels), name) || sameTag(it.name, name) }?.id
+                ?: tagDao.insert(Tag(name = name, kind = TagKind.GENRE))
+        }
+    }
+
+    /**
+     * The default genres the library no longer has come back: a genre of the user's with a default
+     * one's name (in [labels] or in English) becomes that default again. Returns how many came back.
+     */
+    suspend fun restoreDefaultGenres(labels: Map<String, String>): Int = db.withTransaction {
+        val known = tagDao.genres()
+        var restored = 0
+        for (genre in Genre.entries) {
+            if (known.any { it.code == genre.name }) continue
+            val same = known.firstOrNull { it.code == null && (sameTag(it.name, labels[genre.name].orEmpty()) || sameTag(it.name, genre.english)) }
+            if (same != null) tagDao.setCode(same.id, genre.name)
+            else tagDao.insert(Tag(name = genre.english, kind = TagKind.GENRE, code = genre.name))
+            restored++
+        }
+        restored
+    }
+
+    /** The keys of each score, by score id, in each score's order. */
+    fun keysBySheet(): Flow<Map<Long, List<MusicalKey>>> = keyDao.observeAll().map { rows ->
+        rows.groupBy({ it.sheetId }, { MusicalKey.ofCode(it.key) }).mapValues { (_, keys) -> keys.filterNotNull() }
+    }
+
+    suspend fun keysOf(sheetId: Long): List<MusicalKey> = keyDao.keysOf(sheetId).mapNotNull { MusicalKey.ofCode(it.key) }
+
+    /** [sheetId] is in [keys], in this order (the first is the one it starts in). */
+    suspend fun setKeys(sheetId: Long, keys: List<MusicalKey>) = db.withTransaction {
+        keyDao.clear(sheetId)
+        keyDao.insert(keys.distinct().mapIndexed { position, key -> SheetKey(sheetId, position, key.code) })
+    }
+
+    /** [keys] are added after the ones each of [sheetIds] has. */
+    suspend fun addKeys(sheetIds: List<Long>, keys: List<MusicalKey>) = db.withTransaction {
+        for (sheetId in sheetIds) {
+            val had = keysOf(sheetId)
+            setKeys(sheetId, had + keys.filter { it !in had })
         }
     }
 

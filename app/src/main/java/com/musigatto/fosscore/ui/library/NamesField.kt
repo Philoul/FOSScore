@@ -98,12 +98,15 @@ internal fun tagToCreate(all: List<String>, typed: String): String? {
 internal fun toggleTag(checked: List<String>, tag: String): List<String> =
     if (tag in checked) checked - tag else checked + tag
 
-/** What a field of names says: its label (the picker's title too), and the picker's words. */
+/**
+ * What a field of names says: its label (the picker's title too), and the picker's words. [create]
+ * null: a closed list (the keys), where nothing is created and the field only finds.
+ */
 class NamesTexts(
     @StringRes val label: Int,
     @StringRes val choose: Int,
     @StringRes val hint: Int,
-    @StringRes val create: Int,
+    @StringRes val create: Int?,
     @StringRes val none: Int,
     @StringRes val noMatch: Int,
     @StringRes val remove: Int,
@@ -124,11 +127,22 @@ val PERFORMER_NAMES = NamesTexts(
     R.string.people_none_typed, R.string.people_no_match, R.string.person_remove,
 )
 
+val GENRE_NAMES = NamesTexts(
+    R.string.field_genre, R.string.genre_choose, R.string.genre_hint, R.string.genre_create,
+    R.string.genres_none_typed, R.string.genres_no_match, R.string.genre_remove,
+)
+
+val KEY_NAMES = NamesTexts(
+    R.string.field_key, R.string.key_choose, R.string.key_hint, null,
+    R.string.key_no_match, R.string.key_no_match, R.string.key_remove,
+)
+
 /**
  * The score's names (its tags, its authors/composers, its performers) in an outlined box,
  * labelled like the other fields, each with ✕ to remove it. The + on the right (or a tap on the
  * box) opens the picker, where the library's names ([known]) are checked or unchecked and a new
- * one is created.
+ * one is created. [sorted]: the names come back in alphabetical order; else in the order they
+ * were checked (the keys: the first is the one the score starts in).
  */
 @Composable
 fun NamesField(
@@ -136,7 +150,8 @@ fun NamesField(
     tags: List<String>,
     known: List<String>,
     onTagsChange: (List<String>) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sorted: Boolean = true,
 ) {
     var picking by rememberSaveable { mutableStateOf(false) }
     val chooseLabel = stringResource(texts.choose)
@@ -177,6 +192,7 @@ fun NamesField(
     if (picking) {
         TagPickerDialog(
             texts = texts,
+            sorted = sorted,
             chosen = tags,
             known = known,
             onDismiss = { picking = false },
@@ -196,6 +212,7 @@ fun NamesField(
 @Composable
 private fun TagPickerDialog(
     texts: NamesTexts,
+    sorted: Boolean,
     chosen: List<String>,
     known: List<String>,
     onDismiss: () -> Unit,
@@ -215,7 +232,11 @@ private fun TagPickerDialog(
 
     fun create(): List<String> {
         val tag = tagToCreate(all, draft) ?: return checked
-        if (all.none { it == tag }) created = created + tag
+        if (all.none { it == tag }) {
+            // a closed list: only what it holds
+            if (texts.create == null) return checked
+            created = created + tag
+        }
         if (tag !in checked) checked = checked + tag
         draft = ""
         return checked
@@ -247,10 +268,11 @@ private fun TagPickerDialog(
                     // a name typed but not added yet is not lost
                     TextButton(onClick = {
                         val collator = nameCollator()
-                        onConfirm(create().sortedWith { a, b -> collator.compare(a, b) })
+                        val names = create()
+                        onConfirm(if (sorted) names.sortedWith { a, b -> collator.compare(a, b) } else names)
                     }) { Text(stringResource(R.string.action_ok)) }
                 }
-                val createLabel = stringResource(texts.create, tagName(draft))
+                val createLabel = texts.create?.let { stringResource(it, tagName(draft)) }
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
@@ -258,12 +280,14 @@ private fun TagPickerDialog(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { create() }),
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { create() },
-                            enabled = tagName(draft).isNotEmpty(),
-                            modifier = Modifier.semantics { contentDescription = createLabel }
-                        ) { LineIcon(LINE_ADD) }
+                    trailingIcon = createLabel?.let { label ->
+                        {
+                            IconButton(
+                                onClick = { create() },
+                                enabled = tagName(draft).isNotEmpty(),
+                                modifier = Modifier.semantics { contentDescription = label }
+                            ) { LineIcon(LINE_ADD) }
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()

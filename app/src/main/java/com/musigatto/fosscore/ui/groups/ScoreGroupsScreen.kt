@@ -573,7 +573,7 @@ private fun GroupEditor(
             LibraryPicker(
                 library,
                 present = times,
-                mark = { count -> if (groups.ordered) "×$count" else "✓" },
+                mark = { count -> if (groups.ordered) stringResource(R.string.setlist_times, count) else "✓" },
                 inGroup = stringResource(shown.inGroup),
                 onTap = { sheet ->
                     scope.launch {
@@ -741,7 +741,7 @@ private fun RemoveButton(label: String, onClick: () -> Unit) {
 private fun LibraryPicker(
     library: LibraryRepository,
     present: Map<Long, Int>,
-    mark: (Int) -> String,
+    mark: @Composable (Int) -> String,
     inGroup: String,
     onTap: (Sheet) -> Unit,
     modifier: Modifier,

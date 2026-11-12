@@ -38,7 +38,7 @@ fun splitTagText(text: String): List<String> {
 fun splitPeopleText(text: String): List<String> = distinctTagNames(text.split('/', ';', ',', '&').map(::tagName))
 
 /**
- * A table of names built from every score's text (v9): the tags from `sheets.tags`, the people
+ * A table of names built from every score's text (v10): the tags from `sheets.tags`, the people
  * from `sheets.composer`. One row per name however many scores carry it or however it is
  * spelled, the first spelling met (scores in [sheets] order) as its name.
  */

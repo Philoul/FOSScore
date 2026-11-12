@@ -16,7 +16,7 @@ import org.xml.sax.InputSource
 
 /**
  * A MusicXML score kept as a DOM, so it can be changed before Verovio lays it out: hide parts,
- * move lyrics, change instruments. Files exported from MuseScore often hold the whole
+ * move lyrics, change instruments. Files exported from notation tools often hold the whole
  * arrangement (voice, piano, strings, drums...) while the musician only wants to read one part.
  *
  * At parsing, notes the author hid are cleaned up (see [hideInvisibleNotes]).
@@ -113,7 +113,7 @@ class MusicXmlScore private constructor(private val doc: Document) {
         if (keep.isEmpty() || all.all { it.getAttribute("id") in keep }) return
         val kept = all.filter { it.getAttribute("id") in keep }
         val removed = all.filter { it.getAttribute("id") !in keep }
-        // MuseScore writes tempo marks in the first part only, often the hidden voice.
+        // Some exporters write tempo marks in the first part only, often the hidden voice.
         kept.firstOrNull()?.let { if (kept.none(::hasTempo)) copyTempo(removed, it, undo) }
         root.child("part-list")?.let { list ->
             detach(list, undo) {
@@ -163,7 +163,7 @@ class MusicXmlScore private constructor(private val doc: Document) {
 
     /**
      * Copies the notes of the one-staff part [from], invisible and with their lyrics, into [staff]
-     * of [into], as a voice of its own. This is how MuseScore keeps the lyrics of a hidden vocal
+     * of [into], as a voice of its own. This is how notation tools keep the lyrics of a hidden vocal
      * line, and Verovio draws them under that staff. Returns false, changing nothing, when the
      * parts do not line up (another number of measures, durations that do not convert).
      */
@@ -443,7 +443,7 @@ class MusicXmlScore private constructor(private val doc: Document) {
         }
 
         /**
-         * MuseScore hides a note either with `print-object="no"` or, for a vocal line kept only for
+         * A notation tool hides a note either with `print-object="no"` or, for a vocal line kept only for
          * its lyrics, with no notehead and no stem. Verovio still draws the beams, ledger lines,
          * ties, slurs and accidentals of such notes: mark them invisible and drop what hangs on
          * them. The lyrics stay.
@@ -465,7 +465,7 @@ class MusicXmlScore private constructor(private val doc: Document) {
         private val HIDDEN_NOTE_MARKS = setOf("beam", "tie", "tied", "slur", "accidental")
 
         // a voice carrying lyrics into another part: what its notes lose, and its first number
-        // (MuseScore numbers the voices of a two-staff part 1 to 8)
+        // (some tools number the voices of a two-staff part 1 to 8)
         private val LYRICS_VOICE_DROPS = setOf("beam", "tie", "notations", "accidental", "stem", "notehead", "voice", "staff")
         private const val FIRST_LYRICS_VOICE = 9
 

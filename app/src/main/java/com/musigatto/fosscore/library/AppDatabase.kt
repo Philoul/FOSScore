@@ -13,6 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SheetKey::class, Person::class, SheetPerson::class,
         Tag::class, SheetTag::class, SheetLayout::class,
         Setlist::class, SetlistItem::class,
+        Layer::class,
     ],
     version = AppDatabase.VERSION
 )
@@ -20,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sheetDao(): SheetDao
     abstract fun stampDao(): StampDao
     abstract fun strokeDao(): StrokeDao
+    abstract fun layerDao(): LayerDao
     abstract fun setlistDao(): SetlistDao
     abstract fun tagDao(): TagDao
     abstract fun personDao(): PersonDao
@@ -242,14 +244,33 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * v9: the tags live in their table, no longer in `sheets.tags`. Since v5 the table was a
+         * v9: annotation layers. Adds the [layers] table and a [layer] column to stamps and strokes.
+         * Existing marks are moved to one layer per sheet (created by the migration) so they keep
+         * their grouping; the layer name is empty and the UI shows a translated default by position.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `layers` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `name` TEXT NOT NULL, `visible` INTEGER NOT NULL, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_layers_sheetId` ON `layers` (`sheetId`)")
+                db.execSQL("ALTER TABLE `stamps` ADD COLUMN `layer` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `strokes` ADD COLUMN `layer` INTEGER NOT NULL DEFAULT 0")
+                // One layer per sheet that has marks; old marks go to that layer. The name is empty:
+                // the UI shows a translated default by position.
+                db.execSQL("INSERT INTO `layers` (`sheetId`, `name`, `visible`) SELECT `sheetId`, '', 1 FROM (SELECT DISTINCT `sheetId` FROM `stamps` UNION SELECT DISTINCT `sheetId` FROM `strokes`)")
+                db.execSQL("UPDATE `stamps` SET `layer` = (SELECT MIN(`id`) FROM `layers` WHERE `layers`.`sheetId` = `stamps`.`sheetId`)")
+                db.execSQL("UPDATE `strokes` SET `layer` = (SELECT MIN(`id`) FROM `layers` WHERE `layers`.`sheetId` = `strokes`.`sheetId`)")
+            }
+        }
+
+        /**
+         * v10: the tags live in their table, no longer in `sheets.tags`. Since v5 the table was a
          * copy taken once, and the tag field went on writing the text: it is built again from the
          * text, which is what every score shows today. A tag written on several scores, or spelled
          * several ways ("Rock", "rock"), becomes one tag. The genre stays text for now: its rows,
          * copied at v5 and never read, go, and come back when the genre gets its own field.
          * The text column stays (dropping it rebuilds `sheets`), emptied.
          */
-        private val MIGRATION_8_9 = object : Migration(8, 9) {
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // the user's own words on each score
                 db.execSQL("ALTER TABLE `sheets` ADD COLUMN `comment` TEXT NOT NULL DEFAULT ''")
@@ -367,10 +388,10 @@ abstract class AppDatabase : RoomDatabase() {
          * Schema version. When it changes: add the migration to [MIGRATIONS] (or an automatic
          * migration), commit the new file in `app/schemas/`, and extend `MigrationTest`.
          */
-        const val VERSION = 9
+        const val VERSION = 10
 
         /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
 
         private var instance: AppDatabase? = null
 

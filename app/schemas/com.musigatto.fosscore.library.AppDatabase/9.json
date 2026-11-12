@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "cb000c3b10d6d10613147f43ff1c6671",
+    "identityHash": "990cc978aa33be09ee91495b6c98d907",
     "entities": [
       {
         "tableName": "sheets",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fileName` TEXT NOT NULL, `path` TEXT NOT NULL, `hash` TEXT NOT NULL, `title` TEXT NOT NULL, `composer` TEXT NOT NULL, `genre` TEXT NOT NULL, `musicalKey` TEXT NOT NULL, `tags` TEXT NOT NULL, `format` TEXT, `tempoBpm` REAL, `beatUnit` INTEGER, `timeSignature` TEXT, `durationS` REAL, `openedAt` INTEGER, `openCount` INTEGER, `addedAt` INTEGER, `comment` TEXT NOT NULL DEFAULT '')",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fileName` TEXT NOT NULL, `path` TEXT NOT NULL, `hash` TEXT NOT NULL, `title` TEXT NOT NULL, `composer` TEXT NOT NULL, `genre` TEXT NOT NULL, `musicalKey` TEXT NOT NULL, `tags` TEXT NOT NULL, `format` TEXT, `tempoBpm` REAL, `beatUnit` INTEGER, `timeSignature` TEXT, `durationS` REAL, `openedAt` INTEGER, `openCount` INTEGER, `addedAt` INTEGER)",
         "fields": [
           {
             "fieldPath": "id",
@@ -101,13 +101,6 @@
             "fieldPath": "addedAt",
             "columnName": "addedAt",
             "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "comment",
-            "columnName": "comment",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
           }
         ],
         "primaryKey": {
@@ -130,7 +123,7 @@
       },
       {
         "tableName": "stamps",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `page` INTEGER NOT NULL, `symbol` TEXT NOT NULL, `x` REAL NOT NULL, `y` REAL NOT NULL, `size` REAL NOT NULL, `color` INTEGER, `text` TEXT, `font` TEXT, `bold` INTEGER NOT NULL, `italic` INTEGER NOT NULL, `textWidth` REAL, `measure` INTEGER, `staff` INTEGER, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `page` INTEGER NOT NULL, `symbol` TEXT NOT NULL, `x` REAL NOT NULL, `y` REAL NOT NULL, `size` REAL NOT NULL, `color` INTEGER, `text` TEXT, `font` TEXT, `bold` INTEGER NOT NULL, `italic` INTEGER NOT NULL, `textWidth` REAL, `measure` INTEGER, `staff` INTEGER, `layer` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -215,6 +208,13 @@
             "fieldPath": "staff",
             "columnName": "staff",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "layer",
+            "columnName": "layer",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -251,7 +251,7 @@
       },
       {
         "tableName": "strokes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `page` INTEGER NOT NULL, `points` TEXT NOT NULL, `width` REAL NOT NULL, `color` INTEGER, `measure` INTEGER, `staff` INTEGER, `groupId` INTEGER NOT NULL, `kind` INTEGER NOT NULL, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `page` INTEGER NOT NULL, `points` TEXT NOT NULL, `width` REAL NOT NULL, `color` INTEGER, `measure` INTEGER, `staff` INTEGER, `groupId` INTEGER NOT NULL, `kind` INTEGER NOT NULL, `layer` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -309,6 +309,13 @@
             "columnName": "kind",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "layer",
+            "columnName": "layer",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -497,7 +504,7 @@
       },
       {
         "tableName": "tags",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `color` INTEGER, `kind` TEXT NOT NULL, `code` TEXT)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `color` INTEGER, `kind` TEXT NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -521,11 +528,6 @@
             "columnName": "kind",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "code",
-            "columnName": "code",
-            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -536,14 +538,13 @@
         },
         "indices": [
           {
-            "name": "index_tags_kind_name",
+            "name": "index_tags_name",
             "unique": true,
             "columnNames": [
-              "kind",
               "name"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_kind_name` ON `${TABLE_NAME}` (`kind`, `name`)"
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `${TABLE_NAME}` (`name`)"
           }
         ]
       },
@@ -772,11 +773,71 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "layers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `name` TEXT NOT NULL, `visible` INTEGER NOT NULL, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sheetId",
+            "columnName": "sheetId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visible",
+            "columnName": "visible",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_layers_sheetId",
+            "unique": false,
+            "columnNames": [
+              "sheetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_layers_sheetId` ON `${TABLE_NAME}` (`sheetId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sheets",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sheetId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cb000c3b10d6d10613147f43ff1c6671')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '990cc978aa33be09ee91495b6c98d907')"
     ]
   }
 }

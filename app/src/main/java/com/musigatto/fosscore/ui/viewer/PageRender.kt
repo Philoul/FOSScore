@@ -27,6 +27,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -36,7 +37,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.util.WeakHashMap
-import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.milliseconds
 
 // the same tag the viewer logs its draws with: one grep finds the document's whole story
@@ -112,7 +112,7 @@ internal class PagePaper(private val pdfUri: Uri) {
                 if (format.isMusicXml) MusicXmlPages.open(context, File(pdfUri.path.orEmpty()))
                 else MuPdfDoc.open(context, pdfUri)
             }
-            if (coroutineContext[Job]?.isActive == false) {
+            if (currentCoroutineContext()[Job]?.isActive == false) {
                 withContext(NonCancellable + Dispatchers.IO) { doc.close() }
                 return null
             }
@@ -137,6 +137,12 @@ internal class PagePaper(private val pdfUri: Uri) {
         pageCount = count
         bitmaps.clear()
     }
+
+    /**
+     * Runs [block] under the draws' lock: the export opens and writes a PDF of its own, but MuPDF
+     * keeps process-wide state, so it must not run while a page is being rendered.
+     */
+    suspend fun <T> withRenderLock(block: suspend () -> T): T = lock.withLock { block() }
 
     /**
      * Lays the music out again under the same lock as the draws: it is the same document, and a
@@ -229,7 +235,7 @@ internal class PagePaper(private val pdfUri: Uri) {
         val vpW = viewport.width.toFloat()
         val vpH = viewport.height.toFloat()
         val shown = bitmaps[page]
-        val job = coroutineContext[Job]
+        val job = currentCoroutineContext()[Job]
 
         suspend fun draw(index: Int): Bitmap? {
             if (index !in 0 until pageCount || job?.isActive == false) return null

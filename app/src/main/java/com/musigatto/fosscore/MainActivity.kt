@@ -2,11 +2,13 @@ package com.musigatto.fosscore
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Display
 import android.view.FrameMetrics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -102,7 +104,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            InkPerfMetrics.enable(windowManager.defaultDisplay.refreshRate)
+            // the display's rate sets the ink frame budget; the window's getDefaultDisplay() is
+            // deprecated, DisplayManager works on every supported version
+            val display = getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)
+            InkPerfMetrics.enable(display?.refreshRate ?: 0f)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 // no removal needed: the listener hangs off the window, which dies with the activity
                 window.addOnFrameMetricsAvailableListener(

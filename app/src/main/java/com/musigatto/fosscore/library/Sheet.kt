@@ -16,7 +16,7 @@ import com.musigatto.fosscore.score.SheetFormat
  * one page more), so nothing points at it.
  *
  * The text columns genre and musicalKey are the v4 values, still written and read by the library
- * screen. composer and tags are empty from v9: the people ([SheetPerson]) and the tags
+ * screen. composer and tags are empty from v10: the people ([SheetPerson]) and the tags
  * ([SheetTag]) are in their tables. See docs/feature-roadmap.md §3.8.
  */
 @Entity(tableName = "sheets", indices = [Index("hash", unique = true)])
@@ -44,7 +44,7 @@ data class Sheet(
     val openCount: Int? = null,
     /** When the score entered the library. */
     val addedAt: Long? = null,
-    /** The user's own words on the score, free text (v9). */
+    /** The user's own words on the score, free text (v10). */
     @ColumnInfo(defaultValue = "")
     val comment: String = "",
 )
@@ -99,7 +99,7 @@ enum class PersonRole { COMPOSER, PERFORMER }
 enum class TagKind { GENRE, FREE }
 
 /**
- * A tag or a genre ([kind]). A name is unique within its kind (v9): the genre "Pop" and a tag "Pop"
+ * A tag or a genre ([kind]). A name is unique within its kind (v10): the genre "Pop" and a tag "Pop"
  * are two rows. [code] is the [Genre] a default genre is, shown in the app's language; null for
  * every name the user wrote.
  */

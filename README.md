@@ -9,7 +9,8 @@ Done:
 
 - [x] **PDF viewer** tuned for sheet music (MuPDF) — portrait, landscape, two-up, half-page turns, zoom/pan anchored on the midpoint, animated double tap
 - [x] **Library with metadata** — composer, genre, key, tags
-- [x] **Ink annotations exportable into the PDF** (`/Annots` ink, 💾PDF button in edit mode)
+- [x] **Annotations** — ink, highlighter, shapes, musical stamps and typed text, in **named layers** you can add, rename, hide and delete
+- [x] **Share with annotations** — *Share → Save a copy* writes the chosen layer (or all of them) into a **copy** of the PDF as real PDF annotations, so a PC's reader lists each mark as a comment (author, date, layer as subject, its own popup). The score in the app and its marks stay untouched, and the export can be repeated
 - [x] **Dark theme** — light/dark/auto, page dimming, negative mode for OLED
 
 Pending (detailed roadmap in the GitHub issues):
@@ -17,7 +18,6 @@ Pending (detailed roadmap in the GitHub issues):
 - [ ] **Reflow** — detect the music systems and show them as a horizontal teleprompter
 - [ ] **Search and filters** — dynamic browsing, no folders
 - [ ] **Setlists** — group scores to play them in order, with navigation across files
-- [ ] **Stamps and text** — musical stamps into `/Annots` too, text notes
 - [ ] **Audio tracks** — attach audio to each score, adjust speed/pitch, loop, automatic page turns
 - [ ] **Built-in tools** — metronome, tuner, pitch pipe, virtual piano
 - [ ] **MIDI / Bluetooth** — page turner pedals (PageFlip, AirTurn, etc.)
@@ -25,8 +25,8 @@ Pending (detailed roadmap in the GitHub issues):
 - [ ] **Links and buttons** — repeats, programmable actions on the page
 - [ ] **Reorder pages** — insert, duplicate, delete, split files
 - [ ] **Performance mode, practice dashboard**
-- [ ] **100% offline first** — your music always with you
-- [ ] **No telemetry, no ads, no mandatory accounts**
+- [x] **100% offline first** — your music always with you
+- [x] **No telemetry, no ads, no mandatory accounts**
 
 ## Compatibility
 

@@ -20,7 +20,7 @@ const val MUSIC_SIZE_STEP = 5
 const val MAX_TRANSPOSE = 12
 
 /** What the viewer shows over the page: nothing, the menu, or one of the menu's panels. */
-enum class ViewerSurface { NONE, MENU, DISPLAY, LAYOUT, PLAYBACK, METRONOME }
+enum class ViewerSurface { NONE, MENU, DISPLAY, LAYOUT, PLAYBACK, METRONOME, SHARE }
 
 /**
  * Every entry of the viewer menu, in its order. The groups are separated by a line: going
@@ -47,6 +47,8 @@ fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
             if (isMusicXml) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
         // a MusicXML score's marks hang on its measures, so they follow the music (MusicXmlMarks)
         ViewerMenuItem.ANNOTATE -> MenuItemState.READY
+        // the export writes the marks into a copy of the PDF: a MusicXML score has no PDF to copy
+        ViewerMenuItem.SHARE -> if (isMusicXml) MenuItemState.NOT_ON_MUSICXML else MenuItemState.READY
         else -> MenuItemState.SOON
     }
 

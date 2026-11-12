@@ -47,7 +47,7 @@ enum class Genre(@StringRes val label: Int, val english: String, val aliases: Li
 }
 
 /**
- * The genres table built from every score's genre text (v9): the [Genre]s first (rows 0..14, by
+ * The genres table built from every score's genre text (v10): the [Genre]s first (rows 0..14, by
  * their code), then a genre of its own for each other text, one per name however it is spelled.
  * [links] are a score's id and the index of its genre in [rows].
  */

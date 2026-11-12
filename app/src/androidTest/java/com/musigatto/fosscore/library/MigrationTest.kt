@@ -74,6 +74,8 @@ class MigrationTest {
                     }
                     // v7: a text stamp keeps the width it wraps at
                     if (version >= 7) put("textWidth", 0.5f)
+                    // v9: the layer the mark belongs to
+                    if (version >= 9) put("layer", 1L)
                 }
             )
         }
@@ -88,8 +90,18 @@ class MigrationTest {
                     if (version >= 5) put("groupId", 7L)
                     // v6: strokes carry their kind; a shape row is what the new schema adds
                     if (version >= 6) put("kind", 1)
+                    // v9: the layer the mark belongs to
+                    if (version >= 9) put("layer", 1L)
                 }
             )
+        }
+        if (version >= 9) {
+            // a database born at v9 already has its layer, written by the app (id 1: the first row)
+            db.insert("layers", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                put("sheetId", 1L)
+                put("name", "")
+                put("visible", 1)
+            })
         }
         if (version >= 8) {
             db.insert("setlists", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
@@ -122,7 +134,7 @@ class MigrationTest {
                 val sheet = db.sheetDao().byHash(HASH)
                 assertNotNull("v$version: sheet lost", sheet)
                 assertEquals("v$version", "Song", sheet!!.title)
-                // v9: the tags left the text for their table (checked below)
+                // v10: the tags left the text for their table (checked below)
                 assertEquals("v$version", "", sheet.tags)
                 // v5: the format stops being the extension
                 assertEquals("v$version", SheetFormat.PDF, sheet.format)
@@ -150,14 +162,23 @@ class MigrationTest {
                     assertEquals("v$version: stroke kind", if (version >= 6) 1 else 0, strokes[0].kind)
                 }
 
-                // v8: the setlists come in empty from an older version; a v8 setlist stays
+                // v9: the old annotations end up in their sheet's layer (a layer the migration created)
+                if (version >= 2) assertEquals("v$version: layer", 1L, stamps[0].layer)
+                if (version >= 4) assertEquals("v$version: layer", 1L, strokes[0].layer)
+                assertEquals(
+                    "v$version: layers",
+                    if (version >= 2) listOf(Layer(1L, sheet.id, "", true)) else emptyList(),
+                    db.layerDao().observe(sheet.id).first(),
+                )
+
+                // v8: a database created at v8 already has its setlists populated by fill()
                 assertEquals(
                     "v$version: setlists",
                     if (version >= 8) listOf(GroupSummary(1L, "Concert", 2)) else emptyList(),
                     db.setlistDao().observeSummaries().first()
                 )
 
-                // v9: the score's text "duo, practice" is its tags, whatever the table held
+                // v10: the score's text "duo, practice" is its tags, whatever the table held
                 val tags = db.openHelper.readableDatabase
                     .query("SELECT `name` FROM `tags` WHERE `kind` = 'FREE' ORDER BY `name`").use { c ->
                         buildList { while (c.moveToNext()) add(c.getString(0)) }
@@ -165,15 +186,15 @@ class MigrationTest {
                 assertEquals("v$version: tags", listOf("duo", "practice"), tags)
                 assertEquals("v$version: the score's tags", listOf("duo", "practice"), db.tagDao().tagsOf(sheet.id).map { it.name })
 
-                // v9: the 15 default genres; the text "Folk" is the default "Folk & country"
+                // v10: the 15 default genres; the text "Folk" is the default "Folk & country"
                 assertEquals("v$version: genres", Genre.entries.map { it.name }, db.tagDao().genres().mapNotNull { it.code }.sortedBy { Genre.valueOf(it).ordinal })
                 assertEquals("v$version: the score's genre", listOf(Genre.FOLK_COUNTRY.name), db.tagDao().genresOf(sheet.id).map { it.code })
                 assertEquals("v$version: genre text", "", sheet.genre)
-                // v9: the key text "F" is the key F
+                // v10: the key text "F" is the key F
                 assertEquals("v$version: keys", listOf("F"), db.keyDao().keysOf(sheet.id).map { it.key })
                 assertEquals("v$version: key text", "", sheet.musicalKey)
 
-                // v9: the composer text is a person, as author/composer; the text is emptied
+                // v10: the composer text is a person, as author/composer; the text is emptied
                 assertEquals("v$version: people", listOf("Composer"), db.personDao().all().map { it.name })
                 assertEquals(
                     "v$version: the score's composers",
@@ -181,7 +202,7 @@ class MigrationTest {
                     db.personDao().peopleOf(sheet.id, PersonRole.COMPOSER.name).map { it.name },
                 )
                 assertEquals("v$version: composer text", "", sheet.composer)
-                // v9: a comment, empty for every score that came before it
+                // v10: a comment, empty for every score that came before it
                 assertEquals("v$version: comment", "", sheet.comment)
             }
         }
@@ -207,7 +228,7 @@ class MigrationTest {
             }
             close()
         }
-        helper.runMigrationsAndValidate(testDb, 9, true, *AppDatabase.MIGRATIONS).close()
+        helper.runMigrationsAndValidate(testDb, 10, true, *AppDatabase.MIGRATIONS).close()
         withRoom { db ->
             // "Bal musette" is a genre of its own, once; "Rock" the default
             val own = db.tagDao().genres().filter { it.code == null }.map { it.name }
@@ -242,7 +263,7 @@ class MigrationTest {
             }
             close()
         }
-        helper.runMigrationsAndValidate(testDb, 9, true, *AppDatabase.MIGRATIONS).close()
+        helper.runMigrationsAndValidate(testDb, 10, true, *AppDatabase.MIGRATIONS).close()
         withRoom { db ->
             val composers = { id: Long -> runBlocking { db.personDao().peopleOf(id, PersonRole.COMPOSER.name).map { it.name } } }
             // the first spelling met names the person
@@ -274,7 +295,7 @@ class MigrationTest {
             }
             close()
         }
-        helper.runMigrationsAndValidate(testDb, 9, true, *AppDatabase.MIGRATIONS).close()
+        helper.runMigrationsAndValidate(testDb, 10, true, *AppDatabase.MIGRATIONS).close()
         withRoom { db ->
             // the first spelling met names the tag: "Rock" (score 1), not "rock" or "Rôck"
             assertEquals(listOf("Rock", "duo", "film music"), db.tagDao().free().map { it.name }.sorted())
@@ -298,6 +319,13 @@ class MigrationTest {
             val stroke = db.strokeDao().observePage(1L, 2).first().single()
             assertEquals(1, db.strokeDao().observePage(1L, 2).first().size)
             assertEquals("v6 keeps a shape's kind", Stroke.SHAPE, stroke.kind)
+            // v9: the layer written on v9 comes out of the schema as it was written
+            assertEquals(1L, stroke.layer)
+            assertEquals(
+                "v9 layers",
+                listOf(Layer(1L, 1L, "", true)),
+                db.layerDao().observe(1L).first(),
+            )
             assertEquals(listOf(GroupSummary(1L, "Concert", 2)), db.setlistDao().observeSummaries().first())
             assertEquals(listOf(1L, 1L), db.setlistDao().observeEntries(1L).first().map { it.sheet.id })
         }

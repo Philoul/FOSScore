@@ -179,7 +179,7 @@ fun ViewerTitleBar(
             }
             // the pen is picked up here and put down with ✓ at the end of the annotation bar (spec
             // §5 row 1): while annotating the toggle steps aside instead of meaning something else
-            // (issue #50). forScore does the same: its own row 1 replaces the title bar.
+            // (issue #50). The reference implementation does the same: its own row 1 replaces the title bar.
             if (editEntryShown(editing, annotatable)) {
                 Spacer(Modifier.width(8.dp))
                 Pill {

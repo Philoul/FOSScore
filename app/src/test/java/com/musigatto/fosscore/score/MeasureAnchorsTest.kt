@@ -160,7 +160,7 @@ class MeasureAnchorsTest {
 
     @Test
     fun everyMeasureTakesMarksWhateverItsNumber() {
-        // a measure is kept by its place in the file: "X1" (left out of the count by MuseScore)
+        // a measure is kept by its place in the file: "X1" (left out of the count by its exporter)
         // and "12a" take marks as "13" does
         val id = com.musigatto.fosscore.musicxml.PageGeometry::measureId
         val geometry = com.musigatto.fosscore.musicxml.PageGeometry.parse(

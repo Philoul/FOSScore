@@ -1,11 +1,11 @@
 [versions]
-agp = "9.2.1"
+agp = "9.5.1"
 junit = "4.13.2"
 activityCompose = "1.8.0"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
 room = "2.7.2"
-ksp = "2.2.10-2.0.2"
+ksp = "2.3.6"
 mupdf = "1.28.5"
 coroutines = "1.10.2"
 # the version Compose already brings in

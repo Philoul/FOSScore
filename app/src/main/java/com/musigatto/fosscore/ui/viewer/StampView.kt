@@ -192,7 +192,7 @@ private const val BRAVURA_ASSET = "fonts/bravura.otf"
 private var bravuraTypeface: Typeface? = null
 private var bravuraLoaded = false
 
-private fun bravura(context: Context): Typeface? {
+internal fun bravura(context: Context): Typeface? {
     if (!bravuraLoaded) {
         bravuraLoaded = true
         bravuraTypeface = runCatching {
@@ -206,6 +206,41 @@ private fun bravura(context: Context): Typeface? {
 private const val MAX_ENLARGE = 2f
 
 /**
+ * Draws one SMuFL glyph centred in a [side] × [side] box, grown to fill it up to [MAX_ENLARGE]
+ * times its natural size. The composable draws through it and so does the export, so a stamp looks
+ * the same on the page and in the PDF.
+ */
+internal fun drawStampGlyph(
+    canvas: android.graphics.Canvas,
+    typeface: Typeface?,
+    codepoint: Int,
+    side: Float,
+    color: Int,
+) {
+    if (typeface == null || side <= 0f) return
+    val text = String(Character.toChars(codepoint))
+    val paint = Paint().apply {
+        // NOTE: without "this." the typeface falls back to the outer name
+        this.typeface = typeface
+        isAntiAlias = true
+        this.color = color
+    }
+    val box = Rect()
+    // natural size: one em = the stamp box
+    paint.textSize = side
+    paint.getTextBounds(text, 0, text.length, box)
+    val fit = if (box.width() > 0 && box.height() > 0) {
+        minOf(side * 0.92f / box.width(), side * 0.92f / box.height())
+    } else 1f
+    paint.textSize = side * fit.coerceAtMost(MAX_ENLARGE)
+    paint.getTextBounds(text, 0, text.length, box)
+    // centred on the ink box (getTextBounds is relative to the baseline: top is negative)
+    val x = side / 2f - (box.left + box.right) / 2f
+    val y = side / 2f - (box.top + box.bottom) / 2f
+    canvas.drawText(text, x, y, paint)
+}
+
+/**
  * Draws a stamp: the glyph from Bravura, measured by its ink box so it lands centred, and grown to
  * fill the requested size up to [MAX_ENLARGE] times its natural size.
  */
@@ -216,27 +251,8 @@ fun StampView(symbol: StampSymbol, sizePx: Float, color: Color, modifier: Modifi
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(side)) {
             val s = size.minDimension
-            if (typeface == null || s <= 0f) return@Canvas
-            val text = String(Character.toChars(symbol.codepoint))
-            val paint = Paint().apply {
-                // NOTE: without "this." the typeface falls back to the outer name
-                this.typeface = typeface
-                isAntiAlias = true
-                this.color = color.toArgb()
-            }
-            val box = Rect()
-            // natural size: one em = the stamp box
-            paint.textSize = s
-            paint.getTextBounds(text, 0, text.length, box)
-            val fit = if (box.width() > 0 && box.height() > 0) {
-                minOf(s * 0.92f / box.width(), s * 0.92f / box.height())
-            } else 1f
-            paint.textSize = s * fit.coerceAtMost(MAX_ENLARGE)
-            paint.getTextBounds(text, 0, text.length, box)
-            // centred on the ink box (getTextBounds is relative to the baseline: top is negative)
-            val x = s / 2f - (box.left + box.right) / 2f
-            val y = s / 2f - (box.top + box.bottom) / 2f
-            drawIntoCanvas { it.nativeCanvas.drawText(text, x, y, paint) }
+            val argb = color.toArgb()
+            drawIntoCanvas { drawStampGlyph(it.nativeCanvas, typeface, symbol.codepoint, s, argb) }
         }
     }
 }

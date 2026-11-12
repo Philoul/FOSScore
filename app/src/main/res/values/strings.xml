@@ -95,10 +95,18 @@
     <string name="err_import_failed">Import failed</string>
     <string name="err_invalid_pdf">Invalid or corrupt PDF</string>
     <string name="err_render_page">Could not render the page</string>
-    <string name="err_no_local_file">Sheet has no local file</string>
-    <string name="err_no_ink">No ink to save</string>
     <string name="err_pdf_not_editable">The PDF cannot be edited</string>
-    <string name="err_replace_failed">Could not replace the PDF</string>
+    <string name="err_no_marks">Nothing to share: this score has no marks yet</string>
+    <string name="layer_default">Layer %1$d</string>
+    <string name="layer_new">New layer</string>
+    <string name="layer_show">Show layer</string>
+    <string name="layer_hide">Hide layer</string>
+    <string name="layer_rename">Rename layer</string>
+    <string name="layer_delete_title">Delete layer</string>
+    <string name="layer_delete_message">Delete “%1$s” and its %2$d marks? This cannot be undone.</string>
+    <string name="layer_all">All layers</string>
+    <string name="share_title">Share with annotations</string>
+    <string name="share_save">Save a copy</string>
     <string name="err_export_failed">Could not save into the PDF</string>
 
     <!-- Names spoken by screen readers (stamp palette) -->

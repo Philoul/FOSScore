@@ -306,7 +306,7 @@ internal fun TypingField(
 }
 
 /**
- * The two white circles of a text being typed, as forScore shows them: the left one moves the whole
+ * The two white circles of a text being typed, as the reference implementation shows them: the left one moves the whole
  * box, the right one changes its width with the left edge fixed (the height follows the wrapping).
  * They sit in the page's coordinates, in the same layer as the field, so they stay on the box at any
  * zoom.

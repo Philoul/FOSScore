@@ -3,7 +3,7 @@ package com.musigatto.fosscore.musicxml
 /**
  * One part of the score (voice, piano, drums...).
  *
- * [visibleInFile] is false when the author hid every staff of the part (MuseScore "hide staff"):
+ * [visibleInFile] is false when the author hid every staff of the part (the "hide staff" setting):
  * a good default for the parts shown. [program] is the General MIDI program (1-128) written in
  * the file, [drums] is true on MIDI channel 10.
  */

@@ -51,7 +51,7 @@ class SelectionClearedTest {
     fun noMainDispatcher() = Dispatchers.resetMain()
 
     // a text moved (its box drawn where the finger left it), then the ink around it
-    private fun selected() = AnnotationViewModel(1, NoStamps, NoStrokes).apply {
+    private fun selected() = AnnotationViewModel(1, NoStamps, NoStrokes, FakeLayers()).apply {
         selectedId = stamp.id
         dragStamp = stamp.copy(x = 0.6f)
         selectedStrokeIds = setOf(stroke.id)

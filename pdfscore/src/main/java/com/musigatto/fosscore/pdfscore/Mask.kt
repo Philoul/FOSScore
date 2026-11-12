@@ -8,24 +8,66 @@ class Mask(val width: Int, val height: Int, private val bits: BooleanArray = Boo
     operator fun get(x: Int, y: Int): Boolean = x in 0 until width && y in 0 until height && bits[y * width + x]
 
     operator fun set(x: Int, y: Int, on: Boolean) {
-        if (x in 0 until width && y in 0 until height) bits[y * width + x] = on
+        if (x in 0 until width && y in 0 until height) {
+            bits[y * width + x] = on
+            packed = null
+        }
     }
 
-    val count: Int get() = bits.count { it }
+    val count: Int get() = words().sumOf { java.lang.Long.bitCount(it) }
+
+    /** The bits 64 to a word, for [iou]: a symbol is compared with thousands of references. */
+    private var packed: LongArray? = null
+
+    private fun words(): LongArray = packed ?: LongArray((bits.size + 63) / 64).also { words ->
+        for (i in bits.indices) if (bits[i]) words[i / 64] = words[i / 64] or (1L shl (i % 64))
+        packed = words
+    }
 
     /** Intersection over union with a mask of the same size: 1 when they are the same. */
     fun iou(other: Mask): Double {
         require(other.width == width && other.height == height) { "masks of different sizes" }
+        val a = words()
+        val b = other.words()
         var both = 0
         var either = 0
-        for (i in bits.indices) {
-            if (bits[i] && other.bits[i]) both++
-            if (bits[i] || other.bits[i]) either++
+        for (i in a.indices) {
+            both += java.lang.Long.bitCount(a[i] and b[i])
+            either += java.lang.Long.bitCount(a[i] or b[i])
         }
         return if (either == 0) 1.0 else both.toDouble() / either
     }
 
+    /** The mask grown by one pixel all around (the eight neighbours of each pixel on). */
+    fun dilated(): Mask {
+        val result = Mask(width, height)
+        for (y in 0 until height) for (x in 0 until width) {
+            if (!this[x, y]) continue
+            for (dy in -1..1) for (dx in -1..1) result[x + dx, y + dy] = true
+        }
+        return result
+    }
+
+    /** How many on pixels of this mask are on in [other] too. */
+    private fun overlap(other: Mask): Int {
+        val a = words()
+        val b = other.words()
+        var count = 0
+        for (i in a.indices) count += java.lang.Long.bitCount(a[i] and b[i])
+        return count
+    }
+
     companion object {
+        /**
+         * How alike two masks of the same size are, within a pixel: the share of each one's pixels
+         * that fall on the other or next to it ([aNear], [bNear]: the masks [dilated]). 1 when
+         * they are the same or a pixel apart.
+         */
+        fun closeness(a: Mask, aNear: Mask, b: Mask, bNear: Mask): Double {
+            val total = a.count + b.count
+            return if (total == 0) 1.0 else (a.overlap(bNear) + b.overlap(aNear)).toDouble() / total
+        }
+
         /**
          * Fills [polygons] (closed outlines, nonzero winding) into a mask covering [frame], one pixel
          * per 1 / [scale] units. A pixel is on when its centre is inside.

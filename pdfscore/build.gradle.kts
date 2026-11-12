@@ -28,6 +28,13 @@ android {
             it.systemProperty("pdfscore.corpus", providers.gradleProperty("pdfscoreCorpus").getOrElse(""))
             // One system to look at in detail (CorpusProbeTest.probeSystem): "<pdf>|<page>|<system>"
             it.systemProperty("pdfscore.probe", providers.gradleProperty("pdfscoreProbe").getOrElse(""))
+            // The free music fonts the recognition compares symbols with: Verovio's font data,
+            // which :musicxml downloads with Verovio's source.
+            it.systemProperty(
+                "pdfscore.fonts",
+                rootProject.file("musicxml/third_party").listFiles { file -> file.name.startsWith("verovio-") }
+                    ?.maxOrNull()?.resolve("data")?.path ?: "",
+            )
             it.maxHeapSize = "2g"
         }
     }
@@ -36,5 +43,4 @@ android {
 dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.pdfbox)
-    testImplementation(libs.org.json)
 }

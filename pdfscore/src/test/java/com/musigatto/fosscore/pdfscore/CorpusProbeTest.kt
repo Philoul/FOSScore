@@ -13,6 +13,7 @@ import java.io.File
 class CorpusProbeTest {
     private val corpus = File(System.getProperty("pdfscore.corpus") ?: "")
     private val documents get() = File(corpus, "library/documents")
+    private val fonts = File(System.getProperty("pdfscore.fonts") ?: "")
 
     private val museScore = listOf("Message Personnel.pdf", "Je_Suis_Malade.pdf", "Obispo Pascal - Lucie paroles MU3.pdf")
     private val printToPdf = listOf(
@@ -33,7 +34,7 @@ class CorpusProbeTest {
     @Test
     fun probePitches() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
-        val names = GlyphNames(File(corpus, "fonts"))
+        val names = GlyphNames(fonts)
         pairs.forEach { (pdfName, mxlName) ->
             val file = File(documents, pdfName)
             val pages = Loader.loadPDF(file).use { it.numberOfPages }
@@ -79,7 +80,7 @@ class CorpusProbeTest {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val target = System.getProperty("pdfscore.probe").orEmpty().split("|")
         assumeTrue(target.size == 3)
-        val names = GlyphNames(File(corpus, "fonts"))
+        val names = GlyphNames(fonts)
         val drawing = PdfBoxPages.read(File(documents, target[0]), target[1].toInt() - 1, names).drawing
         val systems = Staves.find(drawing)
         val system = systems[target[2].toInt() - 1]
@@ -109,7 +110,7 @@ class CorpusProbeTest {
     @Test
     fun probeGlyphs() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
-        val names = GlyphNames(File(corpus, "fonts"))
+        val names = GlyphNames(fonts)
         museScore.forEach { pdfName ->
             val page = PdfBoxPages.read(File(documents, pdfName), 0, names)
             val drawing = page.drawing
@@ -123,7 +124,7 @@ class CorpusProbeTest {
                 println("  unnamed ${g.font}#${g.code} at %.1f,%.1f size %.1f box %.1f-%.1f x %.1f-%.1f; texts near: %s".format(
                     g.x, g.y, g.size, g.box.left, g.box.right, g.box.top, g.box.bottom, near.joinToString { "'${it.text}'@%.0f".format(it.x) }))
                 page.fontGlyphs[g.font to g.code]?.let { fg ->
-                    println("    rank: " + names.ranking(fg).take(3).joinToString { "${it.first} %.2f".format(it.second) })
+                    println("    rank: " + names.ranking(fg).take(3).joinToString { "${it.name} %.2f".format(it.score) })
                 }
             }
         }
@@ -133,7 +134,7 @@ class CorpusProbeTest {
     @Test
     fun tempoNotesOfTextFontsAreNamed() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
-        val names = GlyphNames(File(corpus, "fonts"))
+        val names = GlyphNames(fonts)
         museScore.forEach { pdfName ->
             val glyphs = PdfBoxPages.read(File(documents, pdfName), 0, names).drawing.glyphs
             val tempo = glyphs.filter { it.font.contains("Text") }.map { it.name }
@@ -160,7 +161,7 @@ class CorpusProbeTest {
     @Test
     fun probeSystems() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
-        val names = GlyphNames(File(corpus, "fonts"))
+        val names = GlyphNames(fonts)
         (museScore + printToPdf).forEach { pdfName ->
             val file = File(documents, pdfName)
             val pages = Loader.loadPDF(file).use { it.numberOfPages }

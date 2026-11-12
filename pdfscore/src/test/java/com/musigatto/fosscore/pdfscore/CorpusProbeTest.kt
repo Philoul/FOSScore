@@ -20,6 +20,92 @@ class CorpusProbeTest {
         "Je veux être un homme heureux William Sheller.pdf",
     )
 
+    private val pairs = mapOf(
+        // Message Personnel.mxl is another arrangement than the PDF (three times the notes): no reference.
+        "Je_Suis_Malade.pdf" to "Je suis malade - Serge Lama.mxl",
+        "Obispo Pascal - Lucie paroles MU3.pdf" to "Lucie - Obispo Pascal.mxl",
+    )
+
+    /**
+     * The pitches read on each staff, measure by measure, against the paired MusicXML's part that
+     * matches best (the PDF can be one part's extract).
+     */
+    @Test
+    fun probePitches() {
+        assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
+        val names = GlyphNames(File(corpus, "fonts"))
+        pairs.forEach { (pdfName, mxlName) ->
+            val file = File(documents, pdfName)
+            val pages = Loader.loadPDF(file).use { it.numberOfPages }
+            // staff index → measures, each the pitches read in it, sorted
+            val read = mutableMapOf<Int, MutableList<List<String>>>()
+            val where = mutableListOf<String>() // measure → "page/system"
+            for (index in 0 until pages) {
+                val drawing = PdfBoxPages.read(file, index, names).drawing
+                StaffNotes.read(drawing, Staves.find(drawing)).forEachIndexed { si, system ->
+                    val measures = system.maxOf { staff -> maxOf(staff.barlines.size, (staff.notes.maxOfOrNull { it.measure } ?: -1) + 1) }
+                    repeat(measures) { where += "p${index + 1}/s${si + 1}" }
+                    system.forEachIndexed { s, staff ->
+                        val list = read.getOrPut(s) { mutableListOf() }
+                        (0 until measures).forEach { m ->
+                            list += staff.notes.filter { it.measure == m }.map { it.pitch.toString() }.sorted()
+                        }
+                    }
+                }
+            }
+            val expected = MxlNotes(File(documents, mxlName)).parts
+            val (partId, score) = expected.map { (id, staves) ->
+                id to read.entries.sumOf { (s, measures) ->
+                    val want = staves[s + 1].orEmpty()
+                    measures.indices.count { it < want.size && want[it] == measures[it] }
+                }
+            }.maxBy { it.second }
+            val total = read.values.sumOf { it.size }
+            println("== $pdfName vs $mxlName part $partId: $score / $total staff-measures right " +
+                "(read ${read[0]?.size} measures, MusicXML ${expected[partId]?.get(1)?.size})")
+            val staves = expected.getValue(partId)
+            read.forEach { (s, measures) ->
+                val want = staves[s + 1].orEmpty()
+                measures.indices.filter { it >= want.size || want[it] != measures[it] }.take(6).forEach { m ->
+                    println("  staff ${s + 1} measure ${m + 1} (${where.getOrNull(m)}): read ${measures[m]} expected ${want.getOrNull(m)}")
+                }
+            }
+        }
+    }
+
+    /** One system in detail: -PpdfscoreProbe="<pdf>|<page>|<system>" (1 up). */
+    @Test
+    fun probeSystem() {
+        assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
+        val target = System.getProperty("pdfscore.probe").orEmpty().split("|")
+        assumeTrue(target.size == 3)
+        val names = GlyphNames(File(corpus, "fonts"))
+        val drawing = PdfBoxPages.read(File(documents, target[0]), target[1].toInt() - 1, names).drawing
+        val systems = Staves.find(drawing)
+        val system = systems[target[2].toInt() - 1]
+        // The system as an image, to look at (in the build folder, never committed).
+        val scale = 3f
+        val image = Loader.loadPDF(File(documents, target[0])).use {
+            org.apache.pdfbox.rendering.PDFRenderer(it).renderImage(target[1].toInt() - 1, scale)
+        }
+        val top = ((system.top - 40) * scale).toInt().coerceAtLeast(0)
+        val bottom = ((system.bottom + 40) * scale).toInt().coerceAtMost(image.height)
+        javax.imageio.ImageIO.write(image.getSubimage(0, top, image.width, bottom - top), "png", File("build/probe-system.png"))
+        StaffNotes.read(drawing, systems)[target[2].toInt() - 1].forEachIndexed { s, staff ->
+            println("staff ${s + 1}: top %.1f space %.2f x %.1f-%.1f clef ${staff.clef} key ${staff.key}".format(
+                staff.staff.top, staff.staff.space, staff.staff.left, staff.staff.right))
+            println("  barlines " + staff.barlines.joinToString { "%.1f".format(it) })
+            staff.notes.forEach { n ->
+                println("  x %.1f y %.1f h %.1f step %d m %d %s %s".format(
+                    n.head.box.left, n.head.box.centerY, n.head.box.height, n.step, n.measure, n.pitch, n.head.name))
+            }
+        }
+        val glyphs = drawing.glyphs.filter { it.box.centerY in system.top - 60..system.bottom + 60 && it.name?.startsWith("notehead") != true }
+        glyphs.sortedBy { it.box.left }.forEach { println("  other ${it.name} x %.1f-%.1f y %.1f-%.1f".format(it.box.left, it.box.right, it.box.top, it.box.bottom)) }
+        drawing.lines.filter { it.isVertical && it.length > 15 && minOf(it.y1, it.y2) in system.top - 5..system.bottom }
+            .sortedBy { it.x1 }.forEach { println("  vertical x %.1f y %.1f-%.1f w %.2f".format(it.x1, minOf(it.y1, it.y2), maxOf(it.y1, it.y2), it.width)) }
+    }
+
     @Test
     fun probeGlyphs() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)

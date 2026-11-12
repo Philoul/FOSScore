@@ -26,6 +26,8 @@ android {
             // The scores the recognition is checked against, outside the repository (the
             // user's own scores are not ours to publish): -PpdfscoreCorpus=<folder>
             it.systemProperty("pdfscore.corpus", providers.gradleProperty("pdfscoreCorpus").getOrElse(""))
+            // One system to look at in detail (CorpusProbeTest.probeSystem): "<pdf>|<page>|<system>"
+            it.systemProperty("pdfscore.probe", providers.gradleProperty("pdfscoreProbe").getOrElse(""))
             it.maxHeapSize = "2g"
         }
     }

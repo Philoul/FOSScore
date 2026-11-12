@@ -32,6 +32,26 @@ class CorpusProbeTest {
                 "${drawing.lines.size} lines, ${drawing.shapes.size} shapes, ${drawing.texts.size} texts")
             drawing.glyphs.groupingBy { it.name ?: "?${it.font.substringAfter('+')}#${it.code}" }.eachCount()
                 .entries.sortedByDescending { it.value }.forEach { println("  ${it.value}\t${it.key}") }
+            drawing.glyphs.filter { it.name == null }.forEach { g ->
+                val near = drawing.texts.filter { kotlin.math.abs(it.y - g.y) < 15 && kotlin.math.abs(it.x - g.x) < 120 }
+                println("  unnamed ${g.font}#${g.code} at %.1f,%.1f size %.1f box %.1f-%.1f x %.1f-%.1f; texts near: %s".format(
+                    g.x, g.y, g.size, g.box.left, g.box.right, g.box.top, g.box.bottom, near.joinToString { "'${it.text}'@%.0f".format(it.x) }))
+                page.fontGlyphs[g.font to g.code]?.let { fg ->
+                    println("    rank: " + names.ranking(fg).take(3).joinToString { "${it.first} %.2f".format(it.second) })
+                }
+            }
+        }
+    }
+
+    /** The tempo's note ("♩ = 64") comes from a text font (Leland Text, Bravura Text) of other metrics. */
+    @Test
+    fun tempoNotesOfTextFontsAreNamed() {
+        assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
+        val names = GlyphNames(File(corpus, "fonts"))
+        museScore.forEach { pdfName ->
+            val glyphs = PdfBoxPages.read(File(documents, pdfName), 0, names).drawing.glyphs
+            val tempo = glyphs.filter { it.font.contains("Text") }.map { it.name }
+            org.junit.Assert.assertEquals(pdfName, listOf("metNoteQuarterUp"), tempo)
         }
     }
 

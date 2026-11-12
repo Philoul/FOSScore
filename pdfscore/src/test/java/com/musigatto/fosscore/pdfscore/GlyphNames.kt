@@ -50,7 +50,7 @@ class GlyphNames(fontsDir: File) {
             abs(it.box.left - box.left) < tolerance && abs(it.box.right - box.right) < tolerance &&
                 abs(it.box.top - box.top) < tolerance && abs(it.box.bottom - box.bottom) < tolerance
         }
-        return candidates.map { ref ->
+        val sameSize = candidates.map { ref ->
             val frame = Box(
                 minOf(box.left, ref.box.left), minOf(box.top, ref.box.top),
                 maxOf(box.right, ref.box.right), maxOf(box.bottom, ref.box.bottom),
@@ -58,6 +58,21 @@ class GlyphNames(fontsDir: File) {
             val scale = 48.0 / max(frame.width, frame.height)
             ref.name to Mask.rasterize(polygons, frame, scale).iou(Mask.rasterize(ref.polygons, frame, scale))
         }.sortedByDescending { it.second }
+        if ((sameSize.firstOrNull()?.second ?: 0.0) >= 0.65) return sameSize
+        // A text font's music symbols (Leland Text, Bravura Text) are sized and placed otherwise:
+        // compare the shapes each fitted to its own bounds, among those of the same proportions.
+        val aspect = box.width / box.height
+        val mask = fitted(polygons, box)
+        return refs.filter { abs(it.box.width / it.box.height - aspect) < 0.15 * aspect }
+            .map { it.name to mask.iou(fitted(it.polygons, it.box)) }
+            .sortedByDescending { it.second }
+    }
+
+    private fun fitted(polygons: List<List<Point>>, box: Box): Mask {
+        val unit = polygons.map { polygon ->
+            polygon.map { Point((it.x - box.left) / box.width, (it.y - box.top) / box.height) }
+        }
+        return Mask.rasterize(unit, Box(0.0, 0.0, 1.0, 1.0), 48.0)
     }
 
     private fun references(file: File): List<Reference> {

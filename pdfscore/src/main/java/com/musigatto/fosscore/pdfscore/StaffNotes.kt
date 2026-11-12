@@ -1,5 +1,8 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Clef
+import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.Pitch
 import kotlin.math.abs
 
 /** A notehead read on a staff: where it sits ([step], see [Staff.step]), in which measure, and its pitch. */
@@ -7,7 +10,8 @@ data class StaffNote(val head: DrawnGlyph, val step: Int, val measure: Int, val 
 
 /**
  * What one staff of a system says: its clef and key at the start, the barlines' xs, and its notes
- * from left to right. [pitch][StaffNote.pitch] is null while no clef is known.
+ * from left to right. [pitch][StaffNote.pitch] is null while no clef is known. [symbols] are every
+ * named symbol that belongs to the staff, left to right (what the rhythm is read from).
  */
 data class StaffReading(
     val staff: Staff,
@@ -15,6 +19,7 @@ data class StaffReading(
     val key: Key,
     val barlines: List<Double>,
     val notes: List<StaffNote>,
+    val symbols: List<DrawnGlyph> = emptyList(),
 )
 
 /**
@@ -30,6 +35,12 @@ object StaffNotes {
             .mapNotNull { glyph -> staffOf(glyph.box, staves.map { it.second })?.let { glyph to it } }
             .toMap(LinkedHashMap())
         keepChordsTogether(assigned, staves, page.lines)
+        // A tuplet's number goes with the notes nearest to it, stems included (it stands at their
+        // end): high over a melody's stems, it may be closer to the staff above.
+        val notes = assigned.entries.filter { isHead(it.key.name) }.map { (head, staff) -> withStem(head, page.lines) to staff }
+        for (number in tupletNumbers(page.texts)) {
+            notes.minByOrNull { (box, _) -> distance(box, number.box.centerX, number.box.centerY) }?.let { assigned[number] = it.second }
+        }
         val byStaff = assigned.entries.groupBy({ it.value }, { it.key })
         return systems.map { system ->
             system.staves.map { staff ->
@@ -50,7 +61,7 @@ object StaffNotes {
         staves: List<Pair<StaffSystem, Staff>>,
         lines: List<DrawnLine>,
     ) {
-        val heads = assigned.keys.filter { it.name.orEmpty().startsWith("notehead") }
+        val heads = assigned.keys.filter { isHead(it.name) }
         for (stem in lines.filter { it.isVertical }) {
             val top = minOf(stem.y1, stem.y2)
             val bottom = maxOf(stem.y1, stem.y2)
@@ -76,6 +87,21 @@ object StaffNotes {
         }
     }
 
+    /** A head's box with its stem's, when a stem runs from its side. */
+    private fun withStem(head: DrawnGlyph, lines: List<DrawnLine>): Box {
+        val box = head.box
+        val space = box.height
+        return lines.firstOrNull { line ->
+            line.isVertical && line.length >= 1.5 * space &&
+                minOf(abs(line.x1 - box.left), abs(line.x1 - box.right)) < 0.35 * space &&
+                box.centerY >= minOf(line.y1, line.y2) - 0.6 * space && box.centerY <= maxOf(line.y1, line.y2) + 0.6 * space
+        }?.let { Box(minOf(box.left, it.x1), minOf(box.top, it.y1, it.y2), maxOf(box.right, it.x1), maxOf(box.bottom, it.y1, it.y2)) } ?: box
+    }
+
+    /** How far a point is from a box (0 inside it). */
+    private fun distance(box: Box, x: Double, y: Double): Double =
+        kotlin.math.hypot(maxOf(box.left - x, 0.0, x - box.right), maxOf(box.top - y, 0.0, y - box.bottom))
+
     /** How far a symbol is out of a staff, in spaces (0 within its lines). */
     private fun distance(box: Box, staff: Staff): Double {
         val y = box.centerY
@@ -96,9 +122,9 @@ object StaffNotes {
 
     private fun read(staff: Staff, system: StaffSystem, symbols: List<DrawnGlyph>, lines: List<DrawnLine>): StaffReading {
         val space = staff.space
-        val heads = symbols.filter { it.name.orEmpty().startsWith("notehead") }
+        val heads = symbols.filter { isHead(it.name) }
         val clefs = symbols.mapNotNull { glyph ->
-            Clef.ofName(glyph.name.orEmpty())?.let { (sign, shift) ->
+            clefOf(glyph.name.orEmpty())?.let { (sign, shift) ->
                 val step = staff.step(glyph.box.top + originFraction(glyph.name.orEmpty()) * glyph.box.height)
                 glyph to Clef(sign, (Math.round(step / 2.0).toInt() + 1).coerceIn(1, 5), shift)
             }
@@ -142,7 +168,7 @@ object StaffNotes {
             }
             StaffNote(head, step, measure, pitch)
         }
-        return StaffReading(staff, firstClef?.second, key, barlines, notes)
+        return StaffReading(staff, firstClef?.second, key, barlines, notes, symbols)
     }
 
     /**
@@ -218,6 +244,40 @@ object StaffNotes {
         return xs.fold(mutableListOf()) { kept, x ->
             if (kept.isEmpty() || x - kept.last() > space) kept += x
             kept
+        }
+    }
+
+    /**
+     * A tuplet's number written in a text font (MuseScore's italic "3"), as the symbol a music font
+     * would draw ("tuplet3"), placed by its box: it then goes to its staff like any symbol. Whether it
+     * is a tuplet (and not a fingering) is for [Rhythms] to say.
+     */
+    private fun tupletNumbers(texts: List<DrawnText>): List<DrawnGlyph> = texts.mapNotNull { text ->
+        text.text.trim().takeIf { it.length == 1 && it[0] in '2'..'9' }?.let { digit ->
+            DrawnGlyph("tuplet$digit", Box(text.x, text.y - 0.7 * text.size, text.x + 0.55 * text.size, text.y))
+        }
+    }
+
+    /** A notehead, not the parenthesis drawn around one. */
+    internal fun isHead(name: String?): Boolean =
+        name != null && name.startsWith("notehead") && !name.startsWith("noteheadParenthesis")
+
+    /** The clef a SMuFL name stands for, and the octaves it shifts; its line is read from where it sits. */
+    private fun clefOf(name: String): Pair<Clef.Sign, Int>? {
+        val base = name.removeSuffix("Change")
+        val shift = when {
+            base.endsWith("8vb") -> -1
+            base.endsWith("8va") -> 1
+            base.endsWith("15mb") -> -2
+            base.endsWith("15ma") -> 2
+            else -> 0
+        }
+        return when {
+            base.startsWith("gClef") -> Clef.Sign.G to shift
+            base.startsWith("fClef") -> Clef.Sign.F to shift
+            base.startsWith("cClef") -> Clef.Sign.C to shift
+            base.startsWith("unpitchedPercussionClef") -> Clef.Sign.PERCUSSION to 0
+            else -> null
         }
     }
 

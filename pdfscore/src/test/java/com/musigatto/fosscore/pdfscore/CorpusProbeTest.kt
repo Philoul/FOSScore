@@ -1,5 +1,8 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Chord
+import com.musigatto.fosscore.pdfscore.music.Fraction
+import com.musigatto.fosscore.pdfscore.music.Rest
 import org.apache.pdfbox.Loader
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -16,6 +19,12 @@ class CorpusProbeTest {
     private val fonts = File(System.getProperty("pdfscore.fonts") ?: "")
 
     private val museScore = listOf("Message Personnel.pdf", "Je_Suis_Malade.pdf", "Obispo Pascal - Lucie paroles MU3.pdf")
+
+    // MuseScore PDFs with no MusicXML to compare with
+    private val otherMuseScore = listOf(
+        "Aux-Champs-Elysees Joe Dassin.pdf", "Bruel_Patrick_Qui_A_Le_Droit.pdf", "Chanson_sur_ma_drole_de_vie 2.pdf",
+        "Mad World.pdf", "Quelques mots d'amour Paroles.pdf",
+    )
     private val printToPdf = listOf(
         "Savoir Aimer MU3.pdf",
         "Je veux être un homme heureux William Sheller.pdf",
@@ -32,13 +41,72 @@ class CorpusProbeTest {
      * matches best (the PDF can be one part's extract).
      */
     @Test
-    fun probePitches() {
+    fun probePitches() = probe("pitches") { _, staff, m ->
+        staff.notes.filter { it.measure == m }.map { it.pitch.toString() }.sorted()
+    }
+
+    /**
+     * Each note's pitch and written value ("E4 quarter."), grace notes left out, against the paired
+     * MusicXML: a measure is right when all its notes are.
+     */
+    @Test
+    fun probeDurations() = probe("durations", timed = true) { drawing, staff, m ->
+        Rhythms.read(drawing, staff).firstOrNull { it.index == m }?.events.orEmpty()
+            .mapNotNull { it.event as? Chord }.filter { !it.grace }
+            .flatMap { chord -> chord.pitches.map { "$it ${chord.duration.type.musicXml}${".".repeat(chord.duration.dots)}" } }
+            .sorted()
+    }
+
+    /**
+     * Whether the voices of each measure agree: every voice of every staff of a system should last
+     * as long in one measure (a whole-measure rest fills any length). Checks the rests, the voices
+     * and the onsets, which the MusicXML comparison does not. All MuseScore PDFs of the corpus.
+     */
+    @Test
+    fun probeMeasureLengths() {
+        assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
+        val names = GlyphNames(fonts)
+        (museScore + otherMuseScore).forEach { pdfName ->
+            val file = File(documents, pdfName)
+            val pages = Loader.loadPDF(file).use { it.numberOfPages }
+            var measures = 0
+            val uneven = mutableListOf<String>()
+            for (index in 0 until pages) {
+                val drawing = PdfBoxPages.read(file, index, names).drawing
+                StaffNotes.read(drawing, Staves.find(drawing)).forEachIndexed { si, system ->
+                    val read = system.map { Rhythms.read(drawing, it) }
+                    val count = read.maxOf { staff -> (staff.maxOfOrNull { it.index } ?: -1) + 1 }
+                    for (m in 0 until count) {
+                        measures++
+                        // staff/voice → its length, whole-measure rests left out
+                        val lengths = read.flatMapIndexed { s, staff ->
+                            staff.firstOrNull { it.index == m }?.events.orEmpty()
+                                .filter { (it.event as? Rest)?.wholeMeasure != true && (it.event as? Chord)?.grace != true }
+                                .groupBy { it.event.voice }
+                                .map { (voice, events) -> "s${s + 1}v$voice" to events.fold(Fraction.ZERO) { sum, e -> sum + e.event.duration.length } }
+                        }
+                        if (lengths.map { it.second }.distinct().size > 1) {
+                            uneven += "p${index + 1}/s${si + 1} m${m + 1}: " + lengths.joinToString { "${it.first}=${it.second}" }
+                        }
+                    }
+                }
+            }
+            println("== measure lengths: $pdfName: ${measures - uneven.size} / $measures system-measures even")
+            uneven.take(8).forEach { println("  $it") }
+        }
+    }
+
+    /**
+     * What [readMeasure] gives for each staff and measure of the paired PDFs, against the
+     * MusicXML's part that matches best (the PDF can be one part's extract).
+     */
+    private fun probe(what: String, timed: Boolean = false, readMeasure: (PageDrawing, StaffReading, Int) -> List<String>) {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val names = GlyphNames(fonts)
         pairs.forEach { (pdfName, mxlName) ->
             val file = File(documents, pdfName)
             val pages = Loader.loadPDF(file).use { it.numberOfPages }
-            // staff index → measures, each the pitches read in it, sorted
+            // staff index → measures, each what was read in it
             val read = mutableMapOf<Int, MutableList<List<String>>>()
             val where = mutableListOf<String>() // measure → "page/system"
             for (index in 0 until pages) {
@@ -48,13 +116,12 @@ class CorpusProbeTest {
                     repeat(measures) { where += "p${index + 1}/s${si + 1}" }
                     system.forEachIndexed { s, staff ->
                         val list = read.getOrPut(s) { mutableListOf() }
-                        (0 until measures).forEach { m ->
-                            list += staff.notes.filter { it.measure == m }.map { it.pitch.toString() }.sorted()
-                        }
+                        (0 until measures).forEach { m -> list += readMeasure(drawing, staff, m) }
                     }
                 }
             }
-            val expected = MxlNotes(File(documents, mxlName)).parts
+            val mxl = MxlNotes(File(documents, mxlName))
+            val expected = if (timed) mxl.timed else mxl.parts
             val (partId, score) = expected.map { (id, staves) ->
                 id to read.entries.sumOf { (s, measures) ->
                     val want = staves[s + 1].orEmpty()
@@ -62,7 +129,7 @@ class CorpusProbeTest {
                 }
             }.maxBy { it.second }
             val total = read.values.sumOf { it.size }
-            println("== $pdfName vs $mxlName part $partId: $score / $total staff-measures right " +
+            println("== $what: $pdfName vs $mxlName part $partId: $score / $total staff-measures right " +
                 "(read ${read[0]?.size} measures, MusicXML ${expected[partId]?.get(1)?.size})")
             val staves = expected.getValue(partId)
             read.forEach { (s, measures) ->
@@ -100,18 +167,37 @@ class CorpusProbeTest {
                 println("  x %.1f y %.1f h %.1f step %d m %d %s %s".format(
                     n.head.box.left, n.head.box.centerY, n.head.box.height, n.step, n.measure, n.pitch, n.head.name))
             }
+            Rhythms.read(drawing, staff).forEach { measure ->
+                measure.events.forEach { placed ->
+                    val event = placed.event
+                    val what = (event as? Chord)?.let { "${it.pitches} ${it.stem}${if (it.grace) " grace" else ""}" } ?: "rest"
+                    println("  rhythm m %d x %.1f voice %d onset %s %s%s %s".format(
+                        measure.index, placed.box.left, event.voice, event.onset, event.duration.type.musicXml, ".".repeat(event.duration.dots), what))
+                }
+            }
         }
         val glyphs = drawing.glyphs.filter { it.box.centerY in system.top - 60..system.bottom + 60 && it.name?.startsWith("notehead") != true }
         glyphs.sortedBy { it.box.left }.forEach { println("  other ${it.name} x %.1f-%.1f y %.1f-%.1f".format(it.box.left, it.box.right, it.box.top, it.box.bottom)) }
         drawing.lines.filter { it.isVertical && it.length > 15 && minOf(it.y1, it.y2) in system.top - 5..system.bottom }
             .sortedBy { it.x1 }.forEach { println("  vertical x %.1f y %.1f-%.1f w %.2f".format(it.x1, minOf(it.y1, it.y2), maxOf(it.y1, it.y2), it.width)) }
+        val inSystem = { y: Double -> y in system.top - 40..system.bottom + 40 }
+        drawing.lines.filter { it.isVertical && it.length <= 15 && inSystem(it.y1) }
+            .sortedBy { it.x1 }.forEach { println("  short vertical x %.1f y %.1f-%.1f w %.2f".format(it.x1, minOf(it.y1, it.y2), maxOf(it.y1, it.y2), it.width)) }
+        drawing.lines.filter { !it.isVertical && !it.isHorizontal && inSystem(it.y1) }
+            .sortedBy { minOf(it.x1, it.x2) }.forEach { println("  slanted %.1f,%.1f-%.1f,%.1f w %.2f".format(it.x1, it.y1, it.x2, it.y2, it.width)) }
+        drawing.lines.filter { it.isHorizontal && it.width > 1.0 && inSystem(it.y1) }
+            .sortedBy { minOf(it.x1, it.x2) }.forEach { println("  thick horizontal x %.1f-%.1f y %.1f w %.2f".format(minOf(it.x1, it.x2), maxOf(it.x1, it.x2), it.y1, it.width)) }
+        drawing.shapes.filter { inSystem(it.box.centerY) }.sortedBy { it.left }.forEach { shape ->
+            println("  shape ${if (shape.curved) "curved" else "straight"} ${shape.points.size} pts x %.1f-%.1f y %.1f-%.1f".format(shape.left, shape.right, shape.top, shape.bottom) +
+                if (!shape.curved && shape.points.size <= 6) " " + shape.points.joinToString(" ") { "%.1f,%.1f".format(it.x, it.y) } else "")
+        }
     }
 
     @Test
     fun probeGlyphs() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val names = GlyphNames(fonts)
-        museScore.forEach { pdfName ->
+        (museScore + otherMuseScore).forEach { pdfName ->
             val page = PdfBoxPages.read(File(documents, pdfName), 0, names)
             val drawing = page.drawing
             val unnamed = drawing.glyphs.count { it.name == null }
@@ -135,7 +221,7 @@ class CorpusProbeTest {
     fun tempoNotesOfTextFontsAreNamed() {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val names = GlyphNames(fonts)
-        museScore.forEach { pdfName ->
+        (museScore + otherMuseScore).forEach { pdfName ->
             val glyphs = PdfBoxPages.read(File(documents, pdfName), 0, names).drawing.glyphs
             val tempo = glyphs.filter { it.font.contains("Text") }.map { it.name }
             org.junit.Assert.assertEquals(pdfName, listOf("metNoteQuarterUp"), tempo)

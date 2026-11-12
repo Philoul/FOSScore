@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Pitch
 import org.w3c.dom.Element
 import java.io.File
 import java.util.zip.ZipFile
@@ -13,6 +14,12 @@ class MxlNotes(file: File) {
     /** part id → staff (1 up) → measure (0 up) → the measure's pitches, sorted. */
     val parts: Map<String, Map<Int, List<List<String>>>>
 
+    /**
+     * The same with each note's written value: "E4 quarter.", grace notes left out (what
+     * [com.musigatto.fosscore.pdfscore.Rhythms] is checked against).
+     */
+    val timed: Map<String, Map<Int, List<List<String>>>>
+
     init {
         val document = ZipFile(file).use { zip ->
             val entry = zip.entries().asSequence().first {
@@ -22,9 +29,11 @@ class MxlNotes(file: File) {
             factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
             zip.getInputStream(entry).use { factory.newDocumentBuilder().parse(it) }
         }
+        val timedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         parts = document.getElementsByTagName("part").elements().associate { part ->
             val measures = part.getElementsByTagName("measure").elements()
             val staves = mutableMapOf<Int, MutableList<MutableList<String>>>()
+            val timedStaves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             measures.forEachIndexed { index, measure ->
                 measure.getElementsByTagName("note").elements().forEach { note ->
                     val staff = note.child("staff")?.textContent?.trim()?.toInt() ?: 1
@@ -37,11 +46,20 @@ class MxlNotes(file: File) {
                     val list = staves.getOrPut(staff) { mutableListOf() }
                     while (list.size <= index) list += mutableListOf<String>()
                     list[index] += pitch.toString()
+                    if (note.child("grace") == null) {
+                        val dots = (0 until note.childNodes.length).count { (note.childNodes.item(it) as? Element)?.tagName == "dot" }
+                        val timedList = timedStaves.getOrPut(staff) { mutableListOf() }
+                        while (timedList.size <= index) timedList += mutableListOf<String>()
+                        timedList[index] += "$pitch ${note.child("type")?.textContent?.trim()}${".".repeat(dots)}"
+                    }
                 }
             }
             staves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
+            timedStaves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
+            timedParts[part.getAttribute("id")] = timedStaves.mapValues { (_, list) -> list.map { it.sorted() } }
             part.getAttribute("id") to staves.mapValues { (_, list) -> list.map { it.sorted() } }
         }
+        timed = timedParts
     }
 
     private fun org.w3c.dom.NodeList.elements(): List<Element> = (0 until length).map { item(it) as Element }

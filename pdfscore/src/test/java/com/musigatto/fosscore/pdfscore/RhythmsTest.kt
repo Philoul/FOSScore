@@ -1,0 +1,351 @@
+package com.musigatto.fosscore.pdfscore
+
+import com.musigatto.fosscore.pdfscore.music.Chord
+import com.musigatto.fosscore.pdfscore.music.Fraction
+import com.musigatto.fosscore.pdfscore.music.NoteType
+import com.musigatto.fosscore.pdfscore.music.Rest
+import com.musigatto.fosscore.pdfscore.music.Stem
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class RhythmsTest {
+    private val space = 5.0
+    private val top = 100.0
+    private val bottomLine = top + 4 * space
+    private val g4 = top + 3 * space // second line from the bottom
+    private val c5 = top + 1.5 * space // third space
+    private val stemLength = 3.5 * space
+
+    private val staffLines = (0..4).map { DrawnLine(50.0, top + it * space, 550.0, top + it * space, 0.5) }
+    private val clef = DrawnGlyph("gClef", Box(55.0, top - 1.5 * space, 55.0 + 2.7 * space, top + 5.5 * space))
+
+    private fun head(x: Double, y: Double, name: String = "noteheadBlack", height: Double = 1.0) =
+        DrawnGlyph(name, Box(x, y - height * space / 2, x + 1.3 * height * space, y + height * space / 2))
+
+    private fun stemUp(head: DrawnGlyph) = DrawnLine(head.box.right, head.box.centerY, head.box.right, head.box.centerY - stemLength, 0.5)
+    private fun stemDown(head: DrawnGlyph) = DrawnLine(head.box.left, head.box.centerY, head.box.left, head.box.centerY + stemLength, 0.5)
+
+    private fun barline(x: Double) = DrawnLine(x, top, x, bottomLine, 0.8)
+
+    /** A flat beam joining stems up from [x1] to [x2], [index] 0 at the stems' ends, 1 under it... */
+    private fun flatBeamUp(x1: Double, x2: Double, endY: Double, index: Int) =
+        DrawnLine(x1, endY + 0.25 * space + index * 0.75 * space, x2, endY + 0.25 * space + index * 0.75 * space, 0.5 * space)
+
+    private fun dot(afterHead: DrawnGlyph, y: Double) =
+        DrawnGlyph("augmentationDot", Box(afterHead.box.right + 0.5 * space, y - 0.2 * space, afterHead.box.right + 0.9 * space, y + 0.2 * space))
+
+    private fun read(
+        glyphs: List<DrawnGlyph>,
+        lines: List<DrawnLine>,
+        shapes: List<DrawnShape> = emptyList(),
+        texts: List<DrawnText> = emptyList(),
+    ): List<MeasureReading> {
+        val page = PageDrawing(600.0, 800.0, listOf(clef) + glyphs, staffLines + lines, shapes, texts)
+        val reading = StaffNotes.read(page, Staves.find(page)).single().single()
+        return Rhythms.read(page, reading)
+    }
+
+    private fun types(measure: MeasureReading) = measure.events.map { it.event.duration.type }
+    private fun onsets(measure: MeasureReading) = measure.events.map { it.event.onset }
+
+    @Test
+    fun theHeadAndItsStemGiveQuarterHalfAndWhole() {
+        val quarter = head(100.0, g4)
+        val half = head(130.0, g4, "noteheadHalf")
+        val whole = head(160.0, g4, "noteheadWhole")
+        val measure = read(listOf(quarter, half, whole), listOf(stemUp(quarter), stemUp(half))).single()
+        assertEquals(listOf(NoteType.QUARTER, NoteType.HALF, NoteType.WHOLE), types(measure))
+        assertEquals(listOf(Stem.UP, Stem.UP, Stem.NONE), measure.events.map { (it.event as Chord).stem })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(3, 4)), onsets(measure))
+        assertEquals(listOf("G4"), (measure.events[0].event as Chord).pitches.map { it.toString() })
+        assertEquals(quarter.box, measure.events[0].box)
+    }
+
+    @Test
+    fun aStemDownStartsAtTheHeadsLeftSide() {
+        val note = head(100.0, c5)
+        val chord = read(listOf(note), listOf(stemDown(note))).single().events.single().event as Chord
+        assertEquals(Stem.DOWN, chord.stem)
+        assertEquals(NoteType.QUARTER, chord.duration.type)
+    }
+
+    @Test
+    fun aFlagMakesAnEighth() {
+        val note = head(100.0, g4)
+        val stem = stemUp(note)
+        val flag = DrawnGlyph("flag8thUp", Box(stem.x1, stem.y2, stem.x1 + 0.9 * space, stem.y2 + 3 * space))
+        val measure = read(listOf(note, flag), listOf(stem)).single()
+        assertEquals(listOf(NoteType.EIGHTH), types(measure))
+    }
+
+    @Test
+    fun beamsCountAtEachStem() {
+        // two sixteenths beamed together, then two eighths: two beams, then one
+        val heads = (0 until 4).map { head(100.0 + it * 3 * space, g4) }
+        val stems = heads.map { stemUp(it) }
+        val end = stems[0].y2
+        val beams = listOf(
+            flatBeamUp(stems[0].x1, stems[1].x1, end, 0), flatBeamUp(stems[0].x1, stems[1].x1, end, 1),
+            flatBeamUp(stems[2].x1, stems[3].x1, end, 0),
+        )
+        val measure = read(heads, stems + beams).single()
+        assertEquals(listOf(NoteType.SIXTEENTH, NoteType.SIXTEENTH, NoteType.EIGHTH, NoteType.EIGHTH), types(measure))
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 16), Fraction.of(1, 8), Fraction.of(1, 4)), onsets(measure))
+    }
+
+    /** MuseScore 3 draws some beams twice, one exactly over the other: still one beam. */
+    @Test
+    fun aBeamDrawnTwiceIsOneBeam() {
+        val heads = listOf(head(100.0, g4), head(115.0, g4))
+        val stems = heads.map { stemUp(it) }
+        val beam = flatBeamUp(stems[0].x1, stems[1].x1, stems[0].y2, 0)
+        val measure = read(heads, stems + beam + beam).single()
+        assertEquals(listOf(NoteType.EIGHTH, NoteType.EIGHTH), types(measure))
+    }
+
+    /** A sixteenth then a dotted eighth: the sixteenth's short beam stops before the next stem, and is not its. */
+    @Test
+    fun aShortBeamBelongsOnlyToTheStemItTouches() {
+        val heads = listOf(head(100.0, g4), head(115.0, g4))
+        val stems = heads.map { stemUp(it) }
+        val end = stems[0].y2
+        val hook = flatBeamUp(stems[0].x1, stems[1].x1 - 0.35 * space, end, 1)
+        val measure = read(heads, stems + flatBeamUp(stems[0].x1, stems[1].x1, end, 0) + hook).single()
+        assertEquals(listOf(NoteType.SIXTEENTH, NoteType.EIGHTH), types(measure))
+    }
+
+    /** A stem drawn in two pieces, one from the heads, one on to the beam: one stem. */
+    @Test
+    fun aStemInTwoPiecesReachesItsBeam() {
+        val heads = listOf(head(100.0, g4), head(115.0, g4))
+        val stems = heads.map { stemUp(it) }
+        val first = stems[0]
+        val middle = first.y1 - 1.5 * space
+        val pieces = listOf(DrawnLine(first.x1, first.y1, first.x1, middle, 0.5), DrawnLine(first.x1, middle, first.x1, first.y2, 0.5))
+        val measure = read(heads, pieces + stems[1] + flatBeamUp(first.x1, stems[1].x1, first.y2, 0)).single()
+        assertEquals(listOf(NoteType.EIGHTH, NoteType.EIGHTH), types(measure))
+    }
+
+    @Test
+    fun aSlantingBeamIsAFourCorneredShape() {
+        val low = head(100.0, g4)
+        val high = head(115.0, c5)
+        val s1 = stemUp(low)
+        val s2 = stemUp(high)
+        val beam = DrawnShape(
+            listOf(Point(s1.x1, s1.y2), Point(s2.x1, s2.y2), Point(s2.x1, s2.y2 + 0.5 * space), Point(s1.x1, s1.y2 + 0.5 * space), Point(s1.x1, s1.y2)),
+            curved = false,
+        )
+        val measure = read(listOf(low, high), listOf(s1, s2), listOf(beam)).single()
+        assertEquals(listOf(NoteType.EIGHTH, NoteType.EIGHTH), types(measure))
+    }
+
+    @Test
+    fun aDotAfterTheHeadMakesItLongerByHalf() {
+        val dotted = head(100.0, g4) // on a line: its dot sits in the space above
+        val eighth = head(130.0, g4)
+        val stem2 = stemUp(eighth)
+        val flag = DrawnGlyph("flag8thUp", Box(stem2.x1, stem2.y2, stem2.x1 + 0.9 * space, stem2.y2 + 3 * space))
+        val measure = read(listOf(dotted, dot(dotted, g4 - 0.5 * space), eighth, flag), listOf(stemUp(dotted), stem2)).single()
+        assertEquals(listOf(1, 0), measure.events.map { it.event.duration.dots })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(3, 8)), onsets(measure))
+    }
+
+    /** A dot on a head's edge is no augmentation dot, not even of the note before it. */
+    @Test
+    fun aDotOnAHeadIsNotTheDotOfTheNoteBefore() {
+        val eighth = head(100.0, c5)
+        val quarter = head(113.5, c5)
+        val stem = stemUp(eighth)
+        val flag = DrawnGlyph("flag8thUp", Box(stem.x1, stem.y2, stem.x1 + 0.9 * space, stem.y2 + 3 * space))
+        val onHead = DrawnGlyph("augmentationDot", Box(quarter.box.right - 0.2 * space, c5 - 0.2 * space, quarter.box.right + 0.2 * space, c5 + 0.2 * space))
+        val measure = read(listOf(eighth, flag, quarter, onHead), listOf(stem, stemUp(quarter))).single()
+        assertEquals(listOf(0, 0), measure.events.map { it.event.duration.dots })
+    }
+
+    @Test
+    fun aWholeRestHangsFromALineAndAHalfRestSitsOnOne() {
+        // measure 1: a half rest on the middle line, then a half note; measure 2: a whole rest alone
+        val halfRest = DrawnGlyph("restWhole", Box(100.0, top + 1.5 * space, 106.0, top + 2 * space))
+        val note = head(130.0, g4, "noteheadHalf")
+        val wholeRest = DrawnGlyph("restWhole", Box(220.0, top + space, 226.0, top + 1.5 * space))
+        val measures = read(listOf(halfRest, note, wholeRest), listOf(stemUp(note), barline(200.0)))
+        assertEquals(listOf(NoteType.HALF, NoteType.HALF), types(measures[0]))
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 2)), onsets(measures[0]))
+        val rest = measures[1].events.single().event as Rest
+        assertEquals(NoteType.WHOLE, rest.duration.type)
+        assertTrue(rest.wholeMeasure)
+    }
+
+    @Test
+    fun stemsUpAndDownStruckTogetherAreTwoVoices() {
+        // voice 1: two half notes, stems up; voice 2: a quarter rest, then three quarters, stems down
+        val upper = listOf(head(100.0, top + 0.5 * space, "noteheadHalf"), head(140.0, top + 0.5 * space, "noteheadHalf"))
+        val lowerRest = DrawnGlyph("restQuarter", Box(100.0, top + 2.5 * space, 104.0, top + 5 * space))
+        val lower = listOf(head(120.0, bottomLine), head(140.0, bottomLine), head(160.0, bottomLine))
+        val measure = read(upper + lowerRest + lower, upper.map { stemUp(it) } + lower.map { stemDown(it) }).single()
+        val voice1 = measure.events.filter { it.event.voice == 1 }
+        val voice2 = measure.events.filter { it.event.voice == 2 }
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 2)), voice1.map { it.event.onset })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), voice2.map { it.event.onset })
+        assertTrue(voice2.first().event is Rest)
+    }
+
+    /**
+     * A melody over chords, both with stems up (the chords' stems stop under the melody's heads):
+     * still two voices, the upper one first.
+     */
+    @Test
+    fun twoVoicesWithStemsUpGoByHeight() {
+        val melodyY = top - 1.5 * space // B5
+        val melody = listOf(head(100.0, melodyY), head(115.0, melodyY))
+        val melodyStems = melody.map { DrawnLine(it.box.right, melodyY, it.box.right, melodyY - 2.5 * space, 0.5) }
+        val flag = DrawnGlyph("flag8thUp", Box(melodyStems[1].x1, melodyStems[1].y2, melodyStems[1].x1 + 0.9 * space, melodyStems[1].y2 + 2 * space))
+        val chord = head(100.0, g4)
+        val chordStem = DrawnLine(chord.box.right, g4, chord.box.right, melodyY + space, 0.5)
+        val measure = read(melody + flag + chord, melodyStems + chordStem).single()
+        val voice1 = measure.events.filter { it.event.voice == 1 }.map { (it.event as Chord).pitches.map { p -> p.toString() } }
+        val voice2 = measure.events.filter { it.event.voice == 2 }.map { (it.event as Chord).pitches.map { p -> p.toString() } }
+        assertEquals(listOf(listOf("B5"), listOf("B5")), voice1)
+        assertEquals(listOf(listOf("G4")), voice2)
+    }
+
+    /**
+     * Chords whose stem runs up to a melody's half note, whose own stem goes on from it: one line on
+     * the page, two voices (a stem holds notes of one value).
+     */
+    @Test
+    fun aHalfNoteOnTheStemOfBlackOnesIsAnotherVoice() {
+        val melodyY = top - 1.5 * space
+        val half = head(100.0, melodyY, "noteheadHalf")
+        val chord = listOf(head(100.0, g4), head(100.0, bottomLine))
+        val line = DrawnLine(half.box.right, bottomLine, half.box.right, melodyY - 3 * space, 0.5)
+        val next = head(120.0, g4)
+        val measure = read(listOf(half) + chord + next, listOf(line, stemUp(next))).single()
+        val voice1 = measure.events.filter { it.event.voice == 1 }.map { it.event.duration.type }
+        val voice2 = measure.events.filter { it.event.voice == 2 }.map { it.event.duration.type }
+        assertEquals(listOf(NoteType.HALF), voice1)
+        assertEquals(listOf(NoteType.QUARTER, NoteType.QUARTER), voice2)
+    }
+
+    @Test
+    fun stemsTurningAtTheMiddleLineStayOneVoice() {
+        val low = head(100.0, g4)
+        val high = head(125.0, top)
+        val measure = read(listOf(low, high), listOf(stemUp(low), stemDown(high))).single()
+        assertEquals(listOf(1, 1), measure.events.map { it.event.voice })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4)), onsets(measure))
+    }
+
+    @Test
+    fun aGraceNoteTakesNoTime() {
+        val grace = head(100.0, c5, height = 0.65)
+        val note = head(110.0, g4)
+        val measure = read(listOf(grace, note), listOf(stemUp(grace), stemUp(note))).single()
+        val chords = measure.events.map { it.event as Chord }
+        assertEquals(listOf(true, false), chords.map { it.grace })
+        assertEquals(listOf(Fraction.ZERO, Fraction.ZERO), chords.map { it.onset })
+    }
+
+    /** Stems of two staves on almost the same x stay two stems: the upper one keeps its flag. */
+    @Test
+    fun stemsOfTwoStavesOnOneXStayApart() {
+        val lowerTop = top + 10 * space
+        val lowerLines = (0..4).map { DrawnLine(50.0, lowerTop + it * space, 550.0, lowerTop + it * space, 0.5) }
+        val system = listOf(DrawnLine(50.0, top, 50.0, lowerTop + 4 * space, 0.8))
+        val upper = head(100.0, g4)
+        val upperStem = stemUp(upper)
+        val flag = DrawnGlyph("flag8thUp", Box(upperStem.x1, upperStem.y2, upperStem.x1 + 0.9 * space, upperStem.y2 + 3 * space))
+        val lower = head(100.0 - 0.01, lowerTop + 3 * space)
+        val fClef = DrawnGlyph("fClef", Box(55.0, lowerTop - 0.2 * space, 55.0 + 2.7 * space, lowerTop + 3.3 * space))
+        val page = PageDrawing(
+            600.0, 800.0, listOf(clef, fClef, upper, flag, lower),
+            staffLines + lowerLines + system + upperStem + stemUp(lower), emptyList(), emptyList(),
+        )
+        val staves = StaffNotes.read(page, Staves.find(page)).single()
+        assertEquals(listOf(NoteType.EIGHTH), types(Rhythms.read(page, staves[0]).single()))
+        assertEquals(listOf(NoteType.QUARTER), types(Rhythms.read(page, staves[1]).single()))
+    }
+
+    /** An italic "3" in a text font, its baseline at [y], centred on [x]. */
+    private fun number(text: String, x: Double, y: Double) = DrawnText(text, "Edwin-Italic", x - 0.3 * 2 * space, y, 2 * space)
+
+    /** A quarter and an eighth under a bracketed "3": three eighths in the time of two. */
+    @Test
+    fun aBracketedThreeMakesATriplet() {
+        val quarter = head(100.0, g4)
+        val eighth = head(115.0, g4)
+        val after = head(140.0, g4)
+        val s2 = stemUp(eighth)
+        val flag = DrawnGlyph("flag8thUp", Box(s2.x1, s2.y2, s2.x1 + 0.9 * space, s2.y2 + 3 * space))
+        // the bracket over the stems' ends: a hook down at each end, the "3" in its middle
+        val y = s2.y2 - 1.5 * space
+        val bracket = listOf(
+            DrawnLine(quarter.box.left, y, 108.0, y, 0.5), DrawnLine(112.0, y, s2.x1, y, 0.5),
+            DrawnLine(quarter.box.left, y, quarter.box.left, y + 0.75 * space, 0.5), DrawnLine(s2.x1, y, s2.x1, y + 0.75 * space, 0.5),
+        )
+        val measure = read(
+            listOf(quarter, eighth, flag, after), listOf(stemUp(quarter), s2, stemUp(after)) + bracket,
+            texts = listOf(number("3", 110.0, y + 0.5 * space)),
+        ).single()
+        assertEquals(listOf(Fraction.of(2, 3), Fraction.of(2, 3), Fraction.of(1)), measure.events.map { it.event.duration.tuplet })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 6), Fraction.of(1, 4)), onsets(measure))
+    }
+
+    /** Three beamed eighths with a "3" over their beam and no bracket. */
+    @Test
+    fun aThreeOverABeamMakesATriplet() {
+        val heads = (0 until 3).map { head(100.0 + it * 3 * space, g4) }
+        val after = head(150.0, g4)
+        val stems = heads.map { stemUp(it) }
+        val beam = flatBeamUp(stems[0].x1, stems[2].x1, stems[0].y2, 0)
+        val measure = read(
+            heads + after, stems + beam + stemUp(after),
+            texts = listOf(number("3", stems[1].x1, stems[0].y2 - 0.5 * space)),
+        ).single()
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 12), Fraction.of(1, 6), Fraction.of(1, 4)), onsets(measure))
+    }
+
+    /** A fingering "3" over a quarter is no triplet: a third of a quarter is no note's value. */
+    @Test
+    fun aFingeringIsNoTuplet() {
+        val note = head(100.0, g4)
+        val next = head(120.0, g4)
+        val measure = read(listOf(note, next), listOf(stemDown(note), stemDown(next)), texts = listOf(number("3", 103.0, top - space))).single()
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4)), onsets(measure))
+    }
+
+    /**
+     * A "3" high over a melody's stems may be closer to the staff above it (another system): it
+     * still goes with the notes it is nearest to.
+     */
+    @Test
+    fun aTupletNumberGoesWithTheNearestNotes() {
+        val lowerTop = top + 15 * space
+        val lowerLines = (0..4).map { DrawnLine(50.0, lowerTop + it * space, 550.0, lowerTop + it * space, 0.5) }
+        val lowerClef = DrawnGlyph("gClef", Box(55.0, lowerTop - 1.5 * space, 55.0 + 2.7 * space, lowerTop + 5.5 * space))
+        val upperNote = head(100.0, top + 2 * space)
+        val melodyY = lowerTop - 1.5 * space
+        val quarter = head(100.0, melodyY)
+        val eighth = head(115.0, melodyY)
+        val s1 = stemUp(quarter)
+        val s2 = stemUp(eighth)
+        val flag = DrawnGlyph("flag8thUp", Box(s2.x1, s2.y2, s2.x1 + 0.9 * space, s2.y2 + 3 * space))
+        val after = head(140.0, melodyY)
+        val y = s2.y2 - 1.5 * space
+        val bracket = listOf(
+            DrawnLine(quarter.box.left, y, s2.x1, y, 0.5),
+            DrawnLine(quarter.box.left, y, quarter.box.left, y + 0.75 * space, 0.5), DrawnLine(s2.x1, y, s2.x1, y + 0.75 * space, 0.5),
+        )
+        val page = PageDrawing(
+            600.0, 800.0, listOf(clef, lowerClef, upperNote, quarter, eighth, flag, after),
+            staffLines + lowerLines + bracket + listOf(stemUp(upperNote), s1, s2, stemUp(after)), emptyList(),
+            listOf(number("3", 110.0, y + 0.3 * space)),
+        )
+        val systems = StaffNotes.read(page, Staves.find(page))
+        assertEquals(2, systems.size)
+        val lower = Rhythms.read(page, systems[1].single()).single()
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 6), Fraction.of(1, 4)), onsets(lower))
+    }
+}

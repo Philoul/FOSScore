@@ -1,4 +1,4 @@
-package com.musigatto.fosscore.pdfscore
+package com.musigatto.fosscore.pdfscore.music
 
 /** A written pitch: [step] 0 to 6 for C to B, [octave] (4 holds middle C), [alter] in semitones. */
 data class Pitch(val step: Int, val octave: Int, val alter: Int = 0) {
@@ -29,31 +29,10 @@ data class Clef(val sign: Sign, val line: Int, val octaveShift: Int = 0) {
         PERCUSSION(Pitch(4, 4)),
     }
 
-    /** The white key written at a staff [step] (0 the bottom line, see [Staff.step]). */
+    /** The white key written at a staff [step]: 0 on the bottom line, one per line and space up (negative below). */
     fun diatonicAt(step: Int): Int {
         val reference = if (sign == Sign.PERCUSSION) 2 else 2 * (line - 1)
         return sign.pitch.diatonic + 7 * octaveShift + (step - reference)
-    }
-
-    companion object {
-        /** The clef a SMuFL name stands for, its line still to be read from where it sits; null when not a clef. */
-        fun ofName(name: String): Pair<Sign, Int>? {
-            val base = name.removeSuffix("Change")
-            val shift = when {
-                base.endsWith("8vb") -> -1
-                base.endsWith("8va") -> 1
-                base.endsWith("15mb") -> -2
-                base.endsWith("15ma") -> 2
-                else -> 0
-            }
-            return when {
-                base.startsWith("gClef") -> Sign.G to shift
-                base.startsWith("fClef") -> Sign.F to shift
-                base.startsWith("cClef") -> Sign.C to shift
-                base.startsWith("unpitchedPercussionClef") -> Sign.PERCUSSION to 0
-                else -> null
-            }
-        }
     }
 }
 

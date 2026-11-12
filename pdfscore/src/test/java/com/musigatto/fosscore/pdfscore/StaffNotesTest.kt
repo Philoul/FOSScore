@@ -1,5 +1,7 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Clef
+import com.musigatto.fosscore.pdfscore.music.Key
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -162,5 +164,19 @@ class StaffNotesTest {
         val stem = DrawnLine(100.0 + 1.3 * space, top + 4 * space, 100.0 + 1.3 * space, top - 0.5 * space, 0.5)
         val staff = read(staffLines(top) + stem, glyphs).single().single()
         assertEquals(emptyList<Double>(), staff.barlines)
+    }
+
+    /** A cautionary parenthesis around a note is drawn with the noteheads' glyphs, but is no note. */
+    @Test
+    fun aParenthesisAroundANoteIsNoNote() {
+        val top = 100.0
+        val glyphs = listOf(
+            gClef(55.0, top),
+            glyph("noteheadParenthesisLeft", 97.0, top + 4 * space, 2.0, 0.5, 0.5),
+            head(100.0, top + 4 * space),
+            glyph("noteheadParenthesisRight", 107.0, top + 4 * space, 2.0, 0.5, 0.5),
+        )
+        val staff = read(staffLines(top), glyphs).single().single()
+        assertEquals(listOf("E4"), staff.notes.map { it.pitch.toString() })
     }
 }

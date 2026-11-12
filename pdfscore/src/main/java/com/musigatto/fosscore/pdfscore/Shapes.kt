@@ -2,15 +2,18 @@ package com.musigatto.fosscore.pdfscore
 
 import kotlin.math.abs
 
+/** The shape's corners, without the repeats that closing a path back on its first point leaves. */
+internal fun DrawnShape.corners(): List<Point> =
+    points.filterIndexed { i, p -> i == 0 || !p.near(points[i - 1]) }
+        .let { if (it.size > 1 && it.last().near(it.first())) it.dropLast(1) else it }
+
 /**
  * The line a thin filled rectangle draws (a staff line, stem or barline that a program fills
  * instead of stroking), else null: lines are read as lines whichever way they were drawn.
  */
 fun DrawnShape.asLine(): DrawnLine? {
     if (curved) return null
-    // The corners, without the repeats that closing a path back on its first point leaves.
-    val corners = points.filterIndexed { i, p -> i == 0 || !p.near(points[i - 1]) }
-        .let { if (it.size > 1 && it.last().near(it.first())) it.dropLast(1) else it }
+    val corners = corners()
     if (corners.size != 4) return null
     if (!(corners + corners[0]).zipWithNext().all { (a, b) -> abs(a.x - b.x) < 0.01 || abs(a.y - b.y) < 0.01 }) return null
     val box = box

@@ -2,6 +2,8 @@ package com.musigatto.fosscore.ui.viewer
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -9,6 +11,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.musigatto.fosscore.FOSScoreApp
+import com.musigatto.fosscore.library.Layer
+import com.musigatto.fosscore.library.LayerStore
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.StampStore
 import com.musigatto.fosscore.library.Stroke
@@ -49,7 +53,83 @@ internal class AnnotationViewModel(
     private val sheetId: Long?,
     private var stamps: StampStore,
     private var strokes: StrokeStore,
+    private val layers: LayerStore,
 ) : ViewModel() {
+
+    // --- the layers of this sheet: the list (for the panel) and which one receives new marks ---
+    var layerList by mutableStateOf<List<Layer>>(emptyList())
+        private set
+    var activeLayerId by mutableLongStateOf(0L)
+        private set
+
+    /** Guards [ensureLayer] from inserting twice before the layer flow comes back. */
+    private var ensureRequested = false
+
+    init {
+        sheetId?.let { id ->
+            viewModelScope.launch {
+                layers.observe(id).collect { list ->
+                    layerList = list
+                    // the active layer is gone (deleted): fall back to the first remaining one
+                    if (list.none { it.id == activeLayerId }) {
+                        activeLayerId = list.firstOrNull()?.id ?: 0L
+                        ensureRequested = false
+                    }
+                }
+            }
+        }
+    }
+
+    /** Creates the sheet's first layer when annotating starts; idempotent. */
+    fun ensureLayer() {
+        val id = sheetId ?: return
+        if (ensureRequested || layerList.isNotEmpty()) return
+        ensureRequested = true
+        viewModelScope.launch {
+            activeLayerId = layers.insert(Layer(sheetId = id))
+        }
+    }
+
+    fun setActiveLayer(id: Long) {
+        activeLayerId = id
+    }
+
+    /** The active layer never hides: the user would be drawing into nothing. */
+    fun setLayerVisible(id: Long, visible: Boolean) {
+        if (!visible && id == activeLayerId) return
+        viewModelScope.launch { layers.setVisible(id, visible) }
+    }
+
+    /** Inserts a new layer and makes it active. */
+    fun addLayer(name: String) {
+        val id = sheetId ?: return
+        viewModelScope.launch {
+            activeLayerId = layers.insert(Layer(sheetId = id, name = name))
+        }
+    }
+
+    fun renameLayer(id: Long, name: String) {
+        viewModelScope.launch { layers.rename(id, name) }
+    }
+
+    /** Deletes the layer and its marks; the undo history pointed at rows now gone, so it goes too. */
+    fun deleteLayer(id: Long) {
+        if (!LayerLogic.canDelete(layerList, id)) return
+        viewModelScope.launch {
+            layers.deleteWithMarks(id)
+            clearHistory()
+            clearSelection()
+            clearHidden()
+        }
+    }
+
+    /** Marks per layer for the whole sheet (delete dialog, Share). */
+    suspend fun markCounts(): Map<Long, Int> = layerCounts()
+
+    private suspend fun layerCounts(): Map<Long, Int> = sheetId?.let { layers.markCounts(it) } ?: emptyMap()
+
+    /** The layer new marks go to; 0 = no layer yet (marks stay visible from before layers). */
+    private fun activeLayer(): Long = activeLayerId
 
     /**
      * Where the marks are kept: a PDF's pages (the repositories), or a MusicXML score's measures
@@ -258,11 +338,12 @@ internal class AnnotationViewModel(
     fun addInk(page: Int, stroke: Stroke, current: PageEdit) {
         pushUndo(current, page)
         lastInkAt = System.currentTimeMillis()
-        val optimistic = stroke.copy(id = nextPendingId--)
+        val row = stroke.copy(layer = activeLayer())
+        val optimistic = row.copy(id = nextPendingId--)
         pendingInk = pendingInk + optimistic
         viewModelScope.launch {
             try {
-                val id = strokes.insert(stroke)
+                val id = strokes.insert(row)
                 when {
                     id <= 0L -> Unit
                     pendingInk.any { it.id == optimistic.id } ->
@@ -271,7 +352,7 @@ internal class AnnotationViewModel(
                         pendingInk = pendingInk.map {
                             if (it.id == optimistic.id) optimistic.copy(id = id) else it
                         }
-                    else -> strokes.delete(stroke.copy(id = id))
+                    else -> strokes.delete(row.copy(id = id))
                 }
             } finally {
                 pendingInk = pendingInk.filterNot { it.id == optimistic.id }
@@ -322,11 +403,12 @@ internal class AnnotationViewModel(
     /** A placed stamp: it stays selected so its box shows where it landed. */
     fun placeStamp(page: Int, stamp: Stamp, current: PageEdit) {
         pushUndo(current, page)
-        val optimistic = stamp.copy(id = nextPendingId--)
+        val row = stamp.copy(layer = activeLayer())
+        val optimistic = row.copy(id = nextPendingId--)
         pendingStamps = pendingStamps + optimistic
         viewModelScope.launch {
             try {
-                val id = stamps.insert(stamp)
+                val id = stamps.insert(row)
                 when {
                     id <= 0L -> Unit
                     pendingStamps.any { it.id == optimistic.id } -> {
@@ -335,7 +417,7 @@ internal class AnnotationViewModel(
                         }
                         selectedId = id
                     }
-                    else -> stamps.delete(stamp.copy(id = id))
+                    else -> stamps.delete(row.copy(id = id))
                 }
             } finally {
                 pendingStamps = pendingStamps.filterNot { it.id == optimistic.id }
@@ -368,7 +450,7 @@ internal class AnnotationViewModel(
     var typing by mutableStateOf<TextDraft?>(null)
         private set
     // a new text, or another one typed in: the field starts again with its own words
-    var typingKey by mutableStateOf(0)
+    var typingKey by mutableIntStateOf(0)
         private set
 
     /** Typing starts on [draft]: a new text, or one already on the page. */
@@ -409,7 +491,7 @@ internal class AnnotationViewModel(
         fun factory(context: Context, sheetId: Long?) = viewModelFactory {
             initializer {
                 val app = context.applicationContext as FOSScoreApp
-                AnnotationViewModel(sheetId, app.stampRepository, app.strokeRepository)
+                AnnotationViewModel(sheetId, app.stampRepository, app.strokeRepository, app.layerRepository)
             }
         }
     }

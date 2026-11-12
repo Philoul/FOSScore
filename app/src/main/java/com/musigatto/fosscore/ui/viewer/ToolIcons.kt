@@ -62,6 +62,12 @@ internal const val ICON_TEXT =
 internal const val ICON_HIGHLIGHTER =
     "M6,14l3,3v5h6v-5l3,-3v-4H6v4zM11,2v5H9v2h6V7h-2V2h-2z"
 
+// a layer's visibility: Material's visibility glyph (an eye)
+internal const val ICON_EYE =
+    "M12,4.5C7,4.5 2.73,7.61 1,12c1.73,4.39 6,7.5 11,7.5s9.27-3.11 11,-7.5c-1.73,-4.39 -6,-7.5 " +
+        "-11,-7.5zM12,17c-2.76,0 -5,-2.24 -5,-5s2.24,-5 5,-5 5,2.24 5,5 -2.24,5 -5,5zM12,9" +
+        "c-1.66,0 -3,1.34 -3,3s1.34,3 3,3 3,-1.34 3,-3 -1.34,-3 -3,-3z"
+
 /**
  * The grip of the annotation bar: two lines, Material's drag_handle. Three lines would be the ☰ of
  * a menu, which the viewer has at the same height.

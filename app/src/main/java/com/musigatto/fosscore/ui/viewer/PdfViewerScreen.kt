@@ -105,10 +105,12 @@ import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.PageSource
 import com.musigatto.fosscore.score.SheetFormat
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -396,14 +398,22 @@ fun PdfViewerScreen(
         (pageCount - 1).coerceAtLeast(0)
     )
     val stampsFlow = remember(sheetId, nearPages, stampStore) {
-        sheetId?.let { stampStore.observe(it, nearPages) } ?: flowOf(emptyMap<Int, List<Stamp>>())
+        sheetId?.let { stampStore.observe(it, nearPages) } ?: flowOf(emptyMap())
     }
-    val stampsByPage by stampsFlow.collectAsState(initial = emptyMap())
+    // unfiltered: Share counts and the export need every page, hidden layers included
+    val stampsRaw by stampsFlow.collectAsState(initial = emptyMap())
+    // the layer filter lives here, one point for draw, hit test, selection and settle
+    val stampsByPage = remember(stampsRaw, editor.layerList) {
+        stampsRaw.mapValues { (_, list) -> list.filter { LayerLogic.showsLayer(editor.layerList, it.layer) } }
+    }
 
     val strokesFlow = remember(sheetId, nearPages, strokeStore) {
         sheetId?.let { strokeStore.observe(it, nearPages) } ?: flowOf(emptyMap<Int, List<Stroke>>())
     }
-    val strokesByPage by strokesFlow.collectAsState(initial = emptyMap())
+    val strokesRaw by strokesFlow.collectAsState(initial = emptyMap())
+    val strokesByPage = remember(strokesRaw, editor.layerList) {
+        strokesRaw.mapValues { (_, list) -> list.filter { LayerLogic.showsLayer(editor.layerList, it.layer) } }
+    }
 
     // height of the annotation bar, measured: while annotating it is the top bar, and the page keeps
     // clear of it. Hoisted out of the chrome block because the bar is removed while the loupe is up
@@ -412,6 +422,8 @@ fun PdfViewerScreen(
     // the height of the bottom chrome (a band, the page dots), kept while it is hidden
     var bottomChromePx by remember { mutableIntStateOf(0) }
     var editing by rememberSaveable { mutableStateOf(false) }
+    // the first annotation session of a sheet gets its first layer
+    LaunchedEffect(editing) { if (editing) editor.ensureLayer() }
     // ✕ asks before throwing away the session's marks, and only when there are some (issue #50)
     var confirmDiscard by remember { mutableStateOf(false) }
     // the page tag that flashes while annotating: the bar has no room for a page label, so the
@@ -1662,6 +1674,18 @@ fun PdfViewerScreen(
                     },
                     onHeight = { annBarPx = it },
                     atTop = barY == 0f,
+                    layerChip = {
+                        LayerChip(
+                            layers = editor.layerList,
+                            activeId = editor.activeLayerId,
+                            markCounts = { editor.markCounts() },
+                            onSelect = { editor.setActiveLayer(it) },
+                            onToggleVisible = { id, visible -> editor.setLayerVisible(id, visible) },
+                            onRename = { id, name -> editor.renameLayer(id, name) },
+                            onDelete = { editor.deleteLayer(it) },
+                            onAdd = { name -> editor.addLayer(name) },
+                        )
+                    },
                     panelPlace = toolPanelPlace(barY, annBarPx, viewport.height + annBarPx, statusTopPx, navigationBottomPx),
                     // the top of the screen: while annotating this bar IS the title bar, and the
                     // grip moves it down out of the way, where it turns see-through so the page
@@ -1735,6 +1759,27 @@ fun PdfViewerScreen(
             onOpenSetlist = onOpenSetlist,
             editing = editing,
             onToggleEditing = { toggleEditing() },
+            editor = editor,
+            shareName = File(pdfUri.path.orEmpty()).nameWithoutExtension,
+            onExport = { layerId, destination ->
+                // no sheet, nowhere the marks hang from: say so instead of leaving the file empty
+                val id = sheetId ?: throw ExportError.WriteFailed()
+                // the whole document, not the three pages in hand: the copy carries every mark
+                val allStamps = stampStore.observe(id, 0 until pageCount).first().values.flatten()
+                val allStrokes = strokeStore.observe(id, 0 until pageCount).first().values.flatten()
+                // the render lock only covers the MuPDF work, never the database reads
+                paper.withRenderLock {
+                    AnnotationExport.export(
+                        context = context,
+                        source = pdfUri,
+                        destination = destination,
+                        stamps = allStamps,
+                        strokes = allStrokes,
+                        layerName = { layer -> layerLabel(context, editor.layerList, layer) },
+                        layerId = layerId,
+                    )
+                }
+            },
             onShowChrome = { navVisible = true },
             metronomeVm = metronomeVm,
             playbackVm = playbackVm,

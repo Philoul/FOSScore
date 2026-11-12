@@ -91,10 +91,18 @@
     <string name="err_import_failed">No se pudo importar</string>
     <string name="err_invalid_pdf">PDF inválido o corrupto</string>
     <string name="err_render_page">No se pudo mostrar la página</string>
-    <string name="err_no_local_file">Partitura sin archivo local</string>
-    <string name="err_no_ink">No hay tinta que guardar</string>
     <string name="err_pdf_not_editable">El PDF no se puede editar</string>
-    <string name="err_replace_failed">No se pudo reemplazar el PDF</string>
+    <string name="err_no_marks">No hay nada que compartir: esta partitura aún no tiene marcas</string>
+    <string name="layer_default">Capa %1$d</string>
+    <string name="layer_new">Nueva capa</string>
+    <string name="layer_show">Mostrar capa</string>
+    <string name="layer_hide">Ocultar capa</string>
+    <string name="layer_rename">Renombrar capa</string>
+    <string name="layer_delete_title">Borrar capa</string>
+    <string name="layer_delete_message">¿Borrar «%1$s» y sus %2$d marcas? No se puede deshacer.</string>
+    <string name="layer_all">Todas las capas</string>
+    <string name="share_title">Compartir con anotaciones</string>
+    <string name="share_save">Guardar una copia</string>
     <string name="err_export_failed">No se pudo guardar en el PDF</string>
 
     <!-- Nombres que lee el lector de pantalla (paleta de sellos) -->

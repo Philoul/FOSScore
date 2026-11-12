@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.library
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -36,6 +37,8 @@ data class Stamp(
     // null = x/y are a place on the page, as on a PDF
     val measure: Int? = null,
     val staff: Int? = null,
+    // the layer this mark belongs to; 0 = marks from before layers existed (always visible)
+    @ColumnInfo(defaultValue = "0") val layer: Long = 0,
 ) {
     companion object {
         /** symbol of a stamp row that is typed text (#35): its [text] carries the words. */

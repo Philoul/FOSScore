@@ -76,10 +76,18 @@
     <string name="err_import_failed">Échec de l’importation</string>
     <string name="err_invalid_pdf">PDF invalide ou corrompu</string>
     <string name="err_render_page">La page n’a pas pu être affichée</string>
-    <string name="err_no_local_file">La partition n’a pas de fichier local</string>
-    <string name="err_no_ink">Aucune encre à enregistrer</string>
     <string name="err_pdf_not_editable">Ce PDF ne peut pas être modifié</string>
-    <string name="err_replace_failed">Le PDF n’a pas pu être remplacé</string>
+    <string name="err_no_marks">Rien à partager : cette partition n’a pas encore de marques</string>
+    <string name="layer_default">Couche %1$d</string>
+    <string name="layer_new">Nouvelle couche</string>
+    <string name="layer_show">Afficher la couche</string>
+    <string name="layer_hide">Masquer la couche</string>
+    <string name="layer_rename">Renommer la couche</string>
+    <string name="layer_delete_title">Supprimer la couche</string>
+    <string name="layer_delete_message">Supprimer « %1$s » et ses %2$d marques ? Cette action est irréversible.</string>
+    <string name="layer_all">Toutes les couches</string>
+    <string name="share_title">Partager avec les annotations</string>
+    <string name="share_save">Enregistrer une copie</string>
     <string name="err_export_failed">L’enregistrement dans le PDF a échoué</string>
 
     <!-- Noms lus par les lecteurs d’écran (palette de tampons) -->

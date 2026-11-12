@@ -50,7 +50,7 @@ class OptimisticMarkTest {
     @Test
     fun inkIsVisibleBeforeInsertCompletesAndSettlesIfFlowArrivesFirst() {
         val insertedId = CompletableDeferred<Long>()
-        val editor = AnnotationViewModel(1, DelayedStamps(CompletableDeferred()), DelayedStrokes(insertedId))
+        val editor = AnnotationViewModel(1, DelayedStamps(CompletableDeferred()), DelayedStrokes(insertedId), FakeLayers())
         val stroke = Stroke(sheetId = 1, page = 0, points = "0.1,0.1|0.2,0.2", width = 0.01f)
 
         editor.addInk(0, stroke, PageEdit(emptyList(), emptyList()))
@@ -68,7 +68,7 @@ class OptimisticMarkTest {
     @Test
     fun stampIsVisibleBeforeInsertCompletesAndSettlesIfFlowArrivesFirst() {
         val insertedId = CompletableDeferred<Long>()
-        val editor = AnnotationViewModel(1, DelayedStamps(insertedId), DelayedStrokes(CompletableDeferred()))
+        val editor = AnnotationViewModel(1, DelayedStamps(insertedId), DelayedStrokes(CompletableDeferred()), FakeLayers())
         val stamp = Stamp(sheetId = 1, page = 0, symbol = "FLAT", x = 0.5f, y = 0.5f, size = 0.05f)
 
         editor.placeStamp(0, stamp, PageEdit(emptyList(), emptyList()))

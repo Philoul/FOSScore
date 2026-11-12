@@ -192,6 +192,7 @@ internal fun AnnotationBar(
     modifier: Modifier = Modifier,
     panelPlace: PanelPlace = PanelPlace(above = false, maxHeightPx = Int.MAX_VALUE),
     atTop: Boolean = true,
+    layerChip: @Composable () -> Unit = {},
 ) {
     // where each tool sits on screen, so its panel hangs from the tool and not from the bar's edge
     val toolX = remember { mutableStateMapOf<AnnotationTool, Float>() }
@@ -245,6 +246,8 @@ internal fun AnnotationBar(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
             val tools: @Composable () -> Unit = {
+                    // the layer chip first: it says where new marks go, and scrolls with the tools
+                    layerChip()
                     // The tools (issue #56): exactly one is in hand, so they read as radio buttons.
                     // The arrow selects, moves and resizes; the rest act on what they create.
                     ToolButton(

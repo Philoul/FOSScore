@@ -44,4 +44,10 @@ interface StampDao {
 
     @Query("DELETE FROM stamps WHERE sheetId = :sheetId AND page = :page")
     suspend fun deletePage(sheetId: Long, page: Int)
+
+    @Query("SELECT layer, COUNT(*) AS n FROM stamps WHERE sheetId = :sheetId GROUP BY layer")
+    suspend fun marksPerLayer(sheetId: Long): List<LayerCount>
+
+    @Query("DELETE FROM stamps WHERE layer = :layer")
+    suspend fun deleteByLayer(layer: Long)
 }

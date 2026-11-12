@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.library
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -30,11 +31,13 @@ data class Stroke(
     /**
      * What the stroke is: [INK] free ink, [SHAPE] a shape's outline (generated, drawn with its own
      * width or per-kind fill), [SHAPE_FILLED] a shape drawn filled (a solid: the eraser deletes it
-     * whole, and it stays in the sidecar — it is not exported to /Annots), [SHAPE_STAFF] a staff:
-     * its points come in pairs, each pair one line of the staff, so one stroke draws N lines,
-     * [HIGHLIGHTER] free ink drawn translucent (selected and erased like ink, never grouped in words).
+     * whole; the export writes it as a filled polygon), [SHAPE_STAFF] a staff: its points come in
+     * pairs, each pair one line of the staff, so one stroke draws N lines, [HIGHLIGHTER] free ink
+     * drawn translucent (selected and erased like ink, never grouped in words).
      */
     val kind: Int = 0,
+    // the layer this mark belongs to; 0 = marks from before layers existed (always visible)
+    @ColumnInfo(defaultValue = "0") val layer: Long = 0,
 ) {
     companion object {
         const val INK = 0

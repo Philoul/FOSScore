@@ -100,7 +100,7 @@ internal fun inkPath(pts: List<Offset>, kind: Int = Stroke.INK): Path {
 
 // the highlighter lies over the music, so its ink is translucent (the reference implementation's
 // highlighter does the same); the colour itself is the tool's
-private const val HIGHLIGHTER_ALPHA = 0.35f
+internal const val HIGHLIGHTER_ALPHA = 0.35f
 
 // the one place that decides how a stroke looks: a filled solid, or a round-capped line
 private fun DrawScope.drawInk(path: Path, color: Color, widthPx: Float, kind: Int = Stroke.INK) =

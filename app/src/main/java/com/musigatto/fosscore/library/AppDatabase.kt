@@ -13,6 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SheetKey::class, Person::class, SheetPerson::class,
         Tag::class, SheetTag::class, SheetLayout::class,
         Setlist::class, SetlistItem::class,
+        Layer::class,
     ],
     version = AppDatabase.VERSION
 )
@@ -20,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sheetDao(): SheetDao
     abstract fun stampDao(): StampDao
     abstract fun strokeDao(): StrokeDao
+    abstract fun layerDao(): LayerDao
     abstract fun setlistDao(): SetlistDao
 
     companion object {
@@ -238,16 +240,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9: annotation layers. Adds the [layers] table and a [layer] column to stamps and strokes.
+         * Existing marks are moved to one layer per sheet (created by the migration) so they keep
+         * their grouping; the layer name is empty and the UI shows a translated default by position.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `layers` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sheetId` INTEGER NOT NULL, `name` TEXT NOT NULL, `visible` INTEGER NOT NULL, FOREIGN KEY(`sheetId`) REFERENCES `sheets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_layers_sheetId` ON `layers` (`sheetId`)")
+                db.execSQL("ALTER TABLE `stamps` ADD COLUMN `layer` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `strokes` ADD COLUMN `layer` INTEGER NOT NULL DEFAULT 0")
+                // One layer per sheet that has marks; old marks go to that layer. The name is empty:
+                // the UI shows a translated default by position.
+                db.execSQL("INSERT INTO `layers` (`sheetId`, `name`, `visible`) SELECT `sheetId`, '', 1 FROM (SELECT DISTINCT `sheetId` FROM `stamps` UNION SELECT DISTINCT `sheetId` FROM `strokes`)")
+                db.execSQL("UPDATE `stamps` SET `layer` = (SELECT MIN(`id`) FROM `layers` WHERE `layers`.`sheetId` = `stamps`.`sheetId`)")
+                db.execSQL("UPDATE `strokes` SET `layer` = (SELECT MIN(`id`) FROM `layers` WHERE `layers`.`sheetId` = `strokes`.`sheetId`)")
+            }
+        }
+
         const val NAME = "fosscore.db"
 
         /**
          * Schema version. When it changes: add the migration to [MIGRATIONS] (or an automatic
          * migration), commit the new file in `app/schemas/`, and extend `MigrationTest`.
          */
-        const val VERSION = 8
+        const val VERSION = 9
 
         /** Every migration, oldest first. A missing one stops the app instead of wiping the library. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
 
         private var instance: AppDatabase? = null
 

@@ -74,6 +74,8 @@ class MigrationTest {
                     }
                     // v7: a text stamp keeps the width it wraps at
                     if (version >= 7) put("textWidth", 0.5f)
+                    // v9: the layer the mark belongs to
+                    if (version >= 9) put("layer", 1L)
                 }
             )
         }
@@ -88,8 +90,18 @@ class MigrationTest {
                     if (version >= 5) put("groupId", 7L)
                     // v6: strokes carry their kind; a shape row is what the new schema adds
                     if (version >= 6) put("kind", 1)
+                    // v9: the layer the mark belongs to
+                    if (version >= 9) put("layer", 1L)
                 }
             )
+        }
+        if (version >= 9) {
+            // a database born at v9 already has its layer, written by the app (id 1: the first row)
+            db.insert("layers", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
+                put("sheetId", 1L)
+                put("name", "")
+                put("visible", 1)
+            })
         }
         if (version >= 8) {
             db.insert("setlists", SQLiteDatabase.CONFLICT_ABORT, ContentValues().apply {
@@ -149,8 +161,21 @@ class MigrationTest {
                     assertEquals("v$version: stroke kind", if (version >= 6) 1 else 0, strokes[0].kind)
                 }
 
-                // v8: the setlists come in empty
-                assertEquals("v$version: setlists", emptyList<SetlistSummary>(), db.setlistDao().observeSummaries().first())
+                // v9: the old annotations end up in their sheet's layer (a layer the migration created)
+                if (version >= 2) assertEquals("v$version: layer", 1L, stamps[0].layer)
+                if (version >= 4) assertEquals("v$version: layer", 1L, strokes[0].layer)
+                assertEquals(
+                    "v$version: layers",
+                    if (version >= 2) listOf(Layer(1L, sheet.id, "", true)) else emptyList(),
+                    db.layerDao().observe(sheet.id).first(),
+                )
+
+                // v8: a database created at v8 already has its setlists populated by fill()
+                assertEquals(
+                    "v$version: setlists",
+                    if (version >= 8) listOf(SetlistSummary(1L, "Concert", 2)) else emptyList(),
+                    db.setlistDao().observeSummaries().first()
+                )
 
                 // v5 (from an older version): the free text becomes tags, the genre as a genre
                 if (version >= 5) return@withRoom
@@ -176,6 +201,13 @@ class MigrationTest {
             val stroke = db.strokeDao().observePage(1L, 2).first().single()
             assertEquals(1, db.strokeDao().observePage(1L, 2).first().size)
             assertEquals("v6 keeps a shape's kind", Stroke.SHAPE, stroke.kind)
+            // v9: the layer written on v9 comes out of the schema as it was written
+            assertEquals(1L, stroke.layer)
+            assertEquals(
+                "v9 layers",
+                listOf(Layer(1L, 1L, "", true)),
+                db.layerDao().observe(1L).first(),
+            )
             assertEquals(listOf(SetlistSummary(1L, "Concert", 2)), db.setlistDao().observeSummaries().first())
             assertEquals(listOf(1L, 1L), db.setlistDao().observeEntries(1L).first().map { it.sheet.id })
         }

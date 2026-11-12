@@ -52,4 +52,10 @@ interface StrokeDao {
 
     @Query("DELETE FROM strokes WHERE sheetId = :sheetId AND page = :page")
     suspend fun deletePage(sheetId: Long, page: Int)
+
+    @Query("SELECT layer, COUNT(*) AS n FROM strokes WHERE sheetId = :sheetId GROUP BY layer")
+    suspend fun marksPerLayer(sheetId: Long): List<LayerCount>
+
+    @Query("DELETE FROM strokes WHERE layer = :layer")
+    suspend fun deleteByLayer(layer: Long)
 }

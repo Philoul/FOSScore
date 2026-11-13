@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Articulation
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
@@ -23,7 +24,7 @@ data class MeasureReading(val index: Int, val events: List<PlacedEvent>) {
  * Reads how long each note and rest of a staff lasts, and in which voice, from the symbols' names
  * and boxes and the page's lines and shapes only, so that a scan's blobs are read by the same code:
  * - a note's value from its head (whole, half, black), then the flags or beams at its stem's end;
- * - the augmentation dots after it;
+ * - the augmentation dots after it, the staccato dots over or under it;
  * - a rest's value from its symbol (a whole rest hangs from a line, a half rest sits on one);
  * - two voices where notes with stems up and down are struck together, else one;
  * - each event's onset in its measure, the durations of its voice before it added up.
@@ -57,6 +58,7 @@ object Rhythms {
         val rest: Boolean = false,
         val grace: Boolean = false,
         var dots: Int = 0,
+        var staccato: Boolean = false,
     ) {
         val x: Double get() = box.left
     }
@@ -151,7 +153,10 @@ object Rhythms {
 
     private fun rests(reading: StaffReading): List<Draft> {
         val staff = reading.staff
-        return reading.symbols.mapNotNull { glyph ->
+        return reading.symbols.filter { glyph ->
+            // a rest drawn under a head is hidden by it: nothing a reader sees
+            reading.notes.none { covered(glyph.box, it.head.box) >= 0.5 }
+        }.mapNotNull { glyph ->
             val type = when (glyph.name) {
                 "restDoubleWhole" -> NoteType.BREVE
                 // drawn alike: a whole rest hangs from a line, a half rest sits on one
@@ -176,15 +181,19 @@ object Rhythms {
     }
 
     /**
-     * The augmentation dots after each note or rest: a dot belongs to the nearest one on its left
-     * whose head (or rest) it sits beside; repeat dots by a barline are not. Several in a row are a
-     * double dot.
+     * The dots of each note or rest. A dot over or under a chord's heads (in their width, above or
+     * below them) is its staccato: drawn like an augmentation dot, told apart by where it sits. The
+     * other dots are augmentation dots: one belongs to the nearest note or rest on its left whose
+     * head (or rest) it sits beside; repeat dots by a barline are not. Several in a row are a double
+     * dot.
      */
     private fun dots(drafts: List<Draft>, reading: StaffReading, space: Double) {
         val owned = java.util.IdentityHashMap<Draft, MutableList<DrawnGlyph>>()
+        val chords = drafts.filter { !it.rest }
         reading.symbols.filter { it.name == "augmentationDot" }
             .filter { dot -> reading.barlines.none { abs(it - dot.box.centerX) < 1.2 * space } }
-            // a dot drawn on a head is some other mark
+            .filterNot { dot -> staccatoOf(dot, chords, space)?.also { it.staccato = true } != null }
+            // another dot drawn on a head is some other mark
             .filter { dot -> reading.notes.none { overlap(it.head.box, dot.box) } }
             .sortedBy { it.box.left }
             .forEach { dot ->
@@ -202,12 +211,28 @@ object Rhythms {
     }
 
     /**
+     * The chord a dot is the staccato of: the nearest one it is over or under, in its heads' width
+     * (pressed against the outer head, it can overlap its edge).
+     */
+    private fun staccatoOf(dot: DrawnGlyph, chords: List<Draft>, space: Double): Draft? {
+        val x = dot.box.centerX
+        val y = dot.box.centerY
+        return chords.filter {
+            x >= it.box.left - 0.1 * space && x <= it.box.right + 0.1 * space &&
+                (y < it.box.top + 0.25 * space || y > it.box.bottom - 0.25 * space)
+        }
+            .minByOrNull { minOf(abs(y - it.box.top), abs(y - it.box.bottom)) }
+    }
+
+    /**
      * Voices and onsets of one measure. Two voices when notes on two stems are struck together:
      * - a stem up over a stem down: the stems up are voice 1, down voice 2, a rest goes by the side
      *   of the middle line it lies on;
      * - two stems the same way (a melody over chords): the notes above the gap between them are
      *   voice 1, below it voice 2.
-     * Else everything is one voice.
+     * Else a rest drawn beside a chord, at its time, is another voice's (voice 2 under the chords,
+     * voice 1 over them); else everything is one voice. A voice is silent until it shows: an event
+     * drawn at the time of another voice's starts then (the rests before it are hidden).
      */
     private fun timed(items: List<Draft>, staff: Staff, tuplets: List<Tuplet>): List<PlacedEvent> {
         val space = staff.space
@@ -224,15 +249,25 @@ object Rhythms {
         // where the upper voice ends and the lower one begins, when the stems do not say it
         val split = together.map { (upper, lower) -> (upper.box.bottom + lower.box.top) / 2 }.average()
         val middle = staff.top + 2 * space
+        // rest → whether it lies under the chord it is drawn beside
+        val besideRests = java.util.IdentityHashMap<Draft, Boolean>()
+        if (together.isEmpty()) {
+            items.filter { it.rest }.forEach { rest ->
+                chords.firstOrNull { sharedWidth(rest.box, it.box) >= 0.3 * space }?.let { besideRests[rest] = rest.box.centerY > it.box.centerY }
+            }
+        }
         fun voiceOf(draft: Draft): Int = when {
-            together.isEmpty() -> 1
+            together.isEmpty() && besideRests.isEmpty() -> 1
+            together.isEmpty() -> besideRests[draft]?.let { under -> if (under) 2 else 1 } ?: if (besideRests.containsValue(true)) 1 else 2
             !byStem -> if (draft.box.centerY > split) 2 else 1
             draft.stem == Stem.UP -> 1
             draft.stem == Stem.DOWN -> 2
             else -> if (draft.box.centerY > middle + 0.5 * space) 2 else 1
         }
         val result = mutableListOf<PlacedEvent>()
-        for ((voice, inVoice) in items.groupBy(::voiceOf)) {
+        // the voice with the most events first: the others start where they line up with it
+        val timedBefore = mutableListOf<Pair<Draft, Fraction>>()
+        for ((voice, inVoice) in items.groupBy(::voiceOf).entries.sortedByDescending { it.value.size }) {
             var time = Fraction.ZERO
             val sorted = inVoice.sortedBy { it.x }
             val ratios = java.util.IdentityHashMap<Draft, Fraction>()
@@ -241,13 +276,21 @@ object Rhythms {
                 if (tuplet.fits(under)) under.forEach { ratios[it] = tuplet.ratio }
             }
             for (draft in sorted) {
+                if (!draft.grace) {
+                    timedBefore.filter { (other, _) -> !other.grace && sharedWidth(draft.box, other.box) >= 0.3 * space }
+                        .maxOfOrNull { it.second }?.let { if (it > time) time = it }
+                }
                 val duration = Duration(draft.type ?: NoteType.QUARTER, draft.dots, ratios[draft] ?: Fraction.of(1))
                 val event = if (draft.rest) {
                     Rest(duration, time, voice, wholeMeasure = duration.type == NoteType.WHOLE && sorted.size == 1)
                 } else {
-                    Chord(draft.notes.sortedBy { it.step }.map { it.pitch }, duration, draft.stem, time, voice, draft.grace)
+                    Chord(
+                        draft.notes.sortedBy { it.step }.map { it.pitch }, duration, draft.stem, time, voice, draft.grace,
+                        if (draft.staccato) setOf(Articulation.STACCATO) else emptySet(),
+                    )
                 }
                 result += PlacedEvent(event, draft.box)
+                timedBefore += draft to time
                 if (!draft.grace) time += duration.length
             }
         }
@@ -261,8 +304,12 @@ object Rhythms {
     private class Tuplet(val count: Int, val left: Double, val right: Double) {
         val ratio: Fraction = Fraction.of(normal(count).toLong(), count.toLong())
 
-        /** Whether the note or rest is under it: its stem (or its middle) between the ends. */
+        /**
+         * Whether the note or rest is under it: its stem (or its middle) between the ends; a rest
+         * at least partly (a bracket's hook can stand right of the middle of the rest it starts on).
+         */
         fun holds(draft: Draft, space: Double): Boolean {
+            if (draft.rest) return minOf(draft.box.right, right) - maxOf(draft.box.left, left) >= 0.25 * space
             val x = draft.stemLine?.x1 ?: draft.box.centerX
             return (x >= left - 0.1 * space && x <= right + 0.1 * space) || draft.box.centerX in left..right
         }
@@ -364,6 +411,17 @@ object Rhythms {
 
     private fun overlap(a: Box, b: Box): Boolean =
         a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+    /** How wide [a] and [b] lie over each other (negative when apart). */
+    private fun sharedWidth(a: Box, b: Box): Double = minOf(a.right, b.right) - maxOf(a.left, b.left)
+
+    /** How much of [a]'s area [b] covers, from 0 to 1. */
+    private fun covered(a: Box, b: Box): Double {
+        val width = minOf(a.right, b.right) - maxOf(a.left, b.left)
+        val height = minOf(a.bottom, b.bottom) - maxOf(a.top, b.top)
+        val area = a.width * a.height
+        return if (width <= 0 || height <= 0 || area <= 0) 0.0 else width * height / area
+    }
 
     private fun union(boxes: List<Box>): Box =
         Box(boxes.minOf { it.left }, boxes.minOf { it.top }, boxes.maxOf { it.right }, boxes.maxOf { it.bottom })

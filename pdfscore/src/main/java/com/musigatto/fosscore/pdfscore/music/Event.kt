@@ -16,7 +16,7 @@ sealed interface Event {
 /**
  * Notes struck together on one stem (one note alone is a chord of one). A [pitch][pitches] is null
  * while nothing says it (no clef read). A [grace] note takes no time of its own: its [onset] is the
- * one of the note it leads to.
+ * one of the note it leads to. Its [articulations] are the marks over or under it (a staccato dot).
  */
 data class Chord(
     val pitches: List<Pitch?>,
@@ -25,7 +25,11 @@ data class Chord(
     override val onset: Fraction,
     override val voice: Int,
     val grace: Boolean = false,
+    val articulations: Set<Articulation> = emptySet(),
 ) : Event
+
+/** A mark on the notes that says how to play them, not how long they are written. */
+enum class Articulation { STACCATO }
 
 /** A silence. A [wholeMeasure] rest fills its measure whatever its length (its [duration] is a whole). */
 data class Rest(

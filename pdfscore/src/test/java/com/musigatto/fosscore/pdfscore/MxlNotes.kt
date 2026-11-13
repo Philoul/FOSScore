@@ -15,7 +15,7 @@ class MxlNotes(file: File) {
     val parts: Map<String, Map<Int, List<List<String>>>>
 
     /**
-     * The same with each note's written value: "E4 quarter.", grace notes left out (what
+     * The same with each note's written value and staccato: "E4 quarter. staccato", grace notes left out (what
      * [com.musigatto.fosscore.pdfscore.Rhythms] is checked against).
      */
     val timed: Map<String, Map<Int, List<List<String>>>>
@@ -36,6 +36,8 @@ class MxlNotes(file: File) {
             val timedStaves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             measures.forEachIndexed { index, measure ->
                 measure.getElementsByTagName("note").elements().forEach { note ->
+                    // a note the score does not print (no head, or hidden) is not on the page
+                    if (note.getAttribute("print-object") == "no" || note.child("notehead")?.textContent?.trim() == "none") return@forEach
                     val staff = note.child("staff")?.textContent?.trim()?.toInt() ?: 1
                     val pitch = note.child("pitch")?.let { p ->
                         val alter = p.child("alter")?.textContent?.trim()?.toDouble()?.toInt() ?: 0
@@ -50,7 +52,8 @@ class MxlNotes(file: File) {
                         val dots = (0 until note.childNodes.length).count { (note.childNodes.item(it) as? Element)?.tagName == "dot" }
                         val timedList = timedStaves.getOrPut(staff) { mutableListOf() }
                         while (timedList.size <= index) timedList += mutableListOf<String>()
-                        timedList[index] += "$pitch ${note.child("type")?.textContent?.trim()}${".".repeat(dots)}"
+                        val staccato = note.getElementsByTagName("staccato").length > 0
+                        timedList[index] += "$pitch ${note.child("type")?.textContent?.trim()}${".".repeat(dots)}${if (staccato) " staccato" else ""}"
                     }
                 }
             }

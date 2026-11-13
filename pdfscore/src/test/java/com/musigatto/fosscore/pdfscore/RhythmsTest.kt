@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Articulation
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.NoteType
@@ -164,6 +165,65 @@ class RhythmsTest {
         assertEquals(listOf(0, 0), measure.events.map { it.event.duration.dots })
     }
 
+    /**
+     * A staccato over a note (its stem down) can sit at the height of the note before it: it is
+     * the staccato of the note it is over, not a dot of the one before.
+     */
+    @Test
+    fun aStaccatoOverANoteIsNoDotOfTheNoteBefore() {
+        val eighth = head(100.0, c5)
+        val quarter = head(111.0, c5 + 0.5 * space)
+        val s1 = stemDown(eighth)
+        val flag = DrawnGlyph("flag8thDown", Box(s1.x1, s1.y2 - 3 * space, s1.x1 + 0.9 * space, s1.y2))
+        val staccato = DrawnGlyph(
+            "augmentationDot",
+            Box(quarter.box.centerX - 0.2 * space, quarter.box.centerY - 1.2 * space, quarter.box.centerX + 0.2 * space, quarter.box.centerY - 0.8 * space),
+        )
+        val measure = read(listOf(eighth, flag, quarter, staccato), listOf(s1, stemDown(quarter))).single()
+        assertEquals(listOf(0, 0), measure.events.map { it.event.duration.dots })
+        assertEquals(listOf(emptySet(), setOf(Articulation.STACCATO)), measure.events.map { (it.event as Chord).articulations })
+    }
+
+    /** A staccato pressed against its head (stem up, the dot just under it) is still its staccato. */
+    @Test
+    fun aStaccatoTouchingItsHeadIsItsStaccato() {
+        val note = head(100.0, top - space)
+        val staccato = DrawnGlyph(
+            "augmentationDot",
+            Box(note.box.centerX - 0.15 * space, note.box.bottom - 0.2 * space, note.box.centerX + 0.15 * space, note.box.bottom + 0.1 * space),
+        )
+        val chord = read(listOf(note, staccato), listOf(stemUp(note))).single().events.single().event as Chord
+        assertEquals(0, chord.duration.dots)
+        assertEquals(setOf(Articulation.STACCATO), chord.articulations)
+    }
+
+    /** A rest drawn under a head is hidden by it: no reader sees it, so it is not read. */
+    @Test
+    fun aRestHiddenUnderAHeadIsNotRead() {
+        val note = head(100.0, top - 0.5 * space)
+        val hidden = DrawnGlyph("restWhole", Box(note.box.left, note.box.centerY, note.box.right, note.box.bottom))
+        val measure = read(listOf(note, hidden), listOf(stemUp(note))).single()
+        assertEquals(listOf(NoteType.QUARTER), types(measure))
+        assertTrue(measure.events.single().event is Chord)
+    }
+
+    /**
+     * A rest under the chords, drawn at the time of one of them, is another voice's: it starts
+     * then (the voice's time before it is hidden rests).
+     */
+    @Test
+    fun aRestBesideAChordIsAnotherVoice() {
+        val chords = (0 until 4).map { head(100.0 + it * 20, g4) }
+        val ledger = bottomLine + space
+        val rest = DrawnGlyph("restHalf", Box(137.0, ledger - 0.5 * space, 149.0, ledger))
+        val measure = read(chords + rest, chords.map { stemUp(it) }).single()
+        val voice1 = measure.events.filter { it.event.voice == 1 }
+        val voice2 = measure.events.filter { it.event.voice == 2 }
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), voice1.map { it.event.onset })
+        assertEquals(listOf(Fraction.of(1, 2)), voice2.map { it.event.onset })
+        assertEquals(NoteType.HALF, (voice2.single().event as Rest).duration.type)
+    }
+
     @Test
     fun aWholeRestHangsFromALineAndAHalfRestSitsOnOne() {
         // measure 1: a half rest on the middle line, then a half note; measure 2: a whole rest alone
@@ -288,6 +348,31 @@ class RhythmsTest {
         val measure = read(
             listOf(quarter, eighth, flag, after), listOf(stemUp(quarter), s2, stemUp(after)) + bracket,
             texts = listOf(number("3", 110.0, y + 0.5 * space)),
+        ).single()
+        assertEquals(listOf(Fraction.of(2, 3), Fraction.of(2, 3), Fraction.of(1)), measure.events.map { it.event.duration.tuplet })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 6), Fraction.of(1, 4)), onsets(measure))
+    }
+
+    /**
+     * A rest that starts a bracket: the hook is drawn right of the rest's middle, the rest still
+     * takes part in the triplet.
+     */
+    @Test
+    fun aRestStartingABracketIsInTheTriplet() {
+        val rest = DrawnGlyph("restQuarter", Box(100.0, top + space, 104.6, top + 4 * space))
+        val eighth = head(112.0, g4)
+        val after = head(130.0, g4)
+        val s2 = stemUp(eighth)
+        val flag = DrawnGlyph("flag8thUp", Box(s2.x1, s2.y2, s2.x1 + 0.9 * space, s2.y2 + 3 * space))
+        val y = s2.y2 - 1.5 * space
+        val hook = 103.0
+        val bracket = listOf(
+            DrawnLine(hook, y, 108.0, y, 0.5), DrawnLine(113.0, y, s2.x1, y, 0.5),
+            DrawnLine(hook, y, hook, y + 0.75 * space, 0.5), DrawnLine(s2.x1, y, s2.x1, y + 0.75 * space, 0.5),
+        )
+        val measure = read(
+            listOf(rest, eighth, flag, after), listOf(s2, stemUp(after)) + bracket,
+            texts = listOf(number("3", (hook + s2.x1) / 2, y + 0.5 * space)),
         ).single()
         assertEquals(listOf(Fraction.of(2, 3), Fraction.of(2, 3), Fraction.of(1)), measure.events.map { it.event.duration.tuplet })
         assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 6), Fraction.of(1, 4)), onsets(measure))

@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.Articulation
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Rest
@@ -37,25 +38,42 @@ class CorpusProbeTest {
     )
 
     /**
+     * Staff-measures (staff and measure, 1 up) where the paired MusicXML is another edition than
+     * the PDF, checked by eye: the PDF is read right there. Any other gap is the recognition's.
+     */
+    private val referenceDiffers = mapOf(
+        // the .mxl has one measure less before 84 and one more after it
+        "Je_Suis_Malade.pdf" to setOf(2 to 84, 2 to 85),
+        // the .mxl has F#4 (its sharp written) where the PDF has F4
+        "Obispo Pascal - Lucie paroles MU3.pdf" to setOf(1 to 14, 1 to 22),
+    )
+
+    /**
      * The pitches read on each staff, measure by measure, against the paired MusicXML's part that
      * matches best (the PDF can be one part's extract).
      */
     @Test
-    fun probePitches() = probe("pitches") { _, staff, m ->
-        staff.notes.filter { it.measure == m }.map { it.pitch.toString() }.sorted()
+    fun probePitches() {
+        probe("pitches") { _, staff, m -> staff.notes.filter { it.measure == m }.map { it.pitch.toString() }.sorted() }
     }
 
     /**
-     * Each note's pitch and written value ("E4 quarter."), grace notes left out, against the paired
+     * Each note's pitch, written value and staccato ("E4 quarter. staccato"), grace notes left out, against the paired
      * MusicXML: a measure is right when all its notes are.
      */
     @Test
-    fun probeDurations() = probe("durations", timed = true) { drawing, staff, m ->
+    fun probeDurations() {
+        probe("durations", timed = true, readMeasure = ::durations)
+    }
+
+    private fun durations(drawing: PageDrawing, staff: StaffReading, m: Int): List<String> =
         Rhythms.read(drawing, staff).firstOrNull { it.index == m }?.events.orEmpty()
             .mapNotNull { it.event as? Chord }.filter { !it.grace }
-            .flatMap { chord -> chord.pitches.map { "$it ${chord.duration.type.musicXml}${".".repeat(chord.duration.dots)}" } }
+            .flatMap { chord ->
+                val staccato = if (Articulation.STACCATO in chord.articulations) " staccato" else ""
+                chord.pitches.map { "$it ${chord.duration.type.musicXml}${".".repeat(chord.duration.dots)}$staccato" }
+            }
             .sorted()
-    }
 
     /**
      * Whether the voices of each measure agree: every voice of every staff of a system should last
@@ -64,26 +82,33 @@ class CorpusProbeTest {
      */
     @Test
     fun probeMeasureLengths() {
+        measureLengths()
+    }
+
+    /** [probeMeasureLengths] on pages passed through [shake]: how many system-measures are even, of how many. */
+    private fun measureLengths(shake: (PageDrawing) -> PageDrawing = { it }, verbose: Boolean = true): Pair<Int, Int> {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val names = GlyphNames(fonts)
+        var allEven = 0
+        var all = 0
         (museScore + otherMuseScore).forEach { pdfName ->
             val file = File(documents, pdfName)
             val pages = Loader.loadPDF(file).use { it.numberOfPages }
             var measures = 0
             val uneven = mutableListOf<String>()
             for (index in 0 until pages) {
-                val drawing = PdfBoxPages.read(file, index, names).drawing
+                val drawing = shake(page(file, index, names))
                 StaffNotes.read(drawing, Staves.find(drawing)).forEachIndexed { si, system ->
                     val read = system.map { Rhythms.read(drawing, it) }
                     val count = read.maxOf { staff -> (staff.maxOfOrNull { it.index } ?: -1) + 1 }
                     for (m in 0 until count) {
                         measures++
-                        // staff/voice → its length, whole-measure rests left out
+                        // staff/voice → where it ends, whole-measure rests left out
                         val lengths = read.flatMapIndexed { s, staff ->
                             staff.firstOrNull { it.index == m }?.events.orEmpty()
                                 .filter { (it.event as? Rest)?.wholeMeasure != true && (it.event as? Chord)?.grace != true }
                                 .groupBy { it.event.voice }
-                                .map { (voice, events) -> "s${s + 1}v$voice" to events.fold(Fraction.ZERO) { sum, e -> sum + e.event.duration.length } }
+                                .map { (voice, events) -> "s${s + 1}v$voice" to events.maxOf { it.event.onset + it.event.duration.length } }
                         }
                         if (lengths.map { it.second }.distinct().size > 1) {
                             uneven += "p${index + 1}/s${si + 1} m${m + 1}: " + lengths.joinToString { "${it.first}=${it.second}" }
@@ -91,18 +116,80 @@ class CorpusProbeTest {
                     }
                 }
             }
-            println("== measure lengths: $pdfName: ${measures - uneven.size} / $measures system-measures even")
-            uneven.take(8).forEach { println("  $it") }
+            allEven += measures - uneven.size
+            all += measures
+            if (verbose) {
+                println("== measure lengths: $pdfName: ${measures - uneven.size} / $measures system-measures even")
+                uneven.forEach { println("  $it") }
+            }
         }
+        return allEven to all
+    }
+
+    /** The pages read so far: one test reads each page once, however often it looks at it. */
+    private val pages = mutableMapOf<Pair<String, Int>, PageDrawing>()
+
+    private fun page(file: File, index: Int, names: GlyphNames): PageDrawing =
+        pages.getOrPut(file.name to index) { PdfBoxPages.read(file, index, names).drawing }
+
+    /**
+     * How much an untidy page costs: the symbols, the strokes, the outlines or the texts (one kind
+     * at a time, then all) moved at random, each on its own by about [SHAKES] of a staff space (the
+     * staff lines stay), then read again. Which kind breaks first shows the tolerance to widen.
+     */
+    @Test
+    fun probeRobustness() {
+        assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
+        for (kind in Shaken.entries) {
+            for (fraction in SHAKES) {
+                // the corpus is engraved with a staff space of about 5 points
+                val shake = { page: PageDrawing -> shaken(page, kind, fraction * 5.0, seed = 1) }
+                val (wrong, total) = probe("durations", timed = true, shake = shake, verbose = false, readMeasure = ::durations)
+                val (even, measures) = measureLengths(shake, verbose = false)
+                println("== %s shaken by %.2f space: %d / %d staff-measures wrong against the MusicXML, %d / %d system-measures even"
+                    .format(kind, fraction, wrong, total, even, measures))
+            }
+        }
+    }
+
+    private val SHAKES = listOf(0.05, 0.1, 0.2)
+
+    private enum class Shaken { SYMBOLS, STROKES, OUTLINES, TEXTS, ALL }
+
+    private fun shaken(page: PageDrawing, kind: Shaken, sigma: Double, seed: Long): PageDrawing {
+        val random = java.util.Random(seed)
+        fun d() = random.nextGaussian() * sigma
+        fun Box.moved(dx: Double, dy: Double) = Box(left + dx, top + dy, right + dx, bottom + dy)
+        fun on(what: Shaken) = kind == what || kind == Shaken.ALL
+        // staff lines, drawn whole or a measure at a time
+        val staffLine = { l: DrawnLine -> l.isHorizontal && l.length > 20 && l.width < 1.5 }
+        return PageDrawing(
+            page.width, page.height,
+            if (!on(Shaken.SYMBOLS)) page.glyphs
+            else page.glyphs.map { g -> val dx = d(); val dy = d(); g.copy(box = g.box.moved(dx, dy), x = g.x + dx, y = g.y + dy) },
+            if (!on(Shaken.STROKES)) page.lines
+            else page.lines.map { l -> if (staffLine(l)) l else { val dx = d(); val dy = d(); l.copy(x1 = l.x1 + dx, y1 = l.y1 + dy, x2 = l.x2 + dx, y2 = l.y2 + dy) } },
+            if (!on(Shaken.OUTLINES)) page.shapes
+            else page.shapes.map { sh -> val dx = d(); val dy = d(); sh.copy(points = sh.points.map { Point(it.x + dx, it.y + dy) }) },
+            if (!on(Shaken.TEXTS)) page.texts else page.texts.map { t -> t.copy(x = t.x + d(), y = t.y + d()) },
+        )
     }
 
     /**
      * What [readMeasure] gives for each staff and measure of the paired PDFs, against the
      * MusicXML's part that matches best (the PDF can be one part's extract).
      */
-    private fun probe(what: String, timed: Boolean = false, readMeasure: (PageDrawing, StaffReading, Int) -> List<String>) {
+    private fun probe(
+        what: String,
+        timed: Boolean = false,
+        shake: (PageDrawing) -> PageDrawing = { it },
+        verbose: Boolean = true,
+        readMeasure: (PageDrawing, StaffReading, Int) -> List<String>,
+    ): Pair<Int, Int> {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val names = GlyphNames(fonts)
+        var allWrong = 0
+        var all = 0
         pairs.forEach { (pdfName, mxlName) ->
             val file = File(documents, pdfName)
             val pages = Loader.loadPDF(file).use { it.numberOfPages }
@@ -110,7 +197,7 @@ class CorpusProbeTest {
             val read = mutableMapOf<Int, MutableList<List<String>>>()
             val where = mutableListOf<String>() // measure → "page/system"
             for (index in 0 until pages) {
-                val drawing = PdfBoxPages.read(file, index, names).drawing
+                val drawing = shake(page(file, index, names))
                 StaffNotes.read(drawing, Staves.find(drawing)).forEachIndexed { si, system ->
                     val measures = system.maxOf { staff -> maxOf(staff.barlines.size, (staff.notes.maxOfOrNull { it.measure } ?: -1) + 1) }
                     repeat(measures) { where += "p${index + 1}/s${si + 1}" }
@@ -129,16 +216,25 @@ class CorpusProbeTest {
                 }
             }.maxBy { it.second }
             val total = read.values.sumOf { it.size }
-            println("== $what: $pdfName vs $mxlName part $partId: $score / $total staff-measures right " +
-                "(read ${read[0]?.size} measures, MusicXML ${expected[partId]?.get(1)?.size})")
+            val known = referenceDiffers[pdfName].orEmpty()
             val staves = expected.getValue(partId)
-            read.forEach { (s, measures) ->
+            val gaps = read.flatMap { (s, measures) ->
                 val want = staves[s + 1].orEmpty()
-                measures.indices.filter { it >= want.size || want[it] != measures[it] }.take(6).forEach { m ->
-                    println("  staff ${s + 1} measure ${m + 1} (${where.getOrNull(m)}): read ${measures[m]} expected ${want.getOrNull(m)}")
-                }
+                measures.indices.filter { it >= want.size || want[it] != measures[it] }.map { m -> Triple(s + 1, m + 1, want.getOrNull(m)) to measures[m] }
+            }
+            val unexplained = gaps.count { (at, _) -> (at.first to at.second) !in known }
+            allWrong += unexplained
+            all += total
+            if (!verbose) return@forEach
+            println("== $what: $pdfName vs $mxlName part $partId: $score / $total staff-measures right, " +
+                "${gaps.size - unexplained} where the MusicXML is another edition, $unexplained wrong " +
+                "(read ${read[0]?.size} measures, MusicXML ${expected[partId]?.get(1)?.size})")
+            gaps.forEach { (at, readThere) ->
+                val note = if ((at.first to at.second) in known) " [the MusicXML differs]" else ""
+                println("  staff ${at.first} measure ${at.second} (${where.getOrNull(at.second - 1)}): read $readThere expected ${at.third}$note")
             }
         }
+        return allWrong to all
     }
 
     /** One system in detail: -PpdfscoreProbe="<pdf>|<page>|<system>" (1 up). */
@@ -163,6 +259,7 @@ class CorpusProbeTest {
             println("staff ${s + 1}: top %.1f space %.2f x %.1f-%.1f clef ${staff.clef} key ${staff.key}".format(
                 staff.staff.top, staff.staff.space, staff.staff.left, staff.staff.right))
             println("  barlines " + staff.barlines.joinToString { "%.1f".format(it) })
+            staff.symbols.forEach { println("  symbol ${it.name} x %.1f-%.1f y %.1f-%.1f".format(it.box.left, it.box.right, it.box.top, it.box.bottom)) }
             staff.notes.forEach { n ->
                 println("  x %.1f y %.1f h %.1f step %d m %d %s %s".format(
                     n.head.box.left, n.head.box.centerY, n.head.box.height, n.step, n.measure, n.pitch, n.head.name))
@@ -177,7 +274,7 @@ class CorpusProbeTest {
             }
         }
         val glyphs = drawing.glyphs.filter { it.box.centerY in system.top - 60..system.bottom + 60 && it.name?.startsWith("notehead") != true }
-        glyphs.sortedBy { it.box.left }.forEach { println("  other ${it.name} x %.1f-%.1f y %.1f-%.1f".format(it.box.left, it.box.right, it.box.top, it.box.bottom)) }
+        glyphs.sortedBy { it.box.left }.forEach { println("  other ${it.name} ${it.font.substringAfter('+')}#${it.code} x %.1f-%.1f y %.1f-%.1f".format(it.box.left, it.box.right, it.box.top, it.box.bottom)) }
         drawing.lines.filter { it.isVertical && it.length > 15 && minOf(it.y1, it.y2) in system.top - 5..system.bottom }
             .sortedBy { it.x1 }.forEach { println("  vertical x %.1f y %.1f-%.1f w %.2f".format(it.x1, minOf(it.y1, it.y2), maxOf(it.y1, it.y2), it.width)) }
         val inSystem = { y: Double -> y in system.top - 40..system.bottom + 40 }

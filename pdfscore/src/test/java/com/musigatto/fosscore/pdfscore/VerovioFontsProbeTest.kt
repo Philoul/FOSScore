@@ -27,14 +27,15 @@ class VerovioFontsProbeTest {
         val pitches: Int = 0,
         val durations: Int = 0,
         val signatures: Int = 0,
+        val written: Int = 0,
         val total: Int = 0,
         val even: Int = 0,
         val measures: Int = 0,
     ) {
         operator fun plus(o: Tally) =
-            Tally(pitches + o.pitches, durations + o.durations, signatures + o.signatures, total + o.total, even + o.even, measures + o.measures)
-        override fun toString() = "pitches %d wrong, durations %d wrong, keys or times %d wrong / %d staff-measures; %d / %d system-measures even"
-            .format(pitches, durations, signatures, total, even, measures)
+            Tally(pitches + o.pitches, durations + o.durations, signatures + o.signatures, written + o.written, total + o.total, even + o.even, measures + o.measures)
+        override fun toString() = "pitches %d wrong, durations %d wrong, keys or times %d wrong, written MusicXML %d wrong / %d staff-measures; %d / %d system-measures even"
+            .format(pitches, durations, signatures, written, total, even, measures)
     }
 
     @Test
@@ -55,7 +56,7 @@ class VerovioFontsProbeTest {
                 var sum = Tally()
                 for (part in parts) {
                     val tally = probe(part, font, names, verbose)
-                    if (verbose || tally.pitches + tally.durations + tally.signatures > 0 || tally.even < tally.measures) println("  ${part.name} $font: $tally")
+                    if (verbose || tally.pitches + tally.durations + tally.signatures + tally.written > 0 || tally.even < tally.measures) println("  ${part.name} $font: $tally")
                     sum += tally
                 }
                 println("== $mode, $font: $sum")
@@ -116,6 +117,9 @@ class VerovioFontsProbeTest {
                 }
             }
         }
+        // the whole part read, written as MusicXML and read back: pitches and values together
+        val back = MxlNotes(MusicXmlWriter.write(ScoreReader.read(pages)))
+        val writtenBack = back.allStaves(back.timed).mapKeys { it.key - 1 }
         fun wrong(read: Map<Int, List<List<String>>>, want: Map<Int, List<List<String>>>, what: String): Int {
             var count = 0
             read.forEach { (s, list) ->
@@ -138,6 +142,7 @@ class VerovioFontsProbeTest {
             pitches = wrong(pitches, pitchesWant, "pitches"),
             durations = wrong(durations, durationsWant, "durations"),
             signatures = wrong(signatures, signaturesWant, "signatures"),
+            written = wrong(writtenBack, durationsWant, "written MusicXML"),
             total = pitches.values.sumOf { it.size },
             even = even,
             measures = measures,

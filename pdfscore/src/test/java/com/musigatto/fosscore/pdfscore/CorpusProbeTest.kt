@@ -70,6 +70,16 @@ class CorpusProbeTest {
      * The key in force and the time signature drawn in each measure, against the paired MusicXML:
      * mid-piece changes included.
      */
+    /**
+     * The whole score read, written as MusicXML and read back, against the paired MusicXML: what a
+     * user gets, pitches and values together (as [probeDurations]), then keys and times.
+     */
+    @Test
+    fun probeWrittenMusicXml() {
+        probe("written MusicXML, durations", timed = true, written = { it.timed })
+        probe("written MusicXML, signatures", reference = { it.signatures }, written = { it.signatures })
+    }
+
     @Test
     fun probeSignatures() {
         probe("signatures", reference = { it.signatures }) { _, staff, m -> Signatures.read(staff, m) }
@@ -194,7 +204,8 @@ class CorpusProbeTest {
         reference: ((MxlNotes) -> Map<String, Map<Int, List<List<String>>>>)? = null,
         shake: (PageDrawing) -> PageDrawing = { it },
         verbose: Boolean = true,
-        readMeasure: (PageDrawing, StaffReading, Int) -> List<String>,
+        written: ((MxlNotes) -> Map<String, Map<Int, List<List<String>>>>)? = null,
+        readMeasure: (PageDrawing, StaffReading, Int) -> List<String> = { _, _, _ -> emptyList() },
     ): Pair<Int, Int> {
         assumeTrue(corpus.path.isNotEmpty() && corpus.isDirectory)
         val names = GlyphNames(fonts)
@@ -206,7 +217,16 @@ class CorpusProbeTest {
             // staff index → measures, each what was read in it
             val read = mutableMapOf<Int, MutableList<List<String>>>()
             val where = mutableListOf<String>() // measure → "page/system"
-            for (index in 0 until pages) {
+            if (written != null) {
+                // the whole score read, written as MusicXML, and that read back
+                val score = ScoreReader.read((0 until pages).map { shake(page(file, it, names)) })
+                val xml = MusicXmlWriter.write(score, pdfName.removeSuffix(".pdf"))
+                File("build/pdfscore-out").apply { mkdirs() }.resolve(pdfName.removeSuffix(".pdf") + ".musicxml").writeText(xml)
+                val back = MxlNotes(xml)
+                back.allStaves(written(back)).forEach { (s, measures) -> read[s - 1] = measures.toMutableList() }
+                score.measures.forEach { where += "p${it.page + 1}" }
+            }
+            for (index in if (written != null) 0 until 0 else 0 until pages) {
                 val drawing = shake(page(file, index, names))
                 StaffNotes.read(drawing, Staves.find(drawing)).forEachIndexed { si, system ->
                     val measures = system.maxOf { staff -> maxOf(staff.barlines.size, (staff.notes.maxOfOrNull { it.measure } ?: -1) + 1) }

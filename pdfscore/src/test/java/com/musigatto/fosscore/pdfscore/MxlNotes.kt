@@ -7,10 +7,23 @@ import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * The written pitches of a MusicXML file (.mxl), per part, staff and measure: what the recognition
- * is checked against.
+ * The written pitches of a MusicXML score, per part, staff and measure: what the recognition is
+ * checked against (a reference .mxl file), and what it writes (read back the same way).
  */
-class MxlNotes(file: File) {
+class MxlNotes(document: org.w3c.dom.Document) {
+    /** A compressed MusicXML file (.mxl). */
+    constructor(file: File) : this(
+        ZipFile(file).use { zip ->
+            val entry = zip.entries().asSequence().first {
+                !it.name.startsWith("META-INF") && (it.name.endsWith(".xml") || it.name.endsWith(".musicxml"))
+            }
+            zip.getInputStream(entry).use { builder().parse(it) }
+        },
+    )
+
+    /** An uncompressed MusicXML score. */
+    constructor(xml: String) : this(builder().parse(xml.byteInputStream()))
+
     /** part id → staff (1 up) → measure (0 up) → the measure's pitches, sorted. */
     val parts: Map<String, Map<Int, List<List<String>>>>
 
@@ -27,14 +40,6 @@ class MxlNotes(file: File) {
     val signatures: Map<String, Map<Int, List<List<String>>>>
 
     init {
-        val document = ZipFile(file).use { zip ->
-            val entry = zip.entries().asSequence().first {
-                !it.name.startsWith("META-INF") && (it.name.endsWith(".xml") || it.name.endsWith(".musicxml"))
-            }
-            val factory = DocumentBuilderFactory.newInstance()
-            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-            zip.getInputStream(entry).use { factory.newDocumentBuilder().parse(it) }
-        }
         val timedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         val signatureParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         parts = document.getElementsByTagName("part").elements().associate { part ->
@@ -82,8 +87,21 @@ class MxlNotes(file: File) {
         signatures = signatureParts
     }
 
+    /**
+     * Every part's staves one after the other (a piano's two, then the next part's), numbered from
+     * 1 again: a score written from a PDF, whose parts are its staves, compared as one.
+     */
+    fun allStaves(of: Map<String, Map<Int, List<List<String>>>>): Map<Int, List<List<String>>> =
+        of.values.flatMap { staves -> staves.toSortedMap().values }.withIndex().associate { (i, measures) -> i + 1 to measures }
+
     private fun org.w3c.dom.NodeList.elements(): List<Element> = (0 until length).map { item(it) as Element }
 
     private fun Element.child(name: String): Element? =
         (0 until childNodes.length).map { childNodes.item(it) }.filterIsInstance<Element>().firstOrNull { it.tagName == name }
+
+    private companion object {
+        fun builder() = DocumentBuilderFactory.newInstance().apply {
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        }.newDocumentBuilder()
+    }
 }

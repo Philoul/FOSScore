@@ -212,14 +212,17 @@ object Rhythms {
 
     /**
      * The chord a dot is the staccato of: the nearest one it is over or under, in its heads' width
-     * (pressed against the outer head, it can overlap its edge).
+     * (pressed against the outer head, it can overlap its edge), and close: in the space next to
+     * the outer head, or just past the stem's end.
      */
     private fun staccatoOf(dot: DrawnGlyph, chords: List<Draft>, space: Double): Draft? {
         val x = dot.box.centerX
         val y = dot.box.centerY
         return chords.filter {
             x >= it.box.left - 0.1 * space && x <= it.box.right + 0.1 * space &&
-                (y < it.box.top + 0.25 * space || y > it.box.bottom - 0.25 * space)
+                (y < it.box.top + 0.25 * space || y > it.box.bottom - 0.25 * space) &&
+                (minOf(abs(y - it.box.top), abs(y - it.box.bottom)) <= 1.0 * space ||
+                    it.stemLine?.let { stem -> minOf(abs(y - stem.y1), abs(y - stem.y2)) <= 1.25 * space } == true)
         }
             .minByOrNull { minOf(abs(y - it.box.top), abs(y - it.box.bottom)) }
     }
@@ -406,8 +409,34 @@ object Rhythms {
         }
         // MuseScore 3 draws some beams twice, one over the other
         val grid = 0.05 * space
-        return (flat + slanted).distinctBy { beam -> listOf(beam.left, beam.right, beam.yLeft, beam.yRight).map { Math.round(it / grid) } }
+        val distinct = (flat + slanted).distinctBy { beam -> listOf(beam.left, beam.right, beam.yLeft, beam.yRight).map { Math.round(it / grid) } }
+        return joined(distinct, space)
     }
+
+    /**
+     * Beams drawn in pieces from stem to stem (Verovio does) made whole: a piece that starts where
+     * another ends, at its height and its slant, goes on with it. Otherwise the stem where they meet
+     * would count each piece as a beam of its own.
+     */
+    private fun joined(beams: List<Beam>, space: Double): List<Beam> {
+        val result = mutableListOf<Beam>()
+        for (beam in beams.sortedBy { it.left }) {
+            val index = result.indexOfFirst { before ->
+                abs(beam.left - before.right) < 0.1 * space &&
+                    abs(beam.yLeft - before.yRight) < 0.1 * space &&
+                    abs(slope(beam) - slope(before)) < 0.05
+            }
+            if (index < 0) {
+                result += beam
+            } else {
+                val before = result[index]
+                result[index] = Beam(before.left, beam.right, before.yLeft, beam.yRight)
+            }
+        }
+        return result
+    }
+
+    private fun slope(beam: Beam): Double = (beam.yRight - beam.yLeft) / maxOf(beam.right - beam.left, 1e-6)
 
     private fun overlap(a: Box, b: Box): Boolean =
         a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom

@@ -29,6 +29,9 @@ object CommonSymbols {
         // time signatures
         "timeSig0", "timeSig1", "timeSig2", "timeSig3", "timeSig4", "timeSig5", "timeSig6", "timeSig7", "timeSig8", "timeSig9",
         "timeSigCommon", "timeSigCutCommon", "timeSigPlus", "timeSigFractionalSlash",
+        // tuplet numbers (some programs draw them with the music font, smaller than a time signature's); no 0
+        // or 1: no tuplet has them, and a 0 is drawn like a half note's head
+        "tuplet2", "tuplet3", "tuplet4", "tuplet5", "tuplet6", "tuplet7", "tuplet8", "tuplet9",
         // dots, articulations, holds
         "augmentationDot", "repeatDot",
         "articAccentAbove", "articAccentBelow", "articStaccatoAbove", "articStaccatoBelow",

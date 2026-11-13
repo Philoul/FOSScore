@@ -70,6 +70,18 @@ class StaffNotesTest {
         assertEquals(listOf(0, 0, 0, 1, 1), staff.notes.map { it.measure })
     }
 
+    /** A section's barline drawn at the start of a system, after the clef and key, closes no measure: nothing came before it. */
+    @Test
+    fun aBarlineRightAfterTheKeyClosesNoMeasure() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val glyphs = listOf(gClef(55.0, top), sharp(70.0, top), head(100.0, top + 3 * space), head(150.0, top + 3 * space))
+        val staff = read(staffLines(top) + barline(82.0, top, bottom) + barline(130.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(130.0), staff.barlines)
+        assertEquals(listOf(0, 1), staff.notes.map { it.measure })
+        assertEquals(Key(1), staff.key)
+    }
+
     @Test
     fun aFlatKeyIsReadFromTheFlatsReferenceLine() {
         val top = 100.0

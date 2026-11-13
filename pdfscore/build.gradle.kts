@@ -28,6 +28,11 @@ android {
             it.systemProperty("pdfscore.corpus", providers.gradleProperty("pdfscoreCorpus").getOrElse(""))
             // One system to look at in detail (CorpusProbeTest.probeSystem): "<pdf>|<page>|<system>"
             it.systemProperty("pdfscore.probe", providers.gradleProperty("pdfscoreProbe").getOrElse(""))
+            // Scores engraved by Verovio in each free font, with their MusicXML (VerovioFontsProbeTest):
+            // -PpdfscoreEngraved=<folder>, outside the repository like the corpus
+            it.systemProperty("pdfscore.engraved", providers.gradleProperty("pdfscoreEngraved").getOrElse(""))
+            // Only these parts or fonts (VerovioFontsProbeTest), comma separated
+            it.systemProperty("pdfscore.only", providers.gradleProperty("pdfscoreOnly").getOrElse(""))
             // The free music fonts the recognition compares symbols with: Verovio's font data,
             // which :musicxml downloads with Verovio's source.
             it.systemProperty(

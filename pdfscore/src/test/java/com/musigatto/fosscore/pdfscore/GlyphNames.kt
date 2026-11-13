@@ -8,11 +8,12 @@ import java.io.File
 /**
  * Names a PDF's music-font glyphs with the [SymbolClassifier] the outlines and scans will use,
  * against the free fonts of [fontsDir] (Verovio's font data): a glyph is read as a SMuFL font
- * draws it, 4 staff spaces per em, whichever font it comes from.
+ * draws it, 4 staff spaces per em, whichever font it comes from. The fonts named in [without] are
+ * left out, to read a font as one never seen.
  */
-class GlyphNames(fontsDir: File) {
+class GlyphNames(fontsDir: File, without: Set<String> = emptySet()) {
     private val classifier = SymbolClassifier(
-        TestFonts.all(fontsDir).flatMap { font -> font.symbols.filter { it.name in CommonSymbols.NAMES } },
+        TestFonts.all(fontsDir).filter { it.name !in without }.flatMap { font -> font.symbols.filter { it.name in CommonSymbols.NAMES } },
     )
 
     /** Not cached by font and code: two PDFs' subsets can share a font name and give the same code to other glyphs. */

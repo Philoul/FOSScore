@@ -105,6 +105,34 @@ class RhythmsTest {
         assertEquals(listOf(NoteType.EIGHTH, NoteType.EIGHTH), types(measure))
     }
 
+    /** Verovio draws a beam in pieces from stem to stem: the middle stem, where two pieces meet, still has one beam there. */
+    @Test
+    fun aBeamInPiecesIsOneBeam() {
+        val heads = (0 until 3).map { head(100.0 + it * 3 * space, g4) }
+        val stems = heads.map { stemUp(it) }
+        val end = stems[0].y2
+        val pieces = listOf(flatBeamUp(stems[0].x1, stems[1].x1, end, 1), flatBeamUp(stems[1].x1, stems[2].x1, end, 1))
+        val measure = read(heads, stems + flatBeamUp(stems[0].x1, stems[2].x1, end, 0) + pieces).single()
+        assertEquals(listOf(NoteType.SIXTEENTH, NoteType.SIXTEENTH, NoteType.SIXTEENTH), types(measure))
+    }
+
+    /** The same with slanting pieces, as four-cornered shapes. */
+    @Test
+    fun aSlantingBeamInPiecesIsOneBeam() {
+        val heads = (0 until 3).map { head(100.0 + it * 3 * space, g4 - it * space / 2) }
+        val stems = heads.map { stemUp(it) }
+        fun slanting(a: DrawnLine, b: DrawnLine, index: Int): DrawnShape {
+            val dy = index * 0.75 * space
+            return DrawnShape(
+                listOf(Point(a.x1, a.y2 + dy), Point(b.x1, b.y2 + dy), Point(b.x1, b.y2 + dy + 0.5 * space), Point(a.x1, a.y2 + dy + 0.5 * space), Point(a.x1, a.y2 + dy)),
+                curved = false,
+            )
+        }
+        val shapes = listOf(slanting(stems[0], stems[2], 0), slanting(stems[0], stems[1], 1), slanting(stems[1], stems[2], 1))
+        val measure = read(heads, stems, shapes).single()
+        assertEquals(listOf(NoteType.SIXTEENTH, NoteType.SIXTEENTH, NoteType.SIXTEENTH), types(measure))
+    }
+
     /** A sixteenth then a dotted eighth: the sixteenth's short beam stops before the next stem, and is not its. */
     @Test
     fun aShortBeamBelongsOnlyToTheStemItTouches() {
@@ -182,6 +210,31 @@ class RhythmsTest {
         val measure = read(listOf(eighth, flag, quarter, staccato), listOf(s1, stemDown(quarter))).single()
         assertEquals(listOf(0, 0), measure.events.map { it.event.duration.dots })
         assertEquals(listOf(emptySet(), setOf(Articulation.STACCATO)), measure.events.map { (it.event as Chord).articulations })
+    }
+
+    /**
+     * A dot well under a note (Verovio draws the dot of a note it hides) is no staccato: a staccato
+     * sits in the space next to the head, or past the stem's end.
+     */
+    @Test
+    fun aDotFarUnderANoteIsNoStaccato() {
+        val note = head(100.0, g4)
+        val dot = DrawnGlyph(
+            "augmentationDot",
+            Box(note.box.left - 0.2 * space, note.box.bottom + 1.3 * space, note.box.left + 0.2 * space, note.box.bottom + 1.7 * space),
+        )
+        val chord = read(listOf(note, dot), listOf(stemUp(note))).single().events.single().event as Chord
+        assertEquals(emptySet<Articulation>(), chord.articulations)
+    }
+
+    /** A staccato past the end of the stem (where two voices share the staff) is the note's. */
+    @Test
+    fun aStaccatoPastTheStemsEndIsItsStaccato() {
+        val note = head(100.0, g4)
+        val stem = stemUp(note)
+        val staccato = DrawnGlyph("augmentationDot", Box(note.box.centerX - 0.2 * space, stem.y2 - 1.0 * space, note.box.centerX + 0.2 * space, stem.y2 - 0.6 * space))
+        val chord = read(listOf(note, staccato), listOf(stem)).single().events.single().event as Chord
+        assertEquals(setOf(Articulation.STACCATO), chord.articulations)
     }
 
     /** A staccato pressed against its head (stem up, the dot just under it) is still its staccato. */

@@ -71,36 +71,37 @@ object Staves {
     /**
      * Five lines one under the other, evenly spaced, of the same extent and thin beside their
      * spacing, make a staff. Other lines between them (a beam, a hairpin, a ledger line) are skipped.
+     * The tightest staves are taken first: lines of several staves, with a stray line or two, can
+     * fall evenly spaced too, far wider apart.
      */
     internal fun staves(lines: List<DrawnLine>): List<Staff> {
         val long = lines.filter { it.length >= MIN_STAFF_LENGTH }
+        val candidates = long.indices.flatMap { i ->
+            (i + 1 until long.size).asSequence()
+                .map { it to long[it].y1 - long[i].y1 }
+                .takeWhile { it.second <= MAX_SPACE }
+                .filter { it.second >= MIN_SPACE && alike(long[i], long[it.first], it.second) }
+                .mapNotNull { (second, space) -> staffFrom(long, i, second, space)?.let { space to it } }
+                .toList()
+        }
         val used = BooleanArray(long.size)
         val result = mutableListOf<Staff>()
-        for (i in long.indices) {
-            if (used[i]) continue
-            val first = long[i]
-            // The closest line below that can be the second one sets the spacing.
-            val staff = (i + 1 until long.size).asSequence()
-                .filter { !used[it] }
-                .map { it to long[it].y1 - first.y1 }
-                .takeWhile { it.second <= MAX_SPACE }
-                .filter { it.second >= MIN_SPACE && alike(first, long[it.first], it.second) }
-                .mapNotNull { (second, space) -> staffFrom(long, used, i, second, space) }
-                .firstOrNull() ?: continue
+        for ((_, staff) in candidates.sortedBy { it.first }) {
+            if (staff.any { used[it] }) continue
             staff.forEach { used[it] = true }
             val five = staff.map { long[it] }
             result += Staff(five.map { it.y1 }, five.minOf { it.x1 }, five.maxOf { it.x2 })
         }
-        return result
+        return result.sortedBy { it.top }
     }
 
     /** The indices of the five lines starting with [first] and [second], or null when they are not there. */
-    private fun staffFrom(lines: List<DrawnLine>, used: BooleanArray, first: Int, second: Int, space: Double): List<Int>? {
+    private fun staffFrom(lines: List<DrawnLine>, first: Int, second: Int, space: Double): List<Int>? {
         val found = mutableListOf(first, second)
         for (k in 2..4) {
             val y = lines[first].y1 + k * space
             val next = lines.indices.firstOrNull {
-                !used[it] && abs(lines[it].y1 - y) <= 0.15 * space && alike(lines[first], lines[it], space)
+                abs(lines[it].y1 - y) <= 0.15 * space && alike(lines[first], lines[it], space)
             } ?: return null
             found += next
         }

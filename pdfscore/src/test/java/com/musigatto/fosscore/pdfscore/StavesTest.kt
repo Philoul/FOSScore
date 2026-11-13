@@ -18,6 +18,18 @@ class StavesTest {
         assertEquals(5.0, staves[0].space, 1e-9)
     }
 
+    /**
+     * Long lines between staves (a pedal's, an octave's) can be evenly spaced, by chance, with lines
+     * of the staves: the staves are still the tight ones, not five lines picked across them.
+     */
+    @Test
+    fun strayLinesMakeNoStaffWithLinesOfOthers() {
+        val strays = listOf(14.0, 129.0).map { DrawnLine(50.0, it, 550.0, it, 0.5) }
+        // 14, 52 (the first staff's last line), 88, 129 (a stray), 163: about 37 apart
+        val staves = Staves.find(page(strays + staffLines(32.0) + staffLines(83.0) + staffLines(148.0))).flatMap { it.staves }
+        assertEquals(listOf(32.0, 83.0, 148.0), staves.map { it.top })
+    }
+
     @Test
     fun stepsCountHalfSpacesFromTheBottomLine() {
         val staff = Staff(listOf(100.0, 105.0, 110.0, 115.0, 120.0), 50.0, 550.0)

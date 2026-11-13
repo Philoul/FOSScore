@@ -31,14 +31,14 @@ object StaffNotes {
         // Each symbol goes to the closest staff of the whole page: a note on ledger lines between two
         // systems is within reach of both.
         val staves = systems.flatMap { system -> system.staves.map { system to it } }
-        val assigned = page.glyphs.filter { it.name != null }
+        val assigned = page.glyphs.filter { it.name != null && !isTupletNumber(it.name) }
             .mapNotNull { glyph -> staffOf(glyph.box, staves.map { it.second })?.let { glyph to it } }
             .toMap(LinkedHashMap())
         keepChordsTogether(assigned, staves, page.lines)
         // A tuplet's number goes with the notes nearest to it, stems included (it stands at their
         // end): high over a melody's stems, it may be closer to the staff above.
         val notes = assigned.entries.filter { isHead(it.key.name) }.map { (head, staff) -> withStem(head, page.lines) to staff }
-        for (number in tupletNumbers(page.texts)) {
+        for (number in tupletNumbers(page.texts) + page.glyphs.filter { isTupletNumber(it.name) }) {
             notes.minByOrNull { (box, _) -> distance(box, number.box.centerX, number.box.centerY) }?.let { assigned[number] = it.second }
         }
         val byStaff = assigned.entries.groupBy({ it.value }, { it.key })
@@ -49,6 +49,8 @@ object StaffNotes {
             }
         }
     }
+
+    private fun isTupletNumber(name: String?): Boolean = name != null && name.startsWith("tuplet")
 
     /**
      * The notes on one stem are one chord, on one staff: a bass chord's top note over the bass staff
@@ -129,7 +131,11 @@ object StaffNotes {
                 glyph to Clef(sign, (Math.round(step / 2.0).toInt() + 1).coerceIn(1, 5), shift)
             }
         }
-        val barlines = barlines(staff, system, lines, heads)
+        // A barline with only the clef, key or time before it (a section's start drawn at the start
+        // of a system) closes no measure.
+        val barlines = barlines(staff, system, lines, heads).dropWhile { x ->
+            symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < x }
+        }
         val firstClef = clefs.firstOrNull()
         val keyAccidentals = keyAccidentals(symbols, firstClef?.first, heads, barlines, space)
         val key = Key(keyAccidentals.sumOf { if (it.name == "accidentalSharp") 1 else -1 })

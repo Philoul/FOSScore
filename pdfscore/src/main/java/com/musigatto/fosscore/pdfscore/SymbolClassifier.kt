@@ -22,7 +22,9 @@ class SymbolClassifier(symbols: List<FontSymbol>, private val tuning: Tuning = T
     /**
      * [minScore]: below it a symbol is left unnamed; [margin]: how far ahead of the next name the
      * best one must be, unless it scores [sure]; [minSizeAgreement]: a symbol and a reference of
-     * sizes further apart are not compared; [sizeWeight]: how much the size counts against the shape.
+     * sizes further apart are not compared; [sizeWeight]: how much the size counts against the shape;
+     * [resolution]: the side of the masks the shapes are compared on, in pixels; [tolerance]: how
+     * many pixels apart two strokes still fall on each other.
      */
     data class Tuning(
         val minScore: Double = 0.45,
@@ -30,22 +32,24 @@ class SymbolClassifier(symbols: List<FontSymbol>, private val tuning: Tuning = T
         val sure: Double = 0.75,
         val minSizeAgreement: Double = 0.45,
         val sizeWeight: Double = 0.5,
+        val resolution: Int = 32,
+        val tolerance: Int = 1,
     )
 
     /** A reference drawing: its fitted mask, and the same grown by a pixel. */
     private class Template(val name: String, val box: Box, val mask: Mask, val near: Mask)
 
     private val templates = symbols.filter { it.box.width > 0 || it.box.height > 0 }.map {
-        val mask = fitted(it.polygons, it.box)
-        Template(CommonSymbols.canonical(it.name), it.box, mask, mask.dilated())
+        val mask = fitted(it.polygons, it.box, tuning.resolution)
+        Template(CommonSymbols.canonical(it.name), it.box, mask, near(mask))
     }
 
     /** The names [polygons] (in staff spaces) may have, best first, each once (its best font). */
     fun rank(polygons: List<List<Point>>): List<SymbolMatch> {
         if (polygons.isEmpty()) return emptyList()
         val box = FontSymbol.bounds(polygons)
-        val mask = fitted(polygons, box)
-        val near = mask.dilated()
+        val mask = fitted(polygons, box, tuning.resolution)
+        val near = near(mask)
         val best = HashMap<String, Double>()
         for (template in templates) {
             val size = sizeAgreement(box, template.box)
@@ -70,10 +74,10 @@ class SymbolClassifier(symbols: List<FontSymbol>, private val tuning: Tuning = T
         return tied.minWithOrNull(compareBy<SymbolMatch>({ CommonSymbols.rank(it.name) }, { it.name.length }))
     }
 
-    companion object {
-        /** The fitted masks' side, in pixels. */
-        private const val RESOLUTION = 32.0
+    /** The mask grown by [Tuning.tolerance] pixels: where a stroke of another font may fall. */
+    private fun near(mask: Mask): Mask = (1..tuning.tolerance).fold(mask) { grown, _ -> grown.dilated() }
 
+    companion object {
         private const val TIE = 0.01
 
         /** A side under this (in spaces) counts as this: a line's thickness says little. */
@@ -86,11 +90,11 @@ class SymbolClassifier(symbols: List<FontSymbol>, private val tuning: Tuning = T
         }
 
         /** The shape stretched to a square: compares shapes whatever their size and proportions. */
-        private fun fitted(polygons: List<List<Point>>, box: Box): Mask {
+        private fun fitted(polygons: List<List<Point>>, box: Box, resolution: Int): Mask {
             val width = max(box.width, 1e-6)
             val height = max(box.height, 1e-6)
             val unit = polygons.map { polygon -> polygon.map { Point((it.x - box.left) / width, (it.y - box.top) / height) } }
-            return Mask.rasterize(unit, Box(0.0, 0.0, 1.0, 1.0), RESOLUTION)
+            return Mask.rasterize(unit, Box(0.0, 0.0, 1.0, 1.0), resolution.toDouble())
         }
     }
 }

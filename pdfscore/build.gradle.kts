@@ -33,6 +33,8 @@ android {
             it.systemProperty("pdfscore.engraved", providers.gradleProperty("pdfscoreEngraved").getOrElse(""))
             // Only these parts or fonts (VerovioFontsProbeTest), comma separated
             it.systemProperty("pdfscore.only", providers.gradleProperty("pdfscoreOnly").getOrElse(""))
+            // Compare tunings of the symbol classifier (FontTuningsProbeTest): -PpdfscoreTunings=yes
+            it.systemProperty("pdfscore.tunings", providers.gradleProperty("pdfscoreTunings").getOrElse(""))
             // The free music fonts the recognition compares symbols with: Verovio's font data,
             // which :musicxml downloads with Verovio's source.
             it.systemProperty(

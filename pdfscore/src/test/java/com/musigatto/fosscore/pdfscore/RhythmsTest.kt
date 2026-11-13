@@ -181,6 +181,26 @@ class RhythmsTest {
         assertEquals(listOf(Fraction.ZERO, Fraction.of(3, 8)), onsets(measure))
     }
 
+    /** A dotted note just before a barline keeps its dot: repeat dots come in pairs, one over the other. */
+    @Test
+    fun aDotByTheBarlineIsTheLastNotesDot() {
+        val note = head(100.0, g4)
+        val dotGlyph = dot(note, g4 - 0.5 * space)
+        val bar = barline(dotGlyph.box.right + 0.8 * space)
+        val measures = read(listOf(note, dotGlyph), listOf(stemUp(note), bar))
+        assertEquals(1, measures.first().events.single().event.duration.dots)
+    }
+
+    /** Two dots one over the other by a barline are a repeat's, no note's. */
+    @Test
+    fun repeatDotsByTheBarlineAreNoNotesDots() {
+        val note = head(100.0, g4)
+        val x = note.box.right + 0.5 * space
+        val repeat = listOf(top + 1.5 * space, top + 2.5 * space).map { y -> DrawnGlyph("augmentationDot", Box(x, y - 0.2 * space, x + 0.4 * space, y + 0.2 * space)) }
+        val measures = read(listOf(note) + repeat, listOf(stemUp(note), barline(x + 1.2 * space)))
+        assertEquals(0, measures.first().events.single().event.duration.dots)
+    }
+
     /** A dot on a head's edge is no augmentation dot, not even of the note before it. */
     @Test
     fun aDotOnAHeadIsNotTheDotOfTheNoteBefore() {

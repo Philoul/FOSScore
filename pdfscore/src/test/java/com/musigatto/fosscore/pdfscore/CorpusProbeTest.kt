@@ -321,7 +321,8 @@ class CorpusProbeTest {
         (museScore + otherMuseScore).forEach { pdfName ->
             val glyphs = PdfBoxPages.read(File(documents, pdfName), 0, names).drawing.glyphs
             val tempo = glyphs.filter { it.font.contains("Text") }.map { it.name }
-            org.junit.Assert.assertEquals(pdfName, listOf("metNoteQuarterUp"), tempo)
+            // none, one, or more (a change further down the page): each named
+            org.junit.Assert.assertTrue(pdfName, tempo.all { it == "metNoteQuarterUp" })
         }
     }
 

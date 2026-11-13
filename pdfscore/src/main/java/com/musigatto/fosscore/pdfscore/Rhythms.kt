@@ -190,8 +190,12 @@ object Rhythms {
     private fun dots(drafts: List<Draft>, reading: StaffReading, space: Double) {
         val owned = java.util.IdentityHashMap<Draft, MutableList<DrawnGlyph>>()
         val chords = drafts.filter { !it.rest }
-        reading.symbols.filter { it.name == "augmentationDot" }
-            .filter { dot -> reading.barlines.none { abs(it - dot.box.centerX) < 1.2 * space } }
+        val allDots = reading.symbols.filter { it.name == "augmentationDot" }
+        // repeat dots: by a barline, two one over the other, a space apart
+        fun isRepeatDot(dot: DrawnGlyph) = reading.barlines.any { abs(it - dot.box.centerX) < 1.2 * space } &&
+            allDots.any { other -> other !== dot && abs(other.box.centerX - dot.box.centerX) < 0.3 * space && abs(abs(other.box.centerY - dot.box.centerY) - space) < 0.3 * space }
+        allDots
+            .filterNot { isRepeatDot(it) }
             .filterNot { dot -> staccatoOf(dot, chords, space)?.also { it.staccato = true } != null }
             // another dot drawn on a head is some other mark
             .filter { dot -> reading.notes.none { overlap(it.head.box, dot.box) } }

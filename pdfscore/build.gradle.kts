@@ -35,6 +35,9 @@ android {
             it.systemProperty("pdfscore.only", providers.gradleProperty("pdfscoreOnly").getOrElse(""))
             // Compare tunings of the symbol classifier (FontTuningsProbeTest): -PpdfscoreTunings=yes
             it.systemProperty("pdfscore.tunings", providers.gradleProperty("pdfscoreTunings").getOrElse(""))
+            // PDFs engraved in fonts none of the references, each beside its MusicXML, kept private
+            // outside the repository (PrivateScoresProbeTest): -PpdfscorePrivate=<folder>
+            it.systemProperty("pdfscore.private", providers.gradleProperty("pdfscorePrivate").getOrElse(""))
             // The free music fonts the recognition compares symbols with: Verovio's font data,
             // which :musicxml downloads with Verovio's source.
             it.systemProperty(

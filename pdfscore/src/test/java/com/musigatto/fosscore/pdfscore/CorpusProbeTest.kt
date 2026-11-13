@@ -66,6 +66,15 @@ class CorpusProbeTest {
         probe("durations", timed = true, readMeasure = ::durations)
     }
 
+    /**
+     * The key in force and the time signature drawn in each measure, against the paired MusicXML:
+     * mid-piece changes included.
+     */
+    @Test
+    fun probeSignatures() {
+        probe("signatures", reference = { it.signatures }) { _, staff, m -> Signatures.read(staff, m) }
+    }
+
     private fun durations(drawing: PageDrawing, staff: StaffReading, m: Int): List<String> =
         Rhythms.read(drawing, staff).firstOrNull { it.index == m }?.events.orEmpty()
             .mapNotNull { it.event as? Chord }.filter { !it.grace }
@@ -182,6 +191,7 @@ class CorpusProbeTest {
     private fun probe(
         what: String,
         timed: Boolean = false,
+        reference: ((MxlNotes) -> Map<String, Map<Int, List<List<String>>>>)? = null,
         shake: (PageDrawing) -> PageDrawing = { it },
         verbose: Boolean = true,
         readMeasure: (PageDrawing, StaffReading, Int) -> List<String>,
@@ -208,7 +218,7 @@ class CorpusProbeTest {
                 }
             }
             val mxl = MxlNotes(File(documents, mxlName))
-            val expected = if (timed) mxl.timed else mxl.parts
+            val expected = reference?.invoke(mxl) ?: if (timed) mxl.timed else mxl.parts
             val (partId, score) = expected.map { (id, staves) ->
                 id to read.entries.sumOf { (s, measures) ->
                     val want = staves[s + 1].orEmpty()

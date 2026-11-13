@@ -2,6 +2,7 @@ package com.musigatto.fosscore.pdfscore
 
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -190,5 +191,109 @@ class StaffNotesTest {
         )
         val staff = read(staffLines(top), glyphs).single().single()
         assertEquals(listOf("E4"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /** A key drawn after a barline in the middle of a system holds from there, over the next barlines. */
+    @Test
+    fun aKeyChangeAtABarlineHoldsFromThere() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val c5 = top + 1.5 * space
+        val glyphs = listOf(
+            gClef(55.0, top), sharp(70.0, top),
+            head(100.0, c5), // C5: one sharp, F
+            sharp(165.0, top), sharp(171.0, c5), // two sharps, F and C
+            head(195.0, c5), // C#5 by the new key
+            head(240.0, c5), // still C#5 after the next barline
+            head(260.0, top + 3.5 * space), // F#4
+        )
+        val staff = read(staffLines(top) + barline(160.0, top, bottom) + barline(220.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(Key(1), Key(2)), staff.keys.map { it.value })
+        assertEquals(listOf("C5", "C#5", "C#5", "F#4"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /** Naturals cancelling the old key are the new key's (none here), not a note's. */
+    @Test
+    fun cancellingNaturalsAreAKeyChange() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val c5 = top + 1.5 * space
+        val glyphs = listOf(
+            gClef(55.0, top), sharp(70.0, top), sharp(76.0, c5),
+            head(100.0, top), // F#5
+            natural(165.0, top), natural(171.0, c5),
+            head(190.0, top), // F5
+            head(260.0, top + 3.5 * space), // F4: no key any more
+        )
+        val staff = read(staffLines(top) + barline(160.0, top, bottom) + barline(240.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(Key(2), Key(0)), staff.keys.map { it.value })
+        assertEquals(listOf("F#5", "F5", "F4"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /** A sharp right after a barline, against its note, is the note's: no key change. */
+    @Test
+    fun aNoteAccidentalAfterABarlineIsNoKeyChange() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val f5 = top
+        val glyphs = listOf(
+            gClef(55.0, top),
+            head(100.0, f5),
+            sharp(163.0, f5), head(169.5, f5), // F#5
+            head(190.0, f5), // still F#5 in this measure
+            head(230.0, f5), // F5 after the barline
+        )
+        val staff = read(staffLines(top) + barline(160.0, top, bottom) + barline(210.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(Key(0)), staff.keys.map { it.value })
+        assertEquals(listOf("F5", "F#5", "F#5", "F5"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /** Two digits one over the other, the upper one over the middle line, are a time signature; "C" is 4/4. */
+    @Test
+    fun timeSignaturesAreReadWhereverTheyAre() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        fun digit(d: Int, x: Double, upper: Boolean) = glyph("timeSig$d", x, if (upper) top + space else top + 3 * space, 2.0, 0.5, 1.5)
+        val glyphs = listOf(
+            gClef(55.0, top), digit(3, 70.0, true), digit(4, 70.0, false),
+            head(100.0, top),
+            digit(1, 165.0, true), digit(2, 173.0, true), digit(8, 169.0, false),
+            head(190.0, top),
+            glyph("timeSigCommon", 225.0, top + 2 * space, 2.0, 0.5, 1.5),
+            head(250.0, top),
+        )
+        val staff = read(staffLines(top) + barline(160.0, top, bottom) + barline(220.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(TimeSignature(3, 4), TimeSignature(12, 8), TimeSignature(4, 4)), staff.times.map { it.value })
+        assertEquals(listOf(70.0, 165.0, 225.0), staff.times.map { it.x })
+    }
+
+    /** A clef drawn in the middle of a system reads the notes after it, and is listed where it is. */
+    @Test
+    fun aClefChangeIsListedWhereItIs() {
+        val top = 100.0
+        val glyphs = listOf(gClef(55.0, top), head(100.0, top + 4 * space), fClef(150.0, top), head(180.0, top + 4 * space))
+        val staff = read(staffLines(top), glyphs).single().single()
+        assertEquals(listOf(Clef(Clef.Sign.G, 2), Clef(Clef.Sign.F, 4)), staff.clefs.map { it.value })
+        assertEquals(listOf("E4", "G2"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /**
+     * Naturals alone cancel the whole key before (the new key has no sign): one natural in a key of
+     * three flats, after a barline and a little away from its note, is the note's.
+     */
+    @Test
+    fun aNaturalAloneInAKeyOfThreeFlatsIsANotes() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val b4 = top + 2 * space
+        val glyphs = listOf(
+            gClef(55.0, top), flat(70.0, b4), flat(76.0, top + 0.5 * space), flat(82.0, top + 2.5 * space),
+            head(100.0, b4), // Bb4
+            natural(163.0, b4), head(171.0, b4), // B4, its natural a space away
+            head(240.0, b4), // Bb4 again
+        )
+        val staff = read(staffLines(top) + barline(160.0, top, bottom) + barline(220.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(Key(-3)), staff.keys.map { it.value })
+        assertEquals(listOf("Bb4", "B4", "Bb4"), staff.notes.map { it.pitch.toString() })
     }
 }

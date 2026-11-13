@@ -20,6 +20,12 @@ class MxlNotes(file: File) {
      */
     val timed: Map<String, Map<Int, List<List<String>>>>
 
+    /**
+     * The same with what [Signatures] reads of a measure: the key in force and the time signature
+     * the measure prints, if any ("key -3 time 3/4"), alike on every staff of the part.
+     */
+    val signatures: Map<String, Map<Int, List<List<String>>>>
+
     init {
         val document = ZipFile(file).use { zip ->
             val entry = zip.entries().asSequence().first {
@@ -30,8 +36,17 @@ class MxlNotes(file: File) {
             zip.getInputStream(entry).use { factory.newDocumentBuilder().parse(it) }
         }
         val timedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
+        val signatureParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         parts = document.getElementsByTagName("part").elements().associate { part ->
             val measures = part.getElementsByTagName("measure").elements()
+            var fifths = 0
+            val signatures = measures.map { measure ->
+                measure.getElementsByTagName("fifths").elements().firstOrNull()?.let { fifths = it.textContent.trim().toInt() }
+                val time = measure.getElementsByTagName("time").elements().firstOrNull { it.getAttribute("print-object") != "no" }?.let {
+                    if (it.child("beats") == null) null else "${it.child("beats")?.textContent?.trim()}/${it.child("beat-type")?.textContent?.trim()}"
+                }
+                listOf(Signatures.of(fifths, time))
+            }
             val staves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             val timedStaves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             measures.forEachIndexed { index, measure ->
@@ -60,9 +75,11 @@ class MxlNotes(file: File) {
             staves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
             timedStaves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
             timedParts[part.getAttribute("id")] = timedStaves.mapValues { (_, list) -> list.map { it.sorted() } }
+            signatureParts[part.getAttribute("id")] = staves.keys.associateWith { signatures }
             part.getAttribute("id") to staves.mapValues { (_, list) -> list.map { it.sorted() } }
         }
         timed = timedParts
+        signatures = signatureParts
     }
 
     private fun org.w3c.dom.NodeList.elements(): List<Element> = (0 until length).map { item(it) as Element }

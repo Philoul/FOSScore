@@ -23,10 +23,18 @@ class VerovioFontsProbeTest {
     private val only = (System.getProperty("pdfscore.only") ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     /** What one part in one font gave: staff-measures wrong in pitch, in duration, of how many; system-measures even, of how many. */
-    private data class Tally(val pitches: Int = 0, val durations: Int = 0, val total: Int = 0, val even: Int = 0, val measures: Int = 0) {
-        operator fun plus(o: Tally) = Tally(pitches + o.pitches, durations + o.durations, total + o.total, even + o.even, measures + o.measures)
-        override fun toString() = "pitches %d wrong, durations %d wrong / %d staff-measures; %d / %d system-measures even"
-            .format(pitches, durations, total, even, measures)
+    private data class Tally(
+        val pitches: Int = 0,
+        val durations: Int = 0,
+        val signatures: Int = 0,
+        val total: Int = 0,
+        val even: Int = 0,
+        val measures: Int = 0,
+    ) {
+        operator fun plus(o: Tally) =
+            Tally(pitches + o.pitches, durations + o.durations, signatures + o.signatures, total + o.total, even + o.even, measures + o.measures)
+        override fun toString() = "pitches %d wrong, durations %d wrong, keys or times %d wrong / %d staff-measures; %d / %d system-measures even"
+            .format(pitches, durations, signatures, total, even, measures)
     }
 
     @Test
@@ -47,7 +55,7 @@ class VerovioFontsProbeTest {
                 var sum = Tally()
                 for (part in parts) {
                     val tally = probe(part, font, names, verbose)
-                    if (verbose || tally.pitches + tally.durations > 0 || tally.even < tally.measures) println("  ${part.name} $font: $tally")
+                    if (verbose || tally.pitches + tally.durations + tally.signatures > 0 || tally.even < tally.measures) println("  ${part.name} $font: $tally")
                     sum += tally
                 }
                 println("== $mode, $font: $sum")
@@ -64,9 +72,11 @@ class VerovioFontsProbeTest {
         val mxl = MxlNotes(File(part, "part.mxl"))
         val pitchesWant = mxl.parts.values.first()
         val durationsWant = mxl.timed.values.first()
+        val signaturesWant = mxl.signatures.values.first()
         // staff (0 up) → measures, each what was read in it
         val pitches = mutableMapOf<Int, MutableList<List<String>>>()
         val durations = mutableMapOf<Int, MutableList<List<String>>>()
+        val signatures = mutableMapOf<Int, MutableList<List<String>>>()
         val where = mutableListOf<String>()
         var even = 0
         var measures = 0
@@ -82,7 +92,9 @@ class VerovioFontsProbeTest {
                 system.forEachIndexed { s, staff ->
                     val p = pitches.getOrPut(s) { mutableListOf() }
                     val d = durations.getOrPut(s) { mutableListOf() }
+                    val k = signatures.getOrPut(s) { mutableListOf() }
                     for (m in 0 until count) {
+                        k += Signatures.read(staff, m)
                         p += staff.notes.filter { it.measure == m }.map { it.pitch.toString() }.sorted()
                         d += rhythms[s].firstOrNull { it.index == m }?.events.orEmpty().mapNotNull { it.event as? Chord }.filter { !it.grace }
                             .flatMap { chord ->
@@ -125,6 +137,7 @@ class VerovioFontsProbeTest {
         return Tally(
             pitches = wrong(pitches, pitchesWant, "pitches"),
             durations = wrong(durations, durationsWant, "durations"),
+            signatures = wrong(signatures, signaturesWant, "signatures"),
             total = pitches.values.sumOf { it.size },
             even = even,
             measures = measures,

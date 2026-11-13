@@ -3,15 +3,21 @@ package com.musigatto.fosscore.pdfscore
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.Pitch
+import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import kotlin.math.abs
 
 /** A notehead read on a staff: where it sits ([step], see [Staff.step]), in which measure, and its pitch. */
 data class StaffNote(val head: DrawnGlyph, val step: Int, val measure: Int, val pitch: Pitch?)
 
+/** A clef, key or time signature drawn on a staff, and the [x] it holds from. */
+data class Change<T>(val x: Double, val value: T)
+
 /**
  * What one staff of a system says: its clef and key at the start, the barlines' xs, and its notes
  * from left to right. [pitch][StaffNote.pitch] is null while no clef is known. [symbols] are every
  * named symbol that belongs to the staff, left to right (what the rhythm is read from).
+ * [clefs], [keys] and [times] are every one drawn on the staff, left to right, the first ones
+ * included: a key is drawn again at each system's start, a time signature only where it changes.
  */
 data class StaffReading(
     val staff: Staff,
@@ -20,6 +26,9 @@ data class StaffReading(
     val barlines: List<Double>,
     val notes: List<StaffNote>,
     val symbols: List<DrawnGlyph> = emptyList(),
+    val clefs: List<Change<Clef>> = emptyList(),
+    val keys: List<Change<Key>> = emptyList(),
+    val times: List<Change<TimeSignature>> = emptyList(),
 )
 
 /**
@@ -137,8 +146,16 @@ object StaffNotes {
             symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < x }
         }
         val firstClef = clefs.firstOrNull()
-        val keyAccidentals = keyAccidentals(symbols, firstClef?.first, heads, barlines, space)
-        val key = Key(keyAccidentals.sumOf { if (it.name == "accidentalSharp") 1 else -1 })
+        fun clefAt(x: Double): Clef? = clefs.lastOrNull { it.first.box.left < x }?.second ?: firstClef?.second
+        val keyRuns = keys(staff, symbols, clefs.map { it.first }, barlines, ::clefAt)
+        val keyAccidentals = keyRuns.flatMap { it.first }.toSet()
+        // The key at the system's start is the one right after its first clef, if any.
+        val startKey = keyRuns.firstOrNull()?.takeIf { (_, change) ->
+            firstClef != null && change.x - firstClef.first.box.right <= 1.5 * space
+        }
+        val keys = listOf(startKey?.second ?: Change(firstClef?.first?.box?.right ?: staff.left, Key(0))) +
+            keyRuns.filter { it !== startKey }.map { it.second }
+        fun keyAt(x: Double): Key = keys.lastOrNull { it.x <= x }?.value ?: keys.first().value
 
         // Each accidental before a note belongs to the nearest note to its right on the same step.
         val accidentals = symbols.filter { ALTERS.containsKey(it.name.orEmpty()) && it !in keyAccidentals }
@@ -163,18 +180,22 @@ object StaffNotes {
                 measure = headMeasure
             }
             val step = staff.step(head.box.centerY)
-            val clef = clefs.lastOrNull { it.first.box.left < head.box.left }?.second ?: firstClef?.second
-            val pitch = clef?.let {
+            val pitch = clefAt(head.box.left)?.let {
                 val diatonic = it.diatonicAt(step)
                 val alter = written[head]?.also { alter -> inMeasure[diatonic] = alter }
                     ?: inMeasure[diatonic]
-                    ?: if (it.sign == Clef.Sign.PERCUSSION) 0 else key.alter(Math.floorMod(diatonic, 7))
+                    ?: if (it.sign == Clef.Sign.PERCUSSION) 0 else keyAt(head.box.centerX).alter(Math.floorMod(diatonic, 7))
                 val octaves = ottavas.firstOrNull { (range, _) -> head.box.centerX in range }?.second ?: 0
                 Pitch.ofDiatonic(diatonic + 7 * octaves, alter)
             }
             StaffNote(head, step, measure, pitch)
         }
-        return StaffReading(staff, firstClef?.second, key, barlines, notes, symbols)
+        return StaffReading(
+            staff, firstClef?.second, keys.first().value, barlines, notes, symbols,
+            clefs = clefs.map { (glyph, clef) -> Change(glyph.box.left, clef) },
+            keys = keys,
+            times = times(staff, symbols),
+        )
     }
 
     /**
@@ -205,28 +226,103 @@ object StaffNotes {
     }
 
     /**
-     * The sharps or flats right after the first clef, one beside the other, before any note or
-     * barline: the key signature.
+     * The key signatures of a staff, with their accidentals: sharps or flats one beside the other
+     * right after a clef or a barline, in the order of a key (F C G D… or B E A D…), maybe with
+     * naturals cancelling the key before (only naturals: no key any more). An accidental against a
+     * note on its step is the note's, and ends the search.
      */
-    private fun keyAccidentals(
+    private fun keys(
+        staff: Staff,
         symbols: List<DrawnGlyph>,
-        clef: DrawnGlyph?,
-        heads: List<DrawnGlyph>,
+        clefs: List<DrawnGlyph>,
         barlines: List<Double>,
-        space: Double,
-    ): List<DrawnGlyph> {
-        if (clef == null) return emptyList()
-        val end = minOf(heads.minOfOrNull { it.box.left } ?: Double.MAX_VALUE, barlines.minOrNull() ?: Double.MAX_VALUE)
-        val result = mutableListOf<DrawnGlyph>()
-        var right = clef.box.right
-        for (glyph in symbols.filter { it.box.left > clef.box.left && it.box.right < end }) {
-            if (glyph.box.left - right > 1.5 * space) break
-            if (glyph.name != "accidentalSharp" && glyph.name != "accidentalFlat") break
-            if (result.isNotEmpty() && result[0].name != glyph.name) break
-            result += glyph
-            right = glyph.box.right
+        clefAt: (Double) -> Clef?,
+    ): List<Pair<List<DrawnGlyph>, Change<Key>>> {
+        val space = staff.space
+        val heads = symbols.filter { isHead(it.name) }
+        fun stepOf(glyph: DrawnGlyph) = staff.step(glyph.box.top + originFraction(glyph.name.orEmpty()) * glyph.box.height)
+        fun againstANote(accidental: DrawnGlyph) = heads.any {
+            staff.step(it.box.centerY) == stepOf(accidental) &&
+                it.box.left >= accidental.box.right - 0.3 * space && it.box.left - accidental.box.right <= NOTE_ACCIDENTAL_GAP * space
+        }
+        // Symbols that end a key: anything drawn on the staff (a text or a mark over it does not).
+        val onStaff = symbols.filter { it.box.bottom >= staff.top - space && it.box.top <= staff.bottom + space }
+        val anchors = clefs.map { it.box.right to 1.5 } + barlines.map { it to 2.5 }
+        val result = mutableListOf<Pair<List<DrawnGlyph>, Change<Key>>>()
+        for ((anchor, reach) in anchors.sortedBy { it.first }) {
+            if (result.any { (run, _) -> run.last().box.right > anchor }) continue
+            val run = mutableListOf<DrawnGlyph>()
+            var right = anchor
+            for (glyph in onStaff.filter { it.box.left > anchor - 0.3 * space }) {
+                if (glyph.box.left - right > (if (run.isEmpty()) reach else 1.5) * space) break
+                if (glyph.name !in KEY_SIGNS && glyph.name != "accidentalNatural") break
+                if (againstANote(glyph)) break
+                run += glyph
+                right = glyph.box.right
+            }
+            val clef = clefAt(anchor + space) ?: continue
+            val before = result.lastOrNull()?.second?.value
+            keyOf(run.map { it.name.orEmpty() to Math.floorMod(clef.diatonicAt(stepOf(it)), 7) }, before)?.let {
+                result += run to Change(run.first().box.left, it)
+            }
         }
         return result
+    }
+
+    /**
+     * The key a run of accidentals (name and step, C = 0) writes, or null when it is no key:
+     * naturals before or after one kind of sign, the signs in a key's order. The naturals cancel
+     * signs of the key [before] (null when none was read on the staff yet); naturals alone cancel
+     * all of it.
+     */
+    private fun keyOf(run: List<Pair<String, Int>>, before: Key?): Key? {
+        if (run.isEmpty()) return null
+        val signs = run.filter { it.first != "accidentalNatural" }
+        val naturalsAround = run.dropWhile { it.first == "accidentalNatural" }.dropLastWhile { it.first == "accidentalNatural" }
+        if (naturalsAround.size != signs.size || signs.map { it.first }.distinct().size > 1) return null
+        val sharp = signs.firstOrNull()?.first == "accidentalSharp"
+        val order = if (sharp) SHARP_ORDER else FLAT_ORDER
+        if (signs.map { it.second } != order.take(signs.size)) return null
+        val naturals = run.filter { it.first == "accidentalNatural" }.map { it.second }
+        if (naturals.isNotEmpty()) {
+            if (before == null) {
+                // a stretch of a key's order
+                if (listOf(SHARP_ORDER, FLAT_ORDER).none { it.windowed(naturals.size).contains(naturals) }) return null
+            } else {
+                val cancelled = (if (before.fifths > 0) SHARP_ORDER else FLAT_ORDER).take(abs(before.fifths))
+                if (!cancelled.containsAll(naturals)) return null
+                if (signs.isEmpty() && naturals.size != cancelled.size) return null
+            }
+        }
+        return Key(if (sharp) signs.size else -signs.size)
+    }
+
+    /**
+     * The time signatures of a staff: digits one over the other (the upper number over the middle
+     * line, each maybe of several digits side by side), or "C" (4/4) and "¢" (2/2).
+     */
+    private fun times(staff: Staff, symbols: List<DrawnGlyph>): List<Change<TimeSignature>> {
+        val space = staff.space
+        val middle = (staff.top + staff.bottom) / 2
+        val glyphs = symbols.filter {
+            it.name.orEmpty().startsWith("timeSig") && it.box.centerY > staff.top - 0.5 * space && it.box.centerY < staff.bottom + 0.5 * space
+        }.sortedBy { it.box.left }
+        val groups = mutableListOf<MutableList<DrawnGlyph>>()
+        for (glyph in glyphs) {
+            val last = groups.lastOrNull()
+            if (last != null && glyph.box.left <= last.maxOf { it.box.right } + 0.5 * space) last += glyph else groups += mutableListOf(glyph)
+        }
+        return groups.mapNotNull { group ->
+            val x = group.minOf { it.box.left }
+            when (group.singleOrNull()?.name) {
+                "timeSigCommon" -> return@mapNotNull Change(x, TimeSignature(4, 4))
+                "timeSigCutCommon" -> return@mapNotNull Change(x, TimeSignature(2, 2))
+            }
+            fun number(digits: List<DrawnGlyph>): Int? = digits.takeIf { it.isNotEmpty() }
+                ?.joinToString("") { it.name.orEmpty().removePrefix("timeSig") }?.toIntOrNull()
+            val (upper, lower) = group.partition { it.box.centerY < middle }
+            number(upper)?.let { beats -> number(lower)?.let { beatType -> Change(x, TimeSignature(beats, beatType)) } }
+        }
     }
 
     /**
@@ -305,6 +401,15 @@ object StaffNotes {
         "accidentalDoubleSharp" to 2,
         "accidentalDoubleFlat" to -2,
     )
+
+    private val KEY_SIGNS = setOf("accidentalSharp", "accidentalFlat")
+
+    /** The steps (C = 0) a key's sharps are drawn on, in order: F C G D A E B; flats the other way. */
+    private val SHARP_ORDER = listOf(3, 0, 4, 1, 5, 2, 6)
+    private val FLAT_ORDER = SHARP_ORDER.reversed()
+
+    /** A note's accidental stands this close to its head (in spaces); a key stands further from the first note. */
+    private const val NOTE_ACCIDENTAL_GAP = 0.8
 
     /** How far from its staff (in spaces) a symbol may be and still belong to it. */
     private const val MAX_LEDGER_SPACES = 8.0

@@ -48,7 +48,8 @@ class VerovioFontsProbeTest {
         val known = GlyphNames(fonts)
         for ((mode, namesFor) in listOf<Pair<String, (String) -> GlyphNames>>(
             "known font" to { _ -> known },
-            "font left out of the references" to { font -> GlyphNames(fonts, setOf(font)) },
+            "font left out of the references, named by look only" to { font -> GlyphNames(fonts, setOf(font), codes = false) },
+            "font left out of the references, named by SMuFL code and look" to { font -> GlyphNames(fonts, setOf(font)) },
         )) {
             println("==== $mode")
             for (font in fontNames) {

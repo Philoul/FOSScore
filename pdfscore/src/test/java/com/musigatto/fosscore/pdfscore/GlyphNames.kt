@@ -9,15 +9,22 @@ import java.io.File
  * Names a PDF's music-font glyphs with the [SymbolClassifier] the outlines and scans will use,
  * against the free fonts of [fontsDir] (Verovio's font data): a glyph is read as a SMuFL font
  * draws it, 4 staff spaces per em, whichever font it comes from. The fonts named in [without] are
- * left out, to read a font as one never seen.
+ * left out, to read a font as one never seen. With [codes], a font that follows SMuFL is named by
+ * its code points ([FontNaming]); without, by the look only (what the classifier alone does).
  */
-class GlyphNames(fontsDir: File, without: Set<String> = emptySet()) {
+class GlyphNames(fontsDir: File, without: Set<String> = emptySet(), private val codes: Boolean = true) {
     private val classifier = SymbolClassifier(
         TestFonts.all(fontsDir).filter { it.name !in without }.flatMap { font -> font.symbols.filter { it.name in CommonSymbols.NAMES } },
     )
 
+    private val naming = FontNaming(classifier, File(fontsDir, "Bravura.xml").takeIf { it.isFile }?.let { SmuflCodes.read(it.readText()) }.orEmpty())
+
     /** Not cached by font and code: two PDFs' subsets can share a font name and give the same code to other glyphs. */
     fun name(glyph: FontGlyph): String? = classifier.name(inSpaces(glyph))?.name
+
+    /** The names of one font's glyphs, named together ([FontNaming]) or each by its look. */
+    fun names(font: List<FontGlyph>): List<String?> =
+        if (!codes) font.map { name(it) } else naming.names(font.map { FontNaming.Glyph(SmuflCodes.codePoint(it.unicode, it.code), inSpaces(it)) })
 
     /** The names closest to [glyph], best first (for probing). */
     fun ranking(glyph: FontGlyph): List<SymbolMatch> = classifier.rank(inSpaces(glyph))

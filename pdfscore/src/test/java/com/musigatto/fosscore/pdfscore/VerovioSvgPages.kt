@@ -38,7 +38,7 @@ object VerovioSvgPages {
     private class Reader(val font: String, val unitsPerEm: Double, val names: GlyphNames?) {
         val definitions = mutableMapOf<String, List<List<Point>>>() // glyph id → outline, font units, y up
         val glyphs = mutableListOf<DrawnGlyph>()
-        val nameOf = mutableMapOf<Int, String?>()
+        val outlineOf = linkedMapOf<Int, GeneralPath>() // code → outline, 1000 units per em
         val dots = mutableListOf<List<Point>>()
         val lines = mutableListOf<DrawnLine>()
         val shapes = mutableListOf<DrawnShape>()
@@ -103,9 +103,9 @@ object VerovioSvgPages {
                 }
                 path.closePath()
             }
-            // one font per page: a code is one glyph
-            val name = nameOf.getOrPut(code) { names?.name(FontGlyph(font, code, path)) }
-            glyphs += DrawnGlyph(name, FontSymbol.bounds(onPage), font = font, code = code, x = origin.x, y = origin.y, size = size)
+            // one font per page: a code is one glyph, named with the others in result()
+            outlineOf.getOrPut(code) { path }
+            glyphs += DrawnGlyph(null, FontSymbol.bounds(onPage), font = font, code = code, x = origin.x, y = origin.y, size = size)
         }
 
         fun path(element: Element, at: AffineTransform) {
@@ -183,7 +183,10 @@ object VerovioSvgPages {
                 path.closePath()
                 DrawnGlyph(names?.name(FontGlyph("", -1, path)), box, confidence = 0.9)
             }
-            return PageDrawing(width, height, glyphs + named, lines, shapes, texts)
+            // the page's glyphs named together, as one font's ([GlyphNames.names])
+            val codes = outlineOf.keys.toList()
+            val nameOf = codes.zip(names?.names(codes.map { FontGlyph(font, it, outlineOf.getValue(it)) }) ?: codes.map { null }).toMap()
+            return PageDrawing(width, height, glyphs.map { it.copy(name = nameOf[it.code]) } + named, lines, shapes, texts)
         }
 
         fun map(at: AffineTransform, x: Double, y: Double): Point {

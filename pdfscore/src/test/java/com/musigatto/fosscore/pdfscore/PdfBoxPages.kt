@@ -19,7 +19,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /** A music font's glyph as the PDF holds it: its outline in 1000 units per em, for naming it. */
-class FontGlyph(val font: String, val code: Int, val outline: GeneralPath)
+class FontGlyph(val font: String, val code: Int, val outline: GeneralPath, val unicode: String? = null)
 
 /** One page read by PDFBox: the drawing, and the music fonts' glyph outlines it used. */
 class ReadPage(val drawing: PageDrawing, val fontGlyphs: Map<Pair<String, Int>, FontGlyph>)
@@ -51,7 +51,11 @@ object PdfBoxPages {
         fun run() = processPage(page)
 
         fun result(names: GlyphNames?): ReadPage {
-            val nameOf = fontGlyphs.mapValues { (_, glyph) -> names?.name(glyph) }
+            // each font's glyphs named together: a SMuFL font is named by its code points
+            val nameOf = fontGlyphs.values.groupBy { it.font }.values.flatMap { font ->
+                val named = names?.names(font) ?: font.map { null }
+                font.map { it.font to it.code }.zip(named)
+            }.toMap()
             val named = glyphs.map { g ->
                 val name = nameOf[g.font to g.code]
                 if (name == null) g else g.copy(name = name)
@@ -76,7 +80,7 @@ object PdfBoxPages {
             val y = pageY(textRenderingMatrix.translateY.toDouble())
             if (isMusicFont(fontName) && font is PDVectorFont) {
                 val outline = font.getNormalizedPath(code)
-                fontGlyphs.getOrPut(fontName to code) { FontGlyph(fontName, code, outline) }
+                fontGlyphs.getOrPut(fontName to code) { FontGlyph(fontName, code, outline, font.toUnicode(code)) }
                 val at = textRenderingMatrix.createAffineTransform()
                 at.scale(0.001, 0.001)
                 val b = at.createTransformedShape(outline).bounds2D

@@ -113,6 +113,18 @@ class MusicXmlWriterTest {
         )
     }
 
+    /** The accidentals drawn are written, each on its note: a renderer does not work them out. */
+    @Test
+    fun drawnAccidentalsAreWritten() {
+        val chord = Chord(
+            listOf(Pitch(3, 4, 1), Pitch(0, 5), Pitch(6, 5, -1)), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1,
+            accidentals = mapOf(0 to 1, 1 to 0, 2 to -1),
+        )
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(placed(chord, 70.0)), time = TimeSignature(4, 4))))))
+        val notes = parse(MusicXmlWriter.write(score)).all("note")
+        assertEquals(listOf("sharp", "natural", "flat"), notes.map { it.text("accidental") })
+    }
+
     /** A tie starts on its note and stops on the next note of that pitch on the staff, over the barline. */
     @Test
     fun aTieStopsOnTheNextNoteOfItsPitch() {

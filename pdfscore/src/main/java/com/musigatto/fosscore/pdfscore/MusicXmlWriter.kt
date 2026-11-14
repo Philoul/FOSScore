@@ -14,8 +14,8 @@ import com.musigatto.fosscore.pdfscore.music.TimeSignature
 /**
  * Writes a [ScoreReading] as a MusicXML 4.0 partwise score. Each measure and note gets an id
  * ([ScoreReading.measureId], [ScoreReading.noteId]) that [ScoreReading.notePlaces] finds on the page.
- * What is not read yet is not written: accidentals are left for the reader to work out from the
- * pitches, tuplets get their time-modification but no bracket, and there are no slurs,
+ * What is not read yet is not written: the accidentals written are the ones drawn (a renderer
+ * draws only those), tuplets get their time-modification but no bracket, and there are no slurs,
  * dynamics or lyrics. The pitches are the ones heard: under an octave line they are an octave off
  * what is drawn, and an octave-shift says so.
  */
@@ -150,23 +150,25 @@ object MusicXmlWriter {
         }
         tail.append("<voice>$voice</voice><type>${duration.type.musicXml}</type>")
         repeat(duration.dots) { tail.append("<dot/>") }
+        // after the accidental, in MusicXML's order
+        val after = StringBuilder()
         if (duration.tuplet != Fraction.of(1)) {
-            tail.append("<time-modification><actual-notes>${duration.tuplet.denominator}</actual-notes>")
-            tail.append("<normal-notes>${duration.tuplet.numerator}</normal-notes></time-modification>")
+            after.append("<time-modification><actual-notes>${duration.tuplet.denominator}</actual-notes>")
+            after.append("<normal-notes>${duration.tuplet.numerator}</normal-notes></time-modification>")
         }
         when (event) {
             is Rest -> {
-                out.append("      <note><rest/><duration>${units(duration.length, divisions)}</duration>").append(tail)
+                out.append("      <note><rest/><duration>${units(duration.length, divisions)}</duration>").append(tail).append(after)
                 staff?.let { out.append("<staff>$it</staff>") }
                 out.append("</note>\n")
             }
             is Chord -> {
                 when (event.stem) {
-                    Stem.UP -> tail.append("<stem>up</stem>")
-                    Stem.DOWN -> tail.append("<stem>down</stem>")
+                    Stem.UP -> after.append("<stem>up</stem>")
+                    Stem.DOWN -> after.append("<stem>down</stem>")
                     Stem.NONE -> Unit
                 }
-                staff?.let { tail.append("<staff>$it</staff>") }
+                staff?.let { after.append("<staff>$it</staff>") }
                 // the beams once, on the chord's first note (as MuseScore writes them)
                 val beams = event.beams.withIndex().joinToString("") { (level, mark) -> "<beam number=\"${level + 1}\">${mark.musicXml}</beam>" }
                 val articulations = if (Articulation.STACCATO in event.articulations) "<articulations><staccato/></articulations>" else ""
@@ -183,6 +185,8 @@ object MusicXmlWriter {
                     if (!event.grace) out.append("<duration>${units(duration.length, divisions)}</duration>")
                     ties.forEach { out.append("<tie type=\"$it\"/>") }
                     out.append(tail)
+                    event.accidentals[k]?.let { alter -> ACCIDENTALS[alter]?.let { out.append("<accidental>$it</accidental>") } }
+                    out.append(after)
                     if (k == 0) out.append(beams)
                     val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + articulations
                     if (notations.isNotEmpty()) out.append("<notations>").append(notations).append("</notations>")
@@ -191,6 +195,9 @@ object MusicXmlWriter {
             }
         }
     }
+
+    /** MusicXML's accidentals by the alter they show. */
+    private val ACCIDENTALS = mapOf(-2 to "flat-flat", -1 to "flat", 0 to "natural", 1 to "sharp", 2 to "double-sharp")
 
     /** A note's pitch, or where it sits on a percussion staff (or unknown: no clef read). */
     private fun pitchElement(pitch: Pitch?, clef: Clef?): String = when {

@@ -65,11 +65,14 @@ class PrivateScoresProbeTest {
                     "beams ${right(back.allStaves(back.beamed), want.allStaves(want.beamed), offset)} staff-measures right; " +
                     "${Regex("<octave-shift type=\"(up|down)").findAll(written).count()} octave lines; " +
                     "ties ${right(back.allStaves(back.tied), want.allStaves(want.tied), offset)} staff-measures right " +
-                    "(${back.allStaves(back.tied).values.sumOf { m -> m.sumOf { it.size } }} read)" +
+                    "(${back.allStaves(back.tied).values.sumOf { m -> m.sumOf { it.size } }} read); " +
+                    "accidentals ${right(back.allStaves(back.shown), want.allStaves(want.shown), offset)} staff-measures right " +
+                    "(${back.allStaves(back.shown).values.sumOf { m -> m.sumOf { it.size } }} read)" +
                     if (offset > 0) " (the PDF's staves are the MusicXML's from staff ${offset + 1})" else "")
                 differences(back.allStaves(back.timed), reference, offset).take(5).forEach { println("    $it") }
                 differences(back.allStaves(back.beamed), want.allStaves(want.beamed), offset).take(3).forEach { println("    beams: $it") }
                 differences(back.allStaves(back.tied), want.allStaves(want.tied), offset).take(5).forEach { println("    ties: $it") }
+                differences(back.allStaves(back.shown), want.allStaves(want.shown), offset).take(5).forEach { println("    accidentals: $it") }
             }
         }
     }

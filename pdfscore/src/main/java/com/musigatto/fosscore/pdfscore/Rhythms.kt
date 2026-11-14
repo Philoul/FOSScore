@@ -366,6 +366,7 @@ object Rhythms {
                         draft.beamMarks,
                         draft.notes.firstOrNull()?.octaves ?: 0,
                         notes.indices.filter { notes[it] in ties }.toSet(),
+                        notes.withIndex().mapNotNull { (i, note) -> note.accidental?.let { i to it } }.toMap(),
                     )
                 }
                 result += PlacedEvent(event, draft.box)

@@ -21,6 +21,7 @@ sealed interface Event {
  * does there; empty when it has none. Under an octave line ("8va", "8vb"), its [pitches] are the
  * ones heard, [ottava] octaves away from where they are drawn (1 up, -1 down). [ties] are the
  * indexes in [pitches] of the notes tied on to the next note of their pitch (held, not struck again).
+ * [accidentals] are the ones drawn, by index in [pitches]: their alter (1 a sharp, 0 a natural...).
  */
 data class Chord(
     val pitches: List<Pitch?>,
@@ -33,6 +34,7 @@ data class Chord(
     val beams: List<BeamMark> = emptyList(),
     val ottava: Int = 0,
     val ties: Set<Int> = emptySet(),
+    val accidentals: Map<Int, Int> = emptyMap(),
 ) : Event
 
 /** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */

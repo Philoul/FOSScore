@@ -69,6 +69,8 @@ class StaffNotesTest {
         assertEquals(listOf(160.0), staff.barlines)
         assertEquals(listOf("F#5", "F5", "F5", "F#5", "F#4"), staff.notes.map { it.pitch.toString() })
         assertEquals(listOf(0, 0, 0, 1, 1), staff.notes.map { it.measure })
+        // the accidental drawn before a note, what a renderer must draw again: only the natural
+        assertEquals(listOf(null, 0, null, null, null), staff.notes.map { it.accidental })
     }
 
     /** A section's barline drawn at the start of a system, after the clef and key, closes no measure: nothing came before it. */

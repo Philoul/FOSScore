@@ -42,7 +42,11 @@ class MxlNotes(document: org.w3c.dom.Document) {
     /** The same with each chord's beams, on its first note: "E4 1:begin 2:begin", grace notes left out. */
     val beamed: Map<String, Map<Int, List<List<String>>>>
 
+    /** The same with only the notes a tie starts from: their pitches. */
+    val tied: Map<String, Map<Int, List<List<String>>>>
+
     init {
+        val tiedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         val timedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         val beamedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         val signatureParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
@@ -59,6 +63,7 @@ class MxlNotes(document: org.w3c.dom.Document) {
             val staves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             val timedStaves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             val beamedStaves = mutableMapOf<Int, MutableList<MutableList<String>>>()
+            val tiedStaves = mutableMapOf<Int, MutableList<MutableList<String>>>()
             measures.forEachIndexed { index, measure ->
                 measure.getElementsByTagName("note").elements().forEach { note ->
                     // a note the score does not print (no head, or hidden) is not on the page
@@ -85,12 +90,17 @@ class MxlNotes(document: org.w3c.dom.Document) {
                             while (beamedList.size <= index) beamedList += mutableListOf<String>()
                             beamedList[index] += "$pitch$beams"
                         }
+                        val tiedList = tiedStaves.getOrPut(staff) { mutableListOf() }
+                        while (tiedList.size <= index) tiedList += mutableListOf<String>()
+                        if (note.getElementsByTagName("tie").elements().any { it.getAttribute("type") == "start" }) tiedList[index] += pitch.toString()
                     }
                 }
             }
             staves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
             timedStaves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
             beamedStaves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
+            tiedStaves.values.forEach { list -> while (list.size < measures.size) list += mutableListOf<String>() }
+            tiedParts[part.getAttribute("id")] = tiedStaves.mapValues { (_, list) -> list.map { it.sorted() } }
             beamedParts[part.getAttribute("id")] = beamedStaves.mapValues { (_, list) -> list.map { it.sorted() } }
             timedParts[part.getAttribute("id")] = timedStaves.mapValues { (_, list) -> list.map { it.sorted() } }
             signatureParts[part.getAttribute("id")] = staves.keys.associateWith { signatures }
@@ -99,6 +109,7 @@ class MxlNotes(document: org.w3c.dom.Document) {
         timed = timedParts
         signatures = signatureParts
         beamed = beamedParts
+        tied = tiedParts
     }
 
     /**

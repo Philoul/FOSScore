@@ -15,7 +15,7 @@ import com.musigatto.fosscore.pdfscore.music.TimeSignature
  * Writes a [ScoreReading] as a MusicXML 4.0 partwise score. Each measure and note gets an id
  * ([ScoreReading.measureId], [ScoreReading.noteId]) that [ScoreReading.notePlaces] finds on the page.
  * What is not read yet is not written: accidentals are left for the reader to work out from the
- * pitches, tuplets get their time-modification but no bracket, and there are no ties, slurs,
+ * pitches, tuplets get their time-modification but no bracket, and there are no slurs,
  * dynamics or lyrics. The pitches are the ones heard: under an octave line they are an octave off
  * what is drawn, and an octave-shift says so.
  */
@@ -36,11 +36,11 @@ object MusicXmlWriter {
         score.parts.forEachIndexed { p, part ->
             out.append("  <part id=\"P${p + 1}\">\n")
             var previous: List<MeasureStaff>? = null
-            // each staff's octave line in force: the octaves its notes sound off what is drawn
-            val ottavas = IntArray(part.staves)
+            // what runs on from measure to measure on each staff: its octave line, its ties
+            val running = Array(part.staves) { Running() }
             score.measures.forEachIndexed { index, measure ->
                 val staves = (0 until part.staves).mapNotNull { measure.staves.getOrNull(firstStaff + it) }
-                writeMeasure(out, measure, staves, previous, firstStaff, part.staves, divisions, ottavas, last = index == score.measures.lastIndex)
+                writeMeasure(out, measure, staves, previous, firstStaff, part.staves, divisions, running, last = index == score.measures.lastIndex)
                 previous = staves
             }
             out.append("  </part>\n")
@@ -58,7 +58,7 @@ object MusicXmlWriter {
         firstStaff: Int,
         staffCount: Int,
         divisions: Long,
-        ottavas: IntArray,
+        running: Array<Running>,
         last: Boolean,
     ) {
         out.append("    <measure number=\"${measure.rank}\" id=\"${ScoreReading.measureId(measure.rank)}\">\n")
@@ -100,14 +100,14 @@ object MusicXmlWriter {
                         cursor = event.onset
                     }
                     // the octave line follows the staff's first voice
-                    if (event is Chord && voice == voices.firstKey() && event.ottava != ottavas[s]) {
-                        if (ottavas[s] != 0) out.append(octaveShift("stop", ottavas[s], s + 1, staffCount))
+                    if (event is Chord && voice == voices.firstKey() && event.ottava != running[s].ottava) {
+                        if (running[s].ottava != 0) out.append(octaveShift("stop", running[s].ottava, s + 1, staffCount))
                         if (event.ottava != 0) out.append(octaveShift(if (event.ottava > 0) "down" else "up", event.ottava, s + 1, staffCount))
-                        ottavas[s] = event.ottava
+                        running[s].ottava = event.ottava
                     }
                     val ids = { k: Int -> ScoreReading.noteId(measure.rank, firstStaff + s + 1, index, k) }
                     val musicXmlVoice = s * 4 + voice
-                    writeEvent(out, event, length, divisions, musicXmlVoice, if (staffCount > 1) s + 1 else null, staff.clef, ids)
+                    writeEvent(out, event, length, divisions, musicXmlVoice, if (staffCount > 1) s + 1 else null, staff.clef, ids, running[s].tied)
                     if (!(event is Chord && event.grace)) cursor = event.onset + duration(event, length)
                 }
                 changes.forEach { out.append("      <attributes>\n").append(clef(it.value, s + 1, staffCount)).append("      </attributes>\n") }
@@ -121,9 +121,9 @@ object MusicXmlWriter {
                 cursor = length
             }
             // a line still running at the score's end stops there
-            if (last && ottavas[s] != 0) {
-                out.append(octaveShift("stop", ottavas[s], s + 1, staffCount))
-                ottavas[s] = 0
+            if (last && running[s].ottava != 0) {
+                out.append(octaveShift("stop", running[s].ottava, s + 1, staffCount))
+                running[s].ottava = 0
             }
         }
         out.append("    </measure>\n")
@@ -138,6 +138,7 @@ object MusicXmlWriter {
         staff: Int?,
         clef: Clef?,
         id: (Int) -> String,
+        tied: MutableSet<Pitch>,
     ) {
         val tail = StringBuilder()
         val duration = event.duration
@@ -168,16 +169,24 @@ object MusicXmlWriter {
                 staff?.let { tail.append("<staff>$it</staff>") }
                 // the beams once, on the chord's first note (as MuseScore writes them)
                 val beams = event.beams.withIndex().joinToString("") { (level, mark) -> "<beam number=\"${level + 1}\">${mark.musicXml}</beam>" }
-                val notations = if (Articulation.STACCATO in event.articulations) "<notations><articulations><staccato/></articulations></notations>" else ""
+                val articulations = if (Articulation.STACCATO in event.articulations) "<articulations><staccato/></articulations>" else ""
                 event.pitches.forEachIndexed { k, pitch ->
+                    // a tie stops on the next note of its pitch, and may start again there
+                    val stop = pitch != null && !event.grace && tied.remove(pitch)
+                    val start = pitch != null && !event.grace && k in event.ties
+                    if (start && pitch != null) tied += pitch
+                    val ties = listOf("stop" to stop, "start" to start).filter { it.second }.map { it.first }
                     out.append("      <note id=\"${id(k)}\">")
                     if (event.grace) out.append("<grace/>")
                     if (k > 0) out.append("<chord/>")
                     out.append(pitchElement(pitch, clef))
                     if (!event.grace) out.append("<duration>${units(duration.length, divisions)}</duration>")
+                    ties.forEach { out.append("<tie type=\"$it\"/>") }
                     out.append(tail)
                     if (k == 0) out.append(beams)
-                    out.append(notations).append("</note>\n")
+                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + articulations
+                    if (notations.isNotEmpty()) out.append("<notations>").append(notations).append("</notations>")
+                    out.append("</note>\n")
                 }
             }
         }
@@ -190,6 +199,12 @@ object MusicXmlWriter {
             "<unpitched><display-step>${Pitch.STEPS[pitch.step]}</display-step><display-octave>${pitch.octave}</display-octave></unpitched>"
         else -> "<pitch><step>${Pitch.STEPS[pitch.step]}</step>" +
             (if (pitch.alter != 0) "<alter>${pitch.alter}</alter>" else "") + "<octave>${pitch.octave}</octave></pitch>"
+    }
+
+    /** What runs on over barlines on a staff: the octave line in force, the pitches tied on to their next note. */
+    private class Running {
+        var ottava = 0
+        val tied = mutableSetOf<Pitch>()
     }
 
     /**

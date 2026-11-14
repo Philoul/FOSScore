@@ -50,8 +50,39 @@ object Rhythms {
         dots(drafts, reading, space)
         beamMarks(drafts)
         val tuplets = tuplets(reading, page.lines, beams, space)
+        val ties = ties(page, reading, space)
 
-        return drafts.groupBy { it.measure }.toSortedMap().map { (measure, items) -> MeasureReading(measure, timed(items, staff, tuplets)) }
+        return drafts.groupBy { it.measure }.toSortedMap().map { (measure, items) -> MeasureReading(measure, timed(items, staff, tuplets, ties)) }
+    }
+
+    /**
+     * The notes a tie starts from. A tie is a curve from beside a head (past its middle, at its
+     * height) to beside the next head on its line or space; or on to the staff's end, when the tie
+     * goes on over the line break (its other half starts the next system, before the note it ends
+     * on). A curve to a note on another line or space is a slur.
+     */
+    private fun ties(page: PageDrawing, reading: StaffReading, space: Double): Set<StaffNote> {
+        val staff = reading.staff
+        val notes = reading.notes
+        val starts = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<StaffNote, Boolean>())
+        val besideHead = { p: Point, head: Box -> abs(p.y - head.centerY) <= 1.5 * space }
+        for (curve in page.shapes) {
+            val box = curve.box
+            if (!curve.curved || box.width < 0.8 * space || box.height > 1.5 * space) continue
+            val left = curve.points.minBy { it.x }
+            val right = curve.points.maxBy { it.x }
+            val start = notes.filter { note ->
+                val head = note.head.box
+                left.x >= head.left + 0.2 * head.width && left.x <= head.right + 1.0 * space && besideHead(left, head)
+            }.minByOrNull { abs(left.x - it.head.box.right) + abs(left.y - it.head.box.centerY) } ?: continue
+            val next = notes.filter { it.step == start.step && it.head.box.left > start.head.box.right }.minByOrNull { it.head.box.left }
+            val ends = next?.let { note ->
+                val head = note.head.box
+                right.x >= head.left - 1.0 * space && right.x <= head.right - 0.2 * head.width && besideHead(right, head)
+            } ?: (right.x >= staff.right - 1.5 * space)
+            if (ends) starts += start
+        }
+        return starts
     }
 
     /** A note or rest being read: what is known of it so far. */
@@ -278,7 +309,7 @@ object Rhythms {
      * voice 1 over them); else everything is one voice. A voice is silent until it shows: an event
      * drawn at the time of another voice's starts then (the rests before it are hidden).
      */
-    private fun timed(items: List<Draft>, staff: Staff, tuplets: List<Tuplet>): List<PlacedEvent> {
+    private fun timed(items: List<Draft>, staff: Staff, tuplets: List<Tuplet>, ties: Set<StaffNote>): List<PlacedEvent> {
         val space = staff.space
         val chords = items.filter { !it.rest && !it.grace }
         // chords on two stems struck together: a stem up beside a stem down (heads side by side
@@ -328,11 +359,13 @@ object Rhythms {
                 val event = if (draft.rest) {
                     Rest(duration, time, voice, wholeMeasure = duration.type == NoteType.WHOLE && sorted.size == 1)
                 } else {
+                    val notes = draft.notes.sortedBy { it.step }
                     Chord(
-                        draft.notes.sortedBy { it.step }.map { it.pitch }, duration, draft.stem, time, voice, draft.grace,
+                        notes.map { it.pitch }, duration, draft.stem, time, voice, draft.grace,
                         if (draft.staccato) setOf(Articulation.STACCATO) else emptySet(),
                         draft.beamMarks,
                         draft.notes.firstOrNull()?.octaves ?: 0,
+                        notes.indices.filter { notes[it] in ties }.toSet(),
                     )
                 }
                 result += PlacedEvent(event, draft.box)

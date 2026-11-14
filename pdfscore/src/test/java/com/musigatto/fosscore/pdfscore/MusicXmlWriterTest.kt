@@ -113,6 +113,25 @@ class MusicXmlWriterTest {
         )
     }
 
+    /** A tie starts on its note and stops on the next note of that pitch on the staff, over the barline. */
+    @Test
+    fun aTieStopsOnTheNextNoteOfItsPitch() {
+        val c5 = Pitch(0, 5)
+        val e5 = Pitch(2, 5)
+        val m1 = listOf(placed(Chord(listOf(c5, e5), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1, ties = setOf(1)), 70.0))
+        val m2 = listOf(placed(Chord(listOf(c5, e5), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1), 70.0))
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, m1, time = TimeSignature(4, 4)))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, m2, time = TimeSignature(4, 4)))),
+            ),
+        )
+        val notes = parse(MusicXmlWriter.write(score)).all("note")
+        assertEquals(listOf("", "start", "", "stop"), notes.map { n -> n.all("tie").joinToString { it.getAttribute("type") } })
+        assertEquals(listOf("", "start", "", "stop"), notes.map { n -> n.all("tied").joinToString { it.getAttribute("type") } })
+    }
+
     /** Each note says where its beams begin, go on and end, by level. */
     @Test
     fun beamsAreWrittenByLevel() {

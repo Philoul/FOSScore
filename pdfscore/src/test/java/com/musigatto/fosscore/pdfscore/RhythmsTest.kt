@@ -243,6 +243,58 @@ class RhythmsTest {
         assertEquals(listOf(0, 0), measure.events.map { it.event.duration.dots })
     }
 
+    /** A thin arc from ([x1], [y1]) to ([x2], [y2]), bulging [bulge] down (up when negative), filled as a program draws a tie or a slur. */
+    private fun arc(x1: Double, y1: Double, x2: Double, y2: Double, bulge: Double): DrawnShape {
+        val outer = (0..16).map { i ->
+            val t = i / 16.0
+            Point(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t + 4 * bulge * t * (1 - t))
+        }
+        val inner = outer.reversed().map { Point(it.x, it.y - 0.15 * space * Math.signum(bulge)) }
+        return DrawnShape(outer + inner + outer.first(), curved = true)
+    }
+
+    private fun tied(measure: MeasureReading) = measure.events.map { (it.event as Chord).ties }
+
+    /** A curve from beside a note to beside the next one on its line is a tie: the first note's. */
+    @Test
+    fun aCurveBetweenTwoNotesOnOneLineIsATie() {
+        val a = head(100.0, g4)
+        val b = head(130.0, g4)
+        val tie = arc(a.box.right + 0.2 * space, g4 + 0.6 * space, b.box.left - 0.2 * space, g4 + 0.6 * space, 0.6 * space)
+        val measure = read(listOf(a, b), listOf(stemUp(a), stemUp(b)), listOf(tie)).single()
+        assertEquals(listOf(setOf(0), emptySet<Int>()), tied(measure))
+    }
+
+    /** A curve from one note to a note on another line is a slur, no tie. */
+    @Test
+    fun aCurveToAnotherLineIsNoTie() {
+        val a = head(100.0, g4)
+        val b = head(130.0, c5)
+        val slur = arc(a.box.centerX, g4 + 0.8 * space, b.box.centerX, c5 + 0.8 * space, 0.8 * space)
+        val measure = read(listOf(a, b), listOf(stemDown(a), stemDown(b)), listOf(slur)).single()
+        assertEquals(listOf(emptySet<Int>(), emptySet<Int>()), tied(measure))
+    }
+
+    /** In a chord, the tie by each head says which of its notes is tied (counted from the lowest). */
+    @Test
+    fun aTieInAChordIsTheNoteItStartsBeside() {
+        val low = head(100.0, g4)
+        val high = head(100.0, c5)
+        val next = head(130.0, c5)
+        val tie = arc(high.box.right + 0.2 * space, c5, next.box.left - 0.2 * space, c5, -0.5 * space)
+        val measure = read(listOf(low, high, next), listOf(DrawnLine(low.box.right, g4, low.box.right, c5 - stemLength, 0.5), stemUp(next)), listOf(tie)).single()
+        assertEquals(listOf(setOf(1), emptySet<Int>()), tied(measure))
+    }
+
+    /** A tie running to the end of the staff goes on over the line break: still a tie. */
+    @Test
+    fun aTieToTheStaffsEndIsATie() {
+        val a = head(520.0, g4)
+        val tie = arc(a.box.right + 0.2 * space, g4 + 0.6 * space, 549.0, g4 + 0.6 * space, 0.4 * space)
+        val measure = read(listOf(a), listOf(stemUp(a)), listOf(tie)).single()
+        assertEquals(listOf(setOf(0)), tied(measure))
+    }
+
     /**
      * A staccato over a note (its stem down) can sit at the height of the note before it: it is
      * the staccato of the note it is over, not a dot of the one before.

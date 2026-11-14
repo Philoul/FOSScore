@@ -21,7 +21,11 @@ class PrivateScoresProbeTest {
     @Test
     fun probePrivateScores() {
         assumeTrue(folder.path.isNotEmpty() && folder.isDirectory && fonts.isDirectory)
-        val modes = listOf("look only" to GlyphNames(fonts, codes = false), "SMuFL code and look" to GlyphNames(fonts))
+        val modes = listOf(
+            "look only" to GlyphNames(fonts, codes = false),
+            "SMuFL code and look" to GlyphNames(fonts),
+            "SMuFL code only (the app)" to GlyphNames(fonts, codesOnly = true),
+        )
         val pdfs = folder.listFiles { f -> f.name.endsWith(".pdf", ignoreCase = true) }.orEmpty().sortedBy { it.name }
         for (pdf in pdfs) {
             val reference = listOf(".mxl", ".musicxml", ".xml").map { File(folder, pdf.nameWithoutExtension + it) }.firstOrNull { it.isFile }

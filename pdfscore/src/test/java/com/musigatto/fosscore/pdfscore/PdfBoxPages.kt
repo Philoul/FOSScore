@@ -37,12 +37,8 @@ object PdfBoxPages {
         private val crop = page.cropBox
         private val path = GeneralPath()
         private var curved = false
-        private val glyphs = mutableListOf<DrawnGlyph>()
-        private val lines = mutableListOf<DrawnLine>()
-        private val shapes = mutableListOf<DrawnShape>()
-        private val texts = mutableListOf<DrawnText>()
+        private val drawing = PageBuilder(crop.width.toDouble(), crop.height.toDouble())
         private val fontGlyphs = linkedMapOf<Pair<String, Int>, FontGlyph>()
-        private var lastTextEnd = Double.NaN
 
         fun run() = processPage(page)
 
@@ -52,14 +48,7 @@ object PdfBoxPages {
                 val named = names?.names(font) ?: font.map { null }
                 font.map { it.font to it.code }.zip(named)
             }.toMap()
-            val named = glyphs.map { g ->
-                val name = nameOf[g.font to g.code]
-                if (name == null) g else g.copy(name = name)
-            }
-            return ReadPage(
-                PageDrawing(crop.width.toDouble(), crop.height.toDouble(), named, lines, shapes, texts),
-                fontGlyphs,
-            )
+            return ReadPage(drawing.build { g -> nameOf[g.font to g.code] }, fontGlyphs)
         }
 
         private fun pageX(x: Double) = x - crop.lowerLeftX
@@ -82,21 +71,10 @@ object PdfBoxPages {
                 at.scale(0.001, 0.001)
                 val b = at.createTransformedShape(outline).bounds2D
                 val box = if (b.isEmpty) Box(x, y, x, y) else Box(pageX(b.minX), pageY(b.maxY), pageX(b.maxX), pageY(b.minY))
-                glyphs += DrawnGlyph(null, box, font = fontName, code = code, x = x, y = y, size = size)
+                drawing.glyph(DrawnGlyph(null, box, font = fontName, code = code, x = x, y = y, size = size))
             } else {
-                addText(unicode ?: "", fontName, x, y, size, font.getWidth(code) / 1000.0 * textRenderingMatrix.scalingFactorX)
+                drawing.text(unicode ?: "", fontName, x, y, size, font.getWidth(code) / 1000.0 * textRenderingMatrix.scalingFactorX)
             }
-        }
-
-        private fun addText(text: String, font: String, x: Double, y: Double, size: Double, advance: Double) {
-            val last = texts.lastOrNull()
-            val gap = x - lastTextEnd
-            if (last != null && last.font == font && abs(last.y - y) < 0.5 && gap > -0.1 * size && gap < 0.3 * size) {
-                texts[texts.size - 1] = last.copy(text = last.text + (if (gap > 0.15 * size) " " else "") + text)
-            } else {
-                texts += DrawnText(text, font, x, y, size)
-            }
-            lastTextEnd = x + advance
         }
 
         override fun appendRectangle(p0: Point2D, p1: Point2D, p2: Point2D, p3: Point2D) {
@@ -124,17 +102,12 @@ object PdfBoxPages {
         override fun strokePath() {
             val ctm = graphicsState.currentTransformationMatrix
             val width = graphicsState.lineWidth * sqrt(abs(ctm.scaleX * ctm.scaleY - ctm.shearX * ctm.shearY).toDouble())
-            subpaths().forEach { points ->
-                points.zipWithNext().forEach { (a, b) -> lines += DrawnLine(a.x, a.y, b.x, b.y, width) }
-            }
+            drawing.stroke(subpaths(), width)
             reset()
         }
 
         override fun fillPath(windingRule: Int) {
-            subpaths().filter { it.size >= 3 }.forEach { points ->
-                val shape = DrawnShape(points, curved)
-                shape.asLine()?.let { lines += it } ?: run { shapes += shape }
-            }
+            drawing.fill(subpaths(), curved)
             reset()
         }
 

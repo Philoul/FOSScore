@@ -46,6 +46,15 @@ object SmuflCodes {
     fun codePoint(unicode: String?, code: Int): Int? =
         unicode?.takeIf { it.length == 1 }?.get(0)?.code?.takeIf { it in RANGE } ?: code.takeIf { it in RANGE }
 
+    /**
+     * The name of the symbol at [codePoint] in [smufl], for a font known to follow SMuFL without
+     * looking at its glyphs; null for no code point or a symbol recognition does not look for.
+     */
+    fun name(smufl: Map<Int, String>, codePoint: Int?): String? =
+        codePoint?.let { smufl[it] }?.let(CommonSymbols::canonical)?.takeIf { it in COMMON }
+
+    private val COMMON = CommonSymbols.NAMES.map(CommonSymbols::canonical).toSet()
+
     /** SMuFL's symbols are in Unicode's private use area. */
     private val RANGE = 0xE000..0xF8FF
 }

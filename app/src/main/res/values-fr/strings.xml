@@ -473,6 +473,6 @@
     <string name="pdf_to_musicxml_already">Ce MusicXML est déjà dans la bibliothèque.</string>
     <string name="pdf_to_musicxml_failed">La conversion a échoué : %1$s</string>
     <string name="pdf_to_musicxml_import_failed">le MusicXML n’a pas pu être ajouté à la bibliothèque</string>
-    <string name="pdf_to_musicxml_no_music">aucune note n’a été trouvée : une partition scannée, ou un PDF dessiné sans police musicale, n’est pas encore lue</string>
+    <string name="pdf_to_musicxml_no_music">aucune note n’a été trouvée : une partition scannée (une image) n’est pas encore lue</string>
     <string name="pdf_to_musicxml_close">Fermer</string>
 </resources>

@@ -13,11 +13,15 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.ImportResult
 import com.musigatto.fosscore.library.LibraryRepository
 import com.musigatto.fosscore.pdf.MuPdfDoc
+import com.musigatto.fosscore.pdfscore.CommonSymbols
 import com.musigatto.fosscore.pdfscore.MuPdfSvg
+import com.musigatto.fosscore.pdfscore.MusicFont
 import com.musigatto.fosscore.pdfscore.MusicXmlWriter
+import com.musigatto.fosscore.pdfscore.OutlineSymbols
 import com.musigatto.fosscore.pdfscore.PageDrawing
 import com.musigatto.fosscore.pdfscore.ScoreReader
 import com.musigatto.fosscore.pdfscore.SmuflCodes
+import com.musigatto.fosscore.pdfscore.SymbolClassifier
 import com.musigatto.fosscore.pdfscore.music.Chord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,7 +31,8 @@ import java.util.Locale
 /**
  * Prototype: a vector PDF score read into MusicXML and added to the library, each stage timed, to
  * try the recognition (:pdfscore) on a device. The PDF's music glyphs are named by their SMuFL code
- * points only (what MuseScore's PDFs carry); a scan or a PDF of outlines reads no music yet.
+ * points (what MuseScore's PDFs carry), or, printed without fonts, by their look; a scan reads no
+ * music yet.
  */
 internal sealed interface Conversion {
     data class Reading(val page: Int, val pages: Int) : Conversion
@@ -61,6 +66,27 @@ private object SmuflIndex {
 }
 
 /**
+ * Names the symbols of a PDF printed without its fonts by their look, compared with the music fonts
+ * Verovio's data ships in the assets (Bravura, Leipzig): only the symbols the recognition knows.
+ */
+private object Outlines {
+    private val FONTS = listOf("Bravura", "Leipzig")
+
+    @Volatile
+    private var outlines: OutlineSymbols? = null
+
+    fun get(context: Context): OutlineSymbols = outlines ?: OutlineSymbols(
+        SymbolClassifier(
+            FONTS.mapNotNull { font ->
+                MusicFont.readVerovio(font, CommonSymbols.NAMES.toSet()) { path ->
+                    runCatching { context.assets.open("verovio/data/$path").use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                }
+            }.flatMap { it.symbols },
+        ),
+    ).also { outlines = it }
+}
+
+/**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between
  * two (MuPDF writes each as SVG, [MuPdfSvg] reads it), then recognises the score, writes it as
  * MusicXML and imports it into the library as
@@ -76,13 +102,15 @@ internal suspend fun convertPdfToMusicXml(
 ): Conversion {
     return try {
         val smufl = withContext(Dispatchers.IO) { SmuflIndex.get(context) }
+        val outlines = withContext(Dispatchers.IO) { Outlines.get(context) }
         val start = SystemClock.elapsedRealtime()
         val pages = mutableListOf<PageDrawing>()
         for (index in 0 until doc.pageCount) {
             onProgress(Conversion.Reading(index + 1, doc.pageCount))
             // MuPDF under the viewer's lock, a page at a time; the SVG read off it
             val svg = lock { withContext(Dispatchers.IO) { doc.pageSvg(index) } }
-            svg?.let { pages += withContext(Dispatchers.Default) { MuPdfSvg.read(it, smufl) } }
+            // a page printed without its fonts has its symbols named by their look
+            svg?.let { pages += withContext(Dispatchers.Default) { outlines.name(MuPdfSvg.read(it, smufl)) } }
         }
         val traced = SystemClock.elapsedRealtime()
         onProgress(Conversion.Recognising)

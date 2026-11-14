@@ -468,6 +468,6 @@
     <string name="pdf_to_musicxml_already">This MusicXML is already in the library.</string>
     <string name="pdf_to_musicxml_failed">The conversion failed: %1$s</string>
     <string name="pdf_to_musicxml_import_failed">the MusicXML could not be added to the library</string>
-    <string name="pdf_to_musicxml_no_music">no note was found: a scanned score, or a PDF drawn without a music font, is not read yet</string>
+    <string name="pdf_to_musicxml_no_music">no note was found: a scanned score (an image) is not read yet</string>
     <string name="pdf_to_musicxml_close">Close</string>
 </resources>

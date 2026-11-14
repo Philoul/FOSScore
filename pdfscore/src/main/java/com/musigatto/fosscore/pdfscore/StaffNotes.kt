@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.Pitch
@@ -40,6 +41,8 @@ data class StaffReading(
     val clefs: List<Change<Clef>> = emptyList(),
     val keys: List<Change<Key>> = emptyList(),
     val times: List<Change<TimeSignature>> = emptyList(),
+    /** How each of [barlines] is drawn. */
+    val barStyles: List<BarStyle> = emptyList(),
 )
 
 /**
@@ -153,9 +156,10 @@ object StaffNotes {
         }
         // A barline with only the clef, key or time before it (a section's start drawn at the start
         // of a system) closes no measure.
-        val barlines = barlines(staff, system, lines, heads).dropWhile { x ->
+        val bars = barlines(staff, system, lines, heads).dropWhile { (x, _) ->
             symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < x }
         }
+        val barlines = bars.map { it.first }
         val firstClef = clefs.firstOrNull()
         fun clefAt(x: Double): Clef? = clefs.lastOrNull { it.first.box.left < x }?.second ?: firstClef?.second
         val keyRuns = keys(staff, symbols, clefs.map { it.first }, barlines, ::clefAt)
@@ -206,6 +210,7 @@ object StaffNotes {
             clefs = clefs.map { (glyph, clef) -> Change(glyph.box.left, clef) },
             keys = keys,
             times = times(staff, symbols),
+            barStyles = bars.map { it.second },
         )
     }
 
@@ -358,11 +363,13 @@ object StaffNotes {
 
     /**
      * The barlines' xs: vertical lines running from the staff's top line to its bottom one (or
-     * through it, across the system), but not the system's opening line nor a note's stem.
+     * through it, across the system), but not the system's opening line nor a note's stem; with
+     * how each is drawn. Lines closer than a space make one barline (a double or final one): a
+     * line a third of a space thick or more is a heavy one.
      */
-    private fun barlines(staff: Staff, system: StaffSystem, lines: List<DrawnLine>, heads: List<DrawnGlyph>): List<Double> {
+    private fun barlines(staff: Staff, system: StaffSystem, lines: List<DrawnLine>, heads: List<DrawnGlyph>): List<Pair<Double, BarStyle>> {
         val space = staff.space
-        val xs = lines.filter { it.isVertical }
+        val drawn = lines.filter { it.isVertical }
             .filter { line ->
                 val top = minOf(line.y1, line.y2)
                 val bottom = maxOf(line.y1, line.y2)
@@ -371,12 +378,21 @@ object StaffNotes {
                     line.x1 > staff.left + 0.5 * space && line.x1 <= staff.right + 0.5 * space &&
                     heads.none { abs(it.box.left - line.x1) < 0.3 * space || abs(it.box.right - line.x1) < 0.3 * space }
             }
-            .map { it.x1 }
-            .sorted()
-        // A double or final barline is one barline.
-        return xs.fold(mutableListOf()) { kept, x ->
-            if (kept.isEmpty() || x - kept.last() > space) kept += x
-            kept
+            .sortedBy { it.x1 }
+        val groups = drawn.fold(mutableListOf<MutableList<DrawnLine>>()) { groups, line ->
+            groups.lastOrNull()?.takeIf { line.x1 - it.first().x1 <= space }?.add(line) ?: groups.add(mutableListOf(line))
+            groups
+        }
+        return groups.map { group ->
+            // one line drawn twice is one line
+            val parts = group.distinctBy { Math.round(it.x1 / (0.1 * space)) }.map { it.width >= 0.33 * space }
+            val style = when {
+                parts.size < 2 -> BarStyle.REGULAR
+                !parts.first() && parts.last() -> BarStyle.LIGHT_HEAVY
+                parts.first() && !parts.last() -> BarStyle.HEAVY_LIGHT
+                else -> BarStyle.LIGHT_LIGHT
+            }
+            group.first().x1 to style
         }
     }
 

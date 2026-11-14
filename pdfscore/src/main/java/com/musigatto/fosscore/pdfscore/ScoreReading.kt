@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.pdfscore
 
 import com.musigatto.fosscore.pdfscore.music.Chord
+import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
@@ -59,6 +60,8 @@ data class MeasureStaff(
     val time: TimeSignature?,
     val clefChanges: List<Change<Clef>>,
     val events: List<PlacedEvent>,
+    /** How the barline closing it is drawn; null when none does (the staff's end). */
+    val barStyle: BarStyle? = null,
 )
 
 /**
@@ -139,6 +142,7 @@ object ScoreReader {
             time = times[n],
             clefChanges = staff.clefs.filter { it.x >= music && it.x < right },
             events = events,
+            barStyle = staff.barStyles.getOrNull(m),
         )
     }
 }

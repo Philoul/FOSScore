@@ -3,6 +3,7 @@ package com.musigatto.fosscore.pdfscore
 import com.musigatto.fosscore.pdfscore.music.Articulation
 import com.musigatto.fosscore.pdfscore.music.BeamMark
 import com.musigatto.fosscore.pdfscore.music.Chord
+import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
@@ -111,6 +112,21 @@ class MusicXmlWriterTest {
             listOf("G5 v1 s1", "E5 v1 s1", "backup 3", "C5 v2 s1", "D5 v2 s1", "backup 2", "forward 1", "C3 v5 s2"),
             steps,
         )
+    }
+
+    /** A final barline is written at the end of its measure; a plain one is not. */
+    @Test
+    fun aFinalBarlineIsWritten() {
+        val whole = { placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1), 70.0) }
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(barStyle = BarStyle.REGULAR))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(barStyle = BarStyle.LIGHT_HEAVY))),
+            ),
+        )
+        val measures = parse(MusicXmlWriter.write(score)).all("measure")
+        assertEquals(listOf(emptyList(), listOf("right light-heavy")), measures.map { m -> m.all("barline").map { "${it.getAttribute("location")} ${it.text("bar-style")}" } })
     }
 
     /** The accidentals drawn are written, each on its note: a renderer does not work them out. */

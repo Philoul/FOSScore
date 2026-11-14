@@ -72,6 +72,8 @@ class PrivateScoresProbeTest {
                 differences(back.allStaves(back.timed), reference, offset).take(5).forEach { println("    $it") }
                 differences(back.allStaves(back.beamed), want.allStaves(want.beamed), offset).take(3).forEach { println("    beams: $it") }
                 differences(back.allStaves(back.tied), want.allStaves(want.tied), offset).take(5).forEach { println("    ties: $it") }
+                val bars = Regex("(?s)<measure number=.([0-9]+)[^>]*>(?:(?!</measure>).)*?<bar-style>([a-z-]+)</bar-style>").findAll(written).map { "${it.groupValues[1]} ${it.groupValues[2]}" }.toList()
+                println("    bars written: $bars")
                 differences(back.allStaves(back.shown), want.allStaves(want.shown), offset).take(5).forEach { println("    accidentals: $it") }
             }
         }

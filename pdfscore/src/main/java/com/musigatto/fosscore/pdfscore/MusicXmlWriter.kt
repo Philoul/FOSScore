@@ -2,6 +2,7 @@ package com.musigatto.fosscore.pdfscore
 
 import com.musigatto.fosscore.pdfscore.music.Articulation
 import com.musigatto.fosscore.pdfscore.music.Chord
+import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
@@ -125,6 +126,10 @@ object MusicXmlWriter {
                 out.append(octaveShift("stop", running[s].ottava, s + 1, staffCount))
                 running[s].ottava = 0
             }
+        }
+        // a double or final barline (a plain one goes without saying)
+        first?.barStyle?.takeIf { it != BarStyle.REGULAR }?.let {
+            out.append("      <barline location=\"right\"><bar-style>${it.musicXml}</bar-style></barline>\n")
         }
         out.append("    </measure>\n")
     }

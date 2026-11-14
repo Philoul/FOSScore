@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
@@ -172,6 +173,22 @@ class StaffNotesTest {
         assertEquals(listOf("F6", "F6", "F5"), staff.notes.map { it.pitch.toString() })
         // how far each sounds from where it is drawn: what MusicXML's octave-shift says
         assertEquals(listOf(1, 1, 0), staff.notes.map { it.octaves })
+    }
+
+    /** A thin and a thick line close together end the piece; two thin ones end a section: one barline each, with its look. */
+    @Test
+    fun doubleAndFinalBarlinesKeepTheirLook() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val glyphs = listOf(gClef(55.0, top), head(100.0, top + 2 * space), head(200.0, top + 2 * space), head(300.0, top + 2 * space))
+        val lines = listOf(
+            barline(150.0, top, bottom),
+            DrawnLine(250.0, top, 250.0, bottom, 0.8), DrawnLine(252.5, top, 252.5, bottom, 0.8),
+            DrawnLine(545.0, top, 545.0, bottom, 0.8), DrawnLine(548.0, top, 548.0, bottom, 2.5),
+        )
+        val staff = read(staffLines(top) + lines, glyphs).single().single()
+        assertEquals(listOf(150.0, 250.0, 545.0), staff.barlines)
+        assertEquals(listOf(BarStyle.REGULAR, BarStyle.LIGHT_LIGHT, BarStyle.LIGHT_HEAVY), staff.barStyles)
     }
 
     @Test

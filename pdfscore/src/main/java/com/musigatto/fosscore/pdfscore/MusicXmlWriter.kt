@@ -16,7 +16,8 @@ import com.musigatto.fosscore.pdfscore.music.TimeSignature
  * ([ScoreReading.measureId], [ScoreReading.noteId]) that [ScoreReading.notePlaces] finds on the page.
  * What is not read yet is not written: accidentals are left for the reader to work out from the
  * pitches, tuplets get their time-modification but no bracket, and there are no ties, slurs,
- * dynamics or lyrics.
+ * dynamics or lyrics. The pitches are the ones heard: under an octave line they are an octave off
+ * what is drawn, and an octave-shift says so.
  */
 object MusicXmlWriter {
     fun write(score: ScoreReading, title: String? = null): String {
@@ -35,9 +36,11 @@ object MusicXmlWriter {
         score.parts.forEachIndexed { p, part ->
             out.append("  <part id=\"P${p + 1}\">\n")
             var previous: List<MeasureStaff>? = null
-            for (measure in score.measures) {
+            // each staff's octave line in force: the octaves its notes sound off what is drawn
+            val ottavas = IntArray(part.staves)
+            score.measures.forEachIndexed { index, measure ->
                 val staves = (0 until part.staves).mapNotNull { measure.staves.getOrNull(firstStaff + it) }
-                writeMeasure(out, measure, staves, previous, firstStaff, part.staves, divisions)
+                writeMeasure(out, measure, staves, previous, firstStaff, part.staves, divisions, ottavas, last = index == score.measures.lastIndex)
                 previous = staves
             }
             out.append("  </part>\n")
@@ -55,6 +58,8 @@ object MusicXmlWriter {
         firstStaff: Int,
         staffCount: Int,
         divisions: Long,
+        ottavas: IntArray,
+        last: Boolean,
     ) {
         out.append("    <measure number=\"${measure.rank}\" id=\"${ScoreReading.measureId(measure.rank)}\">\n")
         if (measure.rank > 1 && (measure.newPage || measure.newSystem)) {
@@ -94,6 +99,12 @@ object MusicXmlWriter {
                         out.append("      <forward><duration>${units(event.onset - cursor, divisions)}</duration></forward>\n")
                         cursor = event.onset
                     }
+                    // the octave line follows the staff's first voice
+                    if (event is Chord && voice == voices.firstKey() && event.ottava != ottavas[s]) {
+                        if (ottavas[s] != 0) out.append(octaveShift("stop", ottavas[s], s + 1, staffCount))
+                        if (event.ottava != 0) out.append(octaveShift(if (event.ottava > 0) "down" else "up", event.ottava, s + 1, staffCount))
+                        ottavas[s] = event.ottava
+                    }
                     val ids = { k: Int -> ScoreReading.noteId(measure.rank, firstStaff + s + 1, index, k) }
                     val musicXmlVoice = s * 4 + voice
                     writeEvent(out, event, length, divisions, musicXmlVoice, if (staffCount > 1) s + 1 else null, staff.clef, ids)
@@ -108,6 +119,11 @@ object MusicXmlWriter {
                 if (staffCount > 1) out.append("<staff>${s + 1}</staff>")
                 out.append("</note>\n")
                 cursor = length
+            }
+            // a line still running at the score's end stops there
+            if (last && ottavas[s] != 0) {
+                out.append(octaveShift("stop", ottavas[s], s + 1, staffCount))
+                ottavas[s] = 0
             }
         }
         out.append("    </measure>\n")
@@ -174,6 +190,16 @@ object MusicXmlWriter {
             "<unpitched><display-step>${Pitch.STEPS[pitch.step]}</display-step><display-octave>${pitch.octave}</display-octave></unpitched>"
         else -> "<pitch><step>${Pitch.STEPS[pitch.step]}</step>" +
             (if (pitch.alter != 0) "<alter>${pitch.alter}</alter>" else "") + "<octave>${pitch.octave}</octave></pitch>"
+    }
+
+    /**
+     * An octave line starting or stopping on staff [staff]: [octaves] the notes sound off what is
+     * drawn; MusicXML calls an "8va" a shift down (the notes are drawn lower than heard).
+     */
+    private fun octaveShift(type: String, octaves: Int, staff: Int, staffCount: Int): String {
+        val on = if (staffCount > 1) "<staff>$staff</staff>" else ""
+        val size = 7 * kotlin.math.abs(octaves) + 1
+        return "      <direction><direction-type><octave-shift type=\"$type\" size=\"$size\"/></direction-type>$on</direction>\n"
     }
 
     private fun key(key: Key) = "        <key><fifths>${key.fifths}</fifths></key>\n"

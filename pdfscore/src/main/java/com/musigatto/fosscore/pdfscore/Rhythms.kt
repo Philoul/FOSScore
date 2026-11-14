@@ -332,6 +332,7 @@ object Rhythms {
                         draft.notes.sortedBy { it.step }.map { it.pitch }, duration, draft.stem, time, voice, draft.grace,
                         if (draft.staccato) setOf(Articulation.STACCATO) else emptySet(),
                         draft.beamMarks,
+                        draft.notes.firstOrNull()?.octaves ?: 0,
                     )
                 }
                 result += PlacedEvent(event, draft.box)

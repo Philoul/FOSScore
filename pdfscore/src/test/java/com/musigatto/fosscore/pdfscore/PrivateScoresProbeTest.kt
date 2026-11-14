@@ -50,7 +50,8 @@ class PrivateScoresProbeTest {
             for ((mode, readPages) in modes) {
                 val pages = readPages()
                 val score = ScoreReader.read(pages)
-                val back = MxlNotes(MusicXmlWriter.write(score))
+                val written = MusicXmlWriter.write(score)
+                val back = MxlNotes(written)
                 // the PDF may be one part of the score: its staves are the MusicXML's that match best
                 val read = back.allStaves(back.timed)
                 val reference = want.allStaves(want.timed)
@@ -61,7 +62,8 @@ class PrivateScoresProbeTest {
                     "pitches ${right(back.allStaves(back.parts), want.allStaves(want.parts), offset)}, " +
                     "durations ${right(back.allStaves(back.timed), want.allStaves(want.timed), offset)}, " +
                     "keys and times ${right(back.allStaves(back.signatures), want.allStaves(want.signatures), offset)}, " +
-                    "beams ${right(back.allStaves(back.beamed), want.allStaves(want.beamed), offset)} staff-measures right" +
+                    "beams ${right(back.allStaves(back.beamed), want.allStaves(want.beamed), offset)} staff-measures right; " +
+                    "${Regex("<octave-shift type=\"(up|down)").findAll(written).count()} octave lines" +
                     if (offset > 0) " (the PDF's staves are the MusicXML's from staff ${offset + 1})" else "")
                 differences(back.allStaves(back.timed), reference, offset).take(5).forEach { println("    $it") }
                 differences(back.allStaves(back.beamed), want.allStaves(want.beamed), offset).take(3).forEach { println("    beams: $it") }

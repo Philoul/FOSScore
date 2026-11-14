@@ -168,6 +168,8 @@ class StaffNotesTest {
         val glyphs = listOf(gClef(55.0, top), ottava, head(100.0, top), head(140.0, top), head(170.0, top))
         val staff = read(staffLines(top) + dashes + hook, glyphs).single().single()
         assertEquals(listOf("F6", "F6", "F5"), staff.notes.map { it.pitch.toString() })
+        // how far each sounds from where it is drawn: what MusicXML's octave-shift says
+        assertEquals(listOf(1, 1, 0), staff.notes.map { it.octaves })
     }
 
     @Test

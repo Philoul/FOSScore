@@ -126,6 +126,32 @@ class MusicXmlWriterTest {
         assertEquals(listOf("1:end", "2:backward hook"), notes[1].all("beam").map { "${it.getAttribute("number")}:${it.textContent}" })
     }
 
+    /**
+     * Notes under an "8" sound an octave up: their pitches are the ones heard, and an octave-shift
+     * (MusicXML's "down": drawn lower than heard) runs from the first to the last, over the barline.
+     */
+    @Test
+    fun anOttavaIsAnOctaveShiftOverItsNotes() {
+        val c6 = Pitch(0, 6)
+        fun note(onset: Fraction, ottava: Int) = Chord(listOf(c6), Duration(NoteType.HALF), Stem.DOWN, onset, 1, ottava = ottava)
+        val m1 = listOf(placed(note(Fraction.ZERO, 0), 70.0), placed(note(Fraction.of(1, 2), 1), 120.0))
+        val m2 = listOf(placed(note(Fraction.ZERO, 1), 70.0), placed(note(Fraction.of(1, 2), 0), 120.0))
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, m1, time = TimeSignature(4, 4)))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, m2, time = TimeSignature(4, 4)))),
+            ),
+        )
+        val xml = MusicXmlWriter.write(score)
+        val shifts = parse(xml).all("octave-shift").map { "${it.getAttribute("type")} ${it.getAttribute("size")}" }
+        assertEquals(listOf("down 8", "stop 8"), shifts)
+        assertEquals(listOf("6", "6", "6", "6"), parse(xml).all("octave").map { it.textContent })
+        // it starts before the second note of measure 1, stops before the last one of measure 2
+        val notes = Regex("<note |<octave-shift").findAll(xml).map { it.value }.toList()
+        assertEquals(listOf("<note ", "<octave-shift", "<note ", "<note ", "<octave-shift", "<note "), notes)
+    }
+
     /** A grace note takes no time; a staccato is written; a clef drawn mid-measure comes before the note after it. */
     @Test
     fun graceNotesStaccatoAndAClefChange() {

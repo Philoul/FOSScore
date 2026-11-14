@@ -7,7 +7,7 @@ import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import kotlin.math.abs
 
 /** A notehead read on a staff: where it sits ([step], see [Staff.step]), in which measure, and its pitch. */
-data class StaffNote(val head: DrawnGlyph, val step: Int, val measure: Int, val pitch: Pitch?)
+data class StaffNote(val head: DrawnGlyph, val step: Int, val measure: Int, val pitch: Pitch?, val octaves: Int = 0)
 
 /** A clef, key or time signature drawn on a staff, and the [x] it holds from. */
 data class Change<T>(val x: Double, val value: T)
@@ -180,15 +180,15 @@ object StaffNotes {
                 measure = headMeasure
             }
             val step = staff.step(head.box.centerY)
+            val octaves = ottavas.firstOrNull { (range, _) -> head.box.centerX in range }?.second ?: 0
             val pitch = clefAt(head.box.left)?.let {
                 val diatonic = it.diatonicAt(step)
                 val alter = written[head]?.also { alter -> inMeasure[diatonic] = alter }
                     ?: inMeasure[diatonic]
                     ?: if (it.sign == Clef.Sign.PERCUSSION) 0 else keyAt(head.box.centerX).alter(Math.floorMod(diatonic, 7))
-                val octaves = ottavas.firstOrNull { (range, _) -> head.box.centerX in range }?.second ?: 0
                 Pitch.ofDiatonic(diatonic + 7 * octaves, alter)
             }
-            StaffNote(head, step, measure, pitch)
+            StaffNote(head, step, measure, pitch, octaves)
         }
         return StaffReading(
             staff, firstClef?.second, keys.first().value, barlines, notes, symbols,

@@ -18,7 +18,8 @@ sealed interface Event {
  * while nothing says it (no clef read). A [grace] note takes no time of its own: its [onset] is the
  * one of the note it leads to. Its [articulations] are the marks over or under it (a staccato dot).
  * Its [beams] say, level by level from the outer one (at the stem's end), what each beam on its stem
- * does there; empty when it has none.
+ * does there; empty when it has none. Under an octave line ("8va", "8vb"), its [pitches] are the
+ * ones heard, [ottava] octaves away from where they are drawn (1 up, -1 down).
  */
 data class Chord(
     val pitches: List<Pitch?>,
@@ -29,6 +30,7 @@ data class Chord(
     val grace: Boolean = false,
     val articulations: Set<Articulation> = emptySet(),
     val beams: List<BeamMark> = emptyList(),
+    val ottava: Int = 0,
 ) : Event
 
 /** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */

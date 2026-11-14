@@ -296,4 +296,69 @@ class StaffNotesTest {
         assertEquals(listOf(Key(-3)), staff.keys.map { it.value })
         assertEquals(listOf("Bb4", "B4", "Bb4"), staff.notes.map { it.pitch.toString() })
     }
+
+    /** In a tight passage, an accidental may overlap its head a little: it is still the note's. */
+    @Test
+    fun anAccidentalOverlappingItsHeadIsTheNotes() {
+        val top = 100.0
+        val f4 = top + 3.5 * space
+        val glyphs = listOf(
+            gClef(55.0, top),
+            sharp(97.0, f4), head(100.0, f4), // the sharp's right edge 0.4 space into the head
+        )
+        val staff = read(staffLines(top), glyphs).single().single()
+        assertEquals(listOf("F#4"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /**
+     * A key's signs have their places on the staff: in bass clef, its F sharp is on F3, not F2. A
+     * chord's sharps staggered after a barline (MuseJazz's) are the chord's, not a key of one sharp.
+     */
+    @Test
+    fun aSharpBelowAKeysPlaceIsNoKey() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val f2 = bottom + 0.5 * space
+        val f3 = top + space
+        val glyphs = listOf(
+            fClef(55.0, top), head(100.0, top + 2 * space), // D3
+            sharp(162.0, f2), sharp(167.5, f3), head(172.0, f2), head(172.0, f3), // F#2 and F#3, the low sharp a space away
+            head(240.0, f2), // F2 in the next measure
+        )
+        val staff = read(staffLines(top) + barline(160.0, top, bottom) + barline(220.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(Key(0)), staff.keys.map { it.value })
+        assertEquals(listOf("D3", "F#2", "F#3", "F2"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /**
+     * A font glyph's origin is on the step it marks, wherever its box is: Finale Broadway draws its
+     * sharp higher in its box than other fonts, its middle a step above the note.
+     */
+    @Test
+    fun aFontAccidentalIsOnTheStepOfItsOrigin() {
+        val top = 100.0
+        val f4 = top + 3.5 * space
+        val high = sharp(90.0, f4 - 0.8 * space)
+        val glyphs = listOf(
+            gClef(55.0, top),
+            high.copy(x = high.box.left, y = f4, size = 20.0), head(100.0, f4),
+        )
+        val staff = read(staffLines(top), glyphs).single().single()
+        assertEquals(listOf("F#4"), staff.notes.map { it.pitch.toString() })
+    }
+
+    /** A narrow clef (MuseJazz's) leaves almost 2 spaces before the key: the key is still the clef's. */
+    @Test
+    fun aKeyFarFromANarrowClefIsTheStartKey() {
+        val top = 100.0
+        val b4 = top + 2 * space
+        val glyphs = listOf(
+            gClef(55.0, top), // right edge at 68.5
+            flat(77.5, b4), flat(83.5, top + 0.5 * space), // 1.8 spaces after the clef
+            head(110.0, b4), // Bb4
+        )
+        val staff = read(staffLines(top), glyphs).single().single()
+        assertEquals(listOf(Key(-2)), staff.keys.map { it.value })
+        assertEquals(listOf("Bb4"), staff.notes.map { it.pitch.toString() })
+    }
 }

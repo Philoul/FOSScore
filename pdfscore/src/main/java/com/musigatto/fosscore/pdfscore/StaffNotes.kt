@@ -136,7 +136,7 @@ object StaffNotes {
         val heads = symbols.filter { isHead(it.name) }
         val clefs = symbols.mapNotNull { glyph ->
             clefOf(glyph.name.orEmpty())?.let { (sign, shift) ->
-                val step = staff.step(glyph.box.top + originFraction(glyph.name.orEmpty()) * glyph.box.height)
+                val step = staff.step(referenceY(glyph))
                 glyph to Clef(sign, (Math.round(step / 2.0).toInt() + 1).coerceIn(1, 5), shift)
             }
         }
@@ -151,7 +151,7 @@ object StaffNotes {
         val keyAccidentals = keyRuns.flatMap { it.first }.toSet()
         // The key at the system's start is the one right after its first clef, if any.
         val startKey = keyRuns.firstOrNull()?.takeIf { (_, change) ->
-            firstClef != null && change.x - firstClef.first.box.right <= 1.5 * space
+            firstClef != null && change.x - firstClef.first.box.right <= KEY_REACH * space
         }
         val keys = listOf(startKey?.second ?: Change(firstClef?.first?.box?.right ?: staff.left, Key(0))) +
             keyRuns.filter { it !== startKey }.map { it.second }
@@ -161,10 +161,10 @@ object StaffNotes {
         val accidentals = symbols.filter { ALTERS.containsKey(it.name.orEmpty()) && it !in keyAccidentals }
         val written = mutableMapOf<DrawnGlyph, Int>()
         for (accidental in accidentals) {
-            val step = staff.step(accidental.box.top + originFraction(accidental.name.orEmpty()) * accidental.box.height)
+            val step = staff.step(referenceY(accidental))
             heads.filter {
                 staff.step(it.box.centerY) == step &&
-                    it.box.left >= accidental.box.right - 0.3 * space && it.box.left - accidental.box.right <= 4 * space
+                    it.box.left >= accidental.box.centerX && it.box.left - accidental.box.right <= 4 * space
             }.minByOrNull { it.box.left }?.let { head -> written[head] = ALTERS.getValue(accidental.name.orEmpty()) }
         }
 
@@ -240,14 +240,14 @@ object StaffNotes {
     ): List<Pair<List<DrawnGlyph>, Change<Key>>> {
         val space = staff.space
         val heads = symbols.filter { isHead(it.name) }
-        fun stepOf(glyph: DrawnGlyph) = staff.step(glyph.box.top + originFraction(glyph.name.orEmpty()) * glyph.box.height)
+        fun stepOf(glyph: DrawnGlyph) = staff.step(referenceY(glyph))
         fun againstANote(accidental: DrawnGlyph) = heads.any {
             staff.step(it.box.centerY) == stepOf(accidental) &&
-                it.box.left >= accidental.box.right - 0.3 * space && it.box.left - accidental.box.right <= NOTE_ACCIDENTAL_GAP * space
+                it.box.left >= accidental.box.centerX && it.box.left - accidental.box.right <= NOTE_ACCIDENTAL_GAP * space
         }
         // Symbols that end a key: anything drawn on the staff (a text or a mark over it does not).
         val onStaff = symbols.filter { it.box.bottom >= staff.top - space && it.box.top <= staff.bottom + space }
-        val anchors = clefs.map { it.box.right to 1.5 } + barlines.map { it to 2.5 }
+        val anchors = (clefs.map { it.box.right } + barlines).map { it to KEY_REACH }
         val result = mutableListOf<Pair<List<DrawnGlyph>, Change<Key>>>()
         for ((anchor, reach) in anchors.sortedBy { it.first }) {
             if (result.any { (run, _) -> run.last().box.right > anchor }) continue
@@ -261,6 +261,9 @@ object StaffNotes {
                 right = glyph.box.right
             }
             val clef = clefAt(anchor + space) ?: continue
+            val signs = run.filter { it.name in KEY_SIGNS }
+            val places = keyPlaces(clef, signs.firstOrNull()?.name == "accidentalSharp")
+            if (places != null && signs.map { stepOf(it) } != places.take(signs.size)) continue
             val before = result.lastOrNull()?.second?.value
             keyOf(run.map { it.name.orEmpty() to Math.floorMod(clef.diatonicAt(stepOf(it)), 7) }, before)?.let {
                 result += run to Change(run.first().box.left, it)
@@ -295,6 +298,23 @@ object StaffNotes {
             }
         }
         return Key(if (sharp) signs.size else -signs.size)
+    }
+
+    /**
+     * The staff steps (0 on the bottom line) a key's sharps or flats are drawn on, in order, in the
+     * clefs whose places are set: a key's F sharp is on the top line in treble clef, on the fourth
+     * in bass clef, never an octave away. Null for the other clefs.
+     */
+    private fun keyPlaces(clef: Clef, sharp: Boolean): List<Int>? {
+        val treble = if (sharp) listOf(8, 5, 9, 6, 3, 7, 4) else listOf(4, 7, 3, 6, 2, 5, 1)
+        val shift = when {
+            clef.sign == Clef.Sign.G && clef.line == 2 -> 0
+            clef.sign == Clef.Sign.F && clef.line == 4 -> -2
+            clef.sign == Clef.Sign.C && clef.line == 3 -> -1
+            clef.sign == Clef.Sign.C && clef.line == 4 -> return if (sharp) listOf(2, 6, 3, 7, 4, 8, 5) else treble.map { it + 1 }
+            else -> return null
+        }
+        return treble.map { it + shift }
     }
 
     /**
@@ -384,8 +404,15 @@ object StaffNotes {
     }
 
     /**
-     * How far down its box a symbol's reference line is (where a clef's line or an accidental's step
-     * is read), as a share of the box's height. Same for all SMuFL fonts within a few hundredths.
+     * Where a symbol's reference line is (a clef's line, an accidental's step): a font glyph's origin,
+     * which SMuFL puts on it; else (a symbol from a scan) a share of the way down its box.
+     */
+    private fun referenceY(glyph: DrawnGlyph): Double =
+        if (glyph.size > 0) glyph.y else glyph.box.top + originFraction(glyph.name.orEmpty()) * glyph.box.height
+
+    /**
+     * How far down its box a symbol's reference line is, as a share of the box's height: the same for
+     * most SMuFL fonts within a few hundredths (Finale Broadway draws its sharp higher).
      */
     private fun originFraction(name: String): Double = when {
         name.startsWith("gClef") -> 0.64
@@ -410,6 +437,9 @@ object StaffNotes {
 
     /** A note's accidental stands this close to its head (in spaces); a key stands further from the first note. */
     private const val NOTE_ACCIDENTAL_GAP = 0.8
+
+    /** A key starts this far (in spaces) after its clef or barline at most: fonts with narrow clefs (MuseJazz) leave almost 2. */
+    private const val KEY_REACH = 2.5
 
     /** How far from its staff (in spaces) a symbol may be and still belong to it. */
     private const val MAX_LEDGER_SPACES = 8.0

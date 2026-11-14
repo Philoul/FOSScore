@@ -62,11 +62,14 @@ data class DrawnLine(
 
 /**
  * A filled shape (a beam, a slur or tie, a bracket, or a symbol drawn as an outline), its outline
- * flattened to [points]; [curved] when it had curves (slurs and ties do, beams do not).
+ * flattened to [points]; [curved] when it had curves (slurs and ties do, beams do not). The shapes
+ * of one fill share its [fill] number (a half note's head is its outline and its hole); -1 when
+ * nothing says which fill it was.
  */
 data class DrawnShape(
     val points: List<Point>,
     val curved: Boolean,
+    val fill: Int = -1,
 ) {
     val left: Double get() = points.minOf { it.x }
     val right: Double get() = points.maxOf { it.x }

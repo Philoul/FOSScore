@@ -27,6 +27,8 @@ class PrivateScoresProbeTest {
             "SMuFL code only" to GlyphNames(fonts, codesOnly = true),
         )
         val smufl = SmuflCodes.read(File(fonts, "Bravura.xml").readText())
+        // the app names the outlines of a PDF printed without its fonts by their look
+        val outlines = OutlineSymbols(SymbolClassifier(TestFonts.all(fonts).flatMap { font -> font.symbols.filter { it.name in CommonSymbols.NAMES } }))
         val pdfs = folder.listFiles { f -> f.name.endsWith(".pdf", ignoreCase = true) }.orEmpty().sortedBy { it.name }
         for (pdf in pdfs) {
             val reference = listOf(".mxl", ".musicxml", ".xml").map { File(folder, pdf.nameWithoutExtension + it) }.firstOrNull { it.isFile }
@@ -46,7 +48,7 @@ class PrivateScoresProbeTest {
             // (<name>-p<N>.svg beside the PDF, when there)
             val svgs = (1..pageCount).map { File(folder, "${pdf.nameWithoutExtension}-p$it.svg") }
             val modes = namings.map { (mode, names) -> mode to { (0 until pageCount).map { PdfBoxPages.read(pdf, it, names).drawing } } } +
-                if (svgs.all { it.isFile }) listOf("MuPDF SVG, SMuFL code only (the app)" to { svgs.map { MuPdfSvg.read(it.readBytes(), smufl) } }) else emptyList()
+                if (svgs.all { it.isFile }) listOf("MuPDF SVG, SMuFL code only (the app)" to { svgs.map { outlines.name(MuPdfSvg.read(it.readBytes(), smufl)) } }) else emptyList()
             for ((mode, readPages) in modes) {
                 val pages = readPages()
                 val score = ScoreReader.read(pages)

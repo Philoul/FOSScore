@@ -15,6 +15,7 @@ class PageBuilder(private val width: Double, private val height: Double) {
     private val shapes = mutableListOf<DrawnShape>()
     private val texts = mutableListOf<DrawnText>()
     private var lastTextEnd = Double.NaN
+    private var fills = 0
 
     fun glyph(glyph: DrawnGlyph) {
         glyphs += glyph
@@ -44,8 +45,9 @@ class PageBuilder(private val width: Double, private val height: Double) {
 
     /** A filled path, its subpaths flattened: a thin rectangle is a line, anything else a shape. */
     fun fill(subpaths: List<List<Point>>, curved: Boolean) {
+        val fill = fills++
         subpaths.filter { it.size >= 3 }.forEach { points ->
-            val shape = DrawnShape(points, curved)
+            val shape = DrawnShape(points, curved, fill)
             shape.asLine()?.let { lines += it } ?: run { shapes += shape }
         }
     }

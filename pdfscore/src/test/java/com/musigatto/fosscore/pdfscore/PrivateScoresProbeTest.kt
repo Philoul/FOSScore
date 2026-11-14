@@ -21,11 +21,12 @@ class PrivateScoresProbeTest {
     @Test
     fun probePrivateScores() {
         assumeTrue(folder.path.isNotEmpty() && folder.isDirectory && fonts.isDirectory)
-        val modes = listOf(
+        val namings = listOf(
             "look only" to GlyphNames(fonts, codes = false),
             "SMuFL code and look" to GlyphNames(fonts),
-            "SMuFL code only (the app)" to GlyphNames(fonts, codesOnly = true),
+            "SMuFL code only" to GlyphNames(fonts, codesOnly = true),
         )
+        val smufl = SmuflCodes.read(File(fonts, "Bravura.xml").readText())
         val pdfs = folder.listFiles { f -> f.name.endsWith(".pdf", ignoreCase = true) }.orEmpty().sortedBy { it.name }
         for (pdf in pdfs) {
             val reference = listOf(".mxl", ".musicxml", ".xml").map { File(folder, pdf.nameWithoutExtension + it) }.firstOrNull { it.isFile }
@@ -41,14 +42,20 @@ class PrivateScoresProbeTest {
                 val smufl = glyphs.count { SmuflCodes.codePoint(it.unicode, it.code) != null }
                 println("  font $font: ${glyphs.size} glyphs, $smufl with a SMuFL code point")
             }
-            for ((mode, names) in modes) {
-                val score = ScoreReader.read((0 until pageCount).map { PdfBoxPages.read(pdf, it, names).drawing })
+            // read by PDFBox with each naming; and as the app reads it, from MuPDF's SVG of each page
+            // (<name>-p<N>.svg beside the PDF, when there)
+            val svgs = (1..pageCount).map { File(folder, "${pdf.nameWithoutExtension}-p$it.svg") }
+            val modes = namings.map { (mode, names) -> mode to { (0 until pageCount).map { PdfBoxPages.read(pdf, it, names).drawing } } } +
+                if (svgs.all { it.isFile }) listOf("MuPDF SVG, SMuFL code only (the app)" to { svgs.map { MuPdfSvg.read(it.readBytes(), smufl) } }) else emptyList()
+            for ((mode, readPages) in modes) {
+                val pages = readPages()
+                val score = ScoreReader.read(pages)
                 val back = MxlNotes(MusicXmlWriter.write(score))
                 // the PDF may be one part of the score: its staves are the MusicXML's that match best
                 val read = back.allStaves(back.timed)
                 val reference = want.allStaves(want.timed)
                 val offset = (0..maxOf(0, reference.size - read.size)).maxBy { o -> count(read, reference, o) }
-                val unnamed = (0 until pageCount).sumOf { index -> PdfBoxPages.read(pdf, index, names).drawing.glyphs.count { it.name == null } }
+                val unnamed = pages.sumOf { page -> page.glyphs.count { it.name == null } }
                 println("  $mode: ${score.measures.size} measures read (MusicXML ${want.allStaves(want.parts).values.firstOrNull()?.size}), " +
                     "$unnamed glyphs unnamed; " +
                     "pitches ${right(back.allStaves(back.parts), want.allStaves(want.parts), offset)}, " +

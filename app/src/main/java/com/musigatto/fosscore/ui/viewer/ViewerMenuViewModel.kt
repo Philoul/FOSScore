@@ -32,7 +32,7 @@ enum class ViewerMenuItem(val group: Int) {
     METRONOME(1), TUNER(1), PIANO(1), PLAYBACK(1),
     LINKS(2),
     ANNOTATE(3), PAGES(3),
-    EXPORT(4), SHARE(4),
+    EXPORT(4), SHARE(4), TO_MUSICXML(4),
     SETTINGS(5),
 }
 
@@ -49,6 +49,8 @@ fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
         ViewerMenuItem.ANNOTATE -> MenuItemState.READY
         // the export writes the marks into a copy of the PDF: a MusicXML score has no PDF to copy
         ViewerMenuItem.SHARE -> if (isMusicXml) MenuItemState.NOT_ON_MUSICXML else MenuItemState.READY
+        // prototype: a vector PDF read into a MusicXML score
+        ViewerMenuItem.TO_MUSICXML -> if (isMusicXml) MenuItemState.NOT_ON_MUSICXML else MenuItemState.READY
         else -> MenuItemState.SOON
     }
 

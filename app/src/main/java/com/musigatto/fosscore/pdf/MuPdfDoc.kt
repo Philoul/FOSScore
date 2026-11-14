@@ -8,9 +8,11 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.score.PageSource
+import com.artifex.mupdf.fitz.Buffer
 import com.artifex.mupdf.fitz.ColorSpace
 import com.artifex.mupdf.fitz.Context
 import com.artifex.mupdf.fitz.DisplayList
+import com.artifex.mupdf.fitz.DocumentWriter
 import com.artifex.mupdf.fitz.Document
 import com.artifex.mupdf.fitz.Matrix
 import com.artifex.mupdf.fitz.Page
@@ -210,6 +212,37 @@ class MuPdfDoc private constructor(
                 null
             }
         } else null
+
+    /**
+     * The page written as SVG with its text as paths, for the score recognition (MuPdfSvg reads it);
+     * null when it cannot be loaded. Call it under the viewer's mutex.
+     *
+     * MuPDF's svg writer draws the whole page in one native call: a device written in Java would be
+     * called back for every path and glyph, and MuPDF's bridge keeps a JNI reference per call until
+     * the page ends, past the 512 Android 7 allows (the app aborted on the first page).
+     */
+    fun pageSvg(index: Int): ByteArray? {
+        val page = loadPage(index) ?: return null
+        val buffer = Buffer()
+        return try {
+            val writer = DocumentWriter(buffer, "svg", "text=path")
+            try {
+                val device = writer.beginPage(page.bounds)
+                page.run(device, Matrix.Identity())
+                writer.endPage()
+                writer.close()
+            } finally {
+                writer.destroy()
+            }
+            ByteArray(buffer.length).also { buffer.readBytes(0, it) }
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "no SVG for page $index: ${e.message}", e)
+            null
+        } finally {
+            buffer.destroy()
+            page.destroy()
+        }
+    }
 
     /**
      * Drops what is cached for a page (display list + bitmaps) so it gets parsed and drawn again.

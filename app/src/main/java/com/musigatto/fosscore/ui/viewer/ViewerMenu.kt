@@ -56,6 +56,7 @@ internal val ViewerMenuItem.icon: String
         ViewerMenuItem.PAGES -> LINE_PAGES
         ViewerMenuItem.EXPORT -> LINE_EXPORT
         ViewerMenuItem.SHARE -> LINE_SHARE
+        ViewerMenuItem.TO_MUSICXML -> LINE_EXPORT
         ViewerMenuItem.SETTINGS -> LINE_SETTINGS
     }
 
@@ -76,6 +77,7 @@ internal fun ViewerMenuItem.label(): String = stringResource(
         ViewerMenuItem.PAGES -> R.string.menu_pages
         ViewerMenuItem.EXPORT -> R.string.menu_export
         ViewerMenuItem.SHARE -> R.string.menu_share
+        ViewerMenuItem.TO_MUSICXML -> R.string.menu_to_musicxml
         ViewerMenuItem.SETTINGS -> R.string.menu_settings
     }
 )

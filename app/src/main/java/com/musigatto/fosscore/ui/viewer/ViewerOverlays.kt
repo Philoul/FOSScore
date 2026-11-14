@@ -35,6 +35,7 @@ internal fun openMenuEntry(
     onOpenPreferences: () -> Unit,
     onToggleEditing: () -> Unit,
     onShowChrome: () -> Unit,
+    onConvertToMusicXml: () -> Unit,
 ) {
     when (item) {
         ViewerMenuItem.LIBRARY -> onOpenLibrary()
@@ -50,6 +51,7 @@ internal fun openMenuEntry(
         ViewerMenuItem.ANNOTATE -> if (!editing) onToggleEditing()
         ViewerMenuItem.SETTINGS -> onOpenPreferences()
         ViewerMenuItem.SHARE -> menu.show(ViewerSurface.SHARE)
+        ViewerMenuItem.TO_MUSICXML -> onConvertToMusicXml()
         // greyed out in the menu: never chosen
         else -> Unit
     }
@@ -75,6 +77,7 @@ internal fun ViewerOverlays(
     shareName: String,
     onExport: suspend (layerId: Long?, destination: Uri) -> Unit,
     onShowChrome: () -> Unit,
+    onConvertToMusicXml: () -> Unit,
     metronomeVm: MetronomeViewModel,
     playbackVm: PlaybackViewModel,
     metronome: MetronomeSettings,
@@ -114,7 +117,7 @@ internal fun ViewerOverlays(
                     menu.dismiss()
                     openMenuEntry(
                         item, menu, editing,
-                        onOpenLibrary, onOpenSetlist, onOpenPreferences, onToggleEditing, onShowChrome,
+                        onOpenLibrary, onOpenSetlist, onOpenPreferences, onToggleEditing, onShowChrome, onConvertToMusicXml,
                     )
                 },
                 onDismiss = menu::dismiss,

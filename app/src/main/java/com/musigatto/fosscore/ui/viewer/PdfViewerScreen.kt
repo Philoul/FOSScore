@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musigatto.fosscore.FOSScoreApp
+import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.StampStore
@@ -487,6 +488,20 @@ fun PdfViewerScreen(
     var defaultTextItalic by remember { mutableStateOf(Settings.textItalic(context)) }
     val inkPreview = remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
+    // prototype: the PDF read into a MusicXML score (PdfToMusicXml.kt)
+    var conversion by remember { mutableStateOf<Conversion?>(null) }
+    val convertToMusicXml: () -> Unit = {
+        (pageSource as? MuPdfDoc)?.let { doc ->
+            if (conversion == null) editScope.launch {
+                conversion = Conversion.Reading(0, doc.pageCount)
+                conversion = convertPdfToMusicXml(
+                    context, doc, title, app.repository,
+                    lock = { read -> paper.withRenderLock { read() } },
+                    onProgress = { conversion = it },
+                )
+            }
+        }
+    }
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
 
@@ -1548,6 +1563,7 @@ fun PdfViewerScreen(
                                 openMenuEntry(
                                     item, menu, editing,
                                     onOpenLibrary, onOpenSetlist, onOpenPreferences, { toggleEditing() }, { navVisible = true },
+                                    convertToMusicXml,
                                 )
                             }
                         },
@@ -1750,6 +1766,7 @@ fun PdfViewerScreen(
         // the menu and its panels, over everything: one at a time (ViewerMenuViewModel), the panels
         // under the bar at the top while it shows
         val panelTop = with(density) { if (navVisible) (bars.getTop(density) + TITLE_BAR_ROOM.roundToPx()).toDp() else 0.dp }
+        conversion?.let { state -> ConversionDialog(state) { conversion = null } }
         ViewerOverlays(
             surface = surface,
             menu = menu,
@@ -1781,6 +1798,7 @@ fun PdfViewerScreen(
                 }
             },
             onShowChrome = { navVisible = true },
+            onConvertToMusicXml = convertToMusicXml,
             metronomeVm = metronomeVm,
             playbackVm = playbackVm,
             metronome = metronome,

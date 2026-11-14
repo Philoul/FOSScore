@@ -83,6 +83,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.mupdf.fitz)
     implementation(project(":musicxml"))
+    implementation(project(":pdfscore"))
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.kotlinx.coroutines.test)

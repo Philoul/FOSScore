@@ -60,9 +60,11 @@ class PrivateScoresProbeTest {
                     "$unnamed glyphs unnamed; " +
                     "pitches ${right(back.allStaves(back.parts), want.allStaves(want.parts), offset)}, " +
                     "durations ${right(back.allStaves(back.timed), want.allStaves(want.timed), offset)}, " +
-                    "keys and times ${right(back.allStaves(back.signatures), want.allStaves(want.signatures), offset)} staff-measures right" +
+                    "keys and times ${right(back.allStaves(back.signatures), want.allStaves(want.signatures), offset)}, " +
+                    "beams ${right(back.allStaves(back.beamed), want.allStaves(want.beamed), offset)} staff-measures right" +
                     if (offset > 0) " (the PDF's staves are the MusicXML's from staff ${offset + 1})" else "")
                 differences(back.allStaves(back.timed), reference, offset).take(5).forEach { println("    $it") }
+                differences(back.allStaves(back.beamed), want.allStaves(want.beamed), offset).take(3).forEach { println("    beams: $it") }
             }
         }
     }

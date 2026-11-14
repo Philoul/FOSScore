@@ -17,6 +17,8 @@ sealed interface Event {
  * Notes struck together on one stem (one note alone is a chord of one). A [pitch][pitches] is null
  * while nothing says it (no clef read). A [grace] note takes no time of its own: its [onset] is the
  * one of the note it leads to. Its [articulations] are the marks over or under it (a staccato dot).
+ * Its [beams] say, level by level from the outer one (at the stem's end), what each beam on its stem
+ * does there; empty when it has none.
  */
 data class Chord(
     val pitches: List<Pitch?>,
@@ -26,7 +28,17 @@ data class Chord(
     override val voice: Int,
     val grace: Boolean = false,
     val articulations: Set<Articulation> = emptySet(),
+    val beams: List<BeamMark> = emptyList(),
 ) : Event
+
+/** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */
+enum class BeamMark(val musicXml: String) {
+    BEGIN("begin"),
+    CONTINUE("continue"),
+    END("end"),
+    FORWARD_HOOK("forward hook"),
+    BACKWARD_HOOK("backward hook"),
+}
 
 /** A mark on the notes that says how to play them, not how long they are written. */
 enum class Articulation { STACCATO }

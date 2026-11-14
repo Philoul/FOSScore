@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.pdfscore
 
 import com.musigatto.fosscore.pdfscore.music.Articulation
+import com.musigatto.fosscore.pdfscore.music.BeamMark
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Duration
@@ -110,6 +111,19 @@ class MusicXmlWriterTest {
             listOf("G5 v1 s1", "E5 v1 s1", "backup 3", "C5 v2 s1", "D5 v2 s1", "backup 2", "forward 1", "C3 v5 s2"),
             steps,
         )
+    }
+
+    /** Each note says where its beams begin, go on and end, by level. */
+    @Test
+    fun beamsAreWrittenByLevel() {
+        val events = listOf(
+            placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.EIGHTH, dots = 1), Stem.UP, Fraction.ZERO, 1, beams = listOf(BeamMark.BEGIN)), 70.0),
+            placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.SIXTEENTH), Stem.UP, Fraction.of(3, 16), 1, beams = listOf(BeamMark.END, BeamMark.BACKWARD_HOOK)), 90.0),
+        )
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, events, time = TimeSignature(1, 4))))))
+        val notes = parse(MusicXmlWriter.write(score)).all("note")
+        assertEquals(listOf("1:begin"), notes[0].all("beam").map { "${it.getAttribute("number")}:${it.textContent}" })
+        assertEquals(listOf("1:end", "2:backward hook"), notes[1].all("beam").map { "${it.getAttribute("number")}:${it.textContent}" })
     }
 
     /** A grace note takes no time; a staccato is written; a clef drawn mid-measure comes before the note after it. */

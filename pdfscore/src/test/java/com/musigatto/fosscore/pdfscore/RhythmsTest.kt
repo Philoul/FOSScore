@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.pdfscore
 
 import com.musigatto.fosscore.pdfscore.music.Articulation
+import com.musigatto.fosscore.pdfscore.music.BeamMark
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.NoteType
@@ -93,6 +94,35 @@ class RhythmsTest {
         val measure = read(heads, stems + beams).single()
         assertEquals(listOf(NoteType.SIXTEENTH, NoteType.SIXTEENTH, NoteType.EIGHTH, NoteType.EIGHTH), types(measure))
         assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 16), Fraction.of(1, 8), Fraction.of(1, 4)), onsets(measure))
+    }
+
+    private fun beamMarks(measure: MeasureReading) = measure.events.map { (it.event as Chord).beams }
+
+    /** Each beam at a stem begins, goes on or ends there, level 1 the outer one (at the stems' ends). */
+    @Test
+    fun eachStemKnowsWhereItsBeamsBeginAndEnd() {
+        // three sixteenths under two beams, then two eighths under one
+        val heads = (0 until 5).map { head(100.0 + it * 3 * space, g4) }
+        val stems = heads.map { stemUp(it) }
+        val end = stems[0].y2
+        val beams = listOf(
+            flatBeamUp(stems[0].x1, stems[2].x1, end, 0), flatBeamUp(stems[0].x1, stems[2].x1, end, 1),
+            flatBeamUp(stems[3].x1, stems[4].x1, end, 0),
+        )
+        val measure = read(heads, stems + beams).single()
+        val (begin, go, stop) = Triple(BeamMark.BEGIN, BeamMark.CONTINUE, BeamMark.END)
+        assertEquals(listOf(listOf(begin, begin), listOf(go, go), listOf(stop, stop), listOf(begin), listOf(stop)), beamMarks(measure))
+    }
+
+    /** A dotted eighth then a sixteenth: one beam joins them, the sixteenth's second is a hook pointing back. */
+    @Test
+    fun aShortBeamIsAHookOnItsStem() {
+        val heads = listOf(head(100.0, g4), head(115.0, g4))
+        val stems = heads.map { stemUp(it) }
+        val end = stems[0].y2
+        val hook = flatBeamUp(stems[1].x1 - 1.2 * space, stems[1].x1, end, 1)
+        val measure = read(heads, stems + flatBeamUp(stems[0].x1, stems[1].x1, end, 0) + hook).single()
+        assertEquals(listOf(listOf(BeamMark.BEGIN), listOf(BeamMark.END, BeamMark.BACKWARD_HOOK)), beamMarks(measure))
     }
 
     /** MuseScore 3 draws some beams twice, one exactly over the other: still one beam. */

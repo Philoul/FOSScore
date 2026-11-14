@@ -1,6 +1,7 @@
 package com.musigatto.fosscore.pdfscore
 
 import com.musigatto.fosscore.pdfscore.music.Articulation
+import com.musigatto.fosscore.pdfscore.music.BeamMark
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
@@ -39,9 +40,15 @@ object Rhythms {
         val normalHead = reading.notes.map { it.head.box.height }.sorted().let { if (it.isEmpty()) space else it[it.size / 2] }
 
         val drafts = chords(reading, stems, space).map { chord ->
-            chord.copy(type = chord.type ?: blackValue(chord, beams, reading.symbols, space), grace = chord.notes.all { it.head.box.height < 0.8 * normalHead })
+            val onStem = beamsAt(chord, beams, space)
+            chord.copy(
+                type = chord.type ?: blackValue(chord, onStem, reading.symbols, space),
+                grace = chord.notes.all { it.head.box.height < 0.8 * normalHead },
+                beams = onStem,
+            )
         } + rests(reading)
         dots(drafts, reading, space)
+        beamMarks(drafts)
         val tuplets = tuplets(reading, page.lines, beams, space)
 
         return drafts.groupBy { it.measure }.toSortedMap().map { (measure, items) -> MeasureReading(measure, timed(items, staff, tuplets)) }
@@ -59,6 +66,9 @@ object Rhythms {
         val grace: Boolean = false,
         var dots: Int = 0,
         var staccato: Boolean = false,
+        /** The beams on its stem, from the outer one (at the stem's end) in. */
+        val beams: List<Beam> = emptyList(),
+        var beamMarks: List<BeamMark> = emptyList(),
     ) {
         val x: Double get() = box.left
     }
@@ -111,9 +121,9 @@ object Rhythms {
         return stemmed + whole
     }
 
-    /** A black note's value: a quarter, less by each flag or beam at the end of its stem. */
-    private fun blackValue(chord: Draft, beams: List<Beam>, symbols: List<DrawnGlyph>, space: Double): NoteType {
-        val stem = chord.stemLine ?: return NoteType.QUARTER
+    /** The beams at the end of a chord's stem, from the outer one (at the stem's end) in. */
+    private fun beamsAt(chord: Draft, beams: List<Beam>, space: Double): List<Beam> {
+        val stem = chord.stemLine ?: return emptyList()
         val x = stem.x1
         val top = minOf(stem.y1, stem.y2)
         val bottom = maxOf(stem.y1, stem.y2)
@@ -121,13 +131,40 @@ object Rhythms {
         val end = if (up) top else bottom
         // how far along the stem from its end a beam may lie: never past the heads
         val reach = minOf(4.0 * space, (bottom - top) - 1.0 * space)
-        val beamCount = beams.count { beam ->
-            // a beam ends on its stems: a sixteenth's short beam stops short of the next one
-            x >= beam.left - 0.2 * space && x <= beam.right + 0.2 * space && run {
-                val inward = if (up) beam.yAt(x) - end else end - beam.yAt(x)
-                inward >= -0.6 * space && inward <= reach
+        val inward = { beam: Beam -> if (up) beam.yAt(x) - end else end - beam.yAt(x) }
+        // a beam ends on its stems: a sixteenth's short beam stops short of the next one
+        return beams.filter { beam -> x >= beam.left - 0.2 * space && x <= beam.right + 0.2 * space && inward(beam) in -0.6 * space..reach }
+            .sortedBy(inward)
+    }
+
+    /**
+     * What each beam does at each stem it is on: it begins at its leftmost stem, ends at its
+     * rightmost one, goes on between; a beam on one stem only is a hook, pointing to the side of
+     * the stem it lies on.
+     */
+    private fun beamMarks(drafts: List<Draft>) {
+        val stemsOf = java.util.IdentityHashMap<Beam, MutableList<Draft>>()
+        drafts.forEach { draft -> draft.beams.forEach { stemsOf.getOrPut(it) { mutableListOf() } += draft } }
+        for (draft in drafts) {
+            val x = draft.stemLine?.x1 ?: continue
+            draft.beamMarks = draft.beams.map { beam ->
+                val xs = stemsOf[beam].orEmpty().mapNotNull { it.stemLine?.x1 }
+                when {
+                    xs.size <= 1 -> if (beam.right - x < x - beam.left) BeamMark.BACKWARD_HOOK else BeamMark.FORWARD_HOOK
+                    xs.none { it < x } -> BeamMark.BEGIN
+                    xs.none { it > x } -> BeamMark.END
+                    else -> BeamMark.CONTINUE
+                }
             }
         }
+    }
+
+    /** A black note's value: a quarter, less by each flag or beam ([beams]) at the end of its stem. */
+    private fun blackValue(chord: Draft, beams: List<Beam>, symbols: List<DrawnGlyph>, space: Double): NoteType {
+        val stem = chord.stemLine ?: return NoteType.QUARTER
+        val x = stem.x1
+        val end = if (chord.stem == Stem.UP) minOf(stem.y1, stem.y2) else maxOf(stem.y1, stem.y2)
+        val beamCount = beams.size
         val flagCount = symbols.filter { it.name.orEmpty().startsWith("flag") }
             .filter { flag ->
                 abs(flag.box.left - x) < 0.5 * space &&
@@ -294,6 +331,7 @@ object Rhythms {
                     Chord(
                         draft.notes.sortedBy { it.step }.map { it.pitch }, duration, draft.stem, time, voice, draft.grace,
                         if (draft.staccato) setOf(Articulation.STACCATO) else emptySet(),
+                        draft.beamMarks,
                     )
                 }
                 result += PlacedEvent(event, draft.box)

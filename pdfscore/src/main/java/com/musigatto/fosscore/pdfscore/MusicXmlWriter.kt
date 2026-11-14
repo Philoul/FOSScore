@@ -150,14 +150,18 @@ object MusicXmlWriter {
                     Stem.NONE -> Unit
                 }
                 staff?.let { tail.append("<staff>$it</staff>") }
-                if (Articulation.STACCATO in event.articulations) tail.append("<notations><articulations><staccato/></articulations></notations>")
+                // the beams once, on the chord's first note (as MuseScore writes them)
+                val beams = event.beams.withIndex().joinToString("") { (level, mark) -> "<beam number=\"${level + 1}\">${mark.musicXml}</beam>" }
+                val notations = if (Articulation.STACCATO in event.articulations) "<notations><articulations><staccato/></articulations></notations>" else ""
                 event.pitches.forEachIndexed { k, pitch ->
                     out.append("      <note id=\"${id(k)}\">")
                     if (event.grace) out.append("<grace/>")
                     if (k > 0) out.append("<chord/>")
                     out.append(pitchElement(pitch, clef))
                     if (!event.grace) out.append("<duration>${units(duration.length, divisions)}</duration>")
-                    out.append(tail).append("</note>\n")
+                    out.append(tail)
+                    if (k == 0) out.append(beams)
+                    out.append(notations).append("</note>\n")
                 }
             }
         }

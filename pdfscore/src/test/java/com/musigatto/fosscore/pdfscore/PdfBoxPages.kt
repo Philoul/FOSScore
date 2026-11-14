@@ -26,10 +26,6 @@ class ReadPage(val drawing: PageDrawing, val fontGlyphs: Map<Pair<String, Int>, 
 
 /** Reads a PDF's pages into [PageDrawing]s with PDFBox (tests only; the app reads PDFs with MuPDF). */
 object PdfBoxPages {
-    private val MUSIC_FONTS = listOf("Leland", "MScore", "Bravura", "Emmentaler", "Petaluma", "Gonville", "Maestro")
-
-    fun isMusicFont(name: String): Boolean = MUSIC_FONTS.any { name.contains(it, ignoreCase = true) }
-
     fun read(file: File, pageIndex: Int, names: GlyphNames? = null): ReadPage =
         Loader.loadPDF(file).use { doc ->
             val engine = Engine(doc.getPage(pageIndex))
@@ -78,16 +74,17 @@ object PdfBoxPages {
             val size = textRenderingMatrix.scalingFactorY.toDouble()
             val x = pageX(textRenderingMatrix.translateX.toDouble())
             val y = pageY(textRenderingMatrix.translateY.toDouble())
-            if (isMusicFont(fontName) && font is PDVectorFont) {
+            val unicode = font.toUnicode(code)
+            if (font is PDVectorFont && MusicFonts.isMusic(fontName, unicode, code)) {
                 val outline = font.getNormalizedPath(code)
-                fontGlyphs.getOrPut(fontName to code) { FontGlyph(fontName, code, outline, font.toUnicode(code)) }
+                fontGlyphs.getOrPut(fontName to code) { FontGlyph(fontName, code, outline, unicode) }
                 val at = textRenderingMatrix.createAffineTransform()
                 at.scale(0.001, 0.001)
                 val b = at.createTransformedShape(outline).bounds2D
                 val box = if (b.isEmpty) Box(x, y, x, y) else Box(pageX(b.minX), pageY(b.maxY), pageX(b.maxX), pageY(b.minY))
                 glyphs += DrawnGlyph(null, box, font = fontName, code = code, x = x, y = y, size = size)
             } else {
-                addText(font.toUnicode(code) ?: "", fontName, x, y, size, font.getWidth(code) / 1000.0 * textRenderingMatrix.scalingFactorX)
+                addText(unicode ?: "", fontName, x, y, size, font.getWidth(code) / 1000.0 * textRenderingMatrix.scalingFactorX)
             }
         }
 

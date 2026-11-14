@@ -51,6 +51,7 @@ class PrivateScoresProbeTest {
                     "durations ${right(back.allStaves(back.timed), want.allStaves(want.timed), offset)}, " +
                     "keys and times ${right(back.allStaves(back.signatures), want.allStaves(want.signatures), offset)} staff-measures right" +
                     if (offset > 0) " (the PDF's staves are the MusicXML's from staff ${offset + 1})" else "")
+                differences(back.allStaves(back.timed), reference, offset).take(5).forEach { println("    $it") }
             }
         }
     }
@@ -58,6 +59,14 @@ class PrivateScoresProbeTest {
     /** "right / all": the staves read against the MusicXML's from staff [offset] + 1, measure by measure. */
     private fun right(read: Map<Int, List<List<String>>>, want: Map<Int, List<List<String>>>, offset: Int): String =
         "${count(read, want, offset)} / ${read.keys.sumOf { want[it + offset]?.size ?: 0 }}"
+
+    /** The staff-measures read otherwise than the MusicXML has them, to look at. */
+    private fun differences(read: Map<Int, List<List<String>>>, want: Map<Int, List<List<String>>>, offset: Int): List<String> =
+        read.entries.flatMap { (staff, got) ->
+            val measures = want[staff + offset].orEmpty()
+            measures.indices.filter { it >= got.size || got[it] != measures[it] }
+                .map { "staff $staff measure ${it + 1}: read ${got.getOrNull(it)} expected ${measures[it]}" }
+        }
 
     private fun count(read: Map<Int, List<List<String>>>, want: Map<Int, List<List<String>>>, offset: Int): Int =
         read.entries.sumOf { (staff, got) ->

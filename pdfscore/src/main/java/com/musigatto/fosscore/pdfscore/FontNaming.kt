@@ -49,3 +49,12 @@ object SmuflCodes {
     /** SMuFL's symbols are in Unicode's private use area. */
     private val RANGE = 0xE000..0xF8FF
 }
+
+/** Which of a PDF's glyphs are music symbols, to be named, rather than text. */
+object MusicFonts {
+    /** Music fonts known by name, for those that keep no SMuFL code point. */
+    private val NAMES = listOf("Leland", "MScore", "Bravura", "Emmentaler", "Petaluma", "Gonville", "Maestro")
+
+    fun isMusic(fontName: String, unicode: String?, code: Int): Boolean =
+        SmuflCodes.codePoint(unicode, code) != null || NAMES.any { fontName.contains(it, ignoreCase = true) }
+}

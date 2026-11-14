@@ -28,12 +28,14 @@ class MusicFont(val name: String, val symbols: List<FontSymbol>) {
          * `<name>.xml` lists the glyphs (code and SMuFL name), `<name>/<code>.xml` holds each one's
          * SVG path in font units, y up. [read] gives a file's text by its path in that folder, null
          * when missing: a font is added by adding its files, whatever reads them (assets, disk).
+         * Only the symbols named in [only] are read, when given.
          */
-        fun readVerovio(name: String, read: (String) -> String?): MusicFont? {
+        fun readVerovio(name: String, only: Set<String>? = null, read: (String) -> String?): MusicFont? {
             val index = read("$name.xml") ?: return null
             val space = (UNITS.find(index)?.groupValues?.get(1)?.toDouble() ?: 1000.0) / 4
             val symbols = GLYPH.findAll(index).mapNotNull { match ->
                 val (code, symbolName) = match.destructured
+                if (only != null && symbolName !in only) return@mapNotNull null
                 val d = read("$name/$code.xml")?.let { PATH.find(it)?.groupValues?.get(1) } ?: return@mapNotNull null
                 val polygons = SvgPath.parse(d)?.map { polygon -> polygon.map { Point(it.x / space, -it.y / space) } }
                     ?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null

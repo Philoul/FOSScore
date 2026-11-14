@@ -28,7 +28,10 @@ class PrivateScoresProbeTest {
         )
         val smufl = SmuflCodes.read(File(fonts, "Bravura.xml").readText())
         // the app names the outlines of a PDF printed without its fonts by their look
-        val outlines = OutlineSymbols(SymbolClassifier(TestFonts.all(fonts).flatMap { font -> font.symbols.filter { it.name in CommonSymbols.NAMES } }))
+        // (-PpdfscoreOnly=Bravura,Leipzig: only the fonts the app ships)
+        val only = System.getProperty("pdfscore.only").orEmpty().split(",").filter { it.isNotBlank() }
+        val references = TestFonts.all(fonts).filter { only.isEmpty() || it.name in only }
+        val outlines = OutlineSymbols(SymbolClassifier(references.flatMap { font -> font.symbols.filter { it.name in CommonSymbols.NAMES } }))
         val pdfs = folder.listFiles { f -> f.name.endsWith(".pdf", ignoreCase = true) }.orEmpty().sortedBy { it.name }
         for (pdf in pdfs) {
             val reference = listOf(".mxl", ".musicxml", ".xml").map { File(folder, pdf.nameWithoutExtension + it) }.firstOrNull { it.isFile }

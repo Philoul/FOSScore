@@ -22,6 +22,7 @@ sealed interface Event {
  * ones heard, [ottava] octaves away from where they are drawn (1 up, -1 down). [ties] are the
  * indexes in [pitches] of the notes tied on to the next note of their pitch (held, not struck again).
  * [accidentals] are the ones drawn, by index in [pitches]: their alter (1 a sharp, 0 a natural...).
+ * An [arpeggiate] chord is rolled (a wavy line before it); a [fermata] note is held longer.
  */
 data class Chord(
     val pitches: List<Pitch?>,
@@ -35,6 +36,8 @@ data class Chord(
     val ottava: Int = 0,
     val ties: Set<Int> = emptySet(),
     val accidentals: Map<Int, Int> = emptyMap(),
+    val arpeggiate: Boolean = false,
+    val fermata: Boolean = false,
 ) : Event
 
 /** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */
@@ -49,12 +52,16 @@ enum class BeamMark(val musicXml: String) {
 /** A mark on the notes that says how to play them, not how long they are written. */
 enum class Articulation { STACCATO }
 
-/** A silence. A [wholeMeasure] rest fills its measure whatever its length (its [duration] is a whole). */
+/**
+ * A silence. A [wholeMeasure] rest fills its measure whatever its length (its [duration] is a whole);
+ * a [fermata] one is held longer.
+ */
 data class Rest(
     override val duration: Duration,
     override val onset: Fraction,
     override val voice: Int,
     val wholeMeasure: Boolean = false,
+    val fermata: Boolean = false,
 ) : Event
 
 /** One measure of one staff: its events by onset, then voice. [index] counts the staff's measures from 0. */

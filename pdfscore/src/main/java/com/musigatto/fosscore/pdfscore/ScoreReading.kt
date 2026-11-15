@@ -62,6 +62,8 @@ data class MeasureStaff(
     val events: List<PlacedEvent>,
     /** How the barline closing it is drawn; null when none does (the staff's end). */
     val barStyle: BarStyle? = null,
+    /** What is written over it (a tempo, "rall."), left to right: on a system's top staff only. */
+    val directions: List<Direction> = emptyList(),
 )
 
 /**
@@ -90,7 +92,8 @@ object ScoreReader {
     fun read(pages: List<PageDrawing>): ScoreReading {
         val read = pages.map { page ->
             val systems = Staves.find(page)
-            systems to StaffNotes.read(page, systems).map { system -> system.map { it to Rhythms.read(page, it) } }
+            val directions = Directions.read(page, systems)
+            Triple(systems, StaffNotes.read(page, systems).map { system -> system.map { it to Rhythms.read(page, it) } }, directions)
         }
         val fullest = read.flatMap { it.first }.maxByOrNull { it.staves.size }
         val parts = fullest?.let { system ->
@@ -108,14 +111,15 @@ object ScoreReader {
 
         val measures = mutableListOf<ScoreMeasure>()
         val times = mutableMapOf<Int, TimeSignature>() // staff → the time last drawn on it
-        read.forEachIndexed { page, (_, systems) ->
+        read.forEachIndexed { page, (_, systems, directions) ->
             systems.forEachIndexed { si, system ->
                 val count = system.maxOfOrNull { (staff, rhythms) ->
                     maxOf(staff.barlines.size, (staff.notes.maxOfOrNull { it.measure } ?: -1) + 1, (rhythms.maxOfOrNull { it.index } ?: -1) + 1)
                 } ?: 0
                 for (m in 0 until count) {
                     val staves = system.mapIndexed { s, (staff, rhythms) ->
-                        measureStaff(s + 1, staff, rhythms.firstOrNull { it.index == m }?.events.orEmpty(), m, times)
+                        // what is written over the system goes with its top staff
+                        measureStaff(s + 1, staff, rhythms.firstOrNull { it.index == m }?.events.orEmpty(), m, times, if (s == 0) directions.getOrNull(si).orEmpty() else emptyList())
                     }
                     measures += ScoreMeasure(measures.size + 1, page, newSystem = m == 0, newPage = m == 0 && si == 0, staves = staves)
                 }
@@ -125,7 +129,14 @@ object ScoreReader {
     }
 
     /** Staff [n] (1 up) of measure [m] of its system, the time carried over from [times]. */
-    private fun measureStaff(n: Int, staff: StaffReading, events: List<PlacedEvent>, m: Int, times: MutableMap<Int, TimeSignature>): MeasureStaff {
+    private fun measureStaff(
+        n: Int,
+        staff: StaffReading,
+        events: List<PlacedEvent>,
+        m: Int,
+        times: MutableMap<Int, TimeSignature>,
+        directions: List<Direction>,
+    ): MeasureStaff {
         val lines = staff.staff
         val left = staff.barlines.getOrNull(m - 1) ?: lines.left
         val right = staff.barlines.getOrNull(m) ?: lines.right
@@ -143,6 +154,8 @@ object ScoreReader {
             clefChanges = staff.clefs.filter { it.x >= music && it.x < right },
             events = events,
             barStyle = staff.barStyles.getOrNull(m),
+            // a direction over the clef and key of a system's first measure is its
+            directions = directions.filter { (m == 0 || it.x >= left) && it.x < right },
         )
     }
 }

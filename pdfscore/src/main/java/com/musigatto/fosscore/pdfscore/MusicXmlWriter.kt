@@ -4,6 +4,7 @@ import com.musigatto.fosscore.pdfscore.music.Articulation
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
+import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
@@ -91,6 +92,7 @@ object MusicXmlWriter {
                 if (cursor > Fraction.ZERO) out.append("      <backup><duration>${units(cursor, divisions)}</duration></backup>\n")
                 cursor = Fraction.ZERO
                 val changes = if (voice == voices.firstKey()) staff.clefChanges.toMutableList() else mutableListOf()
+                val directions = if (voice == voices.firstKey()) staff.directions.toMutableList() else mutableListOf()
                 for ((index, placed) in events.sortedWith(compareBy({ it.value.event.onset }, { if ((it.value.event as? Chord)?.grace == true) 0 else 1 }))) {
                     val event = placed.event
                     while (changes.isNotEmpty() && changes.first().x < placed.box.left) {
@@ -99,6 +101,10 @@ object MusicXmlWriter {
                     if (event.onset > cursor) {
                         out.append("      <forward><duration>${units(event.onset - cursor, divisions)}</duration></forward>\n")
                         cursor = event.onset
+                    }
+                    // what is written over the music, before the note it stands over
+                    while (directions.isNotEmpty() && directions.first().x <= placed.box.left + DIRECTION_REACH) {
+                        out.append(direction(directions.removeAt(0), s + 1, staffCount))
                     }
                     // the octave line follows the staff's first voice
                     if (event is Chord && voice == voices.firstKey() && event.ottava != running[s].ottava) {
@@ -112,6 +118,7 @@ object MusicXmlWriter {
                     if (!(event is Chord && event.grace)) cursor = event.onset + duration(event, length)
                 }
                 changes.forEach { out.append("      <attributes>\n").append(clef(it.value, s + 1, staffCount)).append("      </attributes>\n") }
+                directions.forEach { out.append(direction(it, s + 1, staffCount)) }
             }
             // a staff with nothing read fills its measure with a rest, so the parts keep in step
             if (voices.isEmpty()) {
@@ -165,6 +172,7 @@ object MusicXmlWriter {
             is Rest -> {
                 out.append("      <note><rest/><duration>${units(duration.length, divisions)}</duration>").append(tail).append(after)
                 staff?.let { out.append("<staff>$it</staff>") }
+                if (event.fermata) out.append("<notations>$FERMATA</notations>")
                 out.append("</note>\n")
             }
             is Chord -> {
@@ -193,7 +201,8 @@ object MusicXmlWriter {
                     event.accidentals[k]?.let { alter -> ACCIDENTALS[alter]?.let { out.append("<accidental>$it</accidental>") } }
                     out.append(after)
                     if (k == 0) out.append(beams)
-                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + articulations
+                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + articulations +
+                        (if (event.arpeggiate) "<arpeggiate/>" else "") + (if (event.fermata && k == 0) FERMATA else "")
                     if (notations.isNotEmpty()) out.append("<notations>").append(notations).append("</notations>")
                     out.append("</note>\n")
                 }
@@ -211,6 +220,30 @@ object MusicXmlWriter {
             "<unpitched><display-step>${Pitch.STEPS[pitch.step]}</display-step><display-octave>${pitch.octave}</display-octave></unpitched>"
         else -> "<pitch><step>${Pitch.STEPS[pitch.step]}</step>" +
             (if (pitch.alter != 0) "<alter>${pitch.alter}</alter>" else "") + "<octave>${pitch.octave}</octave></pitch>"
+    }
+
+    private const val FERMATA = "<fermata type=\"upright\"/>"
+
+    /** How far right of a note (in points) a direction may start and still stand over it. */
+    private const val DIRECTION_REACH = 5.0
+
+    /**
+     * A direction over staff [staff]: words, or a metronome mark with the tempo it sets (MusicXML's
+     * sound tempo is in quarters a minute: a dotted quarter at 40 is 60).
+     */
+    private fun direction(direction: Direction, staff: Int, staffCount: Int): String {
+        val on = if (staffCount > 1) "<staff>$staff</staff>" else ""
+        return when (direction) {
+            is Words -> "      <direction placement=\"above\"><direction-type><words>${escape(direction.text)}</words></direction-type>$on</direction>\n"
+            is TempoMark -> {
+                val quarters = Duration(direction.beat, direction.dots).length * Fraction.of(4L * direction.perMinute)
+                val tempo = quarters.numerator.toDouble() / quarters.denominator
+                val sound = if (tempo == Math.floor(tempo)) tempo.toLong().toString() else String.format(java.util.Locale.ROOT, "%.2f", tempo)
+                "      <direction placement=\"above\"><direction-type><metronome><beat-unit>${direction.beat.musicXml}</beat-unit>" +
+                    "<beat-unit-dot/>".repeat(direction.dots) + "<per-minute>${direction.perMinute}</per-minute></metronome></direction-type>" +
+                    "$on<sound tempo=\"$sound\"/></direction>\n"
+            }
+        }
     }
 
     /** What runs on over barlines on a staff: the octave line in force, the pitches tied on to their next note. */

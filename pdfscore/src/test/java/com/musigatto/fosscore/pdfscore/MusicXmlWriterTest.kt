@@ -114,6 +114,34 @@ class MusicXmlWriterTest {
         )
     }
 
+    /**
+     * A tempo mark and words over the staff are written before the note they stand over, the tempo
+     * with the sound it gives (in quarters a minute: a dotted quarter at 40 is 60); an arpeggio
+     * and a fermata on their notes.
+     */
+    @Test
+    fun directionsArpeggiosAndFermatas() {
+        val events = listOf(
+            placed(Chord(listOf(Pitch(0, 5), Pitch(2, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.ZERO, 1, arpeggiate = true), 70.0),
+            placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.of(1, 2), 1, fermata = true), 150.0),
+            placed(Rest(Duration(NoteType.HALF), Fraction.of(1, 1), 1, fermata = true), 200.0),
+        )
+        val directions = listOf(TempoMark(68.0, NoteType.QUARTER, 1, 40), Words(148.0, "Rall."))
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, events, time = TimeSignature(6, 4)).copy(directions = directions)))))
+        val xml = MusicXmlWriter.write(score)
+        val doc = parse(xml)
+        assertEquals(listOf("60"), doc.all("sound").map { it.getAttribute("tempo") })
+        assertEquals(listOf("quarter"), doc.all("beat-unit").map { it.textContent })
+        assertEquals(1, doc.all("beat-unit-dot").size)
+        assertEquals(listOf("40"), doc.all("per-minute").map { it.textContent })
+        assertEquals(listOf("Rall."), doc.all("words").map { it.textContent })
+        assertEquals(2, doc.all("arpeggiate").size)
+        assertEquals(2, doc.all("fermata").size)
+        // each direction before the note it stands over
+        val order = Regex("<note[ >]|<metronome|<words").findAll(xml).map { it.value }.toList()
+        assertEquals(listOf("<metronome", "<note ", "<note ", "<words", "<note ", "<note>"), order)
+    }
+
     /** A final barline is written at the end of its measure; a plain one is not. */
     @Test
     fun aFinalBarlineIsWritten() {

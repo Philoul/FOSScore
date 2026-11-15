@@ -49,6 +49,8 @@ object Rhythms {
         } + rests(reading)
         dots(drafts, reading, space)
         beamMarks(drafts)
+        arpeggios(drafts, reading.symbols, space)
+        fermatas(drafts, reading.symbols, space)
         val tuplets = tuplets(reading, page.lines, beams, space)
         val ties = ties(page, reading, space)
 
@@ -100,6 +102,8 @@ object Rhythms {
         /** The beams on its stem, from the outer one (at the stem's end) in. */
         val beams: List<Beam> = emptyList(),
         var beamMarks: List<BeamMark> = emptyList(),
+        var arpeggiate: Boolean = false,
+        var fermata: Boolean = false,
     ) {
         val x: Double get() = box.left
     }
@@ -187,6 +191,31 @@ object Rhythms {
                     else -> BeamMark.CONTINUE
                 }
             }
+        }
+    }
+
+    /**
+     * The rolled chords: a wavy line drawn upright (in pieces, each taller than wide; a trill's line
+     * lies flat) just before the chord, at its height.
+     */
+    private fun arpeggios(drafts: List<Draft>, symbols: List<DrawnGlyph>, space: Double) {
+        val wiggles = symbols.filter { it.name.orEmpty().startsWith("wiggle") && it.box.height > it.box.width }
+        for (chord in drafts.filter { !it.rest }) {
+            chord.arpeggiate = wiggles.any { wiggle ->
+                wiggle.box.right >= chord.box.left - 2.0 * space && wiggle.box.right <= chord.box.left + 0.2 * space &&
+                    wiggle.box.bottom >= chord.box.top - space && wiggle.box.top <= chord.box.bottom + space
+            }
+        }
+    }
+
+    /** The notes and rests held by a fermata: the nearest one under it (or over it, a fermata below), in its width. */
+    private fun fermatas(drafts: List<Draft>, symbols: List<DrawnGlyph>, space: Double) {
+        symbols.filter { it.name.orEmpty().startsWith("fermata") }.forEach { fermata ->
+            val below = fermata.name.orEmpty().contains("Below")
+            drafts.filter {
+                fermata.box.centerX >= it.box.left - 0.5 * space && fermata.box.centerX <= it.box.right + 0.5 * space &&
+                    if (below) fermata.box.top >= it.box.centerY else fermata.box.bottom <= it.box.centerY
+            }.minByOrNull { abs(it.box.centerY - fermata.box.centerY) }?.fermata = true
         }
     }
 
@@ -357,7 +386,7 @@ object Rhythms {
                 }
                 val duration = Duration(draft.type ?: NoteType.QUARTER, draft.dots, ratios[draft] ?: Fraction.of(1))
                 val event = if (draft.rest) {
-                    Rest(duration, time, voice, wholeMeasure = duration.type == NoteType.WHOLE && sorted.size == 1)
+                    Rest(duration, time, voice, wholeMeasure = duration.type == NoteType.WHOLE && sorted.size == 1, fermata = draft.fermata)
                 } else {
                     val notes = draft.notes.sortedBy { it.step }
                     Chord(
@@ -367,6 +396,8 @@ object Rhythms {
                         draft.notes.firstOrNull()?.octaves ?: 0,
                         notes.indices.filter { notes[it] in ties }.toSet(),
                         notes.withIndex().mapNotNull { (i, note) -> note.accidental?.let { i to it } }.toMap(),
+                        draft.arpeggiate,
+                        draft.fermata,
                     )
                 }
                 result += PlacedEvent(event, draft.box)

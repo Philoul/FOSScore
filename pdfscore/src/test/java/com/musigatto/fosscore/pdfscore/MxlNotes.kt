@@ -48,6 +48,9 @@ class MxlNotes(document: org.w3c.dom.Document) {
     /** The same with only the notes that show an accidental: "F#4 sharp" (cautionary ones too). */
     val shown: Map<String, Map<Int, List<List<String>>>>
 
+    /** Measure (0 up) → the syllables sung in it, all parts together, sorted. */
+    val sung: List<List<String>>
+
     init {
         val shownParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
         val tiedParts = mutableMapOf<String, Map<Int, List<List<String>>>>()
@@ -121,7 +124,20 @@ class MxlNotes(document: org.w3c.dom.Document) {
         beamed = beamedParts
         tied = tiedParts
         shown = shownParts
+        // the first verse's syllables of every part, measure by measure (the PDF may sing them over
+        // another staff than the MusicXML's voice part)
+        val measureCount = document.getElementsByTagName("part").elements().maxOfOrNull { it.getElementsByTagName("measure").length } ?: 0
+        val syllables = List(measureCount) { mutableListOf<String>() }
+        document.getElementsByTagName("part").elements().forEach { part ->
+            part.getElementsByTagName("measure").elements().forEachIndexed { index, measure ->
+                measure.getElementsByTagName("lyric").elements()
+                    .filter { it.getAttribute("number").ifEmpty { "1" } == "1" }
+                    .forEach { lyric -> lyric.child("text")?.textContent?.trim()?.takeIf { it.isNotEmpty() }?.let { syllables[index] += it } }
+            }
+        }
+        sung = syllables.map { it.sorted() }
     }
+
 
     /**
      * Every part's staves one after the other (a piano's two, then the next part's), numbered from

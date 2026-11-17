@@ -9,6 +9,7 @@ import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.Lyric
 import com.musigatto.fosscore.pdfscore.music.NoteType
 import com.musigatto.fosscore.pdfscore.music.Pitch
 import com.musigatto.fosscore.pdfscore.music.Rest
@@ -112,6 +113,44 @@ class MusicXmlWriterTest {
             listOf("G5 v1 s1", "E5 v1 s1", "backup 3", "C5 v2 s1", "D5 v2 s1", "backup 2", "forward 1", "C3 v5 s2"),
             steps,
         )
+    }
+
+    /**
+     * A tempo mark and words over the staff are written before the note they stand over, the tempo
+     * with the sound it gives (in quarters a minute: a dotted quarter at 40 is 60); an arpeggio
+     * and a fermata on their notes.
+     */
+    @Test
+    fun directionsArpeggiosAndFermatas() {
+        val events = listOf(
+            placed(Chord(listOf(Pitch(0, 5), Pitch(2, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.ZERO, 1, arpeggiate = true), 70.0),
+            placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.of(1, 2), 1, fermata = true), 150.0),
+            placed(Rest(Duration(NoteType.HALF), Fraction.of(1, 1), 1, fermata = true), 200.0),
+        )
+        val directions = listOf(TempoMark(68.0, NoteType.QUARTER, 1, 40), Words(148.0, "Rall."))
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, events, time = TimeSignature(6, 4)).copy(directions = directions)))))
+        val xml = MusicXmlWriter.write(score)
+        val doc = parse(xml)
+        assertEquals(listOf("60"), doc.all("sound").map { it.getAttribute("tempo") })
+        assertEquals(listOf("quarter"), doc.all("beat-unit").map { it.textContent })
+        assertEquals(1, doc.all("beat-unit-dot").size)
+        assertEquals(listOf("40"), doc.all("per-minute").map { it.textContent })
+        assertEquals(listOf("Rall."), doc.all("words").map { it.textContent })
+        assertEquals(2, doc.all("arpeggiate").size)
+        assertEquals(2, doc.all("fermata").size)
+        // each direction before the note it stands over
+        val order = Regex("<note[ >]|<metronome|<words").findAll(xml).map { it.value }.toList()
+        assertEquals(listOf("<metronome", "<note ", "<note ", "<words", "<note ", "<note>"), order)
+    }
+
+    /** A note's syllable is its lyric, with how it goes on the word; once per chord. */
+    @Test
+    fun lyricsAreWrittenOnTheirNotes() {
+        val lu = Chord(listOf(Pitch(0, 5), Pitch(2, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.ZERO, 1, lyric = Lyric("Lu", Lyric.Syllabic.BEGIN))
+        val cie = Chord(listOf(Pitch(0, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.of(1, 2), 1, lyric = Lyric("cie & co", Lyric.Syllabic.END))
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(placed(lu, 70.0), placed(cie, 150.0)), time = TimeSignature(4, 4))))))
+        val lyrics = parse(MusicXmlWriter.write(score)).all("lyric")
+        assertEquals(listOf("begin Lu", "end cie & co"), lyrics.map { "${it.text("syllabic")} ${it.text("text")}" })
     }
 
     /** A final barline is written at the end of its measure; a plain one is not. */

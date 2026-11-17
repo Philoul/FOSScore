@@ -255,6 +255,32 @@ class RhythmsTest {
 
     private fun tied(measure: MeasureReading) = measure.events.map { (it.event as Chord).ties }
 
+    /** A wavy line drawn upright, in pieces, just before a chord: the chord is rolled (an arpeggio). */
+    @Test
+    fun anUprightWavyLineBeforeAChordIsAnArpeggio() {
+        val low = head(100.0, g4)
+        val high = head(100.0, c5)
+        val stem = DrawnLine(low.box.right, g4, low.box.right, c5 - stemLength, 0.5)
+        val wiggles = (0 until 3).map { i -> DrawnGlyph("wiggleTrill", Box(95.0, c5 - 1.0 + i * 5.0, 98.5, c5 + 6.0 + i * 5.0)) }
+        val plain = head(140.0, c5)
+        val trill = DrawnGlyph("wiggleTrill", Box(135.0, top - 3 * space, 150.0, top - 2.3 * space))
+        val measure = read(listOf(low, high, plain) + wiggles + trill, listOf(stem, stemUp(plain))).single()
+        assertEquals(listOf(true, false), measure.events.map { (it.event as Chord).arpeggiate })
+    }
+
+    /** A fermata over a note or a rest holds it: each gets it. */
+    @Test
+    fun aFermataIsOnTheNoteOrRestUnderIt() {
+        val note = head(100.0, g4)
+        val rest = DrawnGlyph("restQuarter", Box(140.0, top + 0.5 * space, 144.0, top + 3.5 * space))
+        val fermatas = listOf(
+            DrawnGlyph("fermataAbove", Box(99.0, top - 3 * space, 108.0, top - 1.5 * space)),
+            DrawnGlyph("fermataAbove", Box(137.5, top - 3 * space, 146.5, top - 1.5 * space)),
+        )
+        val measure = read(listOf(note, rest) + fermatas, listOf(stemUp(note))).single()
+        assertEquals(listOf(true, true), measure.events.map { (it.event as? Chord)?.fermata ?: (it.event as Rest).fermata })
+    }
+
     /** A curve from beside a note to beside the next one on its line is a tie: the first note's. */
     @Test
     fun aCurveBetweenTwoNotesOnOneLineIsATie() {

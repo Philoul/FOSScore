@@ -93,7 +93,8 @@ object ScoreReader {
         val read = pages.map { page ->
             val systems = Staves.find(page)
             val directions = Directions.read(page, systems)
-            Triple(systems, StaffNotes.read(page, systems).map { system -> system.map { it to Rhythms.read(page, it) } }, directions)
+            // the lyrics go to their notes, system by system
+            Triple(systems, StaffNotes.read(page, systems).map { system -> Lyrics.attach(page, system.map { it to Rhythms.read(page, it) }) }, directions)
         }
         val fullest = read.flatMap { it.first }.maxByOrNull { it.staves.size }
         val parts = fullest?.let { system ->

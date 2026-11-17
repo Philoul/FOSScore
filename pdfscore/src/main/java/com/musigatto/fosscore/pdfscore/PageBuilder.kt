@@ -29,7 +29,7 @@ class PageBuilder(private val width: Double, private val height: Double) {
         val last = texts.lastOrNull()
         val gap = x - lastTextEnd
         if (last != null && last.font == font && abs(last.y - y) < 0.5 && gap > -0.1 * size && gap < 0.3 * size) {
-            texts[texts.size - 1] = last.copy(text = last.text + (if (gap > 0.15 * size) " " else "") + text)
+            texts[texts.size - 1] = last.copy(text = last.text + (if (gap > 0.1 * size) " " else "") + text)
         } else {
             texts += DrawnText(text, font, x, y, size)
         }

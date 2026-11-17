@@ -36,9 +36,12 @@ object Directions {
                 ?.let { PER_MINUTE.find(it.text)?.groupValues?.get(1)?.toIntOrNull() }
                 ?.let { TempoMark(note.box.left, beat, dots, it) }
         }
-        val words = page.texts.filter { over(it.y) && WORDS.containsMatchIn(it.text) }.map { Words(it.x, it.text.trim()) }
+        val words = page.texts.filter { over(it.y) && isWords(it.text) }.map { Words(it.x, it.text.trim()) }
         (tempos + words).sortedBy { it.x }
     }
+
+    /** Whether [text] is a tempo or expression word ("Rall.", "a tempo"), not a lyric. */
+    fun isWords(text: String): Boolean = WORDS.containsMatchIn(text)
 
     /** How far over the top line (in spaces) a direction is written. */
     private const val REACH = 6.0

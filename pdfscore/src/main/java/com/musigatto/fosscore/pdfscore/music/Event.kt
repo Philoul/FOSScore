@@ -22,7 +22,8 @@ sealed interface Event {
  * ones heard, [ottava] octaves away from where they are drawn (1 up, -1 down). [ties] are the
  * indexes in [pitches] of the notes tied on to the next note of their pitch (held, not struck again).
  * [accidentals] are the ones drawn, by index in [pitches]: their alter (1 a sharp, 0 a natural...).
- * An [arpeggiate] chord is rolled (a wavy line before it); a [fermata] note is held longer.
+ * An [arpeggiate] chord is rolled (a wavy line before it); a [fermata] note is held longer. Its
+ * [lyric] is the syllable sung on it, if any.
  */
 data class Chord(
     val pitches: List<Pitch?>,
@@ -38,6 +39,7 @@ data class Chord(
     val accidentals: Map<Int, Int> = emptyMap(),
     val arpeggiate: Boolean = false,
     val fermata: Boolean = false,
+    val lyric: Lyric? = null,
 ) : Event
 
 /** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */

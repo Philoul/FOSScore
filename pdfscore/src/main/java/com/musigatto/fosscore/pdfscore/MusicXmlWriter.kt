@@ -204,6 +204,8 @@ object MusicXmlWriter {
                     val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + articulations +
                         (if (event.arpeggiate) "<arpeggiate/>" else "") + (if (event.fermata && k == 0) FERMATA else "")
                     if (notations.isNotEmpty()) out.append("<notations>").append(notations).append("</notations>")
+                    // the syllable once, on the chord's first note
+                    event.lyric?.takeIf { k == 0 }?.let { out.append("<lyric number=\"1\"><syllabic>${it.syllabic.musicXml}</syllabic><text>${escape(it.text)}</text></lyric>") }
                     out.append("</note>\n")
                 }
             }

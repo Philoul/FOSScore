@@ -9,6 +9,7 @@ import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.Lyric
 import com.musigatto.fosscore.pdfscore.music.NoteType
 import com.musigatto.fosscore.pdfscore.music.Pitch
 import com.musigatto.fosscore.pdfscore.music.Rest
@@ -140,6 +141,16 @@ class MusicXmlWriterTest {
         // each direction before the note it stands over
         val order = Regex("<note[ >]|<metronome|<words").findAll(xml).map { it.value }.toList()
         assertEquals(listOf("<metronome", "<note ", "<note ", "<words", "<note ", "<note>"), order)
+    }
+
+    /** A note's syllable is its lyric, with how it goes on the word; once per chord. */
+    @Test
+    fun lyricsAreWrittenOnTheirNotes() {
+        val lu = Chord(listOf(Pitch(0, 5), Pitch(2, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.ZERO, 1, lyric = Lyric("Lu", Lyric.Syllabic.BEGIN))
+        val cie = Chord(listOf(Pitch(0, 5)), Duration(NoteType.HALF), Stem.UP, Fraction.of(1, 2), 1, lyric = Lyric("cie & co", Lyric.Syllabic.END))
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(placed(lu, 70.0), placed(cie, 150.0)), time = TimeSignature(4, 4))))))
+        val lyrics = parse(MusicXmlWriter.write(score)).all("lyric")
+        assertEquals(listOf("begin Lu", "end cie & co"), lyrics.map { "${it.text("syllabic")} ${it.text("text")}" })
     }
 
     /** A final barline is written at the end of its measure; a plain one is not. */

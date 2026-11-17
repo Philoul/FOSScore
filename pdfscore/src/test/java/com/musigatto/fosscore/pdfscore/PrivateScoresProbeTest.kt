@@ -82,6 +82,12 @@ class PrivateScoresProbeTest {
                 println("    written: " + listOf("arpeggiate", "fermata", "metronome", "words").joinToString { tag -> "$tag ${Regex("<$tag[ />]").findAll(written).count()}" } +
                     "; tempos " + Regex("<sound tempo=.([0-9.]+)").findAll(written).map { it.groupValues[1] }.toList() + "; words " + Regex("<words>([^<]*)").findAll(written).map { it.groupValues[1] }.toList())
                 differences(back.allStaves(back.shown), want.allStaves(want.shown), offset).take(5).forEach { println("    accidentals: $it") }
+                // lyrics: the measures the MusicXML sings in, whichever part sings
+                val sungMeasures = want.sung.indices.filter { want.sung[it].isNotEmpty() }
+                val sungRight = sungMeasures.count { back.sung.getOrNull(it) == want.sung[it] }
+                println("    lyrics: $sungRight / ${sungMeasures.size} sung measures right, ${back.sung.sumOf { it.size }} syllables read (MusicXML ${want.sung.sumOf { it.size }})")
+                sungMeasures.filter { back.sung.getOrNull(it) != want.sung[it] }.take(4)
+                    .forEach { println("      measure ${it + 1}: read ${back.sung.getOrNull(it)} expected ${want.sung[it]}") }
             }
         }
     }

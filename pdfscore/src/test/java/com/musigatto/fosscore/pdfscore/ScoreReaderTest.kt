@@ -59,6 +59,39 @@ class ScoreReaderTest {
         assertEquals(120.0, head.left, 1e-9)
     }
 
+    /**
+     * Over the first system: the title (the largest text), the composer (on the right) and the
+     * lyricist (on the left); left of a part's staves, its instrument's name.
+     */
+    @Test
+    fun theHeaderAndThePartNamesAreRead() {
+        val top = 100.0
+        val page = PageDrawing(
+            600.0, 800.0,
+            listOf(gClef(top), whole(120.0, top + 2 * space)),
+            staffLines(top),
+            emptyList(),
+            listOf(
+                DrawnText("Une  chanson", "font_1", 230.0, 40.0, 20.0),
+                DrawnText("Paroles :  Quelqu'un", "font_1", 50.0, 70.0, 10.0),
+                DrawnText("Musique :  Quelqu'un d'autre", "font_1", 420.0, 70.0, 10.0),
+                DrawnText("Piano", "font_1", 10.0, top + 2.5 * space, 12.0),
+            ),
+        )
+        val score = ScoreReader.read(listOf(page))
+        assertEquals(Header("Une chanson", composer = "Musique : Quelqu'un d'autre", lyricist = "Paroles : Quelqu'un"), score.header)
+        assertEquals(listOf(Part(1, "Piano")), score.parts)
+    }
+
+    /** A title drawn twice (a PDF may draw a text over itself) is one title. */
+    @Test
+    fun aTitleDrawnTwiceIsOneTitle() {
+        val top = 100.0
+        val title = DrawnText("Une chanson", "font_1", 230.0, 40.0, 20.0)
+        val page = PageDrawing(600.0, 800.0, listOf(gClef(top), whole(120.0, top + 2 * space)), staffLines(top), emptyList(), listOf(title, title.copy(x = 231.0)))
+        assertEquals("Une chanson", ScoreReader.read(listOf(page)).header.title)
+    }
+
     /** A brace joins its staves into one part; a staff alone is a part. */
     @Test
     fun aBraceMakesAPartOfItsStaves() {

@@ -143,6 +143,21 @@ class MusicXmlWriterTest {
         assertEquals(listOf("<metronome", "<note ", "<note ", "<words", "<note ", "<note>"), order)
     }
 
+    /** The title read on the page wins over the one given; composer, lyricist and part names are written. */
+    @Test
+    fun theHeaderAndPartNamesAreWritten() {
+        val whole = placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1), 70.0)
+        val score = ScoreReading(
+            listOf(Part(1, "Piano")),
+            listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(whole), time = TimeSignature(4, 4))))),
+            Header("Une chanson", composer = "Quelqu'un", lyricist = "Quelqu'un d'autre"),
+        )
+        val doc = parse(MusicXmlWriter.write(score, "fichier"))
+        assertEquals(listOf("Une chanson"), doc.all("work-title").map { it.textContent })
+        assertEquals(listOf("composer Quelqu'un", "lyricist Quelqu'un d'autre"), doc.all("creator").map { "${it.getAttribute("type")} ${it.textContent}" })
+        assertEquals(listOf("Piano"), doc.all("part-name").map { it.textContent })
+    }
+
     /** A note's syllable is its lyric, with how it goes on the word; once per chord. */
     @Test
     fun lyricsAreWrittenOnTheirNotes() {

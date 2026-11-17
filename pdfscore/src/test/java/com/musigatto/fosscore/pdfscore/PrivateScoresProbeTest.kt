@@ -55,6 +55,7 @@ class PrivateScoresProbeTest {
             for ((mode, readPages) in modes) {
                 val pages = readPages()
                 val score = ScoreReader.read(pages)
+                println("    header ${score.header}; parts ${score.parts}")
                 val written = MusicXmlWriter.write(score)
                 val back = MxlNotes(written)
                 // the PDF may be one part of the score: its staves are the MusicXML's that match best

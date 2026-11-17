@@ -7,10 +7,11 @@ import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 
 /**
- * A whole score read from its pages: its [parts] (one staff each, or several joined by a brace), and
- * its [measures] in reading order, each with what every staff holds and where it is drawn.
+ * A whole score read from its pages: its [parts] (one staff each, or several joined by a brace), its
+ * [measures] in reading order, each with what every staff holds and where it is drawn, and its
+ * [header] (title, composer, lyricist) as the first page writes it.
  */
-data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>) {
+data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>, val header: Header = Header()) {
     /** The staves of the score, top to bottom: the parts' staves one after the other. */
     val staffCount: Int get() = parts.sumOf { it.staves }
 
@@ -33,8 +34,11 @@ data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>)
     }
 }
 
-/** A part: how many [staves] it is written on (2 for a piano). */
-data class Part(val staves: Int)
+/** A part: how many [staves] it is written on (2 for a piano), and its instrument's [name] as written left of them. */
+data class Part(val staves: Int, val name: String? = null)
+
+/** What the first page writes over the music: the [title], the [composer] (on the right), the [lyricist] (on the left). */
+data class Header(val title: String? = null, val composer: String? = null, val lyricist: String? = null)
 
 /**
  * One measure of the score: its [rank] (1 up), the [page] it is drawn on (0 up), whether it starts a
@@ -126,8 +130,53 @@ object ScoreReader {
                 }
             }
         }
-        return ScoreReading(parts, measures)
+        // the first page's first system holds the parts' full names and, over it, the header
+        val first = read.firstOrNull()?.first?.firstOrNull()
+        val header = first?.let { header(pages[0], it) } ?: Header()
+        val named = first?.takeIf { it.staves.size == parts.sumOf { p -> p.staves } }?.let { named(parts, pages[0], it) } ?: parts
+        return ScoreReading(named, measures, header)
     }
+
+    /** Each part with the name written left of its staves in [system] (its lines joined), if any. */
+    private fun named(parts: List<Part>, page: PageDrawing, system: StaffSystem): List<Part> {
+        var s = 0
+        return parts.map { part ->
+            val staves = system.staves.subList(s, s + part.staves)
+            s += part.staves
+            val space = staves.first().space
+            val name = page.texts
+                .filter { it.x < staves.first().left - 0.5 * space && it.y >= staves.first().top - space && it.y <= staves.last().bottom + 2 * space }
+                .sortedBy { it.y }
+                .joinToString(" ") { words(it.text) }
+                .takeIf { it.isNotEmpty() }
+            part.copy(name = name)
+        }
+    }
+
+    /**
+     * The header: over the first system (higher than a tempo or the lyrics), the largest text is the
+     * title, the first text on the right the composer, the first on the left the lyricist.
+     */
+    private fun header(page: PageDrawing, system: StaffSystem): Header {
+        val space = system.staves.first().space
+        val over = page.texts.filter { it.y < system.top - HEADER * space && words(it.text).isNotEmpty() }
+        val largest = over.maxOfOrNull { it.size } ?: return Header()
+        val titles = over.filter { it.size >= largest - 0.5 }
+        // a text drawn twice is one text
+        val title = titles.sortedWith(compareBy({ it.y }, { it.x })).map { words(it.text) }.distinct().joinToString(" ")
+        val rest = (over - titles.toSet()).sortedBy { it.y }
+        return Header(
+            title = title,
+            composer = rest.firstOrNull { it.x > page.width / 2 }?.let { words(it.text) },
+            lyricist = rest.firstOrNull { it.x <= page.width / 2 }?.let { words(it.text) },
+        )
+    }
+
+    /** A text's words, one space between them. */
+    private fun words(text: String): String = text.trim().split(Regex("""\s+""")).joinToString(" ")
+
+    /** How far over the first system (in spaces) the header ends: below it come tempos and lyrics. */
+    private const val HEADER = 5.0
 
     /** Staff [n] (1 up) of measure [m] of its system, the time carried over from [times]. */
     private fun measureStaff(

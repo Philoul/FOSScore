@@ -28,10 +28,17 @@ object MusicXmlWriter {
         out.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
         out.append("<!DOCTYPE score-partwise PUBLIC \"-//Recordare//DTD MusicXML 4.0 Partwise//EN\" \"http://www.musicxml.org/dtds/partwise.dtd\">\n")
         out.append("<score-partwise version=\"4.0\">\n")
-        title?.let { out.append("  <work><work-title>${escape(it)}</work-title></work>\n") }
+        // the title the page writes, else the one given (the file's name)
+        (score.header.title ?: title)?.let { out.append("  <work><work-title>${escape(it)}</work-title></work>\n") }
+        val creators = listOfNotNull(score.header.composer?.let { "composer" to it }, score.header.lyricist?.let { "lyricist" to it })
+        if (creators.isNotEmpty()) {
+            out.append("  <identification>")
+            creators.forEach { (type, name) -> out.append("<creator type=\"$type\">${escape(name)}</creator>") }
+            out.append("</identification>\n")
+        }
         out.append("  <part-list>\n")
-        score.parts.indices.forEach { p ->
-            out.append("    <score-part id=\"P${p + 1}\"><part-name>Part ${p + 1}</part-name></score-part>\n")
+        score.parts.forEachIndexed { p, part ->
+            out.append("    <score-part id=\"P${p + 1}\"><part-name>${escape(part.name ?: "Part ${p + 1}")}</part-name></score-part>\n")
         }
         out.append("  </part-list>\n")
         var firstStaff = 0

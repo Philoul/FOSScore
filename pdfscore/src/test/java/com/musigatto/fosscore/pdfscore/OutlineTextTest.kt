@@ -80,6 +80,22 @@ class OutlineTextTest {
         assertEquals(listOf("3"), Directions.endings(read, Staves.find(read)).single().map { it.numbers })
     }
 
+    /**
+     * An ending's bracket over a line of lyrics stands higher (Lettre à France's "3." and "4.",
+     * 6.5 spaces over the staff): it is found up to 9 spaces over it.
+     */
+    @Test
+    fun anEndingOverTheLyricsIsFound() {
+        val y = top - 7.5 * space
+        val bracket = rect(300.0, y - 0.25, 400.0, y + 0.25, fill = 5)
+        val hook = rect(299.7, y, 300.3, y + 2 * space, fill = 6)
+        val digits = text(302.0, y + 0.4 * space, 312.0, y + 1.8 * space, fill = 7)
+        val ending = PageDrawing(600.0, 800.0, emptyList(), staff, listOf(bracket, hook) + digits, emptyList())
+        val spot = OutlineText.spots(ending).single { it.kind == OutlineText.Kind.ENDING }
+        val read = OutlineText.withTexts(ending, mapOf(spot.box to "4."))
+        assertEquals(listOf("4"), Directions.endings(read, Staves.find(read)).single().map { it.numbers })
+    }
+
     /** A row of lyrics over the system (several runs on one line) is not read: only the words that may be directions. */
     @Test
     fun aRowOfLyricsIsNotRead() {

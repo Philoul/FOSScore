@@ -244,22 +244,16 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
             warming = pages?.let {
                 viewModelScope.launch {
                     delay(WARM_DELAY_MS.milliseconds)
-                    android.util.Log.i("FOSScore-PlayTiming", "warm: start")
                     it.preparePlayback()
-                    android.util.Log.i("FOSScore-PlayTiming", "warm: playback prepared")
                     // the sound bank and the samples of the piece too (decoded once, then kept):
                     // ▶ then starts at once
                     runCatching {
                         val made = livePlayer()
-                        android.util.Log.i("FOSScore-PlayTiming", "warm: player made")
                         it.playback(liveSound())?.let { pb ->
-                            android.util.Log.i("FOSScore-PlayTiming", "warm: playback (midi) ready")
                             withContext(Dispatchers.Default) {
                                 val read = MidiSong.read(pb.midi)
                                 made.setSounds(channelSounds(pb, read))
-                                android.util.Log.i("FOSScore-PlayTiming", "warm: sounds set")
                                 made.warm(read)
-                                android.util.Log.i("FOSScore-PlayTiming", "warm: samples warm")
                             }
                         }
                     }
@@ -554,7 +548,6 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         _failed.value = false
         starting = viewModelScope.launch {
             try {
-                android.util.Log.i("FOSScore-PlayTiming", "play: pressed")
                 val pb = pages.playback(liveSound()) ?: run {
                     stop()
                     _failed.value = true
@@ -565,16 +558,13 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     ?: loop.a?.takeIf { loop.on }
                     ?: pb.onsets.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters
                     ?: 0.0
-                android.util.Log.i("FOSScore-PlayTiming", "play: playback (midi) ready")
                 val read = withContext(Dispatchers.Default) { MidiSong.read(pb.midi) }
                 val next = livePlayer()
-                android.util.Log.i("FOSScore-PlayTiming", "play: player made")
                 // the parts' sounds, and the samples read now, not by the first notes on the audio thread
                 withContext(Dispatchers.Default) {
                     next.setSounds(channelSounds(pb, read))
                     next.warm(read)
                 }
-                android.util.Log.i("FOSScore-PlayTiming", "play: sounds set and warm")
                 if (!isActive) return@launch
                 next.tempoFactor = _tempo.value.toDouble()
                 next.transpose(_transpose.value)
@@ -589,7 +579,6 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 resumeAt = null
                 followPaused = false
                 _state.value = PlayState.PLAYING
-                android.util.Log.i("FOSScore-PlayTiming", "play: playing")
                 follow()
             } catch (e: CancellationException) {
                 throw e

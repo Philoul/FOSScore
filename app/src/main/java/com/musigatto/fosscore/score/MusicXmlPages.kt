@@ -215,6 +215,12 @@ class MusicXmlPages private constructor(
     /** Makes the music ahead of the first ▶ (seconds on a slow tablet), so playing starts at once. */
     suspend fun preparePlayback() = engine.preparePlayback()
 
+    /**
+     * Plays without being laid out, from what was kept when the score was laid out as [spec]
+     * before (a score played, never shown); false when nothing was kept: lay it out then.
+     */
+    suspend fun playWithoutLayout(spec: LayoutSpec): Boolean = engine.useKeptTimemap(spec)
+
     override fun close() {
         scope.cancel()
         bitmaps.clear()

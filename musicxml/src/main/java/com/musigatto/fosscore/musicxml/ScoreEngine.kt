@@ -117,6 +117,8 @@ class ScoreEngine(
     // when notes start in the score shown, and which: the cursor and the page turns
     private var onsets: Pair<List<Onset>, List<Double>>? = null
     private var onsetsFor: Any? = null
+    // the onsets kept in the cache for a score played but not laid out ([useKeptTimemap])
+    @Volatile private var keptOnsets: Pair<Pair<List<Onset>, List<Double>>, LayoutSpec>? = null
 
     // Set by [openLater].
     @Volatile private var cacheDir: File? = null
@@ -247,7 +249,7 @@ class ScoreEngine(
      */
     suspend fun playback(sound: SoundSpec): Playback? {
         val made = music ?: return null
-        val (notes, spec) = run { laidOut?.let { onsets() to it } } ?: return null
+        val (notes, spec) = run { laidOut?.let { onsets() to it } } ?: keptOnsets ?: return null
         val doc = score()
         val midi = made.await()
         val heard = (sound.audible ?: spec.parts).ifEmpty { doc.parts.map { it.id }.toSet() }
@@ -269,6 +271,26 @@ class ScoreEngine(
             Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes.first, notes.second, partTracks)
         }
     }
+
+    /**
+     * Plays the score without laying it out, from the timing map kept in the cache when it was
+     * last laid out as [spec] (transposition, parts and lyrics; the page size does not matter):
+     * for a score that is played but never shown (a PDF's companion), whose layout took seconds.
+     * False when nothing is kept: lay it out then.
+     */
+    suspend fun useKeptTimemap(spec: LayoutSpec): Boolean {
+        val file = timemapFile(spec)?.takeIf { it.isFile } ?: return false
+        val timemap = runCatching { file.readText() }.getOrNull() ?: return false
+        keptOnsets = runCatching { (Playback.onsetsOf(timemap) to Playback.barsOf(timemap)) to spec }.getOrNull() ?: return false
+        return true
+    }
+
+    // the timing map kept for what is loaded as [spec]
+    private fun timemapFile(spec: LayoutSpec): File? = cacheDir?.let { File(it, "timemap-${loadName(spec)}.json") }
+
+    // what is loaded for [spec] (not its page size): the name of what is kept of it
+    private fun loadName(spec: LayoutSpec) =
+        "${spec.semitones}-${spec.parts.sorted().joinToString(",").hashCode()}-${spec.lyrics}-${spec.hiddenLyrics}.$CACHE_VERSION"
 
     /**
      * Gets playback ready ahead of the first ▶: waits for the music, then finds the onsets of the
@@ -301,8 +323,7 @@ class ScoreEngine(
     // transposed. Kept in the cache: making it reads the file, prepares the score, and, when the
     // MEI needs fixing, loads it once more (seconds on a slow tablet).
     private fun textToLayOut(t: Verovio, spec: LayoutSpec): Pair<String, Boolean> {
-        val name = "layout-${spec.semitones}-${spec.parts.sorted().joinToString(",").hashCode()}-" +
-            "${spec.lyrics}-${spec.hiddenLyrics}.$CACHE_VERSION"
+        val name = "layout-${loadName(spec)}"
         val mei = cacheDir?.let { File(it, "$name.mei") }
         val xml = cacheDir?.let { File(it, "$name.xml") }
         mei?.takeIf { it.isFile }?.let { file -> runCatching { return file.readText() to true } }
@@ -347,6 +368,8 @@ class ScoreEngine(
         onsets?.takeIf { onsetsFor == loadedFor }?.let { return it }
         if (laidOut == null) throw MusicXmlException("not laid out")
         val timemap = toolkit().renderTimemap()
+        // kept: a score played but not shown plays from it without being laid out
+        laidOut?.let { spec -> timemapFile(spec)?.let { keep(it, timemap.toByteArray()) } }
         return (Playback.onsetsOf(timemap) to Playback.barsOf(timemap)).also {
             onsets = it
             onsetsFor = loadedFor

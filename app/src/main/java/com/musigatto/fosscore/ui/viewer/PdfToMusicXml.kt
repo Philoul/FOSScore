@@ -143,12 +143,11 @@ internal object PdfCompanion {
     suspend fun open(context: Context, key: String): MusicXmlPages? {
         val file = file(context, key).takeIf { it.isFile } ?: return null
         return try {
-            android.util.Log.i("FOSScore-PlayTiming", "companion: opening")
             // never drawn: its music is made at once, not after a first page that never comes
             MusicXmlPages.open(context, file, soundFirst = true).also {
-                android.util.Log.i("FOSScore-PlayTiming", "companion: opened")
-                it.layout(LayoutSpec(PLAY_WIDTH, PLAY_HEIGHT))
-                android.util.Log.i("FOSScore-PlayTiming", "companion: laid out")
+                // played from what its preparation kept, without the seconds of a layout
+                val spec = LayoutSpec(PLAY_WIDTH, PLAY_HEIGHT)
+                if (!it.playWithoutLayout(spec)) it.layout(spec)
             }
         } catch (e: Exception) {
             Log.e(LOG_TAG, "companion not opened: ${e.message}", e)

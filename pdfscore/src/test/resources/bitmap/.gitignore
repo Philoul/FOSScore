@@ -1,0 +1,2 @@
+# the golden files are text: keep them, against the root *.txt rule
+!*.txt

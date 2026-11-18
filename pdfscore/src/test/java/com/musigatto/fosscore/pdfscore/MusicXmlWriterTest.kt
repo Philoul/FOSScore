@@ -183,6 +183,24 @@ class MusicXmlWriterTest {
         assertEquals(listOf(emptyList(), listOf("right light-heavy")), measures.map { m -> m.all("barline").map { "${it.getAttribute("location")} ${it.text("bar-style")}" } })
     }
 
+    /** A repeat's start and end are barlines with their repeat, so a player plays the measures twice. */
+    @Test
+    fun repeatsAreWritten() {
+        val whole = { placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1), 70.0) }
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(repeatStart = true))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(repeatEnd = true))),
+            ),
+        )
+        val measures = parse(MusicXmlWriter.write(score)).all("measure")
+        assertEquals(
+            listOf(listOf("left heavy-light forward"), listOf("right light-heavy backward")),
+            measures.map { m -> m.all("barline").map { "${it.getAttribute("location")} ${it.text("bar-style")} ${it.all("repeat").joinToString { r -> r.getAttribute("direction") }}" } },
+        )
+    }
+
     /** The accidentals drawn are written, each on its note: a renderer does not work them out. */
     @Test
     fun drawnAccidentalsAreWritten() {

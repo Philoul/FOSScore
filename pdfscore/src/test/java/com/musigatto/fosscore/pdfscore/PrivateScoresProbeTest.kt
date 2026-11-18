@@ -79,7 +79,7 @@ class PrivateScoresProbeTest {
                 differences(back.allStaves(back.beamed), want.allStaves(want.beamed), offset).take(3).forEach { println("    beams: $it") }
                 differences(back.allStaves(back.tied), want.allStaves(want.tied), offset).take(5).forEach { println("    ties: $it") }
                 val bars = Regex("(?s)<measure number=.([0-9]+)[^>]*>(?:(?!</measure>).)*?<bar-style>([a-z-]+)</bar-style>").findAll(written).map { "${it.groupValues[1]} ${it.groupValues[2]}" }.toList()
-                println("    bars written: $bars")
+                println("    bars written: $bars; repeats " + Regex("<repeat direction=.([a-z]+)").findAll(written).map { it.groupValues[1] }.groupingBy { it }.eachCount())
                 println("    written: " + listOf("arpeggiate", "fermata", "metronome", "words").joinToString { tag -> "$tag ${Regex("<$tag[ />]").findAll(written).count()}" } +
                     "; tempos " + Regex("<sound tempo=.([0-9.]+)").findAll(written).map { it.groupValues[1] }.toList() + "; words " + Regex("<words>([^<]*)").findAll(written).map { it.groupValues[1] }.toList())
                 differences(back.allStaves(back.shown), want.allStaves(want.shown), offset).take(5).forEach { println("    accidentals: $it") }

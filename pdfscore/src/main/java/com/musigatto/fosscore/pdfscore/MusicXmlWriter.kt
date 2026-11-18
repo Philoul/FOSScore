@@ -76,6 +76,9 @@ object MusicXmlWriter {
         }
         // what changed since the measure before (everything in the first one)
         val first = staves.firstOrNull()
+        if (first?.repeatStart == true) {
+            out.append("      <barline location=\"left\"><bar-style>heavy-light</bar-style><repeat direction=\"forward\"/></barline>\n")
+        }
         val attributes = StringBuilder()
         if (previous == null) {
             attributes.append("        <divisions>$divisions</divisions>\n")
@@ -141,9 +144,13 @@ object MusicXmlWriter {
                 running[s].ottava = 0
             }
         }
-        // a double or final barline (a plain one goes without saying)
-        first?.barStyle?.takeIf { it != BarStyle.REGULAR }?.let {
-            out.append("      <barline location=\"right\"><bar-style>${it.musicXml}</bar-style></barline>\n")
+        // a repeat's end, else a double or final barline (a plain one goes without saying)
+        if (first?.repeatEnd == true) {
+            out.append("      <barline location=\"right\"><bar-style>light-heavy</bar-style><repeat direction=\"backward\"/></barline>\n")
+        } else {
+            first?.barStyle?.takeIf { it != BarStyle.REGULAR }?.let {
+                out.append("      <barline location=\"right\"><bar-style>${it.musicXml}</bar-style></barline>\n")
+            }
         }
         out.append("    </measure>\n")
     }

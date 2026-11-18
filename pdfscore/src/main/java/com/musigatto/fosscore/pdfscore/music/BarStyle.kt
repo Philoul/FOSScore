@@ -7,3 +7,6 @@ enum class BarStyle(val musicXml: String) {
     LIGHT_HEAVY("light-heavy"),
     HEAVY_LIGHT("heavy-light"),
 }
+
+/** The repeat a barline marks: dots before it end one, dots after it start one, both for a repeat that ends where the next starts. */
+enum class Repeat { NONE, BACKWARD, FORWARD, BOTH }

@@ -102,15 +102,26 @@ internal suspend fun convertPdfToMusicXml(
 ): Conversion {
     return try {
         val smufl = withContext(Dispatchers.IO) { SmuflIndex.get(context) }
-        val outlines = withContext(Dispatchers.IO) { Outlines.get(context) }
         val start = SystemClock.elapsedRealtime()
         val pages = mutableListOf<PageDrawing>()
         for (index in 0 until doc.pageCount) {
             onProgress(Conversion.Reading(index + 1, doc.pageCount))
+            val t0 = SystemClock.elapsedRealtime()
             // MuPDF under the viewer's lock, a page at a time; the SVG read off it
-            val svg = lock { withContext(Dispatchers.IO) { doc.pageSvg(index) } }
-            // a page printed without its fonts has its symbols named by their look
-            svg?.let { pages += withContext(Dispatchers.Default) { outlines.name(MuPdfSvg.read(it, smufl)) } }
+            val svg = lock { withContext(Dispatchers.IO) { doc.pageSvg(index) } } ?: continue
+            val t1 = SystemClock.elapsedRealtime()
+            val raw = withContext(Dispatchers.Default) { MuPdfSvg.read(svg, smufl) }
+            val t2 = SystemClock.elapsedRealtime()
+            // a page printed without its fonts has its symbols named by their look (the reference
+            // shapes are built the first time a page needs them)
+            val page = if (raw.glyphs.any { it.name != null }) raw else {
+                val outlines = withContext(Dispatchers.IO) { Outlines.get(context) }
+                val t3 = SystemClock.elapsedRealtime()
+                Log.i(LOG_TAG, "page $index: references ready in ${t3 - t2} ms")
+                withContext(Dispatchers.Default) { outlines.name(raw) }
+            }
+            Log.i(LOG_TAG, "page $index: svg ${t1 - t0} ms (${svg.size} bytes), parsed ${t2 - t1} ms, named ${SystemClock.elapsedRealtime() - t2} ms")
+            pages += page
         }
         val traced = SystemClock.elapsedRealtime()
         onProgress(Conversion.Recognising)

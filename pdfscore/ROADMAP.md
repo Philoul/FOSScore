@@ -113,7 +113,7 @@ the benchmark before it is installed.
 | 5 | Lettre à France | triplet "3" without bracket read as plain eighths; one "3" per six sixteenths (LilyPond) | the "3" is an outline (no font): not read | fixed 2026-11-19: a tuplet's number printed without its font is named out of the staff (classifier: 0.89-0.91 on Lettre's), the beam under it makes the tuplet |
 | 6 | Lettre à France | in 4/4 there must be exactly 4 beats between two barlines | consequence of 4 and 5 (the writer now cuts what goes past) | fixed 2026-11-19 (ImpliedTuplets): a voice too long whose beamed groups of 3, 6... equal notes, made triplets, take off exactly the excess has them as triplets (LilyPond prints one "3" for some groups only). Lettre à France 75 -> 82 / 92 |
 | 7 | Lettre à France | multiple repeats: "1. 2." (24-28), "3." (29) with To Coda, coda at 31, `:|` at 46, "4." (30) the end | ending numbers and "To Coda" are outline text; and Verovio cannot play this form even from MuseScore's own MusicXML (no To Coda, endings of several passes wrong); MuseScore exports the ending numbers wrong (number="2" for "1. 2.", "3" for "4.", the text is right) | play order done 2026-11-19 (Unfold in :musicxml, MIDI and timing map made from the score unrolled; notes with stable ids): MuseScore's export plays 1-28, 17-28, 17-23, 29, 31-46, 17-23, 30. Endings and words over the music read by OCR on PDFs without fonts (reader 8; Strokes: LilyPond draws brackets as thin fills; endings found up to 9 spaces over the staff, over the lyrics: Lettre's "1. 2.", "3.", "4."). To check on the Tab 3 (it locked at night): D:/FOSScore-builds/fosscore-proto-1119-reader10.apk |
-| 8 | Savoir aimer (no fonts) | a repeat and a jump missed | the "2." ending and "3. To Coda" are outline text; a false segno | endings and words read by OCR 2026-11-19 ("2." found on page 2); to check on the Tab 3; the false segno still to do |
+| 8 | Savoir aimer (no fonts) | a repeat and a jump missed | the "2." ending and "3. To Coda" are outline text; a false segno | endings and words read by OCR 2026-11-19 ("2." found on page 2); its two segnos and coda are real; the false segno was J'te l'dis's (0.71): signs named from 0.8 only (reader 11). To check on the Tab 3 |
 | 9 | Au clair de la lune (engraved by Verovio) | first system read cut, 14 of 16 measures, bar shifted | Verovio draws staff lines measure by measure: one staff segment seen per system | fixed 2026-11-19 (reader 10): the pieces of a staff line at one height (within 0.3 point) are joined left to right; 16 / 16 measures, 48 / 48 staff-measures right |
 | 10 | Halleluya (scan) | two parts for one piano | no brace found on scans | to do (track 3) |
 | 11 | every PDF (Tab 3) | ▶ silent 5 to 10 s, music already read | measured on Lucie: layout 3.3 s, then 13.2 s before the MIDI: the engine makes it after a first page is drawn, and a companion is never drawn (15 s wait); each new reading emptied the cache; ▶ before the companion was open read the PDF again | fixed 2026-11-19: companion opened sound first, prepared after its reading, ▶ waits for it instead of reading again, no layout to play (the timing map comes with the MIDI). From the tap on a score in the library: ready to play 2.1 s, warmed up 4.9 s (about 20 s before) |
@@ -126,9 +126,29 @@ for the reading. Within that, 5 to 10 s a page, or a little more, is fine if it 
 errors: today's 0.5 to 1 s a page with many errors is not the right trade-off, Audiveris's 13 to
 115 s is far too slow.
 
-Comparison with Audiveris (maintainer, 2026-11-18; analysis under way 2026-11-19, report to come in D:/FOSScore-eval/audiveris-vs-fosscore.md): Audiveris reads much better (1563 against
+Comparison with Audiveris (maintainer, 2026-11-18; analysis done 2026-11-19, report D:/FOSScore-eval/audiveris-vs-fosscore.md, sources read at development 33e1a77): Audiveris reads much better (1563 against
 683 measures right on the benchmark) but takes 13 to 115 s a page on the PC, where ours takes
 0.5 to 1 s. To do: a comparative analysis of the structure and the algorithms of both (staff and
 barline finding, head templates, symbol graph and its reduction, rhythm per measure), to take what
 makes Audiveris right while keeping ours fast enough for the tablet; every borrowed idea measured
 with `bench.py`.
+
+What the analysis found, and the order to borrow in (each measured with `bench.py`):
+- Our barlines are read staff by staff, one unbroken stroke each, never compared across the
+  staves of a system: one missed barline shifts every measure after it. Audiveris projects the ink
+  over the staff height (breaks tolerated), checks for ink beside a candidate (a stem with its
+  head), then aligns barlines across the staves and keeps or adds them by majority
+  (StaffProjector, PeakGraph, BarsRetriever, MeasuresBuilder). To borrow first.
+- Eighths missed in 6/8: a flag is only read as a piece of a stemmed blob, so a flag cut from its
+  stem in a scan is lost and the note becomes a quarter. Audiveris classifies what is left after
+  heads, stems, beams, ledgers and barlines, tries combinations of nearby pieces and links flags
+  to stems across gaps.
+- A bass clef missed: cut in three pieces by the staff-line removal; Audiveris tries combinations
+  of pieces at the staff start with only clef shapes allowed, and votes across the staves.
+- A local repair of the measures that do not fill (a barline, a dot, a flag, an eighth rest),
+  run only where a measure does not add up: Audiveris tried it globally and found it too slow.
+- Keep the classifier's two or three best guesses and choose by context (Audiveris's symbol
+  interpretation graph costs 0.4 % of its time); adaptive binarization; head templates on chosen
+  candidates only (template matching over every pixel is 35 % of Audiveris's 33 s a page, beams
+  22 %).
+- The tablet's timing of our own reader is to measure before spending the 5-10 s budget.

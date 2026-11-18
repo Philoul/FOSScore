@@ -94,6 +94,20 @@ class OutlineSymbolsTest {
         assertEquals(listOf("timeSig4"), named.glyphs.map { it.name })
     }
 
+    /**
+     * A metronome mark's note ("♩ = 70" printed without its font) is named over the staff, where
+     * the tempo is written, and only there: a note symbol inside the staff is a note.
+     */
+    @Test
+    fun aMetronomeMarksNoteIsNamedOverTheStaffOnly() {
+        val notes = SymbolClassifier(listOf(FontSymbol("A", "metNoteQuarterUp", listOf(ellipse(0.0, 0.0, 0.7, 1.4)))))
+        val over = listOf(ellipse(100.0, top - 4 * space, 0.7 * space, 1.4 * space))
+        val inside = listOf(ellipse(140.0, top + 2 * space, 0.7 * space, 1.4 * space))
+        val named = OutlineSymbols(notes).name(page(over, inside))
+        assertEquals(listOf("metNoteQuarterUp"), named.glyphs.map { it.name })
+        assertEquals(100.0, named.glyphs.single().box.centerX, 0.01)
+    }
+
     /** A page whose music font names its symbols has no symbol drawn as outlines: its curves (ties, slurs) stay shapes. */
     @Test
     fun aPageWithAMusicFontIsLeftAsItIs() {

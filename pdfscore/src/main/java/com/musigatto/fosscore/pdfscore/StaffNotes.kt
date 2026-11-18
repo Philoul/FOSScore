@@ -59,7 +59,10 @@ object StaffNotes {
         // Each symbol goes to the closest staff of the whole page: a note on ledger lines between two
         // systems is within reach of both.
         val staves = systems.flatMap { system -> system.staves.map { system to it } }
+        // a head inside a clef is a piece of it (a scan may read the treble clef's curl as a head)
+        val clefBoxes = page.glyphs.filter { clefOf(it.name.orEmpty()) != null }.map { it.box }
         val assigned = page.glyphs.filter { it.name != null && !isTupletNumber(it.name) }
+            .filterNot { glyph -> isHead(glyph.name) && clefBoxes.any { glyph.box.centerX in it.left..it.right && glyph.box.centerY in it.top..it.bottom } }
             .mapNotNull { glyph -> staffOf(glyph.box, staves.map { it.second })?.let { glyph to it } }
             .toMap(LinkedHashMap())
         keepChordsTogether(assigned, staves, page.lines)
@@ -70,10 +73,19 @@ object StaffNotes {
             notes.minByOrNull { (box, _) -> distance(box, number.box.centerX, number.box.centerY) }?.let { assigned[number] = it.second }
         }
         val byStaff = assigned.entries.groupBy({ it.value }, { it.key })
-        return systems.map { system ->
-            system.staves.map { staff ->
-                val index = staves.indexOfFirst { it.second === staff }
-                read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines)
+        fun readStaff(system: StaffSystem, staff: Staff, fallbackClef: Clef? = null): StaffReading {
+            val index = staves.indexOfFirst { it.second === staff }
+            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef)
+        }
+        val readings = systems.map { system -> system.staves.map { staff -> readStaff(system, staff) } }
+        // a staff whose clef was not read (a scan) takes the one its place has in the nearest
+        // other system of the page: a clef seldom changes from one line to the next
+        return readings.mapIndexed { si, system ->
+            system.mapIndexed { s, reading ->
+                if (reading.clef != null) return@mapIndexed reading
+                val other = readings.indices.filter { it != si }.sortedBy { kotlin.math.abs(it - si) }
+                    .firstNotNullOfOrNull { readings[it].takeIf { r -> r.size == system.size }?.getOrNull(s)?.clef }
+                other?.let { readStaff(systems[si], systems[si].staves[s], it) } ?: reading
             }
         }
     }
@@ -165,7 +177,7 @@ object StaffNotes {
         }
     }
 
-    private fun read(staff: Staff, system: StaffSystem, symbols: List<DrawnGlyph>, lines: List<DrawnLine>): StaffReading {
+    private fun read(staff: Staff, system: StaffSystem, symbols: List<DrawnGlyph>, lines: List<DrawnLine>, fallbackClef: Clef? = null): StaffReading {
         val space = staff.space
         val heads = symbols.filter { isHead(it.name) && onLedgers(it, staff, lines) }
         val clefs = symbols.mapNotNull { glyph ->
@@ -185,7 +197,7 @@ object StaffNotes {
         val opensRepeat = allBars.take(allBars.size - bars.size).any { it.repeat == Repeat.FORWARD || it.repeat == Repeat.BOTH }
         val barlines = bars.map { it.x }
         val firstClef = clefs.firstOrNull()
-        fun clefAt(x: Double): Clef? = clefs.lastOrNull { it.first.box.left < x }?.second ?: firstClef?.second
+        fun clefAt(x: Double): Clef? = clefs.lastOrNull { it.first.box.left < x }?.second ?: firstClef?.second ?: fallbackClef
         val keyRuns = keys(staff, symbols, clefs.map { it.first }, barlines, ::clefAt)
         val keyAccidentals = keyRuns.flatMap { it.first }.toSet()
         // The key at the system's start is the one right after its first clef, if any.
@@ -230,7 +242,7 @@ object StaffNotes {
             StaffNote(head, step, measure, pitch, octaves, written[head])
         }
         return StaffReading(
-            staff, firstClef?.second, keys.first().value, barlines, notes, symbols,
+            staff, firstClef?.second ?: fallbackClef, keys.first().value, barlines, notes, symbols,
             clefs = clefs.map { (glyph, clef) -> Change(glyph.box.left, clef) },
             keys = keys,
             times = times(staff, symbols),

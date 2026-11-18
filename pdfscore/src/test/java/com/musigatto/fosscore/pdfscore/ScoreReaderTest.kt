@@ -60,6 +60,39 @@ class ScoreReaderTest {
     }
 
     /**
+     * A head inside a clef is a piece of it (a scan read the treble clef's curl as a black head:
+     * Halleluya's first note, heard before the music).
+     */
+    @Test
+    fun aHeadInsideAClefIsPartOfIt() {
+        val top = 100.0
+        val clef = gClef(top)
+        val curl = glyph("noteheadBlack", 57.0, top + 4.5 * space, 1.0, 0.5, 1.3)
+        val page = PageDrawing(600.0, 800.0, listOf(clef, curl, whole(120.0, top + 2 * space)), staffLines(top) + barline(549.0, top), emptyList(), emptyList())
+        val events = ScoreReader.read(listOf(page)).measures.single().staves.single().events
+        assertEquals(listOf("B4"), events.map { (it.event as Chord).pitches.single().toString() })
+    }
+
+    /**
+     * A staff whose clef was not read at its system's start (a scan: Halleluya's first left hand)
+     * takes the clef its staff has in the page's other systems: its notes were read without one,
+     * the whole first line wrong.
+     */
+    @Test
+    fun aStaffWithoutItsClefTakesTheOneOfTheOtherSystems() {
+        val first = 100.0
+        val second = 200.0
+        val page = PageDrawing(
+            600.0, 800.0,
+            listOf(whole(120.0, first + 2 * space), gClef(second), whole(120.0, second + 2 * space)),
+            staffLines(first) + staffLines(second) + barline(549.0, first) + barline(549.0, second),
+            emptyList(), emptyList(),
+        )
+        val score = ScoreReader.read(listOf(page))
+        assertEquals(listOf("B4", "B4"), score.measures.map { (it.staves.single().events.single().event as Chord).pitches.single().toString() })
+    }
+
+    /**
      * To follow the music on the PDF, each note knows the centre of its head, the top and bottom
      * lines of its system, its staff space and where the system's staves end.
      */

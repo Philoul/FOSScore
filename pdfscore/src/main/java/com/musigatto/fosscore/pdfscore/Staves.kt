@@ -51,19 +51,26 @@ object Staves {
     internal fun staffLines(lines: List<DrawnLine>): List<DrawnLine> {
         val horizontal = lines.filter { it.isHorizontal && it.length > 0 }
             .map { if (it.x1 <= it.x2) it else DrawnLine(it.x2, it.y2, it.x1, it.y1, it.width) }
-            .sortedWith(compareBy({ it.y1 }, { it.x1 }))
-        val joined = mutableListOf<DrawnLine>()
+            .sortedBy { it.y1 }
+        // the pieces at one height first (a hair apart: Verovio draws the staff a measure at a
+        // time), then, left to right, each piece joins the line it touches when as thick
+        val heights = mutableListOf<MutableList<DrawnLine>>()
         for (line in horizontal) {
-            val i = joined.indexOfLast {
-                abs(it.y1 - line.y1) < 0.3 && line.x1 <= it.x2 + JOIN_GAP &&
-                    abs(it.width - line.width) < 0.2 * maxOf(it.width, line.width)
+            heights.lastOrNull()?.takeIf { abs(it.last().y1 - line.y1) < 0.3 }?.add(line) ?: heights.add(mutableListOf(line))
+        }
+        val joined = mutableListOf<DrawnLine>()
+        for (height in heights) {
+            val runs = mutableListOf<DrawnLine>()
+            for (line in height.sortedBy { it.x1 }) {
+                val i = runs.indexOfLast { line.x1 <= it.x2 + JOIN_GAP && abs(it.width - line.width) < 0.2 * maxOf(it.width, line.width) }
+                if (i >= 0) {
+                    val last = runs[i]
+                    runs[i] = last.copy(x2 = maxOf(last.x2, line.x2), y2 = last.y1)
+                } else {
+                    runs += line
+                }
             }
-            if (i >= 0) {
-                val last = joined[i]
-                joined[i] = last.copy(x2 = maxOf(last.x2, line.x2), y2 = last.y1)
-            } else {
-                joined += line
-            }
+            joined += runs
         }
         return joined.sortedBy { it.y1 }
     }

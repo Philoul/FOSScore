@@ -46,6 +46,20 @@ class StavesTest {
         assertEquals(550.0, staff.right, 1e-9)
     }
 
+    /**
+     * Verovio draws the staff a measure at a time, its pieces a few thousandths of a point apart in
+     * height: the last piece, a hair higher, came first, and the staff kept its start (Au clair de
+     * la lune: a first system 98 points long, 14 measures read of 16).
+     */
+    @Test
+    fun aStaffDrawnInPiecesAHairApartStartsAtItsFirstPiece() {
+        val pieces = listOf(Triple(50.0, 200.0, 0.0), Triple(200.0, 350.0, 0.002), Triple(350.0, 550.0, -0.003))
+        val lines = pieces.flatMap { (left, right, dy) -> staffLines(100.0 + dy, left, right) }
+        val staff = Staves.find(page(lines)).single().staves.single()
+        assertEquals(50.0, staff.left, 1e-9)
+        assertEquals(550.0, staff.right, 1e-9)
+    }
+
     /** A horizontal beam is a long filled rectangle too: it must not break the staff it crosses. */
     @Test
     fun aBeamAcrossTheStaffLeavesTheStaff() {

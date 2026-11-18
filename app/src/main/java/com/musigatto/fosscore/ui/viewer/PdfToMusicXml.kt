@@ -321,9 +321,9 @@ private fun containsImage(svg: ByteArray): Boolean {
  * The reader's version: a PDF in which an older reader found no music is read again by a newer
  * one, and a companion an older reader wrote is read again. Bumped when the reader learns to read
  * pages it could not, or more of them (3: the tempo of PDFs without fonts, by OCR; 4: voices that
- * keep their measure's length, rests and beam hooks told apart; 5: companions prepared to play at once; 6: played in the order of their repeats and jumps; 7: heads with two stems, implied triplets; 8: endings and words read by OCR; 9: clefs of scans; 10: staves drawn in pieces, endings over lyrics).
+ * keep their measure's length, rests and beam hooks told apart; 5: companions prepared to play at once; 6: played in the order of their repeats and jumps; 7: heads with two stems, implied triplets; 8: endings and words read by OCR; 9: clefs of scans; 10: staves drawn in pieces, endings over lyrics; 11: no false segno).
  */
-internal const val READER_VERSION = 10
+internal const val READER_VERSION = 11
 
 /**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between

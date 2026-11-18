@@ -114,11 +114,8 @@ class ScoreEngine(
     private var display: Verovio? = null
     private var loadedFor: Any? = null
     private var laidOut: LayoutSpec? = null
-    // when notes start in the score shown, and which: the cursor and the page turns
-    private var onsets: Pair<List<Onset>, List<Double>>? = null
-    private var onsetsFor: Any? = null
-    // the onsets kept in the cache for a score played but not laid out ([useKeptTimemap])
-    @Volatile private var keptOnsets: Pair<Pair<List<Onset>, List<Double>>, LayoutSpec>? = null
+    // what a score played but not laid out is played as ([playWithoutLayout])
+    @Volatile private var playSpec: LayoutSpec? = null
 
     // Set by [openLater].
     @Volatile private var cacheDir: File? = null
@@ -126,7 +123,11 @@ class ScoreEngine(
     @Volatile private var parsed: Deferred<MusicXmlScore>? = null
     // the MIDI of every part at the written tempo, not transposed: the tempo, the transposition
     // and the parts heard are then rewritten in it (MidiEdit), without Verovio
-    @Volatile private var music: Deferred<ByteArray>? = null
+    // (in the order it is played: Unfold), with when its notes start
+    @Volatile private var music: Deferred<Music>? = null
+
+    // the music played: its MIDI, when which notes start ([Playback.onsetsOf]) and its measures
+    private class Music(val midi: ByteArray, val onsets: List<Onset>, val bars: List<Double>)
 
     private var resourcePath: String? = null
 
@@ -160,7 +161,6 @@ class ScoreEngine(
         executor.execute {
             loadedFor = null
             laidOut = null
-            onsets = null
             busy.decrementAndGet()
         }
         val doc = scope.async(soundDispatcher) {
@@ -173,14 +173,15 @@ class ScoreEngine(
         parsed = doc
         music = scope.async(soundDispatcher) {
             val cache = cacheDir?.let { File(it, "music.$CACHE_VERSION.mid") }
-            if (cache?.isFile != true) {
+            val timemap = cacheDir?.let { File(it, "timemap.$CACHE_VERSION.json") }
+            if (cache?.isFile != true || timemap?.isFile != true) {
                 var waited = 0L
                 while ((!drawn || busy.get() > 0) && waited < MAX_SOUND_WAIT_MS) {
                     delay(IDLE_POLL_MS)
                     waited += IDLE_POLL_MS
                 }
             }
-            musicOf(doc.await(), cache)
+            musicOf(doc.await(), cache, timemap)
         }
     }
 
@@ -249,9 +250,10 @@ class ScoreEngine(
      */
     suspend fun playback(sound: SoundSpec): Playback? {
         val made = music ?: return null
-        val (notes, spec) = run { laidOut?.let { onsets() to it } } ?: keptOnsets ?: return null
+        val spec = run { laidOut } ?: playSpec ?: return null
         val doc = score()
-        val midi = made.await()
+        val played = made.await()
+        val midi = played.midi
         val heard = (sound.audible ?: spec.parts).ifEmpty { doc.parts.map { it.id }.toSet() }
         // staff n plays on MIDI track n
         val silent = mutableSetOf<Int>()
@@ -268,39 +270,29 @@ class ScoreEngine(
         }
         val tempo = sound.tempo.coerceIn(VerovioOptions.MIN_TEMPO, VerovioOptions.MAX_TEMPO)
         return withContext(Dispatchers.Default) {
-            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), notes.first, notes.second, partTracks)
+            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), played.onsets, played.bars, partTracks)
         }
     }
 
     /**
-     * Plays the score without laying it out, from the timing map kept in the cache when it was
-     * last laid out as [spec] (transposition, parts and lyrics; the page size does not matter):
-     * for a score that is played but never shown (a PDF's companion), whose layout took seconds.
-     * False when nothing is kept: lay it out then.
+     * Plays the score as [spec] (its transposition and parts) without laying it out: the music and
+     * when its notes start do not depend on the layout. For a score played but never shown (a
+     * PDF's companion), whose layout took seconds.
      */
-    suspend fun useKeptTimemap(spec: LayoutSpec): Boolean {
-        val file = timemapFile(spec)?.takeIf { it.isFile } ?: return false
-        val timemap = runCatching { file.readText() }.getOrNull() ?: return false
-        keptOnsets = runCatching { (Playback.onsetsOf(timemap) to Playback.barsOf(timemap)) to spec }.getOrNull() ?: return false
-        return true
+    fun playWithoutLayout(spec: LayoutSpec) {
+        playSpec = spec
     }
-
-    // the timing map kept for what is loaded as [spec]
-    private fun timemapFile(spec: LayoutSpec): File? = cacheDir?.let { File(it, "timemap-${loadName(spec)}.json") }
 
     // what is loaded for [spec] (not its page size): the name of what is kept of it
     private fun loadName(spec: LayoutSpec) =
         "${spec.semitones}-${spec.parts.sorted().joinToString(",").hashCode()}-${spec.lyrics}-${spec.hiddenLyrics}.$CACHE_VERSION"
 
     /**
-     * Gets playback ready ahead of the first ▶: waits for the music, then finds the onsets of the
-     * score shown once the pages are drawn (they take the engine thread for a second or so on a
-     * slow tablet). A failure is left for [playback] to report.
+     * Gets playback ready ahead of the first ▶: waits for the music and when its notes start. A
+     * failure is left for [playback] to report.
      */
     suspend fun preparePlayback() {
         runCatching { music?.await() }
-        while (busy.get() > 0) delay(IDLE_POLL_MS)
-        run { runCatching { onsets() } }
     }
 
     /**
@@ -347,32 +339,30 @@ class ScoreEngine(
         return made
     }
 
-    // On the sound thread: the MIDI of every part at the written tempo, from [cache] when it was
-    // made before, otherwise from a clean copy of the score, laid out as cheaply as possible.
-    private fun musicOf(doc: MusicXmlScore, cache: File?): ByteArray {
-        cache?.takeIf { it.isFile }?.let { file -> runCatching { return file.readBytes() } }
+    // On the sound thread: the MIDI of every part at the written tempo and its timing map, from
+    // [cache] and [timemapCache] when they were made before, otherwise from a clean copy of the
+    // score in the order it is played (Unfold: Verovio's own expansion missed endings of several
+    // passes and jumps), laid out as cheaply as possible. The notes keep their ids (MusicXmlScore
+    // names them), so the cursor finds them on the pages drawn.
+    private fun musicOf(doc: MusicXmlScore, cache: File?, timemapCache: File?): Music {
+        runCatching {
+            if (cache?.isFile == true && timemapCache?.isFile == true) {
+                val timemap = timemapCache.readText()
+                return Music(cache.readBytes(), Playback.onsetsOf(timemap), Playback.barsOf(timemap))
+            }
+        }
         val t = Verovio(resources())
         try {
             t.setOptions(VerovioOptions.unpaged(0).toString())
-            load(t, synchronized(doc) { doc.prepare() })
+            val prepared = synchronized(doc) { doc.prepare() }
+            load(t, runCatching { Unfold.unroll(prepared) }.getOrDefault(prepared))
             val midi = Base64.decode(t.renderMidi(), Base64.DEFAULT)
+            val timemap = t.renderTimemap()
             cache?.let { keep(it, midi) }
-            return midi
+            timemapCache?.let { keep(it, timemap.toByteArray()) }
+            return Music(midi, Playback.onsetsOf(timemap), Playback.barsOf(timemap))
         } finally {
             t.close()
-        }
-    }
-
-    // On the engine thread: the onsets and the measures of the score shown.
-    private fun onsets(): Pair<List<Onset>, List<Double>> {
-        onsets?.takeIf { onsetsFor == loadedFor }?.let { return it }
-        if (laidOut == null) throw MusicXmlException("not laid out")
-        val timemap = toolkit().renderTimemap()
-        // kept: a score played but not shown plays from it without being laid out
-        laidOut?.let { spec -> timemapFile(spec)?.let { keep(it, timemap.toByteArray()) } }
-        return (Playback.onsetsOf(timemap) to Playback.barsOf(timemap)).also {
-            onsets = it
-            onsetsFor = loadedFor
         }
     }
 
@@ -430,6 +420,6 @@ class ScoreEngine(
         const val MAX_SOUND_WAIT_MS = 15_000L
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
-        const val CACHE_VERSION = 2
+        const val CACHE_VERSION = 3
     }
 }

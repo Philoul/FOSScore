@@ -124,7 +124,7 @@ class MusicXmlScoreTest {
     fun headlessNotesBecomeInvisibleWithoutBeamsOrSlurs() {
         val xml = MusicXmlScore.parse(song).prepare()
         val first = xml.substringAfter("<note").substringBefore("</note>")
-        assertTrue(first.startsWith(" print-object=\"no\""))
+        assertTrue("print-object=\"no\"" in first.substringBefore(">"))
         assertFalse("beam" in first)
         assertFalse("slur" in first)
         // Lyrics and other notations stay.

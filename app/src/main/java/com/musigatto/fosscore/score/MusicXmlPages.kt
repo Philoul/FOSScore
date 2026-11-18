@@ -216,10 +216,10 @@ class MusicXmlPages private constructor(
     suspend fun preparePlayback() = engine.preparePlayback()
 
     /**
-     * Plays without being laid out, from what was kept when the score was laid out as [spec]
-     * before (a score played, never shown); false when nothing was kept: lay it out then.
+     * Plays as [spec] (transposition, parts) without being laid out: for a score played, never
+     * shown (a PDF's companion); its music does not depend on the layout.
      */
-    suspend fun playWithoutLayout(spec: LayoutSpec): Boolean = engine.useKeptTimemap(spec)
+    fun playWithoutLayout(spec: LayoutSpec) = engine.playWithoutLayout(spec)
 
     override fun close() {
         scope.cancel()
@@ -331,15 +331,14 @@ class MusicXmlPages private constructor(
 
         /**
          * Makes and keeps what playing the score in [file], never shown, needs at its first
-         * opening (a PDF's companion, just read): its summary, its text laid out as [spec], its
-         * music. In the background, on the engine's low-priority threads.
+         * opening (a PDF's companion, just read): its summary and its music, played as [spec]. In the background, on the engine's low-priority threads.
          */
         suspend fun preparePlay(context: Context, file: File, spec: LayoutSpec) {
             val dir = cacheOf(context, file)
             ScoreEngine(context, RASTER, background = true).use { engine ->
                 val summary = engine.open(file.readBytes(), dir, soundFirst = true)
                 keepSummary(dir, summary)
-                engine.layout(spec)
+                engine.playWithoutLayout(spec)
                 engine.preparePlayback()
             }
         }

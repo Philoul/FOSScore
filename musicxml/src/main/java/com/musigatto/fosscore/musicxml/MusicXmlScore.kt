@@ -425,7 +425,23 @@ class MusicXmlScore private constructor(private val doc: Document) {
             require(doc.documentElement.tagName.startsWith("score-")) { "not a MusicXML score" }
             hideInvisibleNotes(doc)
             rankMeasures(doc)
+            nameNotes(doc)
             return MusicXmlScore(doc)
+        }
+
+        /**
+         * Gives every note without an id one from its place (part, measure, note, 1 up): the music
+         * is played from a copy of the score in the order it is played ([Unfold]), shown from the
+         * score itself, and the cursor finds the notes played on the pages drawn by their ids.
+         */
+        private fun nameNotes(doc: Document) {
+            doc.documentElement.children("part").forEachIndexed { p, part ->
+                part.children("measure").forEachIndexed { m, measure ->
+                    measure.children("note").forEachIndexed { k, note ->
+                        if (!note.hasAttribute("id")) note.setAttribute("id", "fosscore-n${p + 1}-${m + 1}-${k + 1}")
+                    }
+                }
+            }
         }
 
         /**

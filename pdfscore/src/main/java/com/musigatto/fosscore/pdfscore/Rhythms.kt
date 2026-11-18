@@ -355,13 +355,29 @@ object Rhythms {
         val middle = staff.top + 2 * space
         // rest → whether it lies under the chord it is drawn beside
         val besideRests = java.util.IdentityHashMap<Draft, Boolean>()
+        // the stems of the chords a rest is drawn over (they are the lower voice), and under (the upper one)
+        val lowerStems = mutableSetOf<Stem>()
+        val upperStems = mutableSetOf<Stem>()
         if (together.isEmpty()) {
             items.filter { it.rest }.forEach { rest ->
-                chords.firstOrNull { sharedWidth(rest.box, it.box) >= 0.3 * space }?.let { besideRests[rest] = rest.box.centerY > it.box.centerY }
+                chords.firstOrNull { sharedWidth(rest.box, it.box) >= 0.3 * space }?.let { chord ->
+                    val under = rest.box.centerY > chord.box.centerY
+                    besideRests[rest] = under
+                    (if (under) upperStems else lowerStems) += chord.stem
+                }
             }
         }
+        // the stems say the voices when the chords beside rests have one stem (or none: a whole
+        // note) and other chords another: a half or whole note under a rest, the notes after the
+        // rest stem up. The chords like those beside rests are their voice, the others the other one.
+        val besideStem = (lowerStems + upperStems).singleOrNull()
+        val stemVoices = besideStem != null && chords.any { it.stem != besideStem }
         fun voiceOf(draft: Draft): Int = when {
             together.isEmpty() && besideRests.isEmpty() -> 1
+            together.isEmpty() && stemVoices && !draft.rest -> {
+                val besideVoice = if (lowerStems.isNotEmpty()) 2 else 1
+                if (draft.stem == besideStem) besideVoice else 3 - besideVoice
+            }
             together.isEmpty() -> besideRests[draft]?.let { under -> if (under) 2 else 1 } ?: if (besideRests.containsValue(true)) 1 else 2
             !byStem -> if (draft.box.centerY > split) 2 else 1
             draft.stem == Stem.UP -> 1

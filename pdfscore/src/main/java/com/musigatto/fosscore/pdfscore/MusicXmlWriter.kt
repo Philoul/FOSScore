@@ -8,6 +8,7 @@ import com.musigatto.fosscore.pdfscore.music.Duration
 import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.NoteType
 import com.musigatto.fosscore.pdfscore.music.Pitch
 import com.musigatto.fosscore.pdfscore.music.Rest
 import com.musigatto.fosscore.pdfscore.music.Stem
@@ -98,9 +99,17 @@ object MusicXmlWriter {
         if (attributes.isNotEmpty()) out.append("      <attributes>\n").append(attributes).append("      </attributes>\n")
 
         val length = measureLength(staves)
+        // with a time signature, a voice read longer than the measure keeps what fits in it: the
+        // rest would make the measure last longer than its signature (an error of the reading
+        // shifting the whole music after it, for the player)
+        val fixed = staves.any { it.time != null }
         var cursor = Fraction.ZERO
         staves.forEachIndexed { s, staff ->
-            val voices = staff.events.withIndex().groupBy { it.value.event.voice }.toSortedMap()
+            val voices = staff.events.withIndex()
+                .mapNotNull { (index, placed) ->
+                    (if (fixed) cut(placed.event, length) else placed.event)?.let { IndexedValue(index, placed.copy(event = it)) }
+                }
+                .groupBy { it.value.event.voice }.toSortedMap()
             for ((voice, events) in voices) {
                 if (cursor > Fraction.ZERO) out.append("      <backup><duration>${units(cursor, divisions)}</duration></backup>\n")
                 cursor = Fraction.ZERO
@@ -325,6 +334,25 @@ object MusicXmlWriter {
             ?: staves.flatMap { it.events }.filter { (it.event as? Rest)?.wholeMeasure != true && (it.event as? Chord)?.grace != true }
                 .maxOfOrNull { it.event.onset + it.event.duration.length }
             ?: Fraction.of(1)
+
+    /**
+     * [event] within a measure [length] long: as it is when it ends in time, null when it starts
+     * at the end or after, shortened to the longest value that fits when it crosses the end (the
+     * MusicXML plays; the PDF shows the notes as drawn).
+     */
+    private fun cut(event: Event, length: Fraction): Event? {
+        if (event is Rest && event.wholeMeasure) return event
+        if (event is Chord && event.grace) return event.takeIf { it.onset < length }
+        val left = length - event.onset
+        if (left <= Fraction.ZERO) return null
+        if (event.duration.length <= left) return event
+        val shorter = NoteType.entries.flatMap { type -> (0..2).map { Duration(type, it) } }
+            .filter { it.length <= left }.maxByOrNull { it.length } ?: return null
+        return when (event) {
+            is Chord -> event.copy(duration = shorter)
+            is Rest -> event.copy(duration = shorter)
+        }
+    }
 
     private fun duration(event: Event, length: Fraction): Fraction =
         if (event is Rest && event.wholeMeasure) length else event.duration.length

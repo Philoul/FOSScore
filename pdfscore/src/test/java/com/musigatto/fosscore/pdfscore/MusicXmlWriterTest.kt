@@ -46,6 +46,33 @@ class MusicXmlWriterTest {
     private fun Element.all(tag: String): List<Element> = getElementsByTagName(tag).let { list -> (0 until list.length).map { list.item(it) as Element } }
     private fun Element.text(tag: String): String? = all(tag).firstOrNull()?.textContent
 
+    /**
+     * A voice read longer than its measure (a misread rest, sixteenths read as eighths) keeps no
+     * more than the measure: what starts at its end or after is left out, what crosses it is
+     * shortened to fit (a note is heard, a little shorter), so the measure keeps its length.
+     * Written in full, the measure lasted longer than its time signature and the player went back
+     * and forth (J'te l'dis quand même, 2026-11-18).
+     */
+    @Test
+    fun aVoiceLongerThanItsMeasureIsCutAtItsEnd() {
+        val g3 = Pitch(4, 3)
+        // in 3/4: four quarters (the fourth starts at the end), and a half note from beat 2.5 crossing it
+        val upper = (0 until 4).map { placed(chord(g3, type = NoteType.QUARTER, onset = Fraction.of(it.toLong(), 4)), 70.0 + 20 * it) }
+        val lower = listOf(
+            placed(chord(Pitch(4, 2), type = NoteType.QUARTER, onset = Fraction.ZERO, voice = 2, stem = Stem.DOWN), 70.0),
+            placed(chord(Pitch(4, 2), type = NoteType.HALF, onset = Fraction.of(5, 8), voice = 2, stem = Stem.DOWN), 120.0),
+        )
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, newSystem = true, newPage = true, staves = listOf(staff(1, upper + lower)))))
+        val doc = parse(MusicXmlWriter.write(score))
+        val notes = doc.all("note")
+        assertEquals(listOf("1", "1", "1", "2", "2"), notes.map { it.text("voice") })
+        // the half note from beat 2.5 is the eighth left of the measure
+        assertEquals("eighth", notes.last().text("type"))
+        // nothing goes back past the measure's start: the backup is the measure's length
+        val divisions = doc.all("divisions").single().textContent.toInt()
+        assertEquals(listOf((3 * divisions).toString()), doc.all("backup").map { it.text("duration") })
+    }
+
     /** A chord, a triplet, a rest and a whole-measure rest: divisions fit them all, the triplet has its ratio. */
     @Test
     fun durationsChordsTripletsAndRests() {

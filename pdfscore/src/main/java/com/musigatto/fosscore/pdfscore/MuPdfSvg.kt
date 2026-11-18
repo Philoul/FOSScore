@@ -1,8 +1,5 @@
 package com.musigatto.fosscore.pdfscore
 
-import org.w3c.dom.Element
-import java.io.ByteArrayInputStream
-import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -18,57 +15,68 @@ import kotlin.math.sqrt
  * code point is read as text for now.
  */
 object MuPdfSvg {
+    /**
+     * The page drawn in [svg]. Read with a small scanner of its tags rather than an XML library:
+     * MuPDF's SVG is regular, and a DOM (with regular expressions for the paths) took about five
+     * seconds a page on a slow tablet.
+     */
     fun read(svg: ByteArray, smufl: Map<Int, String>): PageDrawing {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isValidating = false
-        }
-        val root = ByteArrayInputStream(svg).use { factory.newDocumentBuilder().parse(it) }.documentElement
-        val width = root.getAttribute("width").toDoubleOrNull() ?: 0.0
-        val height = root.getAttribute("height").toDoubleOrNull() ?: 0.0
-        val page = PageBuilder(width, height)
+        val tags = SvgTags.scan(svg.toString(Charsets.UTF_8))
+        val root = tags.firstOrNull { it.name == "svg" && !it.closing }
+        val page = PageBuilder(root?.get("width")?.toDoubleOrNull() ?: 0.0, root?.get("height")?.toDoubleOrNull() ?: 0.0)
 
-        // the glyph outlines, by id, as subpaths in em units
+        // the glyph outlines, by id, as subpaths in em units (a clip path's are none)
         val outlines = mutableMapOf<String, List<List<Point>>>()
-        fun collect(element: Element) {
-            for (child in children(element)) {
-                if (child.tagName == "path" && child.getAttribute("id").isNotEmpty()) {
-                    outlines[child.getAttribute("id")] = flatten(child.getAttribute("d"), Affine.IDENTITY).subpaths()
-                } else if (child.tagName != "clipPath") {
-                    collect(child)
-                }
+        var inClip = 0
+        for (tag in tags) {
+            when {
+                tag.name == "clipPath" && !tag.selfClosing -> inClip += if (tag.closing) -1 else 1
+                inClip == 0 && tag.name == "path" && !tag.closing && tag.get("id").isNotEmpty() ->
+                    outlines[tag.get("id")] = flatten(tag.get("d"), Affine.IDENTITY).subpaths()
             }
         }
-        collect(root)
 
-        fun walk(element: Element, parent: Affine) {
-            for (child in children(element)) {
-                val at = parent * Affine.parse(child.getAttribute("transform"))
-                when (child.tagName) {
-                    "defs", "clipPath", "mask", "image" -> Unit
-                    "g", "svg" -> walk(child, at)
-                    "path" -> if (child.getAttribute("id").isEmpty()) path(page, child, at)
-                    "use" -> glyph(page, child, at, outlines, smufl)
+        // the drawing: groups compose their transforms; defs, clip paths, masks and images draw nothing
+        val transforms = ArrayDeque<Affine>().apply { addLast(Affine.IDENTITY) }
+        var hidden = 0
+        for (tag in tags) {
+            if (tag.name in HIDDEN && !tag.selfClosing) {
+                hidden += if (tag.closing) -1 else 1
+                continue
+            }
+            if (hidden > 0 || tag.name in HIDDEN) continue
+            if (tag.name == "g" || tag.name == "svg") {
+                when {
+                    tag.closing -> if (transforms.size > 1) transforms.removeLast()
+                    !tag.selfClosing -> transforms.addLast(transforms.last() * Affine.parse(tag.get("transform")))
                 }
+                continue
+            }
+            if (tag.closing) continue
+            val at = transforms.last() * Affine.parse(tag.get("transform"))
+            when (tag.name) {
+                "path" -> if (tag.get("id").isEmpty()) path(page, tag, at)
+                "use" -> glyph(page, tag, at, outlines, smufl)
             }
         }
-        walk(root, Affine.IDENTITY)
         return page.build()
     }
 
-    private fun path(page: PageBuilder, element: Element, at: Affine) {
-        val flat = flatten(element.getAttribute("d"), at)
-        val stroke = element.getAttribute("stroke")
+    private val HIDDEN = setOf("defs", "clipPath", "mask", "image")
+
+    private fun path(page: PageBuilder, element: SvgTags.Tag, at: Affine) {
+        val flat = flatten(element.get("d"), at)
+        val stroke = element.get("stroke")
         if (stroke.isNotEmpty() && stroke != "none") {
-            val width = element.getAttribute("stroke-width").toDoubleOrNull() ?: 1.0
+            val width = element.get("stroke-width").toDoubleOrNull() ?: 1.0
             page.stroke(flat.subpaths(), width * at.scale)
         }
-        if (element.getAttribute("fill") != "none") page.fill(flat.subpaths(), flat.curved)
+        if (element.get("fill") != "none") page.fill(flat.subpaths(), flat.curved)
     }
 
-    private fun glyph(page: PageBuilder, element: Element, at: Affine, outlines: Map<String, List<List<Point>>>, smufl: Map<Int, String>) {
-        val id = element.getAttribute("xlink:href").removePrefix("#")
-        val text = element.getAttribute("data-text")
+    private fun glyph(page: PageBuilder, element: SvgTags.Tag, at: Affine, outlines: Map<String, List<List<Point>>>, smufl: Map<Int, String>) {
+        val id = element.get("xlink:href").removePrefix("#")
+        val text = element.get("data-text")
         val outline = outlines[id].orEmpty()
         val font = id.substringBeforeLast('_')
         val x = at.e
@@ -90,7 +98,7 @@ object MuPdfSvg {
     /** The path [d] (absolute or relative M, L, H, V, C, S, Q, T, Z) on the page through [at]. */
     private fun flatten(d: String, at: Affine): PathFlattener {
         val flat = PathFlattener()
-        val tokens = TOKEN.findAll(d).map { it.value }.toList()
+        val tokens = PathTokens(d)
         var i = 0
         var x = 0.0
         var y = 0.0
@@ -99,8 +107,8 @@ object MuPdfSvg {
         var controlX = 0.0
         var controlY = 0.0
         var command = ' '
-        fun number(): Double = tokens.getOrNull(i)?.toDoubleOrNull()?.also { i++ } ?: 0.0
-        fun hasNumber(): Boolean = tokens.getOrNull(i)?.toDoubleOrNull() != null
+        fun hasNumber(): Boolean = i < tokens.size && tokens.isNumber(i)
+        fun number(): Double = if (hasNumber()) tokens.value(i++) else 0.0
         fun move(nx: Double, ny: Double) {
             x = nx
             y = ny
@@ -126,7 +134,7 @@ object MuPdfSvg {
             y = ny
         }
         while (i < tokens.size) {
-            if (!hasNumber()) command = tokens[i++].first()
+            if (!hasNumber()) command = tokens.command(i++)
             val relative = command.isLowerCase()
             val ox = if (relative) x else 0.0
             val oy = if (relative) y else 0.0
@@ -176,12 +184,64 @@ object MuPdfSvg {
         return flat
     }
 
-    private fun children(element: Element): List<Element> {
-        val nodes = element.childNodes
-        return (0 until nodes.length).mapNotNull { nodes.item(it) as? Element }
+    /** A path's data as commands (letters) and numbers, read in one pass. */
+    private class PathTokens(d: String) {
+        private val kinds = CharArray(d.length)
+        private val values = DoubleArray(d.length)
+        var size = 0
+            private set
+
+        init {
+            var at = 0
+            while (at < d.length) {
+                val c = d[at]
+                when {
+                    c.isLetter() -> {
+                        kinds[size++] = c
+                        at++
+                    }
+                    c == '-' || c == '+' || c == '.' || c.isDigit() -> {
+                        val end = numberEnd(d, at)
+                        // a sign or point with no digit is no number
+                        d.substring(at, end).toDoubleOrNull()?.let {
+                            values[size] = it
+                            kinds[size++] = NUMBER
+                        }
+                        at = maxOf(end, at + 1)
+                    }
+                    else -> at++ // a space or comma
+                }
+            }
+        }
+
+        fun isNumber(i: Int) = kinds[i] == NUMBER
+        fun value(i: Int) = values[i]
+        fun command(i: Int) = kinds[i]
+
+        private companion object {
+            const val NUMBER = '#'
+        }
     }
 
-    private val TOKEN = Regex("""[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?""")
+    /** Where a number written from [start] ends: a sign, digits, one point, digits, an exponent ("-1.5e-3", ".5"). */
+    private fun numberEnd(text: String, start: Int): Int {
+        var at = start
+        if (at < text.length && (text[at] == '-' || text[at] == '+')) at++
+        while (at < text.length && text[at].isDigit()) at++
+        if (at < text.length && text[at] == '.') {
+            at++
+            while (at < text.length && text[at].isDigit()) at++
+        }
+        if (at < text.length && (text[at] == 'e' || text[at] == 'E')) {
+            var exponent = at + 1
+            if (exponent < text.length && (text[exponent] == '-' || text[exponent] == '+')) exponent++
+            if (exponent < text.length && text[exponent].isDigit()) {
+                at = exponent
+                while (at < text.length && text[at].isDigit()) at++
+            }
+        }
+        return at
+    }
 
     /** An affine transform as SVG writes it: x' = a x + c y + e, y' = b x + d y + f. */
     private data class Affine(val a: Double, val b: Double, val c: Double, val d: Double, val e: Double, val f: Double) {
@@ -198,13 +258,16 @@ object MuPdfSvg {
 
         companion object {
             val IDENTITY = Affine(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-            private val MATRIX = Regex("""matrix\(([^)]*)\)""")
-            private val NUMBER = Regex("""[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?""")
 
             /** MuPDF writes only matrix(…) transforms; anything else is taken as none. */
             fun parse(text: String): Affine {
-                val values = MATRIX.find(text)?.groupValues?.get(1)?.let { m -> NUMBER.findAll(m).map { it.value.toDouble() }.toList() }
-                return if (values?.size == 6) Affine(values[0], values[1], values[2], values[3], values[4], values[5]) else IDENTITY
+                val open = text.indexOf("matrix(")
+                if (open < 0) return IDENTITY
+                val close = text.indexOf(')', open)
+                if (close < 0) return IDENTITY
+                val values = PathTokens(text.substring(open + 7, close))
+                if (values.size != 6 || (0 until 6).any { !values.isNumber(it) }) return IDENTITY
+                return Affine(values.value(0), values.value(1), values.value(2), values.value(3), values.value(4), values.value(5))
             }
         }
     }

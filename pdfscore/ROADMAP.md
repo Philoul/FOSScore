@@ -38,7 +38,7 @@ symbols (Bravura and Leipzig, shipped with the app) at the staff's scale.
 
 | Feature | State |
 |---|---|
-| Music symbols by their look | done: pitches 96–100 %, durations 90–99 % |
+| Music symbols by their look | done: pitches 96–100 %, durations 90–99 %; a head far from the staff counts only on ledger lines (chord symbols drawn as outlines are no notes) |
 | Text drawn as outlines (lyrics, titles, tempo numbers) | planned: OCR with Tesseract (Tesseract4Android, Apache-2.0), not a home-made OCR |
 
 ## Track 3: scanned scores (bitmap, 300 dpi and more)

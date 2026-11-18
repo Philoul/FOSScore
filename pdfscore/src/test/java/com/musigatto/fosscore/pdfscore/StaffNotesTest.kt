@@ -122,7 +122,8 @@ class StaffNotesTest {
             gClef(55.0, upper), gClef(55.0, lower),
             head(100.0, lower - 3 * space), // on the third ledger line over the lower staff: E6
         )
-        val systems = read(staffLines(upper) + staffLines(lower), glyphs)
+        val ledgers = (1..3).map { DrawnLine(98.0, lower - it * space, 109.0, lower - it * space, 0.5) }
+        val systems = read(staffLines(upper) + staffLines(lower) + ledgers, glyphs)
         assertEquals(2, systems.size)
         assertEquals(emptyList<String>(), systems[0].single().notes.map { it.pitch.toString() })
         assertEquals(listOf("E6"), systems[1].single().notes.map { it.pitch.toString() })
@@ -137,7 +138,8 @@ class StaffNotesTest {
         val upper = 100.0
         val lower = 135.0 // three spaces under the treble staff
         val stem = DrawnLine(100.0 + 1.3 * space, lower + 2 * space, 100.0 + 1.3 * space, lower - 5.5 * space, 0.5)
-        val lines = staffLines(upper) + staffLines(lower) + barline(50.0, upper, lower + 4 * space) + stem
+        val ledgers = (1..2).map { DrawnLine(98.0, lower - it * space, 109.0, lower - it * space, 0.5) }
+        val lines = staffLines(upper) + staffLines(lower) + barline(50.0, upper, lower + 4 * space) + stem + ledgers
         val glyphs = listOf(
             gClef(55.0, upper), fClef(55.0, lower),
             head(100.0, lower + 2 * space), // D3
@@ -156,10 +158,26 @@ class StaffNotesTest {
         val lower = 135.0
         val head = head(100.0, upper + 4 * space + 1.5 * space) // 1.5 spaces under the treble staff, 2 over the bass one
         val stem = DrawnLine(100.0, head.box.centerY, 100.0, lower + 1.5 * space, 0.5)
-        val lines = staffLines(upper) + staffLines(lower) + barline(50.0, upper, lower + 4 * space) + stem
+        val ledger = DrawnLine(98.0, lower - space, 109.0, lower - space, 0.5) // C4's, over the bass staff
+        val lines = staffLines(upper) + staffLines(lower) + barline(50.0, upper, lower + 4 * space) + stem + ledger
         val system = read(lines, listOf(gClef(55.0, upper), fClef(55.0, lower), head)).single()
         assertEquals(emptyList<String>(), system[0].notes.map { it.pitch.toString() })
         assertEquals(listOf("D4"), system[1].notes.map { it.pitch.toString() })
+    }
+
+    /**
+     * A head far from the staff is a note only on its ledger lines: a head-like shape far over the
+     * staff with none (a chord symbol's letter drawn as outlines) is no note.
+     */
+    @Test
+    fun aHeadFarOutIsANoteOnlyOnLedgerLines() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val low = bottom + 2.5 * space // G3 under the treble staff, under two ledger lines
+        val ledgers = listOf(bottom + space, bottom + 2 * space).map { DrawnLine(98.0, it, 109.0, it, 0.5) }
+        val glyphs = listOf(gClef(55.0, top), head(100.0, low), head(150.0, top - 3 * space))
+        val staff = read(staffLines(top) + ledgers, glyphs).single().single()
+        assertEquals(listOf("G3"), staff.notes.map { it.pitch.toString() })
     }
 
     /** "8" over the staff and its dashed line: the notes under it sound (and are written in MusicXML) an octave up. */

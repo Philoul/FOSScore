@@ -30,6 +30,9 @@ class RhythmsTest {
 
     private fun barline(x: Double) = DrawnLine(x, top, x, bottomLine, 0.8)
 
+    /** The ledger line at [y] across [head] (a note out of the staff stands on its ledger lines). */
+    private fun ledger(head: DrawnGlyph, y: Double) = DrawnLine(head.box.left - 1.0, y, head.box.right + 1.0, y, 0.5)
+
     /** A flat beam joining stems up from [x1] to [x2], [index] 0 at the stems' ends, 1 under it... */
     private fun flatBeamUp(x1: Double, x2: Double, endY: Double, index: Int) =
         DrawnLine(x1, endY + 0.25 * space + index * 0.75 * space, x2, endY + 0.25 * space + index * 0.75 * space, 0.5 * space)
@@ -445,7 +448,7 @@ class RhythmsTest {
         val flag = DrawnGlyph("flag8thUp", Box(melodyStems[1].x1, melodyStems[1].y2, melodyStems[1].x1 + 0.9 * space, melodyStems[1].y2 + 2 * space))
         val chord = head(100.0, g4)
         val chordStem = DrawnLine(chord.box.right, g4, chord.box.right, melodyY + space, 0.5)
-        val measure = read(melody + flag + chord, melodyStems + chordStem).single()
+        val measure = read(melody + flag + chord, melodyStems + chordStem + melody.map { ledger(it, top - space) }).single()
         val voice1 = measure.events.filter { it.event.voice == 1 }.map { (it.event as Chord).pitches.map { p -> p.toString() } }
         val voice2 = measure.events.filter { it.event.voice == 2 }.map { (it.event as Chord).pitches.map { p -> p.toString() } }
         assertEquals(listOf(listOf("B5"), listOf("B5")), voice1)
@@ -463,7 +466,7 @@ class RhythmsTest {
         val chord = listOf(head(100.0, g4), head(100.0, bottomLine))
         val line = DrawnLine(half.box.right, bottomLine, half.box.right, melodyY - 3 * space, 0.5)
         val next = head(120.0, g4)
-        val measure = read(listOf(half) + chord + next, listOf(line, stemUp(next))).single()
+        val measure = read(listOf(half) + chord + next, listOf(line, stemUp(next), ledger(half, top - space))).single()
         val voice1 = measure.events.filter { it.event.voice == 1 }.map { it.event.duration.type }
         val voice2 = measure.events.filter { it.event.voice == 2 }.map { it.event.duration.type }
         assertEquals(listOf(NoteType.HALF), voice1)
@@ -606,7 +609,8 @@ class RhythmsTest {
         )
         val page = PageDrawing(
             600.0, 800.0, listOf(clef, lowerClef, upperNote, quarter, eighth, flag, after),
-            staffLines + lowerLines + bracket + listOf(stemUp(upperNote), s1, s2, stemUp(after)), emptyList(),
+            staffLines + lowerLines + bracket + listOf(stemUp(upperNote), s1, s2, stemUp(after)) + listOf(quarter, eighth, after).map { ledger(it, lowerTop - space) },
+            emptyList(),
             listOf(number("3", 110.0, y + 0.3 * space)),
         )
         val systems = StaffNotes.read(page, Staves.find(page))

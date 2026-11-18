@@ -40,7 +40,8 @@ object Lyrics {
 
     private fun lyricLike(text: DrawnText, staff: Staff): Boolean {
         val words = text.text.trim()
-        return words.isNotEmpty() && text.x >= staff.left - staff.space && !words.all { it.isDigit() } &&
+        // a line read from the pixels (OutlineText) is the words over the music, never a lyric
+        return text.font != OutlineText.FONT && words.isNotEmpty() && text.x >= staff.left - staff.space && !words.all { it.isDigit() } &&
             !words.startsWith("=") && !Directions.isWords(words)
     }
 

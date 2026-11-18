@@ -67,8 +67,10 @@ object Directions {
     fun endings(page: PageDrawing, systems: List<StaffSystem>): List<List<Ending>> = systems.map { system ->
         val staff = system.staves.first()
         val space = staff.space
-        val hooks = page.lines.filter { it.isVertical && it.length in 0.5 * space..3.0 * space }
-        page.lines.filter { line ->
+        // the strokes: lines, and thin filled rectangles (a PDF printed without fonts)
+        val strokes = Strokes.of(page)
+        val hooks = strokes.filter { it.isVertical && it.length in 0.5 * space..3.0 * space }
+        strokes.filter { line ->
             line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - REACH * space
         }.mapNotNull { line ->
             val left = minOf(line.x1, line.x2)

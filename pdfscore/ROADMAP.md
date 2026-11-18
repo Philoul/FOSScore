@@ -48,10 +48,12 @@ symbols (Bravura and Leipzig, shipped with the app) at the staff's scale.
 |---|---|
 | Research prototype (Python): staves, deskew, staff-line removal, segmentation, kNN classifier | done: staves 100 %, symbols ≈97 % P/R on degraded renders |
 | Test set (300 dpi renders of the private corpus) and free training set (random music engraved by Verovio in its free fonts) | in progress |
-| Comparison with Audiveris (AGPL-3.0 OMR engine) as a reference | proposed |
+| Comparison with Audiveris (AGPL-3.0 OMR engine) as a reference | done 2026-11-18: not embeddable (AWT/Swing, Java 25, 8 GB heap, 13–115 s a page on the PC); far better on our renders (lucie3 258/262 clean, 258 scan, 256 rough; malade 205/220; msg 66/66). Kept as a PC-side benchmark and second opinion; its staff/barline, head-template, key and octave-line builders are ideas to borrow (same licence) |
+| OCR (text drawn as outlines, scans) | evaluated 2026-11-18: Tesseract4Android 4.9.0 (Apache-2.0, x86 included, minSdk 21, ~7.5 MB a ABI + 9 MB tessdata_fast eng/fra/ita/deu) recommended, in its own module; PaddleOCR (ONNX) better on italic tempo words and scans but ONNX Runtime is 36–43 MB and minSdk 24 |
 | Kotlin port, whole page (`pdfscore.bitmap`, `BitmapPage.read`: gray image + dpi → `PageDrawing`) | done: every stage of the spec, the kNN model shipped in the module's resources (CRC checked); the golden blobs and both golden pages (clean, rough) match the Python reference exactly; ~40 ms on the 1300 × 309 golden crop, 0.45–0.85 s a 300 dpi page on the PC |
 | Reading scans with the PDF readers (`ScoreReader` unchanged) | first results: ledger lines and evenly spaced staff lines added to the page model; one private score's clean render 257 / 262 staff-measures with the right pitches, the other renders far lower (octave lines, keys, a missed barline shifts the measures) |
-| Streaming, system by system (STREAMING.md), and the app's scan import | next |
+| The app's scan reading | done 2026-11-18 (proto): a page holding a picture and no drawn staff is drawn in gray (300 dpi, at most as wide as A4) and read by `BitmapPage`; Halleluya (7 pages, A3, strips): 112 measures in 91 s on the Tab 3, played. Two parts found for one piano (no brace on scans) |
+| Streaming, system by system (STREAMING.md) | next |
 
 ## App and MusicXML format
 
@@ -82,3 +84,9 @@ Design notes:
   when the user asks for it (transposition, re-layout).
 - Parts and instruments as written left of the staves; automatic page turns; the metronome only as
   a fallback.
+
+Progress:
+
+| Step | State |
+|---|---|
+| 1. Companion and playback | done 2026-11-18 (proto/pdf-to-musicxml): the MusicXML kept in `filesDir/companions`, opened unseen and laid out once; ▶ on a PDF plays it, reads it first when there is none (then plays), keeps the metronome when no music was found (marked per reader version). Tab 3: Savoir aimer (no fonts) read in 8.7 s, Lucie in 6.5 s, Halleluya (scan) in 91 s. Fixed on the way: two live players made at once (bar stuck at 1). Not yet: reading at import (decision 2), the companion in the export (decision 3), tempo of PDFs without fonts (needs OCR), ~17 s from read to sound (Verovio layout + MIDI: step 3 will play from the reading directly) |

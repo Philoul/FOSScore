@@ -32,6 +32,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
                     ?.takeIf { named(it.name) && (!it.name.startsWith("timeSig") || distance(box.centerY, staff) == 0.0) }
                     // a metronome mark's note and dot, over the staff only (where the tempo is written)
                     ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
+                    // a jump's sign must look like one: a false segno makes the music jump
+                    ?.takeIf { !(it.name == "segno" || it.name.startsWith("coda")) || it.score >= JUMP_SIGN }
                     // a tuplet's number out of the staff only (inside, a digit is a time signature's)
                     ?.takeIf { !it.name.startsWith("tuplet") || distance(box.centerY, staff) > 0.0 }
                     // a half or whole rest out of the staff hangs from a ledger line, or sits on one
@@ -52,6 +54,9 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
 
         /** The tallest or widest symbol named, in spaces (a clef is about 7 high): a slur is longer. */
         const val LARGEST = 9.0
+
+        /** The least score a segno or coda named by its look needs (real ones scored 0.82-0.91, a false one 0.71). */
+        const val JUMP_SIGN = 0.8
 
         /** A four-cornered fill wider than this (in spaces) is a beam: a whole rest is about 1.2 wide. */
         const val BEAM = 1.6

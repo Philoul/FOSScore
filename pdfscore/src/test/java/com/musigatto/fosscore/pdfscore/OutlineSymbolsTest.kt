@@ -126,6 +126,21 @@ class OutlineSymbolsTest {
     }
 
     /**
+     * A jump's sign named by its look must look like it: a false segno (J'te l'dis quand même,
+     * read at 0.71 where the real ones score 0.91) would make the music jump.
+     */
+    @Test
+    fun aJumpSignThatLooksLittleLikeOneIsNoSign() {
+        val signs = SymbolClassifier(listOf(FontSymbol("A", "segno", listOf(ellipse(0.0, 0.0, 0.8, 1.1))), FontSymbol("A", "noteheadBlack", listOf(ellipse(0.0, 0.0, 0.6, 0.5)))))
+        val alike = listOf(ellipse(100.0, top - 3 * space, 0.8 * space, 1.1 * space))
+        // a sign it looks like at 0.75 only
+        val y = top - 4 * space
+        val unlike = listOf(listOf(Point(200.0, y), Point(200.0 + 1.6 * space, y), Point(200.0 + 0.8 * space, y + 2.2 * space), Point(200.0, y)))
+        val named = OutlineSymbols(signs).name(page(alike, unlike))
+        assertEquals(listOf(100.0), named.glyphs.map { it.box.centerX })
+    }
+
+    /**
      * A tuplet's number printed without its font, over or under the staff (no bracket: Lettre à
      * France's triplets read as plain eighths, their measures too long), is named; inside the
      * staff a digit is a time signature's.

@@ -53,7 +53,7 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
          * outlines (measure numbers, lyrics, "rit.") would otherwise read as octave lines, dynamics,
          * ornaments. A time signature's digits are named inside the staff only.
          */
-        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig")
+        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda")
 
         fun named(name: String): Boolean = NAMED.any { name.startsWith(it) } || name.contains("Clef")
 

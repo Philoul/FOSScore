@@ -11,8 +11,20 @@ sealed interface Direction {
 /** A metronome mark: [perMinute] [beat]s a minute, the beat [dots] times dotted ("♩. = 40"). */
 data class TempoMark(override val x: Double, val beat: NoteType, val dots: Int, val perMinute: Int) : Direction
 
-/** Words over the music that say how to play it ("Rall.", "a tempo", "cresc."). */
+/** Words over the music that say how to play it ("Rall.", "a tempo", "cresc.", "D.S. al Coda"). */
 data class Words(override val x: Double, val text: String) : Direction
+
+/** A sign a jump goes to: a segno ("D.S." jumps back to it) or a coda ("To Coda" jumps on to it). */
+data class Mark(override val x: Double, val kind: Kind) : Direction {
+    enum class Kind { SEGNO, CODA }
+}
+
+/**
+ * An ending (a first or second time): the bracket over the measures from [x] to [right], played
+ * the times its [numbers] say ("1", "1, 2"); [closed] when the bracket has a hook at its end too
+ * (an open one is the last ending).
+ */
+data class Ending(val x: Double, val right: Double, val numbers: String, val closed: Boolean)
 
 /**
  * Reads what is written over each system: metronome marks (a note symbol, maybe dotted, then
@@ -37,8 +49,41 @@ object Directions {
                 ?.let { TempoMark(note.box.left, beat, dots, it) }
         }
         val words = page.texts.filter { over(it.y) && isWords(it.text) }.map { Words(it.x, it.text.trim()) }
-        (tempos + words).sortedBy { it.x }
+        val marks = page.glyphs.filter { over(it.box.bottom) }.mapNotNull { glyph ->
+            when (glyph.name) {
+                "segno" -> Mark(glyph.box.left, Mark.Kind.SEGNO)
+                "coda", "codaSquare" -> Mark(glyph.box.left, Mark.Kind.CODA)
+                else -> null
+            }
+        }
+        (tempos + words + marks).sortedBy { it.x }
     }
+
+    /**
+     * Each system's endings, left to right: over the top staff, a level line at least two spaces
+     * long with a hook down at its start, and its number ("1.", "1, 2.") just under the line by the
+     * hook. A hook down at its end too closes it; the last ending stays open.
+     */
+    fun endings(page: PageDrawing, systems: List<StaffSystem>): List<List<Ending>> = systems.map { system ->
+        val staff = system.staves.first()
+        val space = staff.space
+        val hooks = page.lines.filter { it.isVertical && it.length in 0.5 * space..3.0 * space }
+        page.lines.filter { line ->
+            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - REACH * space
+        }.mapNotNull { line ->
+            val left = minOf(line.x1, line.x2)
+            val right = maxOf(line.x1, line.x2)
+            val hookAt = { x: Double -> hooks.any { abs(it.x1 - x) < 0.3 * space && minOf(it.y1, it.y2) >= line.y1 - 0.3 * space && minOf(it.y1, it.y2) <= line.y1 + 0.3 * space } }
+            if (!hookAt(left)) return@mapNotNull null
+            page.texts.filter { it.x >= left - 0.2 * space && it.x <= left + 3 * space && it.y > line.y1 && it.y <= line.y1 + 3 * space }
+                .minByOrNull { it.x }
+                ?.let { ENDING.find(it.text)?.groupValues?.get(1) }
+                ?.let { numbers -> Ending(left, right, numbers.replace(Regex("""\s+"""), " "), closed = hookAt(right)) }
+        }.sortedBy { it.x }
+    }
+
+    /** An ending's numbers, with their dot: "1.", "1, 2." (a tuplet's bracket has a number with none). */
+    private val ENDING = Regex("""^\s*(\d+(?:\s*,\s*\d+)*)\.\s*$""")
 
     /** Whether [text] is a tempo or expression word ("Rall.", "a tempo"), not a lyric. */
     fun isWords(text: String): Boolean = WORDS.containsMatchIn(text)
@@ -59,7 +104,7 @@ object Directions {
     /** The usual tempo and expression words, at the start of the text. */
     private val WORDS = Regex(
         """^\s*(rall|rit|ritard|riten|accel|a tempo|tempo|rubato|poco|molto|meno|più|piu|cresc|decresc|dim|smorz|morendo|""" +
-            """calando|allarg|string|sostenuto|dolce|espress|fine|d\.\s?c\.|d\.\s?s\.|da capo|dal segno|al coda|""" +
+            """calando|allarg|string|sostenuto|dolce|espress|fine|d\.\s?c\.|d\.\s?s\.|da capo|dal segno|al coda|to coda|""" +
             """lento|largo|adagio|andante|moderato|allegr|presto|vivace)""",
         RegexOption.IGNORE_CASE,
     )

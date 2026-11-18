@@ -117,7 +117,7 @@ the benchmark before it is installed.
 | 9 | Au clair de la lune (engraved by Verovio) | first system read cut, 14 of 16 measures, bar shifted | Verovio draws staff lines measure by measure: one staff segment seen per system | to do (track 1) |
 | 10 | Halleluya (scan) | two parts for one piano | no brace found on scans | to do (track 3) |
 | 11 | every PDF (Tab 3) | ▶ silent 5 to 10 s, music already read | measured on Lucie: layout 3.3 s, then 13.2 s before the MIDI: the engine makes it after a first page is drawn, and a companion is never drawn (15 s wait); each new reading emptied the cache; ▶ before the companion was open read the PDF again | fixed 2026-11-19: companion opened sound first, prepared after its reading, ▶ waits for it instead of reading again, no layout to play (the timing map comes with the MIDI). From the tap on a score in the library: ready to play 2.1 s, warmed up 4.9 s (about 20 s before) |
-| 12 | Halleluya (scan, no MusicXML of it) | the bar goes back, measures too short or too long; the treble clef's loop seems read as a note; first system the worst | to analyse (track 3); Audiveris's reading installed on the Tab 3 as "Halleluya (Audiveris)" (its two movements joined) for the maintainer to compare by ear | to do |
+| 12 | Halleluya (scan, no MusicXML of it) | the bar goes back, measures too short or too long; the treble clef's loop seems read as a note; first system the worst | to analyse (track 3); Audiveris's reading installed on the Tab 3 as "Halleluya (Audiveris)" (its two movements joined) for the maintainer to compare by ear | in progress 2026-11-19 (reader 9): the treble clef's curl read as a head is now part of the clef; the first system's bass clef, not recognised, is taken from the other systems of the page. Scan benchmark 678 -> 701 (aligned 1109 -> 1156). Still 64 of 112 measures with a voice not filling it (an eighth, note or rest, missed): the scan reader's own work, with the Audiveris comparison (under way) |
 
 Speed requirement (maintainer, 2026-11-18): reading must go faster than the music at the
 score's tempo (the worst case: by the time a score is chosen, looked at and started, a good part
@@ -126,7 +126,7 @@ for the reading. Within that, 5 to 10 s a page, or a little more, is fine if it 
 errors: today's 0.5 to 1 s a page with many errors is not the right trade-off, Audiveris's 13 to
 115 s is far too slow.
 
-Comparison with Audiveris (maintainer, 2026-11-18): Audiveris reads much better (1563 against
+Comparison with Audiveris (maintainer, 2026-11-18; analysis under way 2026-11-19, report to come in D:/FOSScore-eval/audiveris-vs-fosscore.md): Audiveris reads much better (1563 against
 683 measures right on the benchmark) but takes 13 to 115 s a page on the PC, where ours takes
 0.5 to 1 s. To do: a comparative analysis of the structure and the algorithms of both (staff and
 barline finding, head templates, symbol graph and its reduction, rhythm per measure), to take what

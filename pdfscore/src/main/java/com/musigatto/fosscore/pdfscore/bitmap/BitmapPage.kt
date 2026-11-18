@@ -22,6 +22,8 @@ class PageAnalysis(
     val ink: InkMask,
     val deskewed: InkMask,
     val lineFree: InkMask,
+    /** The ledger lines erased (not in the reference: the reader needs them for notes far off a staff). */
+    val ledgers: List<LineRemoval.Ledger>,
     val staves: List<BitmapStaff>,
     val systems: List<List<Int>>,
     val segments: List<Segment>,
@@ -51,10 +53,11 @@ object BitmapPage {
         val db = deskew.apply(ink)
         val found = StaffFinder.find(db, metrics.thickness, metrics.space)
         val space = if (found.staves.isEmpty()) metrics.space else median(found.staves.map { it.space })
-        val lineFree = LineRemoval.remove(db, found.staves, metrics.thickness)
+        val ledgers = mutableListOf<LineRemoval.Ledger>()
+        val lineFree = LineRemoval.remove(db, found.staves, metrics.thickness, ledgers)
         val segments = Segments.find(lineFree, space)
         val blobs = Blobs.find(lineFree, segments, found.staves, space, metrics.thickness)
-        return PageAnalysis(otsu, threshold, metrics, deskew, space, ink, db, lineFree, found.staves, found.systems, segments, blobs)
+        return PageAnalysis(otsu, threshold, metrics, deskew, space, ink, db, lineFree, ledgers, found.staves, found.systems, segments, blobs)
     }
 
     /** The kNN class scores of every blob (in the model's class order). */
@@ -70,7 +73,7 @@ object BitmapPage {
         val glyphs = rules.symbols(prediction, keep).map { s ->
             DrawnGlyph(s.name, Box(s.x0 * scale, s.y0 * scale, (s.x1 + 1) * scale, (s.y1 + 1) * scale), confidence = s.confidence, font = "bitmap")
         }
-        val lines = staffLines(page) + stemsAndBarlines(page, prediction)
+        val lines = staffLines(page) + ledgerLines(page) + stemsAndBarlines(page, prediction)
         val shapes = beams(page, prediction, keep)
         return PageDrawing(
             width = page.ink.width * scale,
@@ -82,12 +85,19 @@ object BitmapPage {
         )
     }
 
-    /** Each staff's five lines, at their centre plus the staff's median offset (pixels). */
+    /** Each staff's five lines, evenly spaced, plus the staff's median offset (pixels). */
     private fun staffLines(page: PageAnalysis): List<DrawnLine> = page.staves.flatMap { staff ->
         (0 until 5).map { k ->
-            val y = staff.ys[k] + staff.medianOffset + 0.5
+            // evenly spaced between the top and bottom lines (SPEC 12 has c_k): the centres found
+            // jitter by a pixel, and the reader measures a staff's space on its first two lines
+            val y = staff.ys[0] + k * staff.space + staff.medianOffset + 0.5
             DrawnLine(staff.left.toDouble(), y, staff.right + 1.0, y, page.thickness)
         }
+    }
+
+    /** The ledger lines, as thick as the staff lines, through the middle of their row. */
+    private fun ledgerLines(page: PageAnalysis): List<DrawnLine> = page.ledgers.map {
+        DrawnLine(it.x0.toDouble(), it.row + 0.5, it.x1 + 1.0, it.row + 0.5, page.thickness)
     }
 
     /**

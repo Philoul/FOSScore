@@ -183,6 +183,49 @@ class MusicXmlWriterTest {
         assertEquals(listOf(emptyList(), listOf("right light-heavy")), measures.map { m -> m.all("barline").map { "${it.getAttribute("location")} ${it.text("bar-style")}" } })
     }
 
+    /** A repeat's start and end are barlines with their repeat, so a player plays the measures twice. */
+    @Test
+    fun repeatsAreWritten() {
+        val whole = { placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1), 70.0) }
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(repeatStart = true))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(repeatEnd = true))),
+            ),
+        )
+        val measures = parse(MusicXmlWriter.write(score)).all("measure")
+        assertEquals(
+            listOf(listOf("left heavy-light forward"), listOf("right light-heavy backward")),
+            measures.map { m -> m.all("barline").map { "${it.getAttribute("location")} ${it.text("bar-style")} ${it.all("repeat").joinToString { r -> r.getAttribute("direction") }}" } },
+        )
+    }
+
+    /**
+     * A first ending closes with its repeat, a second one starts after it and stays open; a segno,
+     * a "D.S." and a "Fine" carry the sound a player jumps by.
+     */
+    @Test
+    fun endingsAndJumpsAreWritten() {
+        val whole = { placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1), 70.0) }
+        fun m(rank: Int, staff: MeasureStaff) = ScoreMeasure(rank, 0, rank == 1, rank == 1, listOf(staff))
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                m(1, staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(directions = listOf(Mark(60.0, Mark.Kind.SEGNO)), repeatStart = true)),
+                m(2, staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(endingStart = "1", endingStop = "1" to true, repeatEnd = true)),
+                m(3, staff(1, listOf(whole()), time = TimeSignature(4, 4)).copy(endingStart = "2", endingStop = "2" to false, directions = listOf(Words(90.0, "D.S. al Fine")))),
+            ),
+        )
+        val doc = parse(MusicXmlWriter.write(score))
+        val barlines = doc.all("measure").map { m ->
+            m.all("barline").map { b -> b.getAttribute("location") + " " + (b.all("ending") + b.all("repeat")).joinToString(" ") { e -> e.getAttribute("number") + e.getAttribute("type") + e.getAttribute("direction") } }
+        }
+        assertEquals(listOf(listOf("left forward"), listOf("left 1start", "right 1stop backward"), listOf("left 2start", "right 2discontinue")), barlines)
+        assertEquals(1, doc.all("segno").size)
+        assertEquals(listOf("segno=segno", "dalsegno=segno"), doc.all("sound").map { s -> listOf("segno", "dalsegno", "dacapo", "fine", "coda", "tocoda").filter { s.hasAttribute(it) }.joinToString { "$it=${s.getAttribute(it)}" } })
+    }
+
     /** The accidentals drawn are written, each on its note: a renderer does not work them out. */
     @Test
     fun drawnAccidentalsAreWritten() {

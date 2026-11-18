@@ -27,7 +27,8 @@ Music symbols are font glyphs, named by their SMuFL code points.
 | Metronome marks (tempo used by playback), tempo/expression words | done |
 | Lyrics | done: 92–94 % of sung measures, syllables and hyphens; lyrics written over an accompaniment staff (not under a voice) still poor |
 | Part names, title, composer and lyricist | done: read on every SMuFL-font score of the corpus |
-| Repeats, endings, segno/coda, D.C./D.S. (playback jumps) | next |
+| Repeat barlines (played twice) | done: as the references, with and without fonts |
+| Endings (1st/2nd time), segno/coda, D.C./D.S./Fine/To Coda (MusicXML sound jumps) | done on synthetic pages (the private corpus has none with fonts); without fonts: segno/coda read, ending numbers wait for OCR; one false segno on one score |
 | Slurs, dynamics, tuplet brackets | later |
 
 ## Track 2: vector PDFs without fonts ("printed to PDF")

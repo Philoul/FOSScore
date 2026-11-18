@@ -4,6 +4,7 @@ import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 
 /**
@@ -68,6 +69,12 @@ data class MeasureStaff(
     val barStyle: BarStyle? = null,
     /** What is written over it (a tempo, "rall."), left to right: on a system's top staff only. */
     val directions: List<Direction> = emptyList(),
+    /** Whether a repeat starts with it, or ends with it (its measures are played twice). */
+    val repeatStart: Boolean = false,
+    val repeatEnd: Boolean = false,
+    /** The ending (its numbers) that starts with it; the one that stops with it, and whether its bracket closes there. */
+    val endingStart: String? = null,
+    val endingStop: Pair<String, Boolean>? = null,
 )
 
 /**
@@ -96,7 +103,7 @@ object ScoreReader {
     fun read(pages: List<PageDrawing>): ScoreReading {
         val read = pages.map { page ->
             val systems = Staves.find(page)
-            val directions = Directions.read(page, systems)
+            val directions = Directions.read(page, systems).zip(Directions.endings(page, systems))
             // the lyrics go to their notes, system by system
             Triple(systems, StaffNotes.read(page, systems).map { system -> Lyrics.attach(page, system.map { it to Rhythms.read(page, it) }) }, directions)
         }
@@ -116,7 +123,7 @@ object ScoreReader {
 
         val measures = mutableListOf<ScoreMeasure>()
         val times = mutableMapOf<Int, TimeSignature>() // staff → the time last drawn on it
-        read.forEachIndexed { page, (_, systems, directions) ->
+        read.forEachIndexed { page, (_, systems, signs) ->
             systems.forEachIndexed { si, system ->
                 val count = system.maxOfOrNull { (staff, rhythms) ->
                     maxOf(staff.barlines.size, (staff.notes.maxOfOrNull { it.measure } ?: -1) + 1, (rhythms.maxOfOrNull { it.index } ?: -1) + 1)
@@ -124,7 +131,8 @@ object ScoreReader {
                 for (m in 0 until count) {
                     val staves = system.mapIndexed { s, (staff, rhythms) ->
                         // what is written over the system goes with its top staff
-                        measureStaff(s + 1, staff, rhythms.firstOrNull { it.index == m }?.events.orEmpty(), m, times, if (s == 0) directions.getOrNull(si).orEmpty() else emptyList())
+                        val (directions, endings) = signs.getOrNull(si) ?: (emptyList<Direction>() to emptyList())
+                        measureStaff(s + 1, staff, rhythms.firstOrNull { it.index == m }?.events.orEmpty(), m, times, if (s == 0) directions else emptyList(), if (s == 0) endings else emptyList())
                     }
                     measures += ScoreMeasure(measures.size + 1, page, newSystem = m == 0, newPage = m == 0 && si == 0, staves = staves)
                 }
@@ -186,6 +194,7 @@ object ScoreReader {
         m: Int,
         times: MutableMap<Int, TimeSignature>,
         directions: List<Direction>,
+        endings: List<Ending>,
     ): MeasureStaff {
         val lines = staff.staff
         val left = staff.barlines.getOrNull(m - 1) ?: lines.left
@@ -204,8 +213,14 @@ object ScoreReader {
             clefChanges = staff.clefs.filter { it.x >= music && it.x < right },
             events = events,
             barStyle = staff.barStyles.getOrNull(m),
+            // a repeat starts after the barline before (or with the system), ends at the one closing it
+            repeatStart = staff.barRepeats.getOrNull(m - 1).let { it == Repeat.FORWARD || it == Repeat.BOTH } || (m == 0 && staff.opensRepeat),
+            repeatEnd = staff.barRepeats.getOrNull(m).let { it == Repeat.BACKWARD || it == Repeat.BOTH },
             // a direction over the clef and key of a system's first measure is its
             directions = directions.filter { (m == 0 || it.x >= left) && it.x < right },
+            // an ending starts in the measure its bracket starts over, stops in the one it reaches the end of
+            endingStart = endings.firstOrNull { (m == 0 || it.x >= left - lines.space) && it.x < right - lines.space }?.numbers,
+            endingStop = endings.firstOrNull { it.right > left + lines.space && it.right <= right + lines.space }?.let { it.numbers to it.closed },
         )
     }
 }

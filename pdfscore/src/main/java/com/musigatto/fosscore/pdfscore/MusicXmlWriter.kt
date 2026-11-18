@@ -76,6 +76,12 @@ object MusicXmlWriter {
         }
         // what changed since the measure before (everything in the first one)
         val first = staves.firstOrNull()
+        // an ending that starts here, a repeat that starts here: one left barline
+        val left = StringBuilder()
+        if (first?.repeatStart == true) left.append("<bar-style>heavy-light</bar-style>")
+        first?.endingStart?.let { left.append("<ending number=\"$it\" type=\"start\"/>") }
+        if (first?.repeatStart == true) left.append("<repeat direction=\"forward\"/>")
+        if (left.isNotEmpty()) out.append("      <barline location=\"left\">").append(left).append("</barline>\n")
         val attributes = StringBuilder()
         if (previous == null) {
             attributes.append("        <divisions>$divisions</divisions>\n")
@@ -141,10 +147,14 @@ object MusicXmlWriter {
                 running[s].ottava = 0
             }
         }
-        // a double or final barline (a plain one goes without saying)
-        first?.barStyle?.takeIf { it != BarStyle.REGULAR }?.let {
-            out.append("      <barline location=\"right\"><bar-style>${it.musicXml}</bar-style></barline>\n")
-        }
+        // a repeat's end (else a double or final barline: a plain one goes without saying) and an
+        // ending that stops here: one right barline
+        val right = StringBuilder()
+        val style = if (first?.repeatEnd == true) BarStyle.LIGHT_HEAVY else first?.barStyle?.takeIf { it != BarStyle.REGULAR }
+        style?.let { right.append("<bar-style>${it.musicXml}</bar-style>") }
+        first?.endingStop?.let { (numbers, closed) -> right.append("<ending number=\"$numbers\" type=\"${if (closed) "stop" else "discontinue"}\"/>") }
+        if (first?.repeatEnd == true) right.append("<repeat direction=\"backward\"/>")
+        if (right.isNotEmpty()) out.append("      <barline location=\"right\">").append(right).append("</barline>\n")
         out.append("    </measure>\n")
     }
 
@@ -240,10 +250,28 @@ object MusicXmlWriter {
      * A direction over staff [staff]: words, or a metronome mark with the tempo it sets (MusicXML's
      * sound tempo is in quarters a minute: a dotted quarter at 40 is 60).
      */
+    /** The jump words say, as MusicXML's sound attributes: "D.C." back to the start, "D.S." to the segno, "To Coda", "Fine". */
+    private fun jump(text: String): String? {
+        val words = text.trim().lowercase()
+        return when {
+            Regex("""^(d\.\s?c\.|da capo)""").containsMatchIn(words) -> "dacapo=\"yes\""
+            Regex("""^(d\.\s?s\.|dal segno)""").containsMatchIn(words) -> "dalsegno=\"segno\""
+            words.startsWith("to coda") -> "tocoda=\"coda\""
+            words.startsWith("fine") -> "fine=\"yes\""
+            else -> null
+        }
+    }
+
     private fun direction(direction: Direction, staff: Int, staffCount: Int): String {
         val on = if (staffCount > 1) "<staff>$staff</staff>" else ""
         return when (direction) {
-            is Words -> "      <direction placement=\"above\"><direction-type><words>${escape(direction.text)}</words></direction-type>$on</direction>\n"
+            // a jump's target, and the sound a player jumps by
+            is Mark -> when (direction.kind) {
+                Mark.Kind.SEGNO -> "      <direction placement=\"above\"><direction-type><segno/></direction-type>$on<sound segno=\"segno\"/></direction>\n"
+                Mark.Kind.CODA -> "      <direction placement=\"above\"><direction-type><coda/></direction-type>$on<sound coda=\"coda\"/></direction>\n"
+            }
+            is Words -> "      <direction placement=\"above\"><direction-type><words>${escape(direction.text)}</words></direction-type>$on" +
+                (jump(direction.text)?.let { "<sound $it/>" } ?: "") + "</direction>\n"
             is TempoMark -> {
                 val quarters = Duration(direction.beat, direction.dots).length * Fraction.of(4L * direction.perMinute)
                 val tempo = quarters.numerator.toDouble() / quarters.denominator

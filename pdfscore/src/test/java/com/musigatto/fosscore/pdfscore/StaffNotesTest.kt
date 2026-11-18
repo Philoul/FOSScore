@@ -3,6 +3,7 @@ package com.musigatto.fosscore.pdfscore
 import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -173,6 +174,32 @@ class StaffNotesTest {
         assertEquals(listOf("F6", "F6", "F5"), staff.notes.map { it.pitch.toString() })
         // how far each sounds from where it is drawn: what MusicXML's octave-shift says
         assertEquals(listOf(1, 1, 0), staff.notes.map { it.octaves })
+    }
+
+    private fun repeatDots(x: Double, top: Double) =
+        listOf(glyph("augmentationDot", x, top + 1.5 * space, 0.4, 0.5, 0.4), glyph("augmentationDot", x, top + 2.5 * space, 0.4, 0.5, 0.4))
+
+    /**
+     * Two dots before a barline end a repeat, after it start one; at a system's start, the repeat's
+     * barline after the clef closes no measure but still opens the repeat.
+     */
+    @Test
+    fun repeatDotsMarkTheBarlines() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val glyphs = listOf(gClef(55.0, top), head(120.0, top + 2 * space), head(200.0, top + 2 * space), head(300.0, top + 2 * space)) +
+            repeatDots(77.0, top) + repeatDots(246.0, top) + repeatDots(258.0, top)
+        val lines = listOf(
+            // after the clef: thick and thin, dots after
+            DrawnLine(70.0, top, 70.0, bottom, 2.5), DrawnLine(73.0, top, 73.0, bottom, 0.8),
+            barline(150.0, top, bottom),
+            // a repeat that ends and the next one that starts: dots on both sides
+            DrawnLine(250.0, top, 250.0, bottom, 0.8), DrawnLine(253.0, top, 253.0, bottom, 2.5), DrawnLine(256.0, top, 256.0, bottom, 0.8),
+        )
+        val staff = read(staffLines(top) + lines, glyphs).single().single()
+        assertEquals(listOf(150.0, 250.0), staff.barlines)
+        assertEquals(true, staff.opensRepeat)
+        assertEquals(listOf(Repeat.NONE, Repeat.BOTH), staff.barRepeats)
     }
 
     /** A thin and a thick line close together end the piece; two thin ones end a section: one barline each, with its look. */

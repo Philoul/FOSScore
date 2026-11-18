@@ -4,6 +4,7 @@ import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.Pitch
+import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import kotlin.math.abs
 
@@ -43,6 +44,10 @@ data class StaffReading(
     val times: List<Change<TimeSignature>> = emptyList(),
     /** How each of [barlines] is drawn. */
     val barStyles: List<BarStyle> = emptyList(),
+    /** The repeat each of [barlines] marks. */
+    val barRepeats: List<Repeat> = emptyList(),
+    /** Whether the system starts a repeat (a repeat barline after the clef and key, which closes no measure). */
+    val opensRepeat: Boolean = false,
 )
 
 /**
@@ -156,10 +161,14 @@ object StaffNotes {
         }
         // A barline with only the clef, key or time before it (a section's start drawn at the start
         // of a system) closes no measure.
-        val bars = barlines(staff, system, lines, heads).dropWhile { (x, _) ->
-            symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < x }
+        // (a repeat it starts still starts with the system)
+        val dots = symbols.filter { it.name == "augmentationDot" || it.name == "repeatDot" }
+        val allBars = barlines(staff, system, lines, heads, dots)
+        val bars = allBars.dropWhile { bar ->
+            symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < bar.x }
         }
-        val barlines = bars.map { it.first }
+        val opensRepeat = allBars.take(allBars.size - bars.size).any { it.repeat == Repeat.FORWARD || it.repeat == Repeat.BOTH }
+        val barlines = bars.map { it.x }
         val firstClef = clefs.firstOrNull()
         fun clefAt(x: Double): Clef? = clefs.lastOrNull { it.first.box.left < x }?.second ?: firstClef?.second
         val keyRuns = keys(staff, symbols, clefs.map { it.first }, barlines, ::clefAt)
@@ -210,7 +219,9 @@ object StaffNotes {
             clefs = clefs.map { (glyph, clef) -> Change(glyph.box.left, clef) },
             keys = keys,
             times = times(staff, symbols),
-            barStyles = bars.map { it.second },
+            barStyles = bars.map { it.style },
+            barRepeats = bars.map { it.repeat },
+            opensRepeat = opensRepeat,
         )
     }
 
@@ -364,10 +375,12 @@ object StaffNotes {
     /**
      * The barlines' xs: vertical lines running from the staff's top line to its bottom one (or
      * through it, across the system), but not the system's opening line nor a note's stem; with
-     * how each is drawn. Lines closer than a space make one barline (a double or final one): a
-     * line a third of a space thick or more is a heavy one.
+     * how each is drawn and the repeat it marks. Lines each closer than a space to the one before
+     * make one barline (a double or final one, a repeat's thin-thick-thin): a line a third of a
+     * space thick or more is a heavy one. Two dots one over the other (a space apart, inside the
+     * staff) close before a barline end a repeat, close after it start one.
      */
-    private fun barlines(staff: Staff, system: StaffSystem, lines: List<DrawnLine>, heads: List<DrawnGlyph>): List<Pair<Double, BarStyle>> {
+    private fun barlines(staff: Staff, system: StaffSystem, lines: List<DrawnLine>, heads: List<DrawnGlyph>, dots: List<DrawnGlyph>): List<Bar> {
         val space = staff.space
         val drawn = lines.filter { it.isVertical }
             .filter { line ->
@@ -380,10 +393,25 @@ object StaffNotes {
             }
             .sortedBy { it.x1 }
         val groups = drawn.fold(mutableListOf<MutableList<DrawnLine>>()) { groups, line ->
-            groups.lastOrNull()?.takeIf { line.x1 - it.first().x1 <= space }?.add(line) ?: groups.add(mutableListOf(line))
+            groups.lastOrNull()?.takeIf { line.x1 - it.last().x1 <= space }?.add(line) ?: groups.add(mutableListOf(line))
             groups
         }
+        // the dots of repeats: in pairs, one over the other a space apart, inside the staff
+        val paired = dots.filter { dot ->
+            dot.box.centerY > staff.top && dot.box.centerY < staff.bottom &&
+                dots.any { other -> other !== dot && abs(other.box.centerX - dot.box.centerX) < 0.3 * space && abs(abs(other.box.centerY - dot.box.centerY) - space) < 0.3 * space }
+        }
         return groups.map { group ->
+            val left = group.first().let { it.x1 - it.width / 2 }
+            val right = group.last().let { it.x1 + it.width / 2 }
+            val before = paired.any { it.box.centerX < left && it.box.centerX >= left - 1.5 * space }
+            val after = paired.any { it.box.centerX > right && it.box.centerX <= right + 1.5 * space }
+            val repeat = when {
+                before && after -> Repeat.BOTH
+                before -> Repeat.BACKWARD
+                after -> Repeat.FORWARD
+                else -> Repeat.NONE
+            }
             // one line drawn twice is one line
             val parts = group.distinctBy { Math.round(it.x1 / (0.1 * space)) }.map { it.width >= 0.33 * space }
             val style = when {
@@ -392,9 +420,12 @@ object StaffNotes {
                 parts.first() && !parts.last() -> BarStyle.HEAVY_LIGHT
                 else -> BarStyle.LIGHT_LIGHT
             }
-            group.first().x1 to style
+            Bar(group.first().x1, style, repeat)
         }
     }
+
+    /** A barline: its [x] (its first line's), how it is drawn, the repeat it marks. */
+    private data class Bar(val x: Double, val style: BarStyle, val repeat: Repeat)
 
     /**
      * A tuplet's number written in a text font (MuseScore's italic "3"), as the symbol a music font

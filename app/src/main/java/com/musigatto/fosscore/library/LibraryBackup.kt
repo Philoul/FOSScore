@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.musigatto.fosscore.ui.viewer.PdfCompanion
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -25,7 +26,10 @@ private const val LOG_TAG = "FOSScore-Backup"
  * - `database/fosscore.db`: a consistent copy of the database, taken while writes are blocked;
  * - `database/schema.sql`: the schema of that database, for people;
  * - `sheets/<hash>.<extension>`: the file of each sheet, named by its MD5 hash. It keeps its
- *   extension (`pdf`, or another score format), which is how the app tells the formats apart.
+ *   extension (`pdf`, or another score format), which is how the app tells the formats apart;
+ * - `companions/<hash>.musicxml`: a PDF's music read into MusicXML, its companion (prototype), by
+ *   the PDF's hash, when it has one and [export] is asked for them (the default), and
+ *   `companions/<hash>.places`, where its notes are on the PDF.
  *
  * **Import** happens in three steps, as in AndroidAPS's settings import:
  * 1. [inspect] unpacks the archive aside and checks it ([BackupChecks]): an ERROR (newer schema,
@@ -45,8 +49,11 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
         val needsConfirmation: Boolean get() = BackupChecks.needsConfirmation(checks)
     }
 
-    /** Writes the export archive of [db] (the open database named [dbName]) to [out]. */
-    fun export(db: RoomDatabase, out: OutputStream): BackupManifest {
+    /**
+     * Writes the export archive of [db] (the open database named [dbName]) to [out], with the
+     * companions of the PDFs unless [withCompanions] is false.
+     */
+    fun export(db: RoomDatabase, out: OutputStream, withCompanions: Boolean = true): BackupManifest {
         val work = File(context.cacheDir, "export").apply {
             deleteRecursively()
             mkdirs()
@@ -68,6 +75,14 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
                     }
                     zip.putNextEntry(ZipEntry("${BackupManifest.SHEETS_DIR}$hash.${extensionOf(path)}"))
                     file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+                if (withCompanions) for (hash in content.files.keys) for (extension in COMPANION_EXTENSIONS) {
+                    val entry = companionEntry(hash, extension)
+                    val companion = File(context.filesDir, entry)
+                    if (!companion.isFile) continue
+                    zip.putNextEntry(ZipEntry(entry))
+                    companion.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
                 zip.putNextEntry(ZipEntry(BackupManifest.DATABASE))
@@ -253,6 +268,13 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
         private val HASH = Regex("[0-9a-f]{32}")
         private val EXTENSION = Regex("[a-z0-9]{1,8}")
         private val SHEET_ENTRY = Regex("""${BackupManifest.SHEETS_DIR}[0-9a-f]{32}\.[a-z0-9]{1,8}""")
+        // a companion and its places on the PDF
+        private val COMPANION_EXTENSIONS = listOf(PdfCompanion.EXTENSION, PdfCompanion.PLACES_EXTENSION)
+        private val COMPANION_ENTRY =
+            Regex("""${PdfCompanion.DIR}/[0-9a-f]{32}\.(${COMPANION_EXTENSIONS.joinToString("|")})""")
+
+        /** The archive entry (and the path in `filesDir`) of the companion of the PDF of [hash], or of its places. */
+        internal fun companionEntry(hash: String, extension: String = PdfCompanion.EXTENSION) = "${PdfCompanion.DIR}/$hash.$extension"
 
         /** The extension a sheet's file keeps in the archive and after an import (`pdf` if it has none). */
         internal fun extensionOf(path: String): String =
@@ -260,7 +282,7 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
 
         internal fun isExpected(name: String): Boolean =
             name == BackupManifest.MANIFEST || name == BackupManifest.DATABASE || name == BackupManifest.SCHEMA ||
-                SHEET_ENTRY.matches(name)
+                SHEET_ENTRY.matches(name) || COMPANION_ENTRY.matches(name)
 
         fun device(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
 
@@ -308,6 +330,16 @@ class LibraryBackup(private val context: Context, private val dbName: String = A
                     error("could not put the imported PDFs in place")
                 }
                 sheets.mkdirs()
+                // the PDFs' companions join the ones already there (they are named by the PDF's hash)
+                runCatching {
+                    File(pending, PdfCompanion.DIR).listFiles()?.forEach { companion ->
+                        val dir = File(files, PdfCompanion.DIR).apply { mkdirs() }
+                        companion.copyTo(File(dir, companion.name), overwrite = true)
+                        // what was kept of a former one (its summary, its music, a "no music" mark) is out of date
+                        File(context.cacheDir, "scores/" + companion.name).deleteRecursively()
+                        File(dir, companion.nameWithoutExtension + ".none").delete()
+                    }
+                }.onFailure { Log.w(LOG_TAG, "companions not imported", it) }
 
                 for (suffix in listOf("", "-wal", "-shm", "-journal")) File(target.path + suffix).delete()
                 if (!incoming.renameTo(target)) error("could not put the imported database in place")

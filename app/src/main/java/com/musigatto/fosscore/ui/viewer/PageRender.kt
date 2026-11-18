@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.IntSize
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.pdf.MuPdfDoc
+import com.musigatto.fosscore.pdf.MuPdfLock
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.PageSource
 import com.musigatto.fosscore.score.ScorePrecompute
@@ -31,7 +32,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -61,12 +61,13 @@ private const val RENDER_UPGRADE_RATIO = 1.25f
  * serializes draw/close, and a cancelled draw (not cancellable mid-page) cannot clash with the next
  * one or with close().
  *
- * ponytail: one mutex per document is enough; if there is ever more than one document at a time,
- * move it to FOSScoreApp. The bitmap cache lives in MuPdfDoc.
+ * There is more than one document at a time (the music of PDFs is read in the background), so the
+ * mutex is the process-wide [MuPdfLock]. The bitmap cache lives in MuPdfDoc.
  */
 internal class PagePaper(private val pdfUri: Uri) {
 
-    private val lock = Mutex()
+    // every document, every viewer: the one MuPDF lock (the music is read from PDFs in the background too)
+    private val lock = MuPdfLock.mutex
 
     /** Why the page is not there: shown in place of it. */
     var error by mutableStateOf<Int?>(null)

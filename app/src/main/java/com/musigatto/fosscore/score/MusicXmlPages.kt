@@ -65,7 +65,7 @@ class MusicXmlPages private constructor(
     private val cacheDir: File,
     // the pages made ahead by [prepare], which no viewer shows
     private val ahead: Boolean = false,
-) : PageSource {
+) : PageSource, MusicPlaces {
 
     @Volatile
     override var pageCount: Int = 0
@@ -204,10 +204,10 @@ class MusicXmlPages private constructor(
     fun blankBands(index: Int): List<Band> = blanks[index].orEmpty()
 
     /** Where the notes and the measures of page [index] are, once the page has been drawn. Positions in SVG units. */
-    fun geometry(index: Int): PageGeometry? = geometries[index]
+    override fun geometry(index: Int): PageGeometry? = geometries[index]
 
     /** Page (0-based) of the note [id] in the current layout, or -1. */
-    suspend fun pageOf(id: String): Int = engine.pageOf(id) - 1
+    override suspend fun pageOf(id: String): Int = engine.pageOf(id) - 1
 
     /** The MIDI and the timing maps for the current layout and [sound], null without a layout. */
     suspend fun playback(sound: SoundSpec): Playback? = engine.playback(sound)

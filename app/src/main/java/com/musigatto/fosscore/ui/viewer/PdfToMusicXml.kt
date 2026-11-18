@@ -26,6 +26,7 @@ import com.musigatto.fosscore.pdfscore.bitmap.GrayImage
 import com.musigatto.fosscore.pdfscore.bitmap.OmrModel
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.score.MusicXmlPages
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -61,15 +62,42 @@ internal data class ConversionReport(
 
 /**
  * The MusicXML companion of a PDF score, kept as a file while the feature is a prototype (the
- * library's database gets it once it works). [key] names the PDF: its uri. A PDF in which no music
+ * library's database gets it once it works). [key] names the PDF: its hash (the MD5 of its
+ * content, which the library export keeps), or its uri outside the library. A PDF in which no music
  * was found gets a mark instead, so that ▶ goes to the metronome at once the next time.
  */
 internal object PdfCompanion {
-    private fun dir(context: Context) = File(context.filesDir, "companions")
+    /** The folder of the companions, inside `filesDir` (the library export carries it). */
+    const val DIR = "companions"
 
-    private fun name(key: String) = key.hashCode().toUInt().toString(16) + "-" + key.length
+    /** A companion's extension. */
+    const val EXTENSION = "musicxml"
 
-    fun file(context: Context, key: String): File = File(dir(context), name(key) + ".musicxml")
+    private fun dir(context: Context) = File(context.filesDir, DIR)
+
+    internal fun name(key: String) =
+        if (HASH.matches(key)) key else key.hashCode().toUInt().toString(16) + "-" + key.length
+
+    private val HASH = Regex("[0-9a-f]{32}")
+
+    fun file(context: Context, key: String): File = File(dir(context), name(key) + "." + EXTENSION)
+
+    /** A companion's places on the PDF ([CompanionPlaces]), beside it. */
+    const val PLACES_EXTENSION = "places"
+
+    private fun placesFile(context: Context, key: String): File = File(dir(context), name(key) + "." + PLACES_EXTENSION)
+
+    /** Where the companion's notes are on the PDF; null when they were not kept. */
+    fun places(context: Context, key: String): CompanionPlaces? =
+        placesFile(context, key).takeIf { it.isFile }?.let { f -> runCatching { CompanionPlaces.read(f.readText()) }.getOrNull() }
+
+    /** The PDF left the library: its companion, or its mark, goes too. */
+    fun forget(context: Context, key: String) {
+        file(context, key).delete()
+        placesFile(context, key).delete()
+        noMusic(context, key).delete()
+        File(context.cacheDir, "scores/" + file(context, key).name).deleteRecursively()
+    }
 
     /** The mark of a PDF read without finding any music, by the reader of its version. */
     private fun noMusic(context: Context, key: String): File = File(dir(context), name(key) + ".none")
@@ -78,9 +106,13 @@ internal object PdfCompanion {
     fun hasNoMusic(context: Context, key: String): Boolean =
         runCatching { noMusic(context, key).readText().trim() == READER_VERSION.toString() }.getOrDefault(false)
 
-    fun keep(context: Context, key: String, xml: String) {
+    fun keep(context: Context, key: String, xml: String, places: String) {
         dir(context).mkdirs()
         noMusic(context, key).delete()
+        // the places first: a companion found always has its own
+        val placesPart = File(dir(context), name(key) + ".places.part")
+        placesPart.writeText(places)
+        if (!placesPart.renameTo(placesFile(context, key))) placesPart.delete()
         // written aside, then renamed: a companion is never seen half written
         val part = File(dir(context), name(key) + ".part")
         part.writeText(xml)
@@ -221,20 +253,27 @@ internal suspend fun convertPdfToMusicXml(
     title: String,
     key: String,
     lock: suspend (suspend () -> Any?) -> Any?,
+    /** Called before each page: the reading in the background waits there for the user to leave the tablet. */
+    pause: suspend () -> Unit = {},
+    /** Where the reading works: anywhere for ▶, a thread at a low priority in the background. */
+    work: () -> CoroutineDispatcher = { Dispatchers.Default },
     onProgress: (Conversion) -> Unit,
 ): Conversion {
     return try {
         val smufl = withContext(Dispatchers.IO) { SmuflIndex.get(context) }
         val start = SystemClock.elapsedRealtime()
         val pages = mutableListOf<PageDrawing>()
+        // the PDF page each of [pages] is (a page that cannot be read is left out)
+        val pdfPages = mutableListOf<Int>()
         var scanned = 0
         for (index in 0 until doc.pageCount) {
+            pause()
             onProgress(Conversion.Reading(index + 1, doc.pageCount))
             val t0 = SystemClock.elapsedRealtime()
             // MuPDF under the viewer's lock, a page at a time; the SVG read off it
-            val svg = lock { withContext(Dispatchers.IO) { doc.pageSvg(index) } } as? ByteArray ?: continue
+            val svg = lock { withContext(work()) { doc.pageSvg(index) } } as? ByteArray ?: continue
             val t1 = SystemClock.elapsedRealtime()
-            val raw = withContext(Dispatchers.Default) { MuPdfSvg.read(svg, smufl) }
+            val raw = withContext(work()) { MuPdfSvg.read(svg, smufl) }
             val t2 = SystemClock.elapsedRealtime()
             val page = when {
                 raw.glyphs.any { it.name != null } -> raw
@@ -244,10 +283,10 @@ internal suspend fun convertPdfToMusicXml(
                     // a page larger than A4 (a scan saved on A3) is drawn as wide as an A4 one: the staves
                     // come out the size the reader is made for, in half the pixels
                     val dpi = scanDpi(raw.width)
-                    val gray = lock { withContext(Dispatchers.IO) { doc.pageGray(index, dpi) } } as? MuPdfDoc.GrayPage ?: continue
+                    val gray = lock { withContext(work()) { doc.pageGray(index, dpi) } } as? MuPdfDoc.GrayPage ?: continue
                     val t3 = SystemClock.elapsedRealtime()
                     scanned++
-                    withContext(Dispatchers.Default) {
+                    withContext(work()) {
                         BitmapPage.read(GrayImage(gray.width, gray.height, gray.pixels), dpi, model)
                     }.also {
                         Log.i(LOG_TAG, "page $index: scan ${gray.width}x${gray.height} drawn in ${t3 - t2} ms, read in ${SystemClock.elapsedRealtime() - t3} ms")
@@ -258,15 +297,16 @@ internal suspend fun convertPdfToMusicXml(
                     // shapes are built the first time a page needs them)
                     val outlines = withContext(Dispatchers.IO) { Outlines.get(context) }
                     Log.i(LOG_TAG, "page $index: references ready in ${SystemClock.elapsedRealtime() - t2} ms")
-                    withContext(Dispatchers.Default) { outlines.name(raw) }
+                    withContext(work()) { outlines.name(raw) }
                 }
             }
             Log.i(LOG_TAG, "page $index: svg ${t1 - t0} ms (${svg.size} bytes), parsed ${t2 - t1} ms, named ${SystemClock.elapsedRealtime() - t2} ms")
             pages += page
+            pdfPages += index
         }
         val traced = SystemClock.elapsedRealtime()
         onProgress(Conversion.Recognising)
-        val score = withContext(Dispatchers.Default) { ScoreReader.read(pages) }
+        val score = withContext(work()) { ScoreReader.read(pages) }
         val read = SystemClock.elapsedRealtime()
         val notes = score.measures.sumOf { m -> m.staves.sumOf { s -> s.events.sumOf { (it.event as? Chord)?.pitches?.size ?: 0 } } }
         if (notes == 0) {
@@ -274,9 +314,16 @@ internal suspend fun convertPdfToMusicXml(
             withContext(Dispatchers.IO) { PdfCompanion.markNoMusic(context, key) }
             return Conversion.Failed(context.getString(R.string.pdf_to_musicxml_no_music))
         }
-        val xml = withContext(Dispatchers.Default) { MusicXmlWriter.write(score, title) }
+        val xml = withContext(work()) { MusicXmlWriter.write(score, title) }
         val written = SystemClock.elapsedRealtime()
-        withContext(Dispatchers.IO) { PdfCompanion.keep(context, key, xml) }
+        // where each note is on the PDF, for the playback bar and the page turns
+        val places = withContext(work()) {
+            CompanionPlaces.write(
+                pages.indices.associate { pdfPages[it] to PageSize(pages[it].width, pages[it].height) },
+                score.followPlaces().mapValues { (_, place) -> place.copy(page = pdfPages[place.page]) },
+            )
+        }
+        withContext(Dispatchers.IO) { PdfCompanion.keep(context, key, xml, places) }
         val glyphs = pages.flatMap { it.glyphs }
         val report = ConversionReport(
             pages = pages.size,

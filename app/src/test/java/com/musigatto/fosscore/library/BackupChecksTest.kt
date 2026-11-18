@@ -88,4 +88,14 @@ class BackupChecksTest {
         assertFalse(LibraryBackup.isExpected("sheets/../../evil.pdf"))
         assertFalse(LibraryBackup.isExpected("sheets/notahash.pdf"))
     }
+
+    /** A PDF's music read into MusicXML (its companion) goes with it, under the PDF's hash. */
+    @Test
+    fun theCompanionsOfThePdfsAreUnpackedToo() {
+        assertTrue(LibraryBackup.isExpected("companions/0123456789abcdef0123456789abcdef.musicxml"))
+        assertFalse(LibraryBackup.isExpected("companions/../../evil.musicxml"))
+        assertTrue(LibraryBackup.isExpected("companions/0123456789abcdef0123456789abcdef.places"))
+        assertFalse(LibraryBackup.isExpected("companions/0123456789abcdef0123456789abcdef.none"))
+        assertEquals("companions/0123456789abcdef0123456789abcdef.musicxml", LibraryBackup.companionEntry("0123456789abcdef0123456789abcdef"))
+    }
 }

@@ -373,6 +373,7 @@ private fun FOSScoreNav(
                     onToggleTheme = toggleTheme,
                     onOpenPreferences = { nav = nav.copy(preferences = true) },
                     sheetId = sheet.id,
+                    scoreHash = sheet.hash,
                     onOpenSetlist = { nav = nav.toGroups(s.playKind, s.playGroup, s.playFacet) },
                     onPastEnd = openPlace(neighbour(playingIds, s.playItem, 1), StartPage.FIRST),
                     onBeforeStart = openPlace(neighbour(playingIds, s.playItem, -1), StartPage.LAST),

@@ -8,6 +8,8 @@ import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.MusicXmlScore
 import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.score.SheetFormat
+import com.musigatto.fosscore.ui.viewer.PdfCompanion
+import com.musigatto.fosscore.ui.viewer.PdfMusicReading
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -230,6 +232,8 @@ class LibraryRepository(context: Context) {
             if (composer.isNotBlank()) setPeople(saved.id, PersonRole.COMPOSER, splitPeopleText(composer))
             // a MusicXML score is laid out and drawn ahead while the user looks at its details
             if (format.isMusicXml) ScorePrecompute.changed()
+            // a PDF has its music read in the background (prototype)
+            else PdfMusicReading.changed()
             ImportResult.Ok(saved)
         } catch (e: Exception) {
             Log.e("FOSScore-Library", "importar ${uri.lastPathSegment}: ${e.message}", e)
@@ -245,6 +249,7 @@ class LibraryRepository(context: Context) {
         stampDao.deleteForSheet(sheet.id)
         strokeDao.deleteForSheet(sheet.id)
         dao.delete(sheet)
+        PdfCompanion.forget(appContext, sheet.hash)
         try {
             File(sheet.path).delete()
         } catch (_: Exception) {

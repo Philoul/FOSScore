@@ -8,6 +8,7 @@ import com.musigatto.fosscore.library.StampRepository
 import com.musigatto.fosscore.library.StrokeRepository
 import com.musigatto.fosscore.score.ScorePrecompute
 import com.musigatto.fosscore.sound.SoundBank
+import com.musigatto.fosscore.ui.viewer.PdfMusicReading
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +27,8 @@ class FOSScoreApp : Application() {
         super.onCreate()
         // MusicXML scores laid out and drawn ahead, whenever the user leaves the tablet alone
         ScorePrecompute.start(this, applicationScope, repository.sheets())
+        // prototype: the music of the PDFs read into their companions, at a low priority, when the tablet is left alone
+        PdfMusicReading.start(this, applicationScope, repository.sheets())
         // a sound bank whose preparation was cut short when the app closed goes on by itself
         SoundBank.prepareAll(this)
     }

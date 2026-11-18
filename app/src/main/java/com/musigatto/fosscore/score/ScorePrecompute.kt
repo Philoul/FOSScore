@@ -98,7 +98,8 @@ object ScorePrecompute {
 
     private fun idle() = !playing && viewerWorks.get() == 0 && SystemClock.uptimeMillis() - lastTouch >= IDLE_MS
 
-    private suspend fun awaitIdle() {
+    /** Returns once the user leaves the tablet alone, no viewer works and nothing plays. */
+    suspend fun awaitIdle() {
         while (!idle()) delay(IDLE_POLL_MS.milliseconds)
     }
 

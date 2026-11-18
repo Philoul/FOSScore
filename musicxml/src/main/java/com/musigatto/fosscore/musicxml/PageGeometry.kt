@@ -75,6 +75,13 @@ class PageGeometry private constructor(
         fun measureId(rank: Int): String = "$MEASURE_ID$rank"
 
         /**
+         * A page [width] × [height] units whose notes were placed by another than Verovio (a PDF
+         * whose music was read): its visible noteheads by id. It has no measures.
+         */
+        fun of(width: Float, height: Float, heads: Map<String, Head>): PageGeometry =
+            PageGeometry(heads.keys, heads, width, height)
+
+        /**
          * Parses the SVG as Verovio wrote it, with `svgFormatRaw` (one line, before the MuPDF fixes).
          */
         fun parse(svg: String): PageGeometry {

@@ -52,7 +52,7 @@ import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
-import com.musigatto.fosscore.score.MusicXmlPages
+import com.musigatto.fosscore.score.MusicPlaces
 import com.musigatto.fosscore.score.PageSource
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -256,6 +256,8 @@ internal fun PageCanvas(
     offsetY: () -> Float,
     invert: Boolean,
     pageSource: PageSource?,
+    /** Where the music played is drawn: the bar follows it (a MusicXML score's layout, a PDF's companion). */
+    places: MusicPlaces?,
     playback: Playback?,
     playQuarters: () -> Double?,
     halfCut: HalfCut?,
@@ -303,7 +305,7 @@ internal fun PageCanvas(
                             colorFilter = if (invert) INVERT_FILTER else null,
                             modifier = Modifier.fillMaxSize()
                         )
-                        val geo = (pageSource as? MusicXmlPages)?.geometry(index)
+                        val geo = places?.geometry(index)
                         if (geo != null && playback != null) {
                             val path = remember(geo, playback) { BarPath(playback, geo) }
                             FitPlaybackBar(path, playQuarters, bmp.width, bmp.height, Modifier.fillMaxSize())
@@ -364,7 +366,7 @@ internal fun PageCanvas(
                     modifier = Modifier.fillMaxSize()
                 )
                 // the playback bar, on whichever part the music is in
-                val pages = pageSource as? MusicXmlPages
+                val pages = places
                 if (pages != null && playback != null) {
                     // a line of music is on the part its middle is in
                     fun middle(s: BarSpot) = (s.top + s.bottom) / 2
@@ -500,7 +502,7 @@ internal fun PageCanvas(
                                 }
                         )
                     // the playback bar, at the page's place and zoom
-                    val cursorGeo = (pageSource as? MusicXmlPages)?.geometry(currentPage)
+                    val cursorGeo = places?.geometry(currentPage)
                     if (cursorGeo != null && playback != null && bitmaps[currentPage] != null) {
                         val path = remember(cursorGeo, playback) { BarPath(playback, cursorGeo) }
                         Canvas(modifier = Modifier.fillMaxSize()) {

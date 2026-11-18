@@ -102,6 +102,7 @@ import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.score.MeasureAnchors
 import com.musigatto.fosscore.score.MusicXmlMarks
+import com.musigatto.fosscore.score.MusicPlaces
 import com.musigatto.fosscore.score.MusicXmlPages
 import com.musigatto.fosscore.score.MusicXmlScreen
 import com.musigatto.fosscore.score.PageSource
@@ -247,6 +248,8 @@ fun PdfViewerScreen(
     onToggleTheme: () -> Unit,
     onOpenPreferences: () -> Unit = {},
     sheetId: Long? = null,
+    /** The hash of the score's file: what its MusicXML companion is kept under (its uri when absent). */
+    scoreHash: String? = null,
     /** In a setlist, the setlist: ≡ in the menu opens it (the setlists otherwise). */
     onOpenSetlist: () -> Unit = onOpenLibrary,
     /**
@@ -393,16 +396,26 @@ fun PdfViewerScreen(
 
     // prototype: a PDF's music, read into its MusicXML companion (PdfToMusicXml.kt), which ▶ plays
     // while the PDF stays the page shown. [companionRead] counts the readings: a new one opens it again
-    val companionKey = pdfUri.toString()
+    val companionKey = scoreHash ?: pdfUri.toString()
     var companionRead by remember { mutableIntStateOf(0) }
     var companionScore by remember { mutableStateOf<MusicXmlPages?>(null) }
+    // where the companion's notes are on the PDF: the bar is drawn there, the pages turn by them
+    var companionPlaces by remember { mutableStateOf<CompanionPlaces?>(null) }
+    // the reading [companionScore] was opened after
+    var companionOpenedAt by remember { mutableIntStateOf(-1) }
+    // the music of the library's PDFs is read in the background: one of them may be this one
+    val readsEnded by PdfMusicReading.finished.collectAsState()
     // ▶ was pressed before the music was read: it is being read, and plays once read
     var readingMusic by remember { mutableStateOf(false) }
     var playOnceRead by remember { mutableStateOf(false) }
-    LaunchedEffect(companionKey, companionRead, format) {
+    LaunchedEffect(companionKey, companionRead, readsEnded, format) {
         if (format.isMusicXml) return@LaunchedEffect
+        // a reading of another PDF ended: the companion already open stays
+        if (companionScore != null && companionOpenedAt == companionRead) return@LaunchedEffect
+        companionOpenedAt = companionRead
         val opened = PdfCompanion.open(context, companionKey)
         val former = companionScore
+        companionPlaces = withContext(Dispatchers.IO) { PdfCompanion.places(context, companionKey) }
         companionScore = opened
         former?.let { old -> withContext(Dispatchers.IO) { old.close() } }
         if (opened != null && playOnceRead) {
@@ -417,6 +430,8 @@ fun PdfViewerScreen(
     }
     // the score ▶ plays: a MusicXML score, or a PDF's companion
     val music: MusicXmlPages? = pageSource as? MusicXmlPages ?: companionScore
+    // where that music is drawn: the MusicXML score's layout, or the PDF the companion was read from
+    val places: MusicPlaces? = pageSource as? MusicXmlPages ?: companionPlaces
 
     // the page in view and its neighbours in one query: a turn finds the new page's marks already
     // in hand, so it draws them on its first frame instead of after Room's round trip. The collected
@@ -525,11 +540,17 @@ fun PdfViewerScreen(
         playOnceRead = fromPlay
         editScope.launch {
             if (!fromPlay) conversion = Conversion.Reading(0, doc.pageCount)
-            val done = convertPdfToMusicXml(
-                context, doc, title, companionKey,
-                lock = { read -> paper.withRenderLock { read() } },
-                onProgress = { if (!fromPlay) conversion = it },
-            )
+            // the music of this PDF may be being read in the background already: then that reading
+            // is waited for, and it no longer pauses for the user
+            val reading = PdfMusicReading.readings.join(editScope, companionKey) {
+                convertPdfToMusicXml(
+                    context, doc, title, companionKey,
+                    lock = { read -> paper.withRenderLock { read() } },
+                    onProgress = { if (!fromPlay) conversion = it },
+                ).also { PdfMusicReading.ended() }
+            }
+            PdfMusicReading.readings.hurry(companionKey)
+            val done = reading.await()
             readingMusic = false
             if (!fromPlay) conversion = done
             when (done) {
@@ -1029,7 +1050,7 @@ fun PdfViewerScreen(
     // The notes on screen, for ▶ (it starts where the eyes are) and for the follow below. A turned
     // half page shows the top of the next page over the bottom of this one.
     fun notesOnScreen(notes: Collection<String>? = null): Set<String> {
-        val pages = pageSource as? MusicXmlPages ?: return emptySet()
+        val pages = places ?: return emptySet()
         fun onPage(index: Int, keep: (PageGeometry, String) -> Boolean = { _, _ -> true }): List<String> {
             val geo = pages.geometry(index) ?: return emptyList()
             return (notes ?: geo.noteIds).filter { it in geo.noteIds && keep(geo, it) }
@@ -1057,7 +1078,7 @@ fun PdfViewerScreen(
     // during playback lets the reader look ahead: the follow waits until the music is on screen
     // again (as in the MusicXML prototype).
     suspend fun followMusic(notes: List<String>, ahead: List<String>, byHand: Boolean = true) {
-        val pages = pageSource as? MusicXmlPages ?: return
+        val pages = places ?: return
         if (notes.isEmpty()) return
         val onScreen = notesOnScreen(notes).isNotEmpty()
         if (byHand && onScreen) playbackVm.musicOnScreen()
@@ -1466,6 +1487,7 @@ fun PdfViewerScreen(
                     offsetY = { zoom.transform.offset.y },
                     invert = invert,
                     pageSource = pageSource,
+                    places = places,
                     playback = playbackVm.currentPlayback,
                     playQuarters = { playQuarters },
                     halfCut = paper.halfCut,

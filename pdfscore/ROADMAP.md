@@ -49,9 +49,32 @@ symbols (Bravura and Leipzig, shipped with the app) at the staff's scale.
 | Research prototype (Python): staves, deskew, staff-line removal, segmentation, kNN classifier | done: staves 100 %, symbols ≈97 % P/R on degraded renders |
 | Test set (300 dpi renders of the private corpus) and free training set (random music engraved by Verovio in its free fonts) | in progress |
 | Comparison with Audiveris (AGPL-3.0 OMR engine) as a reference | proposed |
-| Kotlin port, system by system | next |
+| Kotlin port, whole page (`pdfscore.bitmap`, `BitmapPage.read`: gray image + dpi → `PageDrawing`) | done: every stage of the spec, the kNN model shipped in the module's resources (CRC checked); the golden blobs and both golden pages (clean, rough) match the Python reference exactly; ~40 ms on the 1300 × 309 golden crop, 0.45–0.85 s a 300 dpi page on the PC |
+| Reading scans with the PDF readers (`ScoreReader` unchanged) | first results: ledger lines and evenly spaced staff lines added to the page model; one private score's clean render 257 / 262 staff-measures with the right pitches, the other renders far lower (octave lines, keys, a missed barline shifts the measures) |
+| Streaming, system by system (STREAMING.md), and the app's scan import | next |
 
-## App and MusicXML format (design to be approved)
+## App and MusicXML format
+
+Decisions (maintainer, 2026-11-18):
+
+1. Only the PDF shows in the library. The MusicXML is its companion, used to play it, for the MIDI
+   and MusicXML exports, for a transposition the user asks for, and for a zoom (re-layout) the user
+   asks for to read better.
+2. Decoding starts at the PDF's import, in the background at low priority. The play button starts
+   it at once if it has not started yet; playback then begins immediately, as decoding is much
+   faster than the music and the player takes notes as they come.
+3. The companion goes into the library export by default (an export setting may come later).
+4. Doubts and errors: an editor of the MusicXML (both versions zoomed line by line side by side, to
+   compare and correct) is for a second stage, not the first version.
+5. PDF annotations kept in the MusicXML view (or a show/hide setting): a later improvement, not in
+   the first PR.
+6. Files first while developing; once it works, the PR brings the Room schema change for a clean
+   integration.
+
+Steps: (1) companion file and playback from it, (2) red bar on the PDF, (3) streaming decode while
+playing, (4) the MusicXML view on demand (transposition, zoom), (5) instruments, (6) annotations.
+
+Design notes:
 
 - Playback that starts at the user's click, the score being decoded system by system while it
   plays (decoding is much faster than the music).

@@ -38,6 +38,9 @@ android {
             // PDFs engraved in fonts none of the references, each beside its MusicXML, kept private
             // outside the repository (PrivateScoresProbeTest): -PpdfscorePrivate=<folder>
             it.systemProperty("pdfscore.private", providers.gradleProperty("pdfscorePrivate").getOrElse(""))
+            // 300 dpi page images of those scores, <name>-p<N>[-<variant>].png or .jpg, rendered
+            // beforehand (PrivateScansProbeTest): -PpdfscoreScans=<folder>; else beside the PDFs
+            it.systemProperty("pdfscore.scans", providers.gradleProperty("pdfscoreScans").getOrElse(""))
             // The free music fonts the recognition compares symbols with: Verovio's font data,
             // which :musicxml downloads with Verovio's source.
             it.systemProperty(

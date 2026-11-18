@@ -48,6 +48,9 @@ private const val PRELOAD_SIZES = 4
 // below this size (in points) a display list counts as having no usable bounds
 private const val MIN_PAGE_DIM = 0.05f
 
+// a PDF's unit, the point, is an inch / 72
+private const val POINTS_PER_INCH = 72.0
+
 /** The page box, in PDF points. */
 data class PageBox(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
     val width: Float get() = x1 - x0
@@ -243,6 +246,37 @@ class MuPdfDoc private constructor(
             page.destroy()
         }
     }
+
+    /**
+     * The page drawn in 8-bit gray at [dpi] (a byte per pixel, rows top down, white paper), for
+     * reading a scanned score; null when it cannot be drawn. Call it under the viewer's mutex.
+     */
+    fun pageGray(index: Int, dpi: Double): GrayPage? {
+        val page = loadPage(index) ?: return null
+        var pix: Pixmap? = null
+        return try {
+            val scale = (dpi / POINTS_PER_INCH).toFloat()
+            // without alpha MuPDF draws the page on white paper
+            pix = page.toPixmap(Matrix(scale, 0f, 0f, scale), ColorSpace.DeviceGray, false, true)
+            val width = pix.width
+            val height = pix.height
+            val stride = pix.stride
+            val samples = pix.samples
+            val pixels = if (stride == width) samples else ByteArray(width * height).also { out ->
+                for (y in 0 until height) System.arraycopy(samples, y * stride, out, y * width, width)
+            }
+            GrayPage(width, height, pixels)
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "no gray picture of page $index: ${e.message}", e)
+            null
+        } finally {
+            pix?.destroy()
+            page.destroy()
+        }
+    }
+
+    /** A page in 8-bit gray: [pixels] row after row, [width] each. */
+    class GrayPage(val width: Int, val height: Int, val pixels: ByteArray)
 
     /**
      * Drops what is cached for a page (display list + bitmaps) so it gets parsed and drawn again.

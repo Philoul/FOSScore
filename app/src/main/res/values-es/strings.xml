@@ -462,15 +462,15 @@
         <item quantity="other">%1$d partituras</item>
     </plurals>
     <!-- Prototype: a vector PDF score read into MusicXML (:pdfscore) -->
-    <string name="menu_to_musicxml">Convertir a MusicXML (prototipo)</string>
-    <string name="pdf_to_musicxml_title">Convertir a MusicXML (prototipo)</string>
+    <string name="menu_to_musicxml">Leer la música (prototipo)</string>
+    <string name="pdf_to_musicxml_title">Leer la música (prototipo)</string>
     <string name="pdf_to_musicxml_reading">Leyendo la página %1$d de %2$d…</string>
     <string name="pdf_to_musicxml_recognising">Leyendo la música y escribiendo el MusicXML…</string>
     <string name="pdf_to_musicxml_report">%1$d páginas, %2$d compases, %3$d partes, %4$d notas\n%5$d de %6$d símbolos reconocidos\n\nLectura del PDF: %7$s s\nLectura de la música: %8$s s\nEscritura del MusicXML: %9$s s\nTotal: %10$s s</string>
-    <string name="pdf_to_musicxml_added">Añadida a la biblioteca como «%1$s».</string>
-    <string name="pdf_to_musicxml_already">Este MusicXML ya está en la biblioteca.</string>
     <string name="pdf_to_musicxml_failed">La conversión falló: %1$s</string>
-    <string name="pdf_to_musicxml_import_failed">no se pudo añadir el MusicXML a la biblioteca</string>
-    <string name="pdf_to_musicxml_no_music">no se encontró ninguna nota: una partitura escaneada (una imagen) aún no se lee</string>
+    <string name="pdf_to_musicxml_no_music">no se encontró ninguna nota: suena el metrónomo en su lugar</string>
+    <string name="pdf_to_musicxml_kept">Guardada con el PDF: ▶ la reproduce.</string>
+    <string name="pdf_to_musicxml_scanned">Páginas escaneadas leídas: %1$d</string>
+    <string name="pdf_reading_music">Leyendo la música…</string>
     <string name="pdf_to_musicxml_close">Cerrar</string>
 </resources>

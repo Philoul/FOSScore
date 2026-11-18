@@ -99,6 +99,7 @@ private fun MenuItemState.hint(): String? = when (this) {
 @Composable
 fun ViewerMenuPanel(
     isMusicXml: Boolean,
+    playable: Boolean = isMusicXml,
     onSelect: (ViewerMenuItem) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -133,7 +134,7 @@ fun ViewerMenuPanel(
                         HorizontalDivider(Modifier.padding(vertical = 4.dp))
                         group = item.group
                     }
-                    val state = menuItemState(item, isMusicXml)
+                    val state = menuItemState(item, isMusicXml, playable)
                     MenuRow(item.icon, item.label(), state.hint(), state == MenuItemState.READY) {
                         onSelect(item)
                     }

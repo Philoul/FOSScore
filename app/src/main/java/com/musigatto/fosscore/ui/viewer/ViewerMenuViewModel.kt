@@ -40,11 +40,13 @@ enum class ViewerMenuItem(val group: Int) {
 enum class MenuItemState { READY, SOON, MUSICXML_ONLY, NOT_ON_MUSICXML }
 
 /** Which entries work for this score. */
-fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean): MenuItemState =
+fun menuItemState(item: ViewerMenuItem, isMusicXml: Boolean, playable: Boolean = isMusicXml): MenuItemState =
     when (item) {
         ViewerMenuItem.LIBRARY, ViewerMenuItem.SETLIST, ViewerMenuItem.DISPLAY, ViewerMenuItem.METRONOME, ViewerMenuItem.SETTINGS -> MenuItemState.READY
-        ViewerMenuItem.LAYOUT, ViewerMenuItem.PLAYBACK ->
-            if (isMusicXml) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
+        ViewerMenuItem.LAYOUT -> if (isMusicXml) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
+        // a PDF plays its music once read (its companion)
+        ViewerMenuItem.PLAYBACK ->
+            if (playable) MenuItemState.READY else MenuItemState.MUSICXML_ONLY
         // a MusicXML score's marks hang on its measures, so they follow the music (MusicXmlMarks)
         ViewerMenuItem.ANNOTATE -> MenuItemState.READY
         // the export writes the marks into a copy of the PDF: a MusicXML score has no PDF to copy

@@ -459,15 +459,15 @@
         <item quantity="other">%1$d scores</item>
     </plurals>
     <!-- Prototype: a vector PDF score read into MusicXML (:pdfscore) -->
-    <string name="menu_to_musicxml">Convert to MusicXML (prototype)</string>
-    <string name="pdf_to_musicxml_title">Convert to MusicXML (prototype)</string>
+    <string name="menu_to_musicxml">Read the music (prototype)</string>
+    <string name="pdf_to_musicxml_title">Read the music (prototype)</string>
     <string name="pdf_to_musicxml_reading">Reading page %1$d of %2$d…</string>
     <string name="pdf_to_musicxml_recognising">Reading the music and writing MusicXML…</string>
     <string name="pdf_to_musicxml_report">%1$d pages, %2$d measures, %3$d parts, %4$d notes\n%5$d of %6$d symbols recognised\n\nReading the PDF: %7$s s\nReading the music: %8$s s\nWriting MusicXML: %9$s s\nTotal: %10$s s</string>
-    <string name="pdf_to_musicxml_added">Added to the library as “%1$s”.</string>
-    <string name="pdf_to_musicxml_already">This MusicXML is already in the library.</string>
     <string name="pdf_to_musicxml_failed">The conversion failed: %1$s</string>
-    <string name="pdf_to_musicxml_import_failed">the MusicXML could not be added to the library</string>
-    <string name="pdf_to_musicxml_no_music">no note was found: a scanned score (an image) is not read yet</string>
+    <string name="pdf_to_musicxml_no_music">no note was found: the metronome plays instead</string>
+    <string name="pdf_to_musicxml_kept">Kept with the PDF: ▶ plays it.</string>
+    <string name="pdf_to_musicxml_scanned">Scanned pages read: %1$d</string>
+    <string name="pdf_reading_music">Reading the music…</string>
     <string name="pdf_to_musicxml_close">Close</string>
 </resources>

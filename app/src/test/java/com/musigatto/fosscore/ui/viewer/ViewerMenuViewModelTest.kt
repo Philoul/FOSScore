@@ -130,6 +130,14 @@ class ViewerMenuViewModelTest {
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false))
     }
 
+    /** A PDF whose music was read (its companion) plays it: its playback panel opens, its layout does not. */
+    @Test
+    fun aPdfWithItsMusicReadHasPlaybackButNoLayout() {
+        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.PLAYBACK, isMusicXml = false, playable = true))
+        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false, playable = true))
+        assertEquals(true, ViewerMenuItem.PLAYBACK in barItems(isMusicXml = false, annotatable = true, playable = true))
+    }
+
     @Test
     fun aPdfHasNoParts() {
         val vm = ViewerMenuViewModel(MemoryStore())

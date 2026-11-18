@@ -391,6 +391,33 @@ fun PdfViewerScreen(
     val strokeStore: StrokeStore = marks?.strokes ?: app.strokeRepository
     LaunchedEffect(stampStore, strokeStore) { editor.useStores(stampStore, strokeStore) }
 
+    // prototype: a PDF's music, read into its MusicXML companion (PdfToMusicXml.kt), which ▶ plays
+    // while the PDF stays the page shown. [companionRead] counts the readings: a new one opens it again
+    val companionKey = pdfUri.toString()
+    var companionRead by remember { mutableIntStateOf(0) }
+    var companionScore by remember { mutableStateOf<MusicXmlPages?>(null) }
+    // ▶ was pressed before the music was read: it is being read, and plays once read
+    var readingMusic by remember { mutableStateOf(false) }
+    var playOnceRead by remember { mutableStateOf(false) }
+    LaunchedEffect(companionKey, companionRead, format) {
+        if (format.isMusicXml) return@LaunchedEffect
+        val opened = PdfCompanion.open(context, companionKey)
+        val former = companionScore
+        companionScore = opened
+        former?.let { old -> withContext(Dispatchers.IO) { old.close() } }
+        if (opened != null && playOnceRead) {
+            playOnceRead = false
+            playbackVm.attach(opened, opened.parts.map { it.id }.toSet(), COMPANION_LOADED)
+            metronomeVm.stop()
+            playbackVm.playPause(emptySet())
+        }
+    }
+    DisposableEffect(companionKey) {
+        onDispose { companionScore?.let { c -> app.applicationScope.launch(Dispatchers.IO) { c.close() } } }
+    }
+    // the score ▶ plays: a MusicXML score, or a PDF's companion
+    val music: MusicXmlPages? = pageSource as? MusicXmlPages ?: companionScore
+
     // the page in view and its neighbours in one query: a turn finds the new page's marks already
     // in hand, so it draws them on its first frame instead of after Room's round trip. The collected
     // state survives the range changing (it is remembered without keys), so the last snapshot keeps
@@ -488,20 +515,34 @@ fun PdfViewerScreen(
     var defaultTextItalic by remember { mutableStateOf(Settings.textItalic(context)) }
     val inkPreview = remember { mutableStateOf<List<Offset>>(emptyList()) }  // preview of the stroke being drawn (px)
     val editScope = rememberCoroutineScope()
-    // prototype: the PDF read into a MusicXML score (PdfToMusicXml.kt)
+    // prototype: the PDF's music read into its companion (PdfToMusicXml.kt). From the menu the
+    // dialog follows the reading and reports it; from ▶ the band says it reads, then plays
     var conversion by remember { mutableStateOf<Conversion?>(null) }
-    val convertToMusicXml: () -> Unit = {
-        (pageSource as? MuPdfDoc)?.let { doc ->
-            if (conversion == null) editScope.launch {
-                conversion = Conversion.Reading(0, doc.pageCount)
-                conversion = convertPdfToMusicXml(
-                    context, doc, title, app.repository,
-                    lock = { read -> paper.withRenderLock { read() } },
-                    onProgress = { conversion = it },
-                )
+    fun readMusic(fromPlay: Boolean) {
+        val doc = pageSource as? MuPdfDoc ?: return
+        if (readingMusic) return
+        readingMusic = true
+        playOnceRead = fromPlay
+        editScope.launch {
+            if (!fromPlay) conversion = Conversion.Reading(0, doc.pageCount)
+            val done = convertPdfToMusicXml(
+                context, doc, title, companionKey,
+                lock = { read -> paper.withRenderLock { read() } },
+                onProgress = { if (!fromPlay) conversion = it },
+            )
+            readingMusic = false
+            if (!fromPlay) conversion = done
+            when (done) {
+                is Conversion.Done -> companionRead++
+                // no music: the metronome plays instead
+                else -> if (playOnceRead) {
+                    playOnceRead = false
+                    conversion = done
+                }
             }
         }
     }
+    val convertToMusicXml: () -> Unit = { readMusic(fromPlay = false) }
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
 
@@ -959,12 +1000,19 @@ fun PdfViewerScreen(
     // Playback plays what is loaded: a new transposition, new parts or new lyrics reload the score
     // with new note ids, and stop the music. A new size or a turned screen keeps it playing.
     val shownIds = scoreLayout.partsShown(parts)
-    LaunchedEffect(pageSource, scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics) {
-        playbackVm.attach(
-            pageSource as? MusicXmlPages,
-            shownIds,
-            listOf(scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics),
-        )
+    // A PDF plays its companion, every part of it.
+    LaunchedEffect(pageSource, companionScore, scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics) {
+        val pages = pageSource as? MusicXmlPages
+        val played = companionScore
+        when {
+            pages != null -> playbackVm.attach(
+                pages,
+                shownIds,
+                listOf(scoreLayout.semitones, shownIds, scoreLayout.lyrics, scoreLayout.keepHiddenLyrics),
+            )
+            played != null -> playbackVm.attach(played, played.parts.map { it.id }.toSet(), COMPANION_LOADED)
+            else -> playbackVm.attach(null, emptySet(), COMPANION_LOADED)
+        }
     }
 
     // a page's height in its SVG units, from the page box (null before the first page is read)
@@ -1060,8 +1108,22 @@ fun PdfViewerScreen(
     // What a key of the keyboard or the pedal does (Settings › Keyboard and pedals): the same as the
     // button of the bar or the band. An action that has no meaning here (playback on a PDF score)
     // does nothing.
+    // ▶ / ⏸: the music, a MusicXML score's or a PDF's companion. A PDF whose music is not read yet
+    // has it read first, then played; one in which none was found has the metronome instead
+    fun playPause() {
+        when {
+            music != null -> {
+                metronomeVm.stop()
+                playbackVm.playPause(notesOnScreen())
+            }
+            format.isMusicXml -> Unit
+            pageSource is MuPdfDoc && !PdfCompanion.noMusic(context, companionKey).isFile -> readMusic(fromPlay = true)
+            else -> startStopMetronome()
+        }
+    }
+
     fun runKeyAction(action: KeyAction) {
-        val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+        val writtenBpm = music?.info?.tempo ?: DEFAULT_BPM
         when (action) {
             KeyAction.PREV_PAGE -> applyPrev()
             KeyAction.NEXT_PAGE -> applyNext()
@@ -1073,18 +1135,15 @@ fun PdfViewerScreen(
                 currentPage = (pageCount - 1).coerceAtLeast(0)
                 halfTurned = false
             }
-            KeyAction.PLAY_PAUSE -> if (format.isMusicXml) {
-                metronomeVm.stop()
-                playbackVm.playPause(notesOnScreen())
-            }
-            KeyAction.RESTART -> if (format.isMusicXml) playbackVm.restart()
-            KeyAction.LOOP -> if (format.isMusicXml) playbackVm.toggleLoop()
-            KeyAction.METRONOME -> when (metronomeKey(format.isMusicXml)) {
+            KeyAction.PLAY_PAUSE -> playPause()
+            KeyAction.RESTART -> if (music != null) playbackVm.restart()
+            KeyAction.LOOP -> if (music != null) playbackVm.toggleLoop()
+            KeyAction.METRONOME -> when (metronomeKey(music != null)) {
                 MetronomeKey.TOGGLE_CLICKS -> playbackVm.toggleClicks()
                 MetronomeKey.START_STOP -> startStopMetronome()
             }
             KeyAction.TAP_TEMPO -> metronomeVm.tap()?.let { bpm ->
-                if (format.isMusicXml) playbackVm.setTempo(factorOf(bpm, writtenBpm))
+                if (music != null) playbackVm.setTempo(factorOf(bpm, writtenBpm))
             }
             KeyAction.SHOW_BAR -> if (!editing) navVisible = !navVisible
             // in, or out keeping what was drawn, as ✓
@@ -1555,6 +1614,7 @@ fun PdfViewerScreen(
                         pageLabel = pageLabel,
                         setlistPlace = setlistPlace,
                         isMusicXml = format.isMusicXml,
+                        playable = music != null,
                         annotatable = editEntryShown(editing, sheetId != null),
                         open = open,
                         onSelect = { item ->
@@ -1742,15 +1802,15 @@ fun PdfViewerScreen(
                     metronome = metronome,
                     metronomeOn = metronomeOn,
                     metronomeTick = metronomeTick,
-                    pageSource = pageSource,
+                    music = music,
+                    readingMusic = readingMusic,
                     pageCount = pageCount,
                     currentPage = currentPage,
-                    format = format,
                     playState = playState,
                     loop = loop,
                     tempoFactor = tempoFactor,
                     playbackFailed = playbackFailed,
-                    onStartStop = { startStopMetronome() },
+                    onStartStop = { playPause() },
                     onJump = {
                         playbackVm.pageTurnedByHand()
                         currentPage = it
@@ -1803,6 +1863,7 @@ fun PdfViewerScreen(
             playbackVm = playbackVm,
             metronome = metronome,
             pageSource = pageSource,
+            music = music,
             pageCount = pageCount,
             currentPage = currentPage,
             onJumpPage = {

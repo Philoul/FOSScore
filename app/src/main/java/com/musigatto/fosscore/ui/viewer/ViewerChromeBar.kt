@@ -68,8 +68,6 @@ import com.musigatto.fosscore.metronome.MIN_BPM
 import com.musigatto.fosscore.metronome.MetronomeSettings
 import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.score.MusicXmlPages
-import com.musigatto.fosscore.score.PageSource
-import com.musigatto.fosscore.score.SheetFormat
 import kotlin.math.roundToInt
 
 /**
@@ -733,10 +731,12 @@ internal fun BottomChrome(
     metronome: MetronomeSettings,
     metronomeOn: Boolean,
     metronomeTick: Tick?,
-    pageSource: PageSource?,
+    // the score that plays: a MusicXML score, or a PDF's companion; null for a PDF without music
+    music: MusicXmlPages?,
+    // a PDF's music being read, for ▶ (it plays once read)
+    readingMusic: Boolean,
     pageCount: Int,
     currentPage: Int,
-    format: SheetFormat,
     playState: PlayState,
     loop: Loop,
     tempoFactor: Float,
@@ -756,9 +756,9 @@ internal fun BottomChrome(
             // edge-to-edge: the knob was sitting in the navigation gesture area
             .navigationBarsPadding()
     ) {
-        if (format.isMusicXml) {
+        if (music != null) {
             // the music, the metronome clicking over it on demand: the same band
-            val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+            val writtenBpm = music.info.tempo ?: DEFAULT_BPM
             val clicking by playbackVm.clicking.collectAsState()
             val tick by playbackVm.tick.collectAsState()
             val bar by playbackVm.bar.collectAsState()
@@ -792,15 +792,20 @@ internal fun BottomChrome(
                 )
             }
         } else {
-            // a PDF has no music: the same band drives the metronome alone, its beats turning
-            // the pages; it has no loop. It shows with the bars, as over the music
+            // a PDF whose music is not read (yet, or none was found): the same band drives the
+            // metronome alone, its beats turning the pages; it has no loop. It shows with the
+            // bars, as over the music. ▶ first reads the music, and plays it once read
             PlaybackBand(
                 // the bar heard, counted from the start of the piece as the score numbers its
                 // bars, once the bars of the pages are counted
-                barText = metronomeVm.barHeard(metronomeTick)
+                barText = if (readingMusic) stringResource(R.string.pdf_reading_music) else metronomeVm.barHeard(metronomeTick)
                     ?.takeIf { BarPages(metronome.barCounts, pageCount).known }
                     ?.let { stringResource(R.string.playback_bar, it + 1) },
-                state = if (metronomeOn) PlayState.PLAYING else PlayState.STOPPED,
+                state = when {
+                    readingMusic -> PlayState.PREPARING
+                    metronomeOn -> PlayState.PLAYING
+                    else -> PlayState.STOPPED
+                },
                 loop = null,
                 bpm = metronome.bpm,
                 minBpm = MIN_BPM,

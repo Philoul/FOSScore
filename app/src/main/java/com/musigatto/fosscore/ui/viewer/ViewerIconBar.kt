@@ -77,8 +77,8 @@ private val SEPARATOR_WIDTH = 1.dp
  * The entries of the bar for this score, in the menu's order: those that work for it, and ✎ in
  * Annotate's place (beside the pages) when it can be annotated.
  */
-internal fun barItems(isMusicXml: Boolean, annotatable: Boolean): List<ViewerMenuItem> =
-    (BAR_ITEMS.filter { menuItemState(it, isMusicXml) == MenuItemState.READY } +
+internal fun barItems(isMusicXml: Boolean, annotatable: Boolean, playable: Boolean = isMusicXml): List<ViewerMenuItem> =
+    (BAR_ITEMS.filter { menuItemState(it, isMusicXml, playable) == MenuItemState.READY } +
         listOfNotNull(ViewerMenuItem.ANNOTATE.takeIf { annotatable })).sorted()
 
 /**
@@ -114,9 +114,11 @@ fun ViewerIconBar(
     onAnnotate: () -> Unit,
     modifier: Modifier = Modifier,
     setlistPlace: SetlistPlace? = null,
+    // the score has music to play: a MusicXML score, or a PDF whose music was read
+    playable: Boolean = isMusicXml,
 ) {
     val joined = open != null
-    val items = barItems(isMusicXml, annotatable)
+    val items = barItems(isMusicXml, annotatable, playable)
     Surface(
         modifier = modifier
             .fillMaxWidth()

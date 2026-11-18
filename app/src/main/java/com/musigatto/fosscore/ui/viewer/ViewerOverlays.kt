@@ -82,6 +82,8 @@ internal fun ViewerOverlays(
     playbackVm: PlaybackViewModel,
     metronome: MetronomeSettings,
     pageSource: PageSource?,
+    // the score that plays: a MusicXML score, or a PDF's companion
+    music: MusicXmlPages?,
     pageCount: Int,
     currentPage: Int,
     onJumpPage: (Int) -> Unit,
@@ -113,6 +115,7 @@ internal fun ViewerOverlays(
             ViewerSurface.NONE -> Unit
             ViewerSurface.MENU -> ViewerMenuPanel(
                 isMusicXml = format.isMusicXml,
+                playable = music != null,
                 onSelect = { item ->
                     menu.dismiss()
                     openMenuEntry(
@@ -176,7 +179,7 @@ internal fun ViewerOverlays(
                 onDismiss = menu::dismiss,
             )
             ViewerSurface.PLAYBACK -> {
-                val writtenBpm = (pageSource as? MusicXmlPages)?.info?.tempo ?: DEFAULT_BPM
+                val writtenBpm = music?.info?.tempo ?: DEFAULT_BPM
                 val playTranspose by playbackVm.transpose.collectAsState()
                 val partSounds by playbackVm.partSounds.collectAsState()
                 val musicOff by playbackVm.musicOff.collectAsState()

@@ -150,9 +150,24 @@ object StaffNotes {
             .filter { it.second <= MAX_LEDGER_SPACES }
             .minByOrNull { it.second }?.first
 
+    /**
+     * Whether a head is where a note is written: on the staff or just out of it, else on ledger
+     * lines (the first one, from the staff, crosses or touches it). A head-like shape far out with
+     * none (a chord symbol's letter drawn as outlines) is no note.
+     */
+    private fun onLedgers(head: DrawnGlyph, staff: Staff, lines: List<DrawnLine>): Boolean {
+        val step = staff.step(head.box.centerY)
+        if (step in -2..10) return true
+        val firstLedger = if (step < 0) staff.bottom + staff.space else staff.top - staff.space
+        return lines.any { line ->
+            line.isHorizontal && abs(line.y1 - firstLedger) < 0.3 * staff.space && line.length <= 4 * staff.space &&
+                minOf(line.x1, line.x2) <= head.box.right && maxOf(line.x1, line.x2) >= head.box.left
+        }
+    }
+
     private fun read(staff: Staff, system: StaffSystem, symbols: List<DrawnGlyph>, lines: List<DrawnLine>): StaffReading {
         val space = staff.space
-        val heads = symbols.filter { isHead(it.name) }
+        val heads = symbols.filter { isHead(it.name) && onLedgers(it, staff, lines) }
         val clefs = symbols.mapNotNull { glyph ->
             clefOf(glyph.name.orEmpty())?.let { (sign, shift) ->
                 val step = staff.step(referenceY(glyph))

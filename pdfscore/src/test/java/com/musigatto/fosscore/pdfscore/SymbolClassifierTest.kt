@@ -50,4 +50,20 @@ class SymbolClassifierTest {
     fun nothingAlikeIsLeftUnnamed() {
         assertNull(classifier.name(listOf(rectangle(0.0, 0.0, 3.0, 3.0))))
     }
+
+    /** The references saved and loaded again (an app keeps them instead of building them each time) rank alike. */
+    @Test
+    fun savedReferencesRankAlike() {
+        val bytes = java.io.ByteArrayOutputStream().also { out -> java.io.DataOutputStream(out).use { classifier.save(it) } }.toByteArray()
+        val loaded = SymbolClassifier.load(java.io.DataInputStream(bytes.inputStream()))
+        val shapes = listOf(listOf(ellipse(5.0, 5.0, 0.68, 0.45)), ring(0.66, 0.46, 0.6), listOf(ellipse(0.0, 0.0, 0.22, 0.21)), ring(0.9, 0.52, 0.5))
+        for (shape in shapes) assertEquals(classifier.rank(shape), loaded?.rank(shape))
+    }
+
+    /** Saved references of another layout (an older app's) are not loaded: they are built again. */
+    @Test
+    fun savedReferencesOfAnotherVersionAreNotLoaded() {
+        val bytes = java.io.ByteArrayOutputStream().also { out -> java.io.DataOutputStream(out).use { it.writeInt(-1) } }.toByteArray()
+        assertNull(SymbolClassifier.load(java.io.DataInputStream(bytes.inputStream())))
+    }
 }

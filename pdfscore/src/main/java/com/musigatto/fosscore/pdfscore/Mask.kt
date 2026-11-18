@@ -57,7 +57,18 @@ class Mask(val width: Int, val height: Int, private val bits: BooleanArray = Boo
         return count
     }
 
+    /** The bits row by row, eight to a byte (the first in the high bit). */
+    fun toBytes(): ByteArray {
+        val bytes = ByteArray((width * height + 7) / 8)
+        for (i in 0 until width * height) if (bits[i]) bytes[i / 8] = (bytes[i / 8].toInt() or (0x80 ushr (i % 8))).toByte()
+        return bytes
+    }
+
     companion object {
+        /** A mask from [toBytes]'s bytes. */
+        fun fromBytes(width: Int, height: Int, bytes: ByteArray): Mask =
+            Mask(width, height, BooleanArray(width * height) { i -> (bytes[i / 8].toInt() and (0x80 ushr (i % 8))) != 0 })
+
         /**
          * How alike two masks of the same size are, within a pixel: the share of each one's pixels
          * that fall on the other or next to it ([aNear], [bNear]: the masks [dilated]). 1 when

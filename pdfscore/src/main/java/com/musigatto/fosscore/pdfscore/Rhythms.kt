@@ -117,14 +117,22 @@ object Rhythms {
         val stemless = mutableListOf<StaffNote>()
         for (note in reading.notes) {
             val head = note.head.box
-            val stem = if (headValue(note.head.name) == NoteType.WHOLE || headValue(note.head.name) == NoteType.BREVE) null
+            val touching = if (headValue(note.head.name) == NoteType.WHOLE || headValue(note.head.name) == NoteType.BREVE) emptyList()
             else stems.filter { line ->
                 val top = minOf(line.y1, line.y2)
                 val bottom = maxOf(line.y1, line.y2)
                 minOf(abs(line.x1 - head.right), abs(line.x1 - head.left)) < 0.35 * space &&
                     head.centerY >= top - 0.6 * space && head.centerY <= bottom + 0.6 * space
-            }.minByOrNull { minOf(abs(it.x1 - head.right), abs(it.x1 - head.left)) }
-            stem?.let { byStem.getOrPut(it) { mutableListOf() } += note } ?: stemless.add(note)
+            }
+            // a head with a stem up on its right and one down on its left is struck by two voices
+            // (a melody and its accompaniment on one staff): a note of both chords
+            val up = touching.filter { abs(it.x1 - head.right) < 0.35 * space && minOf(it.y1, it.y2) < head.centerY - space }
+                .minByOrNull { abs(it.x1 - head.right) }
+            val down = touching.filter { abs(it.x1 - head.left) < 0.35 * space && maxOf(it.y1, it.y2) > head.centerY + space }
+                .minByOrNull { abs(it.x1 - head.left) }
+            val chosen = if (up != null && down != null && up !== down) listOf(up, down)
+            else listOfNotNull(touching.minByOrNull { minOf(abs(it.x1 - head.right), abs(it.x1 - head.left)) })
+            if (chosen.isEmpty()) stemless.add(note) else chosen.forEach { byStem.getOrPut(it) { mutableListOf() } += note }
         }
         // A stem holds notes of one value: black and half heads on one line are two voices' stems
         // drawn end to end (chords whose stem runs up to the melody's half note).
@@ -345,7 +353,7 @@ object Rhythms {
         // for a second), or two stems on one side (a melody over chords, all stems up)
         val together = chords.flatMap { a ->
             chords.filter { b ->
-                a !== b && a.box.centerY < b.box.centerY &&
+                a !== b && (a.box.centerY < b.box.centerY || (a.box == b.box && a.stem == Stem.UP && b.stem == Stem.DOWN)) &&
                     abs(a.x - b.x) < (if (a.stem != b.stem && a.stem != Stem.NONE && b.stem != Stem.NONE) 1.3 else 0.3) * space
             }.map { b -> a to b }
         }

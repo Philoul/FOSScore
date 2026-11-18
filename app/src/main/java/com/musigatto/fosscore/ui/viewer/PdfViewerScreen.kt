@@ -1117,7 +1117,7 @@ fun PdfViewerScreen(
                 playbackVm.playPause(notesOnScreen())
             }
             format.isMusicXml -> Unit
-            pageSource is MuPdfDoc && !PdfCompanion.noMusic(context, companionKey).isFile -> readMusic(fromPlay = true)
+            pageSource is MuPdfDoc && !PdfCompanion.hasNoMusic(context, companionKey) -> readMusic(fromPlay = true)
             else -> startStopMetronome()
         }
     }

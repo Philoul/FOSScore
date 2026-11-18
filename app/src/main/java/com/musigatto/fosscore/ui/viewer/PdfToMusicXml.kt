@@ -19,6 +19,7 @@ import com.musigatto.fosscore.pdfscore.OutlineSymbols
 import com.musigatto.fosscore.pdfscore.PageDrawing
 import com.musigatto.fosscore.pdfscore.ScoreReader
 import com.musigatto.fosscore.pdfscore.SmuflCodes
+import com.musigatto.fosscore.pdfscore.Staves
 import com.musigatto.fosscore.pdfscore.SymbolClassifier
 import com.musigatto.fosscore.pdfscore.bitmap.BitmapPage
 import com.musigatto.fosscore.pdfscore.bitmap.GrayImage
@@ -70,11 +71,12 @@ internal object PdfCompanion {
 
     fun file(context: Context, key: String): File = File(dir(context), name(key) + ".musicxml")
 
-    /** The mark of a PDF read without finding any music. */
-    fun noMusic(context: Context, key: String): File = File(dir(context), name(key) + ".none")
+    /** The mark of a PDF read without finding any music, by the reader of its version. */
+    private fun noMusic(context: Context, key: String): File = File(dir(context), name(key) + ".none")
 
-    /** Whether the PDF was read already, with or without music found. */
-    fun known(context: Context, key: String): Boolean = file(context, key).isFile || noMusic(context, key).isFile
+    /** Whether this reader ([READER_VERSION]) found no music in the PDF already. */
+    fun hasNoMusic(context: Context, key: String): Boolean =
+        runCatching { noMusic(context, key).readText().trim() == READER_VERSION.toString() }.getOrDefault(false)
 
     fun keep(context: Context, key: String, xml: String) {
         dir(context).mkdirs()
@@ -110,7 +112,7 @@ internal object PdfCompanion {
 
     fun markNoMusic(context: Context, key: String) {
         dir(context).mkdirs()
-        noMusic(context, key).writeText("")
+        noMusic(context, key).writeText(READER_VERSION.toString())
     }
 }
 
@@ -168,8 +170,29 @@ private object Outlines {
 /** The resolution a scanned page is drawn at to be read (the scans the reader is made for). */
 private const val SCAN_DPI = 300.0
 
-/** Fewer things drawn than this: the page is a picture (a scan), read by its pixels. */
-private const val SCAN_MAX_DRAWN = 20
+/**
+ * Whether a page is a picture of music (a scan), read by its pixels: it holds an image, and no
+ * staff is drawn by its lines (a scan may carry a few: a frame, a text layer, a stamp).
+ */
+internal fun isScan(svg: ByteArray, page: PageDrawing): Boolean =
+    containsImage(svg) && Staves.find(page).isEmpty()
+
+private val IMAGE_TAG = "<image".toByteArray(Charsets.US_ASCII)
+
+private fun containsImage(svg: ByteArray): Boolean {
+    val first = IMAGE_TAG[0]
+    for (i in 0..svg.size - IMAGE_TAG.size) {
+        if (svg[i] != first) continue
+        if (IMAGE_TAG.indices.all { svg[i + it] == IMAGE_TAG[it] }) return true
+    }
+    return false
+}
+
+/**
+ * The reader's version: a PDF in which an older reader found no music is read again by a newer
+ * one. Bumped when the reader learns to read pages it could not.
+ */
+internal const val READER_VERSION = 2
 
 /**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between
@@ -200,7 +223,7 @@ internal suspend fun convertPdfToMusicXml(
             val t2 = SystemClock.elapsedRealtime()
             val page = when {
                 raw.glyphs.any { it.name != null } -> raw
-                raw.glyphs.size + raw.lines.size + raw.shapes.size < SCAN_MAX_DRAWN -> {
+                isScan(svg, raw) -> {
                     // a picture: drawn in gray and read by its pixels
                     val model = withContext(Dispatchers.IO) { ScanModel.get() } ?: continue
                     val gray = lock { withContext(Dispatchers.IO) { doc.pageGray(index, SCAN_DPI) } } as? MuPdfDoc.GrayPage ?: continue

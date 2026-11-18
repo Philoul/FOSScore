@@ -126,6 +126,21 @@ class OutlineSymbolsTest {
     }
 
     /**
+     * A tuplet's number printed without its font, over or under the staff (no bracket: Lettre à
+     * France's triplets read as plain eighths, their measures too long), is named; inside the
+     * staff a digit is a time signature's.
+     */
+    @Test
+    fun aTupletNumberOutOfTheStaffIsNamed() {
+        val digits = SymbolClassifier(listOf(FontSymbol("A", "tuplet3", listOf(ellipse(0.0, 0.0, 0.46, 0.65)))))
+        val over = listOf(ellipse(100.0, top - 2 * space, 0.46 * space, 0.65 * space))
+        val inside = listOf(ellipse(140.0, top + 2 * space, 0.46 * space, 0.65 * space))
+        val named = OutlineSymbols(digits).name(page(over, inside))
+        assertEquals(listOf("tuplet3"), named.glyphs.map { it.name })
+        assertEquals(100.0, named.glyphs.single().box.centerX, 0.01)
+    }
+
+    /**
      * A metronome mark's note ("♩ = 70" printed without its font) is named over the staff, where
      * the tempo is written, and only there: a note symbol inside the staff is a note.
      */

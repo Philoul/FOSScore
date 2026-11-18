@@ -32,6 +32,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
                     ?.takeIf { named(it.name) && (!it.name.startsWith("timeSig") || distance(box.centerY, staff) == 0.0) }
                     // a metronome mark's note and dot, over the staff only (where the tempo is written)
                     ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
+                    // a tuplet's number out of the staff only (inside, a digit is a time signature's)
+                    ?.takeIf { !it.name.startsWith("tuplet") || distance(box.centerY, staff) > 0.0 }
                     // a half or whole rest out of the staff hangs from a ledger line, or sits on one
                     ?.takeIf { it.name !in LEDGER_RESTS || inside(box, staff) || onLedger(box, page.lines, space) }
                     // held by a stem, the same rectangle is a beam's hook (a sixteenth after a dotted eighth)
@@ -58,9 +60,10 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
          * The symbols named by their look: those no letter or digit looks like. Text drawn as
          * outlines (measure numbers, lyrics, "rit.") would otherwise read as octave lines, dynamics,
          * ornaments. A time signature's digits are named inside the staff only; a metronome mark's
-         * note and dot ("♩. = 60") over it only.
+         * note and dot ("♩. = 60") over it only; a tuplet's number out of it only (it joins the
+         * notes of a beam or a bracket, which a measure number or a fingering does not).
          */
-        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda", "metNote", "metAugmentationDot")
+        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda", "metNote", "metAugmentationDot", "tuplet")
 
         fun named(name: String): Boolean = NAMED.any { name.startsWith(it) } || name.contains("Clef")
 

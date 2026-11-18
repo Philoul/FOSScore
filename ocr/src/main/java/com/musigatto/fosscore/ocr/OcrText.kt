@@ -16,6 +16,16 @@ object OcrText {
         TextKind.LINE -> text.trim().replace(SPACES, " ")
     }.takeIf { it.isNotEmpty() }
 
+    /**
+     * An ending's numbers read under its bracket ("1. 2.", "1.2.", "3"), written "1, 2." as the
+     * score reader takes them; null when [text] holds none, or more than an ending has (words).
+     */
+    fun endingNumbers(text: String): String? {
+        if (text.count { it.isLetter() } > 1) return null
+        val numbers = Regex("""\d+""").findAll(text).map { it.value }.toList()
+        return numbers.takeIf { it.isNotEmpty() && it.size <= 4 }?.joinToString(", ", postfix = ".")
+    }
+
     /** The beats a minute of a tempo mark read as "= 70" (the note before it is a symbol, read apart). */
     fun perMinute(text: String): Int? =
         PER_MINUTE.find(text)?.groupValues?.get(1)?.let { clean(it, TextKind.DIGITS) }?.toIntOrNull()?.takeIf { it in 20..400 }

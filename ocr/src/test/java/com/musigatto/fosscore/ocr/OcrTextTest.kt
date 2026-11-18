@@ -21,6 +21,16 @@ class OcrTextTest {
         assertNull(OcrText.clean(" \n ", TextKind.LINE))
     }
 
+    /** An ending's number as the score reader wants it: "1, 2." from "1. 2.", "1.2.", "1,2"; "4." from "4". */
+    @Test
+    fun anEndingsNumbersAreWrittenTheUsualWay() {
+        assertEquals("1, 2.", OcrText.endingNumbers("1. 2."))
+        assertEquals("1, 2.", OcrText.endingNumbers("1.2."))
+        assertEquals("3.", OcrText.endingNumbers("3"))
+        assertEquals("4.", OcrText.endingNumbers(" 4."))
+        assertNull(OcrText.endingNumbers("To Coda"))
+    }
+
     /** "= 70" after a note symbol: the number read whatever the spaces, and its digits taken back. */
     @Test
     fun theBeatsOfATempoMarkAreRead() {

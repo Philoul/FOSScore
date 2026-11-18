@@ -205,7 +205,8 @@ private const val OCR_MARGIN = 0.3
 
 /**
  * [page] (page [index] of [doc], printed without its fonts) with what the music needs of its text
- * drawn as outlines, read from its pixels: the number of each metronome mark ([OutlineText]).
+ * drawn as outlines, read from its pixels ([OutlineText]): the number of each metronome mark, the
+ * numbers of the endings, the words over the systems ("To Coda", "D.S. al Coda", "Rall.").
  */
 private suspend fun readOutlineText(
     context: Context,
@@ -218,15 +219,23 @@ private suspend fun readOutlineText(
     val spots = OutlineText.spots(page)
     if (spots.isEmpty()) return page
     val reader = withContext(Dispatchers.IO) { Ocr.get(context) } ?: return page
-    val read = spots.mapNotNull { box ->
+    val read = spots.mapNotNull { spot ->
+        val box = spot.box
         val margin = OCR_MARGIN * box.height
         val crop = lock {
             withContext(work()) { doc.cropGray(index, OCR_DPI, box.left - margin, box.top - margin, box.right + margin, box.bottom + margin) }
         } as? MuPdfDoc.GrayPage ?: return@mapNotNull null
         val text = withContext(work()) { reader.readLine(GrayCrop(crop.width, crop.height, crop.pixels), OCR_DPI.toInt()) }
-        val perMinute = text?.let { OcrText.perMinute(it) }
-        Log.i(LOG_TAG, "page $index: metronome mark read \"$text\" -> $perMinute")
-        perMinute?.let { box to "= $it" }
+        // what the music needs of it, written as a PDF with fonts would
+        val meant = text?.let { read ->
+            when (spot.kind) {
+                OutlineText.Kind.METRONOME -> OcrText.perMinute(read)?.let { "= $it" }
+                OutlineText.Kind.ENDING -> OcrText.endingNumbers(read)
+                OutlineText.Kind.WORDS -> read
+            }
+        }
+        Log.i(LOG_TAG, "page $index: ${spot.kind} read \"$text\" -> $meant")
+        meant?.let { box to it }
     }.toMap()
     return OutlineText.withTexts(page, read)
 }
@@ -312,9 +321,9 @@ private fun containsImage(svg: ByteArray): Boolean {
  * The reader's version: a PDF in which an older reader found no music is read again by a newer
  * one, and a companion an older reader wrote is read again. Bumped when the reader learns to read
  * pages it could not, or more of them (3: the tempo of PDFs without fonts, by OCR; 4: voices that
- * keep their measure's length, rests and beam hooks told apart; 5: companions prepared to play at once; 6: played in the order of their repeats and jumps; 7: heads with two stems, implied triplets).
+ * keep their measure's length, rests and beam hooks told apart; 5: companions prepared to play at once; 6: played in the order of their repeats and jumps; 7: heads with two stems, implied triplets; 8: endings and words read by OCR).
  */
-internal const val READER_VERSION = 7
+internal const val READER_VERSION = 8
 
 /**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between

@@ -32,6 +32,10 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
                     ?.takeIf { named(it.name) && (!it.name.startsWith("timeSig") || distance(box.centerY, staff) == 0.0) }
                     // a metronome mark's note and dot, over the staff only (where the tempo is written)
                     ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
+                    // a half or whole rest out of the staff hangs from a ledger line, or sits on one
+                    ?.takeIf { it.name !in LEDGER_RESTS || inside(box, staff) || onLedger(box, page.lines, space) }
+                    // held by a stem, the same rectangle is a beam's hook (a sixteenth after a dotted eighth)
+                    ?.takeIf { it.name !in LEDGER_RESTS || !onStem(box, page.lines, space) }
             } else {
                 null
             }
@@ -63,6 +67,27 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
         /** Whether a four-cornered outline's sides are level and upright (a rest, not a slanting beam). */
         fun upright(corners: List<Point>): Boolean =
             (corners + corners[0]).zipWithNext().all { (a, b) -> kotlin.math.abs(a.x - b.x) < 0.05 || kotlin.math.abs(a.y - b.y) < 0.05 }
+
+        /** The rests drawn as a rectangle against a line: out of the staff, against a ledger line. */
+        val LEDGER_RESTS = setOf("restWhole", "restHalf")
+
+        /** Whether [box] is between the staff's top and bottom lines (a rest may touch them). */
+        fun inside(box: Box, staff: Staff): Boolean =
+            box.top >= staff.top - 0.1 * staff.space && box.bottom <= staff.bottom + 0.1 * staff.space
+
+        /** Whether a ledger line (short, level) runs along the top or the bottom of [box]. */
+        fun onLedger(box: Box, lines: List<DrawnLine>, space: Double): Boolean = lines.any { line ->
+            line.isHorizontal && line.length < 4 * space &&
+                minOf(line.x1, line.x2) <= box.right && maxOf(line.x1, line.x2) >= box.left &&
+                (kotlin.math.abs(line.y1 - box.top) < 0.2 * space || kotlin.math.abs(line.y1 - box.bottom) < 0.2 * space)
+        }
+
+        /** Whether a stem (an upright line) runs along the left or right end of [box], across it. */
+        fun onStem(box: Box, lines: List<DrawnLine>, space: Double): Boolean = lines.any { line ->
+            line.isVertical && line.length >= 2 * space &&
+                (kotlin.math.abs(line.x1 - box.left) < 0.2 * space || kotlin.math.abs(line.x1 - box.right) < 0.2 * space) &&
+                minOf(line.y1, line.y2) <= box.bottom && maxOf(line.y1, line.y2) >= box.top
+        }
 
         /** Whether [y] is on a line of the staff, or where a ledger line would be. */
         fun onLine(y: Double, staff: Staff): Boolean {

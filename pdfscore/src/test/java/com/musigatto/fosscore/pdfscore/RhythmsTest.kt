@@ -408,6 +408,39 @@ class RhythmsTest {
         assertEquals(NoteType.HALF, (voice2.single().event as Rest).duration.type)
     }
 
+    /**
+     * A left hand in two voices: a half note stem down, and over it a rest then notes stem up (the
+     * rest is drawn above the half note, at its time). The notes stem up are the rest's voice, the
+     * half notes the other: put in one voice, the measure lasted twice its length and the music
+     * played late, its bar going back and forth (J'te l'dis quand même, 2026-11-18).
+     */
+    @Test
+    fun theNotesOnTheStemsOfARestsSideAreItsVoice() {
+        val halves = listOf(head(100.0, bottomLine, "noteheadHalf"), head(150.0, bottomLine, "noteheadHalf"))
+        val rests = listOf(100.0, 150.0).map { x -> DrawnGlyph("restQuarter", Box(x, top + 0.5 * space, x + 1.1 * space, top + 2.5 * space)) }
+        val quarters = listOf(head(125.0, g4), head(175.0, c5))
+        val measure = read(halves + rests + quarters, halves.map { stemDown(it) } + quarters.map { stemUp(it) }).single()
+        val restVoice = measure.events.first { it.event is Rest }.event.voice
+        val withRests = measure.events.filter { it.event.voice == restVoice }
+        val others = measure.events.filter { it.event.voice != restVoice }
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), withRests.map { it.event.onset })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 2)), others.map { it.event.onset })
+        assertEquals(listOf(NoteType.HALF, NoteType.HALF), others.map { it.event.duration.type })
+    }
+
+    /** The same under a whole note, which has no stem: the notes with a stem are the rest's voice. */
+    @Test
+    fun theNotesWithAStemBesideARestOverAWholeNoteAreItsVoice() {
+        val whole = head(100.0, bottomLine, "noteheadWhole")
+        val rest = DrawnGlyph("restQuarter", Box(100.0, top + 0.5 * space, 100.0 + 1.1 * space, top + 2.5 * space))
+        val quarters = listOf(head(125.0, g4), head(150.0, c5), head(175.0, g4))
+        val measure = read(listOf(whole, rest) + quarters, quarters.map { stemUp(it) }).single()
+        val restVoice = measure.events.first { it.event is Rest }.event.voice
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)),
+            measure.events.filter { it.event.voice == restVoice }.map { it.event.onset })
+        assertEquals(listOf(NoteType.WHOLE), measure.events.filter { it.event.voice != restVoice }.map { it.event.duration.type })
+    }
+
     @Test
     fun aWholeRestHangsFromALineAndAHalfRestSitsOnOne() {
         // measure 1: a half rest on the middle line, then a half note; measure 2: a whole rest alone

@@ -95,6 +95,37 @@ class OutlineSymbolsTest {
     }
 
     /**
+     * A rectangle over the staff with no ledger line is no rest (a hyphen of the lyrics written
+     * between a piano's staves: read as whole rests, it pushed its voice past the measure's end,
+     * J'te l'dis quand même, 2026-11-18); hanging from a ledger line, it is one.
+     */
+    @Test
+    fun aRestOutOfTheStaffHangsFromALedgerLine() {
+        val rests = SymbolClassifier(listOf(FontSymbol("A", "restWhole", listOf(rect(0.0, 0.0, 1.3, 0.5)))))
+        val hyphen = listOf(rect(100.0, top - 2.5, 106.5, top))
+        val hanging = listOf(rect(200.0, top - space, 206.5, top - space + 2.5))
+        val ledger = DrawnLine(198.0, top - space, 208.5, top - space, 0.5)
+        val drawn = page(hyphen, hanging)
+        val named = OutlineSymbols(rests).name(PageDrawing(drawn.width, drawn.height, drawn.glyphs, drawn.lines + ledger, drawn.shapes, drawn.texts))
+        assertEquals(listOf(200.0), named.glyphs.map { it.box.left })
+    }
+
+    /**
+     * A flat beam hook (a sixteenth after a dotted eighth) is a rectangle on a line like a whole
+     * rest, but it holds on to a stem: it stays a beam for the rhythm (read as a rest, it pushed
+     * its voice past the measure's end, J'te l'dis quand même, 2026-11-18).
+     */
+    @Test
+    fun aRectangleHeldByAStemIsABeamHookNoRest() {
+        val rests = SymbolClassifier(listOf(FontSymbol("A", "restWhole", listOf(rect(0.0, 0.0, 1.3, 0.5)))))
+        val hook = listOf(rect(100.0, top + space, 106.5, top + space + 2.5))
+        val stem = DrawnLine(106.5, top + space, 106.5, top + 4 * space, 0.5)
+        val drawn = page(hook)
+        val named = OutlineSymbols(rests).name(PageDrawing(drawn.width, drawn.height, drawn.glyphs, drawn.lines + stem, drawn.shapes, drawn.texts))
+        assertEquals(emptyList<DrawnGlyph>(), named.glyphs)
+    }
+
+    /**
      * A metronome mark's note ("♩ = 70" printed without its font) is named over the staff, where
      * the tempo is written, and only there: a note symbol inside the staff is a note.
      */

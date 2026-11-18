@@ -26,6 +26,41 @@ data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>,
         }
     }.toMap()
 
+    /**
+     * Where each note is drawn, by the id [MusicXmlWriter] gives it, with what a playback bar needs
+     * to follow the music on the page: the system the note is on ([FollowPlace]).
+     */
+    fun followPlaces(): Map<String, FollowPlace> {
+        val places = LinkedHashMap<String, FollowPlace>()
+        var first = 0
+        while (first < measures.size) {
+            // a system: from a measure that starts one to the next that does
+            var end = first + 1
+            while (end < measures.size && !measures[end].newSystem) end++
+            val system = measures.subList(first, end)
+            val boxes = system.flatMap { m -> m.staves.map { it.box } }
+            if (boxes.isNotEmpty()) {
+                val top = boxes.minOf { it.top }
+                val bottom = boxes.maxOf { it.bottom }
+                val lineEnd = boxes.maxOf { it.right }
+                for (measure in system) measure.staves.forEachIndexed { s, staff ->
+                    staff.events.forEachIndexed { e, placed ->
+                        val notes = (placed.event as? Chord)?.pitches?.size ?: 0
+                        val box = placed.box
+                        for (k in 0 until notes) {
+                            places[noteId(measure.rank, s + 1, e, k)] = FollowPlace(
+                                measure.page, (box.left + box.right) / 2, (box.top + box.bottom) / 2,
+                                top, bottom, staff.box.space, lineEnd,
+                            )
+                        }
+                    }
+                }
+            }
+            first = end
+        }
+        return places
+    }
+
     companion object {
         /** The id of a measure (rank 1 up), as `:musicxml` names them so annotations hang on either. */
         fun measureId(rank: Int): String = "fosscore-measure-$rank"
@@ -34,6 +69,21 @@ data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>,
         fun noteId(rank: Int, staff: Int, event: Int, k: Int): String = "fosscore-note-$rank-$staff-$event-$k"
     }
 }
+
+/**
+ * Where a note is drawn, in points on its [page] (0 up): the centre of its head ([x], [y]), the
+ * [top] line of its system's first staff and the [bottom] line of its last, the staff [space], and
+ * where the system's staves end on the right ([lineEnd]). What `:musicxml`'s PageGeometry.Head holds.
+ */
+data class FollowPlace(
+    val page: Int,
+    val x: Double,
+    val y: Double,
+    val top: Double,
+    val bottom: Double,
+    val space: Double,
+    val lineEnd: Double,
+)
 
 /** A part: how many [staves] it is written on (2 for a piano), and its instrument's [name] as written left of them. */
 data class Part(val staves: Int, val name: String? = null)

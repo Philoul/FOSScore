@@ -75,15 +75,27 @@ private object Outlines {
     @Volatile
     private var outlines: OutlineSymbols? = null
 
-    fun get(context: Context): OutlineSymbols = outlines ?: OutlineSymbols(
-        SymbolClassifier(
-            FONTS.mapNotNull { font ->
-                MusicFont.readVerovio(font, CommonSymbols.NAMES.toSet()) { path ->
-                    runCatching { context.assets.open("verovio/data/$path").use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
-                }
-            }.flatMap { it.symbols },
-        ),
-    ).also { outlines = it }
+    fun get(context: Context): OutlineSymbols = outlines ?: OutlineSymbols(cached(context) ?: built(context)).also { outlines = it }
+
+    /** The references kept by a former build: named after the fonts and the symbols they cover, so a change builds them again. */
+    private fun file(context: Context) =
+        File(context.cacheDir, "pdfscore-references-${(FONTS + CommonSymbols.NAMES).hashCode().toUInt().toString(16)}.bin")
+
+    private fun cached(context: Context): SymbolClassifier? = file(context).takeIf { it.isFile }?.let { f ->
+        runCatching { java.io.DataInputStream(f.inputStream().buffered()).use { SymbolClassifier.load(it) } }.getOrNull()
+    }
+
+    /** Built from the fonts' glyph files (several seconds on a slow tablet), then kept for the next time. */
+    private fun built(context: Context): SymbolClassifier = SymbolClassifier(
+        FONTS.mapNotNull { font ->
+            MusicFont.readVerovio(font, CommonSymbols.NAMES.toSet()) { path ->
+                runCatching { context.assets.open("verovio/data/$path").use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+            }
+        }.flatMap { it.symbols },
+    ).also { classifier ->
+        runCatching { java.io.DataOutputStream(file(context).outputStream().buffered()).use { classifier.save(it) } }
+            .onFailure { Log.w(LOG_TAG, "references not kept: ${it.message}") }
+    }
 }
 
 /**

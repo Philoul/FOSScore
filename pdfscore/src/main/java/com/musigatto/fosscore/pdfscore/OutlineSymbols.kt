@@ -30,6 +30,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
             val match = if (!beam && distance(box.centerY, staff) <= REACH * space && max(box.width, box.height) <= LARGEST * space) {
                 classifier.name(fill.map { shape -> shape.points.map { Point(it.x / space, it.y / space) } })
                     ?.takeIf { named(it.name) && (!it.name.startsWith("timeSig") || distance(box.centerY, staff) == 0.0) }
+                    // a metronome mark's note and dot, over the staff only (where the tempo is written)
+                    ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
             } else {
                 null
             }
@@ -51,9 +53,10 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
         /**
          * The symbols named by their look: those no letter or digit looks like. Text drawn as
          * outlines (measure numbers, lyrics, "rit.") would otherwise read as octave lines, dynamics,
-         * ornaments. A time signature's digits are named inside the staff only.
+         * ornaments. A time signature's digits are named inside the staff only; a metronome mark's
+         * note and dot ("♩. = 60") over it only.
          */
-        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda")
+        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda", "metNote", "metAugmentationDot")
 
         fun named(name: String): Boolean = NAMED.any { name.startsWith(it) } || name.contains("Clef")
 

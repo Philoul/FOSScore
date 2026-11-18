@@ -20,6 +20,9 @@ class PrivateScansProbeTest {
     private val folder = File(System.getProperty("pdfscore.private") ?: "")
     private val scans = File(System.getProperty("pdfscore.scans") ?: "").takeIf { it.path.isNotEmpty() && it.isDirectory } ?: folder
 
+    // where the MusicXML read is written, when asked (-PpdfscoreOut=<folder>)
+    private val out = File(System.getProperty("pdfscore.out") ?: "").takeIf { it.path.isNotEmpty() }?.apply { mkdirs() }
+
     @Test
     fun probePrivateScans() {
         assumeTrue(folder.path.isNotEmpty() && folder.isDirectory)
@@ -36,7 +39,10 @@ class PrivateScansProbeTest {
             val drawings = pages.sortedBy { it.first }.mapNotNull { (_, file) -> Golden.gray(file)?.let { BitmapPage.read(it, 300.0, model) } }
             val ms = (System.nanoTime() - start) / 1e6 / maxOf(1, drawings.size)
             val score = ScoreReader.read(drawings)
-            val back = MxlNotes(MusicXmlWriter.write(score))
+            val written = MusicXmlWriter.write(score)
+            // kept for the benchmark against other readers (Audiveris): <name>-<variant>.musicxml
+            out?.let { File(it, "$name-${variant.ifEmpty { "page" }}.musicxml").writeText(written) }
+            val back = MxlNotes(written)
             val read = back.allStaves(back.timed)
             val wanted = want.allStaves(want.timed)
             val offset = (0..maxOf(0, wanted.size - read.size)).maxByOrNull { count(read, wanted, it) } ?: 0

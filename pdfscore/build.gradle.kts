@@ -41,6 +41,9 @@ android {
             // 300 dpi page images of those scores, <name>-p<N>[-<variant>].png or .jpg, rendered
             // beforehand (PrivateScansProbeTest): -PpdfscoreScans=<folder>; else beside the PDFs
             it.systemProperty("pdfscore.scans", providers.gradleProperty("pdfscoreScans").getOrElse(""))
+            // Where PrivateScansProbeTest writes the MusicXML it reads, to compare it with another
+            // reader's (Audiveris, the PC benchmark): -PpdfscoreOut=<folder>, outside the repository
+            it.systemProperty("pdfscore.out", providers.gradleProperty("pdfscoreOut").getOrElse(""))
             // The free music fonts the recognition compares symbols with: Verovio's font data,
             // which :musicxml downloads with Verovio's source.
             it.systemProperty(

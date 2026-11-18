@@ -60,6 +60,33 @@ class ScoreReaderTest {
     }
 
     /**
+     * To follow the music on the PDF, each note knows the centre of its head, the top and bottom
+     * lines of its system, its staff space and where the system's staves end.
+     */
+    @Test
+    fun eachNoteKnowsItsSystem() {
+        val top = 100.0
+        val page = PageDrawing(
+            600.0, 800.0,
+            listOf(gClef(top), whole(120.0, top + 4 * space), whole(320.0, top)),
+            staffLines(top) + barline(300.0, top) + barline(549.0, top),
+            emptyList(), emptyList(),
+        )
+        val score = ScoreReader.read(listOf(page))
+        val second = score.followPlaces().getValue(ScoreReading.noteId(2, 1, 0, 0))
+        assertEquals(0, second.page)
+        // a whole note's head is 1.8 spaces wide
+        assertEquals(320.0 + 0.9 * space, second.x, 1e-9)
+        assertEquals(top, second.y, 1e-9)
+        assertEquals(top, second.top, 1e-9)
+        assertEquals(top + 4 * space, second.bottom, 1e-9)
+        assertEquals(space, second.space, 1e-9)
+        assertEquals(score.measures.last().staves.single().box.right, second.lineEnd, 1e-9)
+        // the first measure's note ends its line at the same place: one system
+        assertEquals(second.lineEnd, score.followPlaces().getValue(ScoreReading.noteId(1, 1, 0, 0)).lineEnd, 1e-9)
+    }
+
+    /**
      * Over the first system: the title (the largest text), the composer (on the right) and the
      * lyricist (on the left); left of a part's staves, its instrument's name.
      */

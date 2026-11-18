@@ -441,6 +441,21 @@ class RhythmsTest {
         assertEquals(listOf(NoteType.WHOLE), measure.events.filter { it.event.voice != restVoice }.map { it.event.duration.type })
     }
 
+    /**
+     * One head with two stems, up on its right and down on its left: a melody and an
+     * accompaniment on one staff that strike the same note. It is a note of both voices (Lettre à
+     * France, measure 9; it was given to one stem only, and the other voice lost it).
+     */
+    @Test
+    fun aHeadWithTwoStemsIsANoteOfBothVoices() {
+        val shared = head(100.0, g4)
+        val measure = read(listOf(shared), listOf(stemUp(shared), stemDown(shared))).single()
+        assertEquals(2, measure.events.size)
+        assertEquals(2, measure.events.map { it.event.voice }.distinct().size)
+        assertEquals(listOf("G4", "G4"), measure.events.map { (it.event as Chord).pitches.single().toString() })
+        assertEquals(setOf(Stem.UP, Stem.DOWN), measure.events.map { (it.event as Chord).stem }.toSet())
+    }
+
     @Test
     fun aWholeRestHangsFromALineAndAHalfRestSitsOnOne() {
         // measure 1: a half rest on the middle line, then a half note; measure 2: a whole rest alone

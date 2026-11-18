@@ -74,7 +74,7 @@ object OutlineText {
         val strokes = Strokes.of(page)
         val hooks = strokes.filter { it.isVertical && it.length in 0.5 * space..3.0 * space }
         return strokes.filter { line ->
-            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - REACH * space
+            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - Directions.ENDING_REACH * space
         }.mapNotNull { line ->
             val left = min(line.x1, line.x2)
             val hooked = hooks.any { abs(it.x1 - left) < 0.3 * space && abs(min(it.y1, it.y2) - line.y1) <= 0.3 * space }

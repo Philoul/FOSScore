@@ -71,7 +71,7 @@ object Directions {
         val strokes = Strokes.of(page)
         val hooks = strokes.filter { it.isVertical && it.length in 0.5 * space..3.0 * space }
         strokes.filter { line ->
-            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - REACH * space
+            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - ENDING_REACH * space
         }.mapNotNull { line ->
             val left = minOf(line.x1, line.x2)
             val right = maxOf(line.x1, line.x2)
@@ -92,6 +92,9 @@ object Directions {
 
     /** How far over the top line (in spaces) a direction is written. */
     private const val REACH = 6.0
+
+    /** How far over the top line (in spaces) an ending's bracket may be: over a line of lyrics too. */
+    const val ENDING_REACH = 9.0
 
     private val BEATS = mapOf(
         "metNoteWhole" to NoteType.WHOLE,

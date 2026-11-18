@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.mupdf.fitz)
     implementation(project(":musicxml"))
     implementation(project(":pdfscore"))
+    implementation(project(":ocr"))
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.kotlinx.coroutines.test)

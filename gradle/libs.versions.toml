@@ -13,6 +13,8 @@ lifecycle = "2.9.4"
 orgJson = "20240303"
 # reads PDFs in the pdfscore tests (Apache-2.0)
 pdfbox = "3.0.4"
+# Tesseract OCR for Android (Apache-2.0), in :ocr
+tesseract4android = "4.9.0"
 androidxTestRunner = "1.6.2"
 androidxTestJunit = "1.2.1"   
 
@@ -38,6 +40,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # Android ships org.json; plain JVM unit tests need the real implementation.
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 pdfbox = { group = "org.apache.pdfbox", name = "pdfbox", version.ref = "pdfbox" }
+tesseract4android = { group = "cz.adaptech.tesseract4android", name = "tesseract4android", version.ref = "tesseract4android" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

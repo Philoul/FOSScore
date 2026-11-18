@@ -24,9 +24,12 @@ internal class CompanionPlaces private constructor(
     companion object {
         private const val HEADER = "fosscore-places 1"
 
-        /** [places] of the notes on the PDF [pages] (by PDF page index), as text to keep. */
-        fun write(pages: Map<Int, PageSize>, places: Map<String, FollowPlace>): String = buildString {
+        private const val READER = "reader"
+
+        /** [places] of the notes on the PDF [pages] (by PDF page index), as text to keep, read by the [reader] of that version. */
+        fun write(pages: Map<Int, PageSize>, places: Map<String, FollowPlace>, reader: Int = 0): String = buildString {
             append(HEADER).append('\n')
+            append("$READER $reader\n")
             for ((index, size) in pages.toSortedMap()) append("page $index ${n(size.width)} ${n(size.height)}\n")
             for ((id, p) in places) {
                 append("note $id ${p.page} ${n(p.x)} ${n(p.y)} ${n(p.top)} ${n(p.bottom)} ${n(p.space)} ${n(p.lineEnd)}\n")
@@ -34,6 +37,10 @@ internal class CompanionPlaces private constructor(
         }
 
         private fun n(v: Double) = String.format(Locale.ROOT, "%.2f", v)
+
+        /** The version of the reader that wrote [text] ([write]); null when it does not say. */
+        fun readerOf(text: String): Int? = text.lineSequence().take(2).toList().takeIf { it.firstOrNull()?.trim() == HEADER }
+            ?.getOrNull(1)?.trim()?.split(' ')?.takeIf { it.size == 2 && it[0] == READER }?.get(1)?.toIntOrNull()
 
         /** The places [write] kept; none when the text is not theirs. */
         fun read(text: String): CompanionPlaces {

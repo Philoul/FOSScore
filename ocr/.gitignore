@@ -1,0 +1,3 @@
+/build
+# Tesseract's language data, downloaded by the build (build.gradle.kts)
+/third_party

@@ -13,6 +13,7 @@ import com.artifex.mupdf.fitz.ColorSpace
 import com.artifex.mupdf.fitz.Context
 import com.artifex.mupdf.fitz.DisplayList
 import com.artifex.mupdf.fitz.DocumentWriter
+import com.artifex.mupdf.fitz.DrawDevice
 import com.artifex.mupdf.fitz.Document
 import com.artifex.mupdf.fitz.Matrix
 import com.artifex.mupdf.fitz.Page
@@ -23,6 +24,8 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.sqrt
 import androidx.core.graphics.createBitmap
@@ -50,6 +53,9 @@ private const val MIN_PAGE_DIM = 0.05f
 
 // a PDF's unit, the point, is an inch / 72
 private const val POINTS_PER_INCH = 72.0
+
+// white, as a gray sample
+private const val WHITE = 255
 
 /** The page box, in PDF points. */
 data class PageBox(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
@@ -270,6 +276,42 @@ class MuPdfDoc private constructor(
             Log.e(LOG_TAG, "no gray picture of page $index: ${e.message}", e)
             null
         } finally {
+            pix?.destroy()
+            page.destroy()
+        }
+    }
+
+    /**
+     * The part [left]..[right] × [top]..[bottom] (points, as the page's SVG gives them) of the page
+     * drawn in 8-bit gray at [dpi] on white paper: a piece of text to be read (OCR). Null when it
+     * cannot be drawn. Call it under the MuPDF lock.
+     */
+    fun cropGray(index: Int, dpi: Double, left: Double, top: Double, right: Double, bottom: Double): GrayPage? {
+        val page = loadPage(index) ?: return null
+        var pix: Pixmap? = null
+        var device: DrawDevice? = null
+        return try {
+            val scale = dpi / POINTS_PER_INCH
+            val x = floor(left * scale).toInt()
+            val y = floor(top * scale).toInt()
+            val width = (ceil(right * scale).toInt() - x).coerceAtLeast(1)
+            val height = (ceil(bottom * scale).toInt() - y).coerceAtLeast(1)
+            pix = Pixmap(ColorSpace.DeviceGray, x, y, width, height, false)
+            pix.clear(WHITE)
+            device = DrawDevice(pix)
+            page.run(device, Matrix(scale.toFloat(), 0f, 0f, scale.toFloat()))
+            device.close()
+            val stride = pix.stride
+            val samples = pix.samples
+            val pixels = if (stride == width) samples else ByteArray(width * height).also { out ->
+                for (row in 0 until height) System.arraycopy(samples, row * stride, out, row * width, width)
+            }
+            GrayPage(width, height, pixels)
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "no gray crop of page $index: ${e.message}", e)
+            null
+        } finally {
+            device?.destroy()
             pix?.destroy()
             page.destroy()
         }

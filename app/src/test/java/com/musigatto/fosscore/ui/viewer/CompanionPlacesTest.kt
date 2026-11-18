@@ -41,6 +41,17 @@ class CompanionPlacesTest {
         assertNull(read.geometry(1))
     }
 
+    /** The places say which reader wrote them: a companion of an older reader is read again. */
+    @Test
+    fun thePlacesSayTheirReader() {
+        val text = CompanionPlaces.write(pages, places, reader = 3)
+        assertEquals(3, CompanionPlaces.readerOf(text))
+        // the places themselves read the same
+        assertEquals(120.5f, CompanionPlaces.read(text).geometry(0)?.head("fosscore-note-1-1-0-0")?.x)
+        assertNull(CompanionPlaces.readerOf("fosscore-places 1\npage 0 595.00 842.00\n"))
+        assertNull(CompanionPlaces.readerOf("something else"))
+    }
+
     @Test
     fun unreadablePlacesAreNone() {
         assertNull(CompanionPlaces.read("something else").geometry(0))

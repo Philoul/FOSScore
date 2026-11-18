@@ -108,7 +108,8 @@ internal object PdfMusicReading {
                 val next = sheets.first()
                     .filter { SheetFormat.of(it.path) == SheetFormat.PDF && it.hash !in failed }
                     .sortedByDescending { it.id }
-                    .firstOrNull { !PdfCompanion.file(app, it.hash).isFile && !PdfCompanion.hasNoMusic(app, it.hash) }
+                    // not read yet, or read by an older reader
+                    .firstOrNull { !PdfCompanion.isCurrent(app, it.hash) && !PdfCompanion.hasNoMusic(app, it.hash) }
                 if (next == null) {
                     wake.first { it != seen }
                     continue

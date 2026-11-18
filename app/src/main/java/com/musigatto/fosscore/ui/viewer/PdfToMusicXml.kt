@@ -10,12 +10,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.musicxml.LayoutSpec
+import com.musigatto.fosscore.ocr.GrayCrop
+import com.musigatto.fosscore.ocr.OcrText
+import com.musigatto.fosscore.ocr.TesseractReader
+import com.musigatto.fosscore.ocr.TextReader
 import com.musigatto.fosscore.pdf.MuPdfDoc
 import com.musigatto.fosscore.pdfscore.CommonSymbols
 import com.musigatto.fosscore.pdfscore.MuPdfSvg
 import com.musigatto.fosscore.pdfscore.MusicFont
 import com.musigatto.fosscore.pdfscore.MusicXmlWriter
 import com.musigatto.fosscore.pdfscore.OutlineSymbols
+import com.musigatto.fosscore.pdfscore.OutlineText
 import com.musigatto.fosscore.pdfscore.PageDrawing
 import com.musigatto.fosscore.pdfscore.ScoreReader
 import com.musigatto.fosscore.pdfscore.SmuflCodes
@@ -91,6 +96,13 @@ internal object PdfCompanion {
     fun places(context: Context, key: String): CompanionPlaces? =
         placesFile(context, key).takeIf { it.isFile }?.let { f -> runCatching { CompanionPlaces.read(f.readText()) }.getOrNull() }
 
+    /**
+     * Whether the PDF has a companion read by this reader ([READER_VERSION]): one read by an older
+     * reader is read again (in the background), for what the newer one reads that it did not.
+     */
+    fun isCurrent(context: Context, key: String): Boolean = file(context, key).isFile &&
+        runCatching { CompanionPlaces.readerOf(placesFile(context, key).readText()) }.getOrNull() == READER_VERSION
+
     /** The PDF left the library: its companion, or its mark, goes too. */
     fun forget(context: Context, key: String) {
         file(context, key).delete()
@@ -156,6 +168,49 @@ private object SmuflIndex {
     fun get(context: Context): Map<Int, String> = codes ?: context.assets.open("verovio/data/Bravura.xml")
         .use { SmuflCodes.read(it.readBytes().toString(Charsets.UTF_8)) }
         .also { codes = it }
+}
+
+/** The reader of the text a page draws as outlines or pixels (Tesseract, in :ocr), started the first time it is needed. */
+private object Ocr {
+    @Volatile
+    private var reader: TextReader? = null
+
+    @Synchronized
+    fun get(context: Context): TextReader? = reader ?: TesseractReader.open(context)?.also { reader = it }
+}
+
+/** The resolution the text of a page is drawn at to be read. */
+private const val OCR_DPI = 300.0
+
+/** Around a piece of text, the white kept when it is drawn to be read, in its heights. */
+private const val OCR_MARGIN = 0.3
+
+/**
+ * [page] (page [index] of [doc], printed without its fonts) with what the music needs of its text
+ * drawn as outlines, read from its pixels: the number of each metronome mark ([OutlineText]).
+ */
+private suspend fun readOutlineText(
+    context: Context,
+    doc: MuPdfDoc,
+    index: Int,
+    page: PageDrawing,
+    lock: suspend (suspend () -> Any?) -> Any?,
+    work: () -> CoroutineDispatcher,
+): PageDrawing {
+    val spots = OutlineText.spots(page)
+    if (spots.isEmpty()) return page
+    val reader = withContext(Dispatchers.IO) { Ocr.get(context) } ?: return page
+    val read = spots.mapNotNull { box ->
+        val margin = OCR_MARGIN * box.height
+        val crop = lock {
+            withContext(work()) { doc.cropGray(index, OCR_DPI, box.left - margin, box.top - margin, box.right + margin, box.bottom + margin) }
+        } as? MuPdfDoc.GrayPage ?: return@mapNotNull null
+        val text = withContext(work()) { reader.readLine(GrayCrop(crop.width, crop.height, crop.pixels), OCR_DPI.toInt()) }
+        val perMinute = text?.let { OcrText.perMinute(it) }
+        Log.i(LOG_TAG, "page $index: metronome mark read \"$text\" -> $perMinute")
+        perMinute?.let { box to "= $it" }
+    }.toMap()
+    return OutlineText.withTexts(page, read)
 }
 
 /** The model that names a scan's symbols, shipped in :pdfscore's resources. */
@@ -237,9 +292,10 @@ private fun containsImage(svg: ByteArray): Boolean {
 
 /**
  * The reader's version: a PDF in which an older reader found no music is read again by a newer
- * one. Bumped when the reader learns to read pages it could not.
+ * one, and a companion an older reader wrote is read again. Bumped when the reader learns to read
+ * pages it could not, or more of them (3: the tempo of PDFs without fonts, by OCR).
  */
-internal const val READER_VERSION = 2
+internal const val READER_VERSION = 3
 
 /**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between
@@ -297,7 +353,9 @@ internal suspend fun convertPdfToMusicXml(
                     // shapes are built the first time a page needs them)
                     val outlines = withContext(Dispatchers.IO) { Outlines.get(context) }
                     Log.i(LOG_TAG, "page $index: references ready in ${SystemClock.elapsedRealtime() - t2} ms")
-                    withContext(work()) { outlines.name(raw) }
+                    val named = withContext(work()) { outlines.name(raw) }
+                    // its text drawn as outlines too: what the music needs of it is read from the pixels
+                    readOutlineText(context, doc, index, named, lock, work)
                 }
             }
             Log.i(LOG_TAG, "page $index: svg ${t1 - t0} ms (${svg.size} bytes), parsed ${t2 - t1} ms, named ${SystemClock.elapsedRealtime() - t2} ms")
@@ -321,6 +379,7 @@ internal suspend fun convertPdfToMusicXml(
             CompanionPlaces.write(
                 pages.indices.associate { pdfPages[it] to PageSize(pages[it].width, pages[it].height) },
                 score.followPlaces().mapValues { (_, place) -> place.copy(page = pdfPages[place.page]) },
+                READER_VERSION,
             )
         }
         withContext(Dispatchers.IO) { PdfCompanion.keep(context, key, xml, places) }

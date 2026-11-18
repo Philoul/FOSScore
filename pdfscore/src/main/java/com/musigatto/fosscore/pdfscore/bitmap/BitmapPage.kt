@@ -1,0 +1,214 @@
+package com.musigatto.fosscore.pdfscore.bitmap
+
+import com.musigatto.fosscore.pdfscore.Box
+import com.musigatto.fosscore.pdfscore.DrawnGlyph
+import com.musigatto.fosscore.pdfscore.DrawnLine
+import com.musigatto.fosscore.pdfscore.DrawnShape
+import com.musigatto.fosscore.pdfscore.PageDrawing
+import com.musigatto.fosscore.pdfscore.Point
+
+/**
+ * What the pixels of a scanned page give before any symbol is named (SPEC 2-8): the thresholds,
+ * the units, the tilt, the staves and systems, the line-free image, its vertical segments and blobs.
+ * Everything is in the deskewed frame, in pixels.
+ */
+class PageAnalysis(
+    val otsu: Int,
+    val threshold: Int,
+    val metrics: Metrics,
+    val deskew: Deskew,
+    /** The page's staff space D: the median of the staves' spaces (D0 when there is no staff). */
+    val space: Double,
+    val ink: InkMask,
+    val deskewed: InkMask,
+    val lineFree: InkMask,
+    val staves: List<BitmapStaff>,
+    val systems: List<List<Int>>,
+    val segments: List<Segment>,
+    val blobs: List<Blob>,
+) {
+    val thickness: Double get() = metrics.thickness
+}
+
+/**
+ * Reads a scanned page (an 8-bit gray image) into a [PageDrawing], so that the same readers as a
+ * PDF's ([com.musigatto.fosscore.pdfscore.ScoreReader]) take it: the symbols named by SMuFL names, the staff lines,
+ * stems and barlines as lines, the beams as four-corner shapes. The page is read deskewed; points
+ * are pixels x 72 / dpi.
+ */
+object BitmapPage {
+    /** The page drawing of [gray] scanned at [dpi], its symbols named by [model]. */
+    fun read(gray: GrayImage, dpi: Double, model: OmrModel): PageDrawing = draw(analyse(gray), dpi, model)
+
+    /** Every stage up to the blobs (SPEC 2-8). */
+    fun analyse(gray: GrayImage): PageAnalysis {
+        val hist = Binarize.histogram(gray)
+        val otsu = Binarize.otsu(hist)
+        val threshold = Binarize.threshold(hist, otsu)
+        val ink = Binarize.ink(gray, threshold)
+        val metrics = Metrics.of(ink)
+        val deskew = Deskew.of(ink, metrics.space)
+        val db = deskew.apply(ink)
+        val found = StaffFinder.find(db, metrics.thickness, metrics.space)
+        val space = if (found.staves.isEmpty()) metrics.space else median(found.staves.map { it.space })
+        val lineFree = LineRemoval.remove(db, found.staves, metrics.thickness)
+        val segments = Segments.find(lineFree, space)
+        val blobs = Blobs.find(lineFree, segments, found.staves, space, metrics.thickness)
+        return PageAnalysis(otsu, threshold, metrics, deskew, space, ink, db, lineFree, found.staves, found.systems, segments, blobs)
+    }
+
+    /** The kNN class scores of every blob (in the model's class order). */
+    fun scores(page: PageAnalysis, model: OmrModel): List<DoubleArray> =
+        page.blobs.map { model.symbols.scores(Features.of(it.mask, page.space, model.thresholds)) }
+
+    /** The page drawing of an analysed page (SPEC 11-12). */
+    fun draw(page: PageAnalysis, dpi: Double, model: OmrModel): PageDrawing {
+        val scale = 72.0 / dpi
+        val rules = SymbolRules(page.blobs, page.staves, page.space, page.thickness, page.deskewed, model)
+        val prediction = rules.predict(scores(page, model), model.symbols.classes)
+        val keep = rules.select(prediction)
+        val glyphs = rules.symbols(prediction, keep).map { s ->
+            DrawnGlyph(s.name, Box(s.x0 * scale, s.y0 * scale, (s.x1 + 1) * scale, (s.y1 + 1) * scale), confidence = s.confidence, font = "bitmap")
+        }
+        val lines = staffLines(page) + stemsAndBarlines(page, prediction)
+        val shapes = beams(page, prediction, keep)
+        return PageDrawing(
+            width = page.ink.width * scale,
+            height = page.ink.height * scale,
+            glyphs = glyphs,
+            lines = lines.map { DrawnLine(it.x1 * scale, it.y1 * scale, it.x2 * scale, it.y2 * scale, it.width * scale) },
+            shapes = shapes.map { shape -> DrawnShape(shape.points.map { Point(it.x * scale, it.y * scale) }, curved = false) },
+            texts = emptyList(),
+        )
+    }
+
+    /** Each staff's five lines, at their centre plus the staff's median offset (pixels). */
+    private fun staffLines(page: PageAnalysis): List<DrawnLine> = page.staves.flatMap { staff ->
+        (0 until 5).map { k ->
+            val y = staff.ys[k] + staff.medianOffset + 0.5
+            DrawnLine(staff.left.toDouble(), y, staff.right + 1.0, y, page.thickness)
+        }
+    }
+
+    /**
+     * Stems: the thin segments of a composite with a notehead piece at one end. Barlines: the
+     * segments of a composite or 'other' component without a head, running from a staff's top
+     * line to its bottom one (half a space either way).
+     */
+    private fun stemsAndBarlines(page: PageAnalysis, prediction: Prediction): List<DrawnLine> {
+        val d = page.space
+        val names = prediction.names
+        val headsOf = page.blobs.indices.filter { page.blobs[it].pass == 2 && names[it] in HEADS }.groupBy { page.blobs[it].parent }
+        val out = mutableListOf<DrawnLine>()
+        page.blobs.forEachIndexed { bi, blob ->
+            for (s in blob.stems) {
+                val xc = (s.x0 + s.x1 + 1) / 2.0
+                val line = DrawnLine(xc, s.y0.toDouble(), xc, s.y1 + 1.0, (s.x1 - s.x0 + 1).toDouble())
+                val heads = headsOf[bi].orEmpty()
+                if (names[bi] == "composite" && s.thin && heads.any { h ->
+                        val hb = page.blobs[h]
+                        hb.x1 >= s.x0 - 0.3 * d && hb.x0 <= s.x1 + 0.3 * d && s.y0 - 0.6 * d <= (hb.y0 + hb.y1) / 2.0 && (hb.y0 + hb.y1) / 2.0 <= s.y1 + 0.6 * d
+                    }
+                ) {
+                    out += line
+                    continue
+                }
+                if ((names[bi] == "composite" || names[bi] == "other") && heads.isEmpty() &&
+                    page.staves.any { st -> s.y0 <= st.top + 0.5 * d && s.y1 + 1 >= st.bottom - 0.5 * d && st.left - d <= xc && xc <= st.right + d }
+                ) {
+                    out += line
+                }
+            }
+        }
+        return out
+    }
+
+    /** The beams of the blobs read as beams, kept or pieces of a composite. */
+    private fun beams(page: PageAnalysis, prediction: Prediction, keep: List<Int>): List<DrawnShape> {
+        val kept = keep.toSet()
+        return page.blobs.indices.filter { i ->
+            val b = page.blobs[i]
+            prediction.names[i] == "beam" && (i in kept || (b.pass == 2 && prediction.names[b.parent] == "composite"))
+        }.flatMap { beamShapes(page.blobs[it], page.space) }
+    }
+
+    /**
+     * A beam blob's beams (SPEC 12): per column, the ink runs at least max(2, rnd(D / 4)) long (a run
+     * thicker than 1.5 beams cut into beams that touch); each run continues the previous column's
+     * track it overlaps most; a track at least 0.8 D long is a beam, the least-squares line through
+     * its run centres, as thick as its median run.
+     */
+    internal fun beamShapes(blob: Blob, space: Double): List<DrawnShape> {
+        val mask = blob.mask
+        val minRun = maxOf(2, rnd(0.25 * space))
+        val b = rnd(0.5 * space)
+        // per track: x, a, b of each column's run
+        val tracks = mutableListOf<MutableList<IntArray>>()
+        var previous = listOf<IntArray>() // a, b, track
+        for (x in 0 until mask.width) {
+            val runs = mutableListOf<IntArray>()
+            var y = 0
+            while (y < mask.height) {
+                if (!mask[x, y]) {
+                    y++
+                    continue
+                }
+                var end = y
+                while (end + 1 < mask.height && mask[x, end + 1]) end++
+                val length = end - y + 1
+                if (length >= minRun) {
+                    if (length > 1.5 * b) {
+                        val n = maxOf(1, rnd(length / (b + 0.25 * space)))
+                        for (i in 0 until n) runs += intArrayOf(y + (i * length) / n, y + ((i + 1) * length) / n - 1)
+                    } else {
+                        runs += intArrayOf(y, end)
+                    }
+                }
+                y = end + 1
+            }
+            val current = mutableListOf<IntArray>()
+            val taken = mutableSetOf<Int>()
+            for (run in runs) {
+                var best = -1
+                var bestOverlap = 0
+                for (p in previous) {
+                    val o = minOf(run[1], p[1]) - maxOf(run[0], p[0]) + 1
+                    if (o >= 1 && o > bestOverlap && p[2] !in taken) {
+                        best = p[2]
+                        bestOverlap = o
+                    }
+                }
+                if (best < 0) {
+                    best = tracks.size
+                    tracks += mutableListOf<IntArray>()
+                }
+                taken += best
+                tracks[best] += intArrayOf(x, run[0], run[1])
+                current += intArrayOf(run[0], run[1], best)
+            }
+            previous = current
+        }
+        return tracks.filter { it.size >= 0.8 * space }.map { track ->
+            val xs = track.map { it[0] + 0.5 + blob.x0 }
+            val cs = track.map { (it[1] + it[2] + 1) / 2.0 + blob.y0 }
+            val th = median(track.map { (it[2] - it[1] + 1).toDouble() })
+            val n = xs.size
+            val mx = xs.sum() / n
+            val my = cs.sum() / n
+            var sxx = 0.0
+            var sxy = 0.0
+            for (i in 0 until n) {
+                sxx += (xs[i] - mx) * (xs[i] - mx)
+                sxy += (xs[i] - mx) * (cs[i] - my)
+            }
+            val slope = if (sxx > 0) sxy / sxx else 0.0
+            val xl = (blob.x0 + track.first()[0]).toDouble()
+            val xr = (blob.x0 + track.last()[0] + 1).toDouble()
+            val yl = my + slope * (xl - mx)
+            val yr = my + slope * (xr - mx)
+            DrawnShape(listOf(Point(xl, yl - th / 2), Point(xr, yr - th / 2), Point(xr, yr + th / 2), Point(xl, yl + th / 2)), curved = false)
+        }
+    }
+
+    private val HEADS = setOf("noteheadBlack", "noteheadHalf", "noteheadWhole")
+}

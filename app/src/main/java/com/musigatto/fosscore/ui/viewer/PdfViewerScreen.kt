@@ -418,8 +418,14 @@ fun PdfViewerScreen(
         companionPlaces = withContext(Dispatchers.IO) { PdfCompanion.places(context, companionKey) }
         companionScore = opened
         former?.let { old -> withContext(Dispatchers.IO) { old.close() } }
+        if (opened == null && playOnceRead && !PdfMusicReading.readings.isRunning(companionKey)) {
+            // nothing to play after all: the band leaves its waiting
+            playOnceRead = false
+            readingMusic = false
+        }
         if (opened != null && playOnceRead) {
             playOnceRead = false
+            readingMusic = false
             playbackVm.attach(opened, opened.parts.map { it.id }.toSet(), COMPANION_LOADED)
             metronomeVm.stop()
             playbackVm.playPause(emptySet())
@@ -1136,14 +1142,20 @@ fun PdfViewerScreen(
     // ▶ / ⏸: the music, a MusicXML score's or a PDF's companion. A PDF whose music is not read yet
     // has it read first, then played; one in which none was found has the metronome instead
     fun playPause() {
-        when {
-            music != null -> {
+        val pdf = pageSource is MuPdfDoc
+        when (playAction(music != null, format.isMusicXml, pdf, pdf && PdfCompanion.file(context, companionKey).isFile, pdf && PdfCompanion.hasNoMusic(context, companionKey))) {
+            PlayAction.PLAY -> {
                 metronomeVm.stop()
                 playbackVm.playPause(notesOnScreen())
             }
-            format.isMusicXml -> Unit
-            pageSource is MuPdfDoc && !PdfCompanion.hasNoMusic(context, companionKey) -> readMusic(fromPlay = true)
-            else -> startStopMetronome()
+            PlayAction.NOTHING -> Unit
+            // the companion is opening: it plays once open (the band says the music is being prepared)
+            PlayAction.WAIT_FOR_COMPANION -> {
+                playOnceRead = true
+                readingMusic = true
+            }
+            PlayAction.READ -> readMusic(fromPlay = true)
+            PlayAction.METRONOME -> startStopMetronome()
         }
     }
 

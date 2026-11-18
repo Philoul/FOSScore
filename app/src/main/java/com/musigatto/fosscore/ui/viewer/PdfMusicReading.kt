@@ -137,13 +137,19 @@ internal object PdfMusicReading {
         Log.i(LOG_TAG, "reading the music of sheet ${sheet.id} in the background")
         val doc = MuPdfLock.mutex.withLockOn(Dispatchers.IO) { MuPdfDoc.open(context, Uri.fromFile(File(sheet.path))) }
         return try {
-            convertPdfToMusicXml(
+            val done = convertPdfToMusicXml(
                 context, doc, sheet.title, key,
                 lock = { block -> MuPdfLock.mutex.withLockOn(Dispatchers.IO) { block() } },
                 pause = { if (!readings.isHurried(key)) ScorePrecompute.awaitIdle() },
                 work = { workOn(key) },
                 onProgress = {},
             )
+            // what its first ▶ needs, made now (still in the background): it then plays at once
+            if (done is Conversion.Done) {
+                if (!readings.isHurried(key)) ScorePrecompute.awaitIdle()
+                PdfCompanion.prepare(context, key)
+            }
+            done
         } finally {
             withContext(NonCancellable) { MuPdfLock.mutex.withLockOn(Dispatchers.IO) { doc.close() } }
             ended(key)
@@ -160,4 +166,20 @@ private suspend fun <T> kotlinx.coroutines.sync.Mutex.withLockOn(dispatcher: Cor
     } finally {
         unlock()
     }
+}
+
+/** What ▶ does on the score shown. */
+internal enum class PlayAction { PLAY, NOTHING, WAIT_FOR_COMPANION, READ, METRONOME }
+
+/**
+ * What ▶ does: plays the [music] (a MusicXML score or a PDF's open companion); on a PDF whose
+ * companion is kept but not open yet, waits for it to open and plays; on a PDF not read, reads
+ * its music then plays; on a PDF without music ([noMusic]), counts with the metronome.
+ */
+internal fun playAction(music: Boolean, isMusicXml: Boolean, isPdf: Boolean, companionKept: Boolean, noMusic: Boolean): PlayAction = when {
+    music -> PlayAction.PLAY
+    isMusicXml -> PlayAction.NOTHING
+    isPdf && companionKept -> PlayAction.WAIT_FOR_COMPANION
+    isPdf && !noMusic -> PlayAction.READ
+    else -> PlayAction.METRONOME
 }

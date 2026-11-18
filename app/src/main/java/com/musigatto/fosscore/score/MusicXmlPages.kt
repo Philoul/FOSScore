@@ -261,16 +261,18 @@ class MusicXmlPages private constructor(
         /**
          * Reads the score in [file]. Nothing is laid out yet: call [layout] once the viewport is
          * known. When the score was opened before, this returns at once: the file is read behind.
+         * [soundFirst] for a score that is played, never shown (a PDF's companion): its music is
+         * made at once instead of after its first page is drawn.
          */
-        suspend fun open(context: Context, file: File): MusicXmlPages {
+        suspend fun open(context: Context, file: File, soundFirst: Boolean = false): MusicXmlPages {
             val engine = ScoreEngine(context, RASTER)
             val dir = cacheOf(context, file)
             val summaryFile = File(dir, SUMMARY)
             val summary = try {
                 val bytes = file.readBytes()
                 summaryFile.takeIf { it.isFile }?.let { ScoreSummary.fromJson(it.readText()) }
-                    ?.also { engine.openLater(bytes, dir) }
-                    ?: engine.open(bytes, dir).also { keepSummary(dir, it) }
+                    ?.also { engine.openLater(bytes, dir, soundFirst) }
+                    ?: engine.open(bytes, dir, soundFirst).also { keepSummary(dir, it) }
             } catch (e: Exception) {
                 engine.close()
                 throw e
@@ -317,6 +319,21 @@ class MusicXmlPages private constructor(
                     pages.settle()
                 }
                 pause()
+                engine.preparePlayback()
+            }
+        }
+
+        /**
+         * Makes and keeps what playing the score in [file], never shown, needs at its first
+         * opening (a PDF's companion, just read): its summary, its text laid out as [spec], its
+         * music. In the background, on the engine's low-priority threads.
+         */
+        suspend fun preparePlay(context: Context, file: File, spec: LayoutSpec) {
+            val dir = cacheOf(context, file)
+            ScoreEngine(context, RASTER, background = true).use { engine ->
+                val summary = engine.open(file.readBytes(), dir, soundFirst = true)
+                keepSummary(dir, summary)
+                engine.layout(spec)
                 engine.preparePlayback()
             }
         }

@@ -143,10 +143,29 @@ internal object PdfCompanion {
     suspend fun open(context: Context, key: String): MusicXmlPages? {
         val file = file(context, key).takeIf { it.isFile } ?: return null
         return try {
-            MusicXmlPages.open(context, file).also { it.layout(LayoutSpec(PLAY_WIDTH, PLAY_HEIGHT)) }
+            android.util.Log.i("FOSScore-PlayTiming", "companion: opening")
+            // never drawn: its music is made at once, not after a first page that never comes
+            MusicXmlPages.open(context, file, soundFirst = true).also {
+                android.util.Log.i("FOSScore-PlayTiming", "companion: opened")
+                it.layout(LayoutSpec(PLAY_WIDTH, PLAY_HEIGHT))
+                android.util.Log.i("FOSScore-PlayTiming", "companion: laid out")
+            }
         } catch (e: Exception) {
             Log.e(LOG_TAG, "companion not opened: ${e.message}", e)
             null
+        }
+    }
+
+    /**
+     * Makes and keeps what the first ▶ on the PDF needs (the companion's summary, layout and
+     * music), right after it is read: the first ▶ then plays at once (it took 13 s on the Tab 3).
+     */
+    suspend fun prepare(context: Context, key: String) {
+        val file = file(context, key).takeIf { it.isFile } ?: return
+        try {
+            MusicXmlPages.preparePlay(context, file, LayoutSpec(PLAY_WIDTH, PLAY_HEIGHT))
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "companion not prepared: ${e.message}")
         }
     }
 
@@ -294,9 +313,9 @@ private fun containsImage(svg: ByteArray): Boolean {
  * The reader's version: a PDF in which an older reader found no music is read again by a newer
  * one, and a companion an older reader wrote is read again. Bumped when the reader learns to read
  * pages it could not, or more of them (3: the tempo of PDFs without fonts, by OCR; 4: voices that
- * keep their measure's length, rests and beam hooks told apart).
+ * keep their measure's length, rests and beam hooks told apart; 5: companions prepared to play at once).
  */
-internal const val READER_VERSION = 4
+internal const val READER_VERSION = 5
 
 /**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between

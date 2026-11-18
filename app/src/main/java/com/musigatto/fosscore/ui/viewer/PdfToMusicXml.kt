@@ -170,12 +170,27 @@ private object Outlines {
 /** The resolution a scanned page is drawn at to be read (the scans the reader is made for). */
 private const val SCAN_DPI = 300.0
 
+// an A4 page at [SCAN_DPI], in pixels
+private const val SCAN_MAX_WIDTH = 2480.0
+
+/** The resolution a page [width] points wide is drawn at to be read as a scan. */
+internal fun scanDpi(width: Double): Double = if (width > 0) minOf(SCAN_DPI, SCAN_MAX_WIDTH * 72 / width) else SCAN_DPI
+
 /**
  * Whether a page is a picture of music (a scan), read by its pixels: it holds an image, and no
  * staff is drawn by its lines (a scan may carry a few: a frame, a text layer, a stamp).
  */
 internal fun isScan(svg: ByteArray, page: PageDrawing): Boolean =
-    containsImage(svg) && Staves.find(page).isEmpty()
+    containsImage(svg) && Staves.find(page.withLines(page.lines.filter { it.width <= MAX_STAFF_LINE })).isEmpty()
+
+private fun PageDrawing.withLines(lines: List<com.musigatto.fosscore.pdfscore.DrawnLine>) =
+    PageDrawing(width, height, glyphs, lines, shapes, texts)
+
+/**
+ * The thickest a staff line is drawn, in points (a staff space is 5 to 9): a scan stored as strips
+ * of picture may lay a band of paper under each, evenly spaced like staff lines, far thicker.
+ */
+private const val MAX_STAFF_LINE = 2.0
 
 private val IMAGE_TAG = "<image".toByteArray(Charsets.US_ASCII)
 
@@ -226,11 +241,14 @@ internal suspend fun convertPdfToMusicXml(
                 isScan(svg, raw) -> {
                     // a picture: drawn in gray and read by its pixels
                     val model = withContext(Dispatchers.IO) { ScanModel.get() } ?: continue
-                    val gray = lock { withContext(Dispatchers.IO) { doc.pageGray(index, SCAN_DPI) } } as? MuPdfDoc.GrayPage ?: continue
+                    // a page larger than A4 (a scan saved on A3) is drawn as wide as an A4 one: the staves
+                    // come out the size the reader is made for, in half the pixels
+                    val dpi = scanDpi(raw.width)
+                    val gray = lock { withContext(Dispatchers.IO) { doc.pageGray(index, dpi) } } as? MuPdfDoc.GrayPage ?: continue
                     val t3 = SystemClock.elapsedRealtime()
                     scanned++
                     withContext(Dispatchers.Default) {
-                        BitmapPage.read(GrayImage(gray.width, gray.height, gray.pixels), SCAN_DPI, model)
+                        BitmapPage.read(GrayImage(gray.width, gray.height, gray.pixels), dpi, model)
                     }.also {
                         Log.i(LOG_TAG, "page $index: scan ${gray.width}x${gray.height} drawn in ${t3 - t2} ms, read in ${SystemClock.elapsedRealtime() - t3} ms")
                     }

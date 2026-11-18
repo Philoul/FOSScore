@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -94,6 +96,25 @@ data class Loop(val on: Boolean = false, val a: Double? = null, val b: Double? =
 
 /** Beats per minute shown for a tempo [factor] of the score's [writtenBpm]. */
 fun bpmOf(factor: Float, writtenBpm: Double): Int = (writtenBpm * factor).roundToInt()
+
+/**
+ * A thing made once by [make], however many ask for it at the same time: the first one makes it,
+ * the others wait for it.
+ */
+class MadeOnce<T : Any>(private val make: suspend () -> T) {
+    private val making = Mutex()
+
+    @Volatile
+    var value: T? = null
+        private set
+
+    suspend fun get(): T = value ?: making.withLock { value ?: make().also { value = it } }
+
+    /** Forgets it: the next [get] makes another. */
+    fun forget() {
+        value = null
+    }
+}
 
 /** The tempo factor for [bpm], within what the module accepts. */
 fun factorOf(bpm: Int, writtenBpm: Double): Float =
@@ -189,7 +210,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var pages: MusicXmlPages? = null
     private var shownParts: Set<String> = emptySet()
     private var attachedFor: Any? = null
-    private var player: LivePlayer? = null
+    private val player: LivePlayer? get() = madePlayer.value
     private var playback: Playback? = null
     // the music the player plays now, to set the parts' sounds on its channels
     private var song: MidiSong? = null
@@ -444,7 +465,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     override fun onCleared() {
         stop()
         player?.release()
-        player = null
+        madePlayer.forget()
         ScorePrecompute.playing = false
     }
 
@@ -472,13 +493,17 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private fun liveSound() = sound().copy(tempo = 1.0)
 
     // the player, made once with the default bank of the preferences (read the first time)
-    private suspend fun livePlayer(): LivePlayer = player ?: withContext(Dispatchers.Default) {
-        LivePlayer(SoundBank.load(context, SoundBank.usable(context, Settings.soundBank(context))))
-    }.also { made ->
-        made.onEnd = { viewModelScope.launch { onEnd() } }
-        made.muted = silent()
-        player = made
+    // and only once: the warming of an attached score and ▶ may ask for it at the same time
+    private val madePlayer = MadeOnce {
+        withContext(Dispatchers.Default) {
+            LivePlayer(SoundBank.load(context, SoundBank.usable(context, Settings.soundBank(context))))
+        }.also { made ->
+            made.onEnd = { viewModelScope.launch { onEnd() } }
+            made.muted = silent()
+        }
     }
+
+    private suspend fun livePlayer(): LivePlayer = madePlayer.get()
 
     // The sound of each channel of [music] from the parts' sounds: a part plays on the channels of
     // its tracks. Reads the banks it needs: off the main thread.

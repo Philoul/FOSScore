@@ -411,7 +411,7 @@ fun PdfViewerScreen(
     LaunchedEffect(companionKey, companionRead, readsEnded, format) {
         if (format.isMusicXml) return@LaunchedEffect
         // a reading of another PDF ended: the companion already open stays
-        if (companionScore != null && companionOpenedAt == companionRead) return@LaunchedEffect
+        if (!companionToOpen(companionScore != null, companionOpenedAt, companionRead, readsEnded, companionKey)) return@LaunchedEffect
         companionOpenedAt = companionRead
         val opened = PdfCompanion.open(context, companionKey)
         val former = companionScore
@@ -547,7 +547,7 @@ fun PdfViewerScreen(
                     context, doc, title, companionKey,
                     lock = { read -> paper.withRenderLock { read() } },
                     onProgress = { if (!fromPlay) conversion = it },
-                ).also { PdfMusicReading.ended() }
+                ).also { PdfMusicReading.ended(companionKey) }
             }
             PdfMusicReading.readings.hurry(companionKey)
             val done = reading.await()
@@ -1043,9 +1043,12 @@ fun PdfViewerScreen(
     // (HalfSplit), worked out by the paper and read once per picture
     fun halfSplit(): HalfSplit = paper.halfSplit(currentPage, layoutVersion)
 
-    // Whether the notehead [id] is above [fraction] of its page's height (a hidden note counts as at the top).
-    fun above(geo: PageGeometry, id: String, fraction: Float) =
-        pageHeight == null || (geo.head(id)?.y ?: 0f) < pageHeight(geo) * fraction
+    // Whether the line of music of note [id] is all above, or all below, [fraction] of its page's
+    // height (HalfParts: a line the cut goes through is in neither part of a turned half page)
+    fun wholeAbove(geo: PageGeometry, id: String, fraction: Float) =
+        pageHeight?.let { HalfParts.wholeAbove(geo.head(id), it(geo), fraction) } ?: true
+    fun wholeBelow(geo: PageGeometry, id: String, fraction: Float) =
+        pageHeight?.let { HalfParts.wholeBelow(geo.head(id), it(geo), fraction) } ?: false
 
     // The notes on screen, for ▶ (it starts where the eyes are) and for the follow below. A turned
     // half page shows the top of the next page over the bottom of this one.
@@ -1059,8 +1062,8 @@ fun PdfViewerScreen(
             branch.showTwoUp -> onPage(currentPage) + onPage(currentPage + 1)
             branch.showHalf && halfTurned -> {
                 val split = halfSplit()
-                onPage(currentPage + 1) { g, id -> above(g, id, split.upper) } +
-                    onPage(currentPage) { g, id -> !above(g, id, split.lower) }
+                onPage(currentPage + 1) { g, id -> wholeAbove(g, id, split.upper) } +
+                    onPage(currentPage) { g, id -> wholeBelow(g, id, split.lower) }
             }
             else -> onPage(currentPage)
         }.toSet()
@@ -1087,11 +1090,12 @@ fun PdfViewerScreen(
         if (target < 0) return
         val looked = ahead.ifEmpty { notes }
         val aheadPage = pages.pageOf(looked.first()).takeIf { it >= 0 } ?: target
-        // below the top of the next page that a turned half page shows
+        // not all within the top of the next page that a turned half page shows (a line of music
+        // the cut goes through is not: the whole page shows before the music reaches it)
         val upper = halfSplit().upper
         val aheadInLowerPart = pages.geometry(aheadPage)?.let { geo ->
             val heads = looked.filter { geo.head(it) != null }
-            heads.isNotEmpty() && heads.none { above(geo, it, upper) }
+            heads.isNotEmpty() && heads.none { wholeAbove(geo, it, upper) }
         } ?: false
         val f = branch.follow(target, aheadInLowerPart, onScreen, aheadPage)
         currentPage = f.page

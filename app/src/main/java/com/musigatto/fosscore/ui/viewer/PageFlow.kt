@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.ui.viewer
 
+import com.musigatto.fosscore.musicxml.PageGeometry
 import kotlin.math.abs
 
 // Where a turned half page may cut, as fractions of the page height from its top: between these
@@ -185,4 +186,19 @@ fun turnPrev(flow: PageFlow, hasPreviousScore: Boolean): Turn = when {
     flow.canPrev -> Turn.ToPage(flow.prev())
     hasPreviousScore -> Turn.ToOtherScore
     else -> Turn.Stay
+}
+
+/**
+ * Which part of a turned half page a note is shown in, by its line of music (its system), not
+ * its head: a system the cut goes through shows half on each part, so its notes are in neither,
+ * and the page turns before the music reaches it.
+ */
+internal object HalfParts {
+    /** Whether the system of [head] is all above [fraction] of a page [pageHeight] high (a hidden note, no head, is at the top). */
+    fun wholeAbove(head: PageGeometry.Head?, pageHeight: Float, fraction: Float): Boolean =
+        head == null || head.bottom < pageHeight * fraction
+
+    /** Whether the system of [head] is all below [fraction] of a page [pageHeight] high. */
+    fun wholeBelow(head: PageGeometry.Head?, pageHeight: Float, fraction: Float): Boolean =
+        head != null && head.top >= pageHeight * fraction
 }

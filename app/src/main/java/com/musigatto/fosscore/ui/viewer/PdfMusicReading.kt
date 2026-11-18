@@ -29,6 +29,17 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.milliseconds
 
+/** The [count]th reading that ended, of the PDF [key] (null before any). */
+internal data class ReadingEnded(val count: Int, val key: String?)
+
+/**
+ * Whether a viewer of the PDF [key] opens its companion (again): none is [opened] yet, it read the
+ * music again itself ([readings] counts its readings, the one opened came after [openedAfter]), or
+ * the reading that just [ended] was this PDF's (read again in the background by a newer reader).
+ */
+internal fun companionToOpen(opened: Boolean, openedAfter: Int, readings: Int, ended: ReadingEnded, key: String): Boolean =
+    !opened || openedAfter != readings || ended.key == key
+
 /**
  * One piece of work per key at a time: who asks for a key already being worked on gets that work
  * instead of a second one. A work can be hurried ([hurry]): it then stops yielding to the user.
@@ -69,10 +80,10 @@ internal object PdfMusicReading {
     val readings = OneAtATime<String, Conversion>()
 
     private val wake = MutableStateFlow(0)
-    private val read = MutableStateFlow(0)
+    private val read = MutableStateFlow(ReadingEnded(0, null))
 
-    /** Counts the readings that ended: a viewer whose PDF had no companion looks again. */
-    val finished: StateFlow<Int> = read
+    /** The last reading that ended: a viewer of that PDF, or of one with no companion yet, opens it. */
+    val finished: StateFlow<ReadingEnded> = read
 
     // after the start of the app, leave it the tablet a moment (ScorePrecompute starts at 5 s)
     private const val START_DELAY_MS = 20_000L
@@ -90,8 +101,8 @@ internal object PdfMusicReading {
     /** A PDF was added: there may be music to read. */
     fun changed() = wake.update { it + 1 }
 
-    /** A reading ended: the viewers may open the companion it kept. */
-    fun ended() = read.update { it + 1 }
+    /** The reading of [key] ended: the viewers may open the companion it kept. */
+    fun ended(key: String) = read.update { ReadingEnded(it.count + 1, key) }
 
     /** Where the work of the reading of [key] runs: the background thread, or anywhere once hurried. */
     fun workOn(key: String): CoroutineDispatcher = if (readings.isHurried(key)) Dispatchers.Default else low
@@ -135,7 +146,7 @@ internal object PdfMusicReading {
             )
         } finally {
             withContext(NonCancellable) { MuPdfLock.mutex.withLockOn(Dispatchers.IO) { doc.close() } }
-            ended()
+            ended(key)
         }
     }
 

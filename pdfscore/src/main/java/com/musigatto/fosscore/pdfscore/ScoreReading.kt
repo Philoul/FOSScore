@@ -50,7 +50,7 @@ data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>,
                         for (k in 0 until notes) {
                             places[noteId(measure.rank, s + 1, e, k)] = FollowPlace(
                                 measure.page, (box.left + box.right) / 2, (box.top + box.bottom) / 2,
-                                top, bottom, staff.box.space, lineEnd,
+                                top, bottom, staff.box.space, lineEnd, measure.staves.maxOf { it.box.right },
                             )
                         }
                     }
@@ -73,7 +73,8 @@ data class ScoreReading(val parts: List<Part>, val measures: List<ScoreMeasure>,
 /**
  * Where a note is drawn, in points on its [page] (0 up): the centre of its head ([x], [y]), the
  * [top] line of its system's first staff and the [bottom] line of its last, the staff [space], and
- * where the system's staves end on the right ([lineEnd]). What `:musicxml`'s PageGeometry.Head holds.
+ * where the system's staves end on the right ([lineEnd]) and where the note's measure ends ([measureEnd]). What
+ * `:musicxml`'s PageGeometry.Head holds.
  */
 data class FollowPlace(
     val page: Int,
@@ -83,6 +84,7 @@ data class FollowPlace(
     val bottom: Double,
     val space: Double,
     val lineEnd: Double,
+    val measureEnd: Double = lineEnd,
 )
 
 /** A part: how many [staves] it is written on (2 for a piano), and its instrument's [name] as written left of them. */

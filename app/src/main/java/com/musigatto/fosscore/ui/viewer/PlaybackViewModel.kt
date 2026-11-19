@@ -15,6 +15,7 @@ import com.musigatto.fosscore.metronome.MetronomeMode
 import com.musigatto.fosscore.metronome.MetronomeSettings
 import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.musicxml.Part
+import com.musigatto.fosscore.musicxml.Onset
 import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.musicxml.SoundSpec
 import com.musigatto.fosscore.score.MusicXmlPages
@@ -92,6 +93,16 @@ data class Loop(val on: Boolean = false, val a: Double? = null, val b: Double? =
         next.a > next.b -> next.copy(a = next.b, b = next.a)
         else -> next
     }
+}
+
+/**
+ * Where ▶ goes on after a pause when another page is shown: the first notes of the page on
+ * screen ([onScreen]), when none of the notes the music paused on ([cursor]) is there; null to go
+ * on from the pause (the pause on screen, or nothing known of the screen).
+ */
+internal fun resumeElsewhere(cursor: List<String>, onScreen: Set<String>, onsets: List<Onset>): Double? {
+    if (onScreen.isEmpty() || cursor.any { it in onScreen }) return null
+    return onsets.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters
 }
 
 /** Beats per minute shown for a tempo [factor] of the score's [writtenBpm]. */
@@ -267,14 +278,16 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     }
 
     /**
-     * ▶ / ⏸. From a pause it goes on; otherwise it starts where ⏮ put it, at the start of the
+     * ▶ / ⏸. From a pause it goes on, or starts at [onScreen] when another page is shown since;
+     * otherwise it starts where ⏮ put it, at the start of the
      * loop, or at [onScreen], the first notes of the page shown, so the music starts where the
      * eyes are.
      */
     fun playPause(onScreen: Set<String>) {
         when (_state.value) {
             PlayState.PLAYING -> pause()
-            PlayState.PAUSED -> resume()
+            // another page shown since the pause: the music starts there
+            PlayState.PAUSED -> playback?.let { resumeElsewhere(_cursor.value, onScreen, it.onsets) }?.let(::resumeFrom) ?: resume()
             PlayState.PREPARING -> Unit
             PlayState.STOPPED -> start(onScreen)
         }
@@ -478,6 +491,16 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private fun resume() {
         val p = player ?: return
         playFrom(p, p.position)
+        _state.value = PlayState.PLAYING
+        follow()
+    }
+
+    // ▶ after a pause, from [quarters] (the page shown) rather than where the music paused
+    private fun resumeFrom(quarters: Double) {
+        val p = player ?: return
+        position = quarters
+        followPaused = false
+        playFrom(p, quarters)
         _state.value = PlayState.PLAYING
         follow()
     }

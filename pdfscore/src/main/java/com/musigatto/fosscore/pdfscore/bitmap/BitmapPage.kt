@@ -74,16 +74,49 @@ object BitmapPage {
             DrawnGlyph(s.name, Box(s.x0 * scale, s.y0 * scale, (s.x1 + 1) * scale, (s.y1 + 1) * scale), confidence = s.confidence, font = "bitmap")
         }
         val lines = staffLines(page) + ledgerLines(page) + stemsAndBarlines(page, prediction)
-        val shapes = beams(page, prediction, keep)
+        // the braces, as the tall curved shapes the systems are read with (Staves.braces)
+        val shapes = beams(page, prediction, keep) + braces(page.deskewed, page.staves, page.systems).map { b ->
+            DrawnShape(listOf(Point(b.x0.toDouble(), b.y0.toDouble()), Point(b.x1.toDouble(), b.y0.toDouble()), Point(b.x1.toDouble(), b.y1.toDouble()), Point(b.x0.toDouble(), b.y1.toDouble())), curved = true)
+        }
         return PageDrawing(
             width = page.ink.width * scale,
             height = page.ink.height * scale,
             glyphs = glyphs,
             lines = lines.map { DrawnLine(it.x1 * scale, it.y1 * scale, it.x2 * scale, it.y2 * scale, it.width * scale) },
-            shapes = shapes.map { shape -> DrawnShape(shape.points.map { Point(it.x * scale, it.y * scale) }, curved = false) },
+            shapes = shapes.map { shape -> DrawnShape(shape.points.map { Point(it.x * scale, it.y * scale) }, curved = shape.curved) },
             texts = emptyList(),
         )
     }
+
+    /** A brace found on a scan, in pixels. */
+    internal class BraceBox(val x0: Int, val y0: Int, val x1: Int, val y1: Int)
+
+    /**
+     * The braces of a scan (the model names no brace): ink in almost every row of a strip left of
+     * two neighbouring staves of a system, from the top of the first to the bottom of the second.
+     * The system's opening line, at the staves' edge, is left out of the strip.
+     */
+    internal fun braces(ink: InkMask, staves: List<BitmapStaff>, systems: List<List<Int>>): List<BraceBox> =
+        systems.flatMap { system -> system.zipWithNext() }.mapNotNull { (a, b) ->
+            val upper = staves[a]
+            val lower = staves[b]
+            val space = (upper.space + lower.space) / 2
+            val right = minOf(upper.left, lower.left) - rnd(BRACE_GAP * space)
+            val left = maxOf(0, right - rnd(BRACE_WIDTH * space))
+            val y0 = rnd(upper.top)
+            val y1 = minOf(ink.height - 1, rnd(lower.bottom))
+            if (right <= left || y1 <= y0) return@mapNotNull null
+            val inked = (y0..y1).count { y -> (left until right).any { x -> ink[x, y] } }
+            if (inked < BRACE_COVER * (y1 - y0 + 1)) return@mapNotNull null
+            val columns = (left until right).filter { x -> (y0..y1).any { y -> ink[x, y] } }
+            BraceBox(columns.first(), y0, columns.last() + 1, y1)
+        }
+
+    // a brace: ink in this share of the rows, in a strip this wide (spaces) left of the staves,
+    // this far from their edge (where the system's opening line is)
+    private const val BRACE_COVER = 0.9
+    private const val BRACE_WIDTH = 3.0
+    private const val BRACE_GAP = 0.3
 
     /** Each staff's five lines, evenly spaced, plus the staff's median offset (pixels). */
     private fun staffLines(page: PageAnalysis): List<DrawnLine> = page.staves.flatMap { staff ->

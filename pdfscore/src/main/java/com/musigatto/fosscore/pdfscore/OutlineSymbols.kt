@@ -36,6 +36,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
                     ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
                     // a jump's sign must look like one: a false segno makes the music jump
                     ?.takeIf { !(it.name == "segno" || it.name.startsWith("coda")) || it.score >= JUMP_SIGN }
+                    // so must a clef: a false one changes the pitch of every note after it
+                    ?.takeIf { !it.name.contains("Clef") || it.score >= CLEF_SIGN }
                     // a tuplet's number out of the staff only (inside, a digit is a time signature's)
                     ?.takeIf { !it.name.startsWith("tuplet") || distance(box.centerY, staff) > 0.0 }
                     // a half or whole rest out of the staff hangs from a ledger line, or sits on one
@@ -87,6 +89,9 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
 
         /** The least score a segno or coda named by its look needs (real ones scored 0.82-0.91, a false one 0.71). */
         const val JUMP_SIGN = 0.8
+
+        /** The least score a clef named by its look needs (real ones scored 0.91-0.97, a false bass clef change 0.57). */
+        const val CLEF_SIGN = 0.75
 
         /** The size of a small note's head against a normal one's (cue notes are printed at 60 to 75 %). */
         const val CUE = 0.7

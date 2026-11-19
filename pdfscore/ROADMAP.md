@@ -152,3 +152,10 @@ What the analysis found, and the order to borrow in (each measured with `bench.p
   candidates only (template matching over every pixel is 35 % of Audiveris's 33 s a page, beams
   22 %).
 - The tablet's timing of our own reader is to measure before spending the 5-10 s budget.
+- Tried 2026-11-19: barlines a staff misses taken from the other staves of its system (kept: the
+  private PDFs and the benchmark unchanged, 699 / 1156); a barline on one staff only dropped in a
+  system of three staves or more (no effect: dropped); barlines by projection alone, columns
+  inked over 90 % of the staff with no head beside (reverted: "Je suis malade" 53 -> 26, chord
+  stems and the system's opening line taken for barlines). Projection needs Audiveris's other
+  checks with it: ink beside the candidate, alignment across the staves, the opening line left
+  out.

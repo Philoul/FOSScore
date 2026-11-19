@@ -110,7 +110,9 @@ object Directions {
     private val WORDS = Regex(
         """^\s*(rall|rit|ritard|riten|accel|a tempo|tempo|rubato|poco|molto|meno|più|piu|cresc|decresc|dim|smorz|morendo|""" +
             """calando|allarg|string|sostenuto|dolce|espress|fine|d\.\s?c\.|d\.\s?s\.|da capo|dal segno|al coda|to coda|""" +
-            """lento|largo|adagio|andante|moderato|allegr|presto|vivace)""",
+            """lento|largo|adagio|andante|moderato|allegr|presto|vivace|""" +
+            // "To" and a sign: "To 𝄋", "3. To ⊕" (the OCR reads the sign too: "To $", "3. To @")
+            """(\d+\.\s*)*to\b(?!\s+[a-zA-Z]{3}))""",
         RegexOption.IGNORE_CASE,
     )
 }

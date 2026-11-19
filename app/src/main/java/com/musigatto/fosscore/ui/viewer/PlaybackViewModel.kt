@@ -161,7 +161,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     /** Bars ahead of the music the pages turn (the metronome setting, shared by playback). */
     var turnAhead = 0
 
-    private val _tempo = MutableStateFlow(Settings.tempo(context, score))
+    // the tempo changed by hand holds for the session; the score's setting, else the tempo printed
+    private val _tempo = MutableStateFlow(SessionTempos.session.start(score, Settings.scoreTempo(context, score)))
     val tempo: StateFlow<Float> = _tempo.asStateFlow()
 
     // semitones the music is heard up or down, the score shown staying as it is
@@ -317,7 +318,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         val f = factor.coerceIn(MIN_TEMPO_FACTOR, MAX_TEMPO_FACTOR)
         if (f == _tempo.value) return
         _tempo.value = f
-        Settings.setTempo(context, score, f)
+        SessionTempos.session.set(score, f)
         // the live player takes it at once
         player?.tempoFactor = f.toDouble()
     }

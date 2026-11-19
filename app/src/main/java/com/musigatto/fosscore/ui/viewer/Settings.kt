@@ -103,7 +103,8 @@ object Settings {
     private const val KEY_PARTS = "parts_"
     private const val KEY_LYRICS = "lyrics_"
     private const val KEY_HIDDEN_LYRICS = "hidden_lyrics_"
-    private const val KEY_TEMPO = "tempo_"
+    // the factors set by hand before 2026-11-20 ("tempo_") are left: they held for the session
+    private const val KEY_SCORE_TEMPO = "score_tempo_"
     private const val KEY_PLAY_TRANSPOSE = "play_transpose_"
     private const val KEY_HEARD = "heard_"
     private const val KEY_PLAY_CLICKS = "play_clicks"
@@ -341,12 +342,16 @@ object Settings {
         context.prefs().edit { putBoolean(KEY_HIDDEN_LYRICS + uri, keep) }
     }
 
-    /** Playback tempo, as a factor of the tempo written in the score (1 = as written). Per score. */
-    fun tempo(context: Context, uri: String): Float =
-        context.prefs().getFloat(KEY_TEMPO + uri, 1f)
+    /**
+     * The tempo set in a score's settings, as a factor of the tempo written in it (1 = as
+     * written); null when none is set: the tempo printed. A tempo changed while playing holds for
+     * the session only ([SessionTempos]).
+     */
+    fun scoreTempo(context: Context, uri: String): Float? =
+        context.prefs().takeIf { it.contains(KEY_SCORE_TEMPO + uri) }?.getFloat(KEY_SCORE_TEMPO + uri, 1f)
 
-    fun setTempo(context: Context, uri: String, factor: Float) {
-        context.prefs().edit { putFloat(KEY_TEMPO + uri, factor) }
+    fun setScoreTempo(context: Context, uri: String, factor: Float) {
+        context.prefs().edit { putFloat(KEY_SCORE_TEMPO + uri, factor) }
     }
 
     /** Whether the music of a score is silenced (the metronome alone). Per score. */

@@ -37,17 +37,35 @@ object Unfold {
     fun unroll(xml: String): String {
         val doc = parse(xml)
         val order = order(doc)
-        for (part in doc.documentElement.childElements("part")) {
+        doc.documentElement.childElements("part").forEachIndexed { p, part ->
             val measures = part.childElements("measure")
-            if (measures.isEmpty()) continue
+            if (measures.isEmpty()) return@forEachIndexed
             measures.forEach { part.removeChild(it) }
+            // the tempo in force where each measure starts, and where it ends, in the score's order
+            val tempoAtStart = arrayOfNulls<String>(measures.size)
+            val tempoAtEnd = arrayOfNulls<String>(measures.size)
+            var tempo: String? = null
+            measures.forEachIndexed { i, measure ->
+                tempoAtStart[i] = tempo
+                measure.descendants("sound").lastOrNull { it.hasAttribute("tempo") }?.let { tempo = it.getAttribute("tempo") }
+                tempoAtEnd[i] = tempo
+            }
             val times = IntArray(measures.size)
+            var previous = -1
             order.forEach { i ->
                 val original = measures.getOrNull(i) ?: return@forEach
                 times[i]++
                 val copy = original.cloneNode(true) as Element
                 if (times[i] > 1) rename(copy, "-rend${times[i]}")
                 stripJumps(copy)
+                // a jump takes the tempo of the place it goes to (the first part carries it for all)
+                val start = tempoAtStart[i]
+                if (p == 0 && previous >= 0 && previous != i - 1 && start != null && start != tempoAtEnd[previous]) {
+                    val direction = doc.createElement("direction")
+                    direction.appendChild(doc.createElement("sound").apply { setAttribute("tempo", start) })
+                    copy.insertBefore(direction, copy.childElements().firstOrNull { it.nodeName != "barline" && it.nodeName != "attributes" && it.nodeName != "print" })
+                }
+                previous = i
                 part.appendChild(copy)
             }
         }

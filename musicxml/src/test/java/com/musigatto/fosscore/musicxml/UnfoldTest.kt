@@ -119,6 +119,27 @@ class UnfoldTest {
         assertEquals(listOf(1, 2, 3, 4, 5, 2, 3, 6, 7, 8), played(m))
     }
 
+    /**
+     * Going back takes the tempo the score has there: Lettre à France speeds up to 100 at 39 and
+     * goes back from 46 to 17, where the tempo is 66 (it went on at 100, 2026-11-19).
+     */
+    @Test
+    fun goingBackTakesTheTempoOfThePlaceGoneBackTo() {
+        val m = List(4) { M() }.toMutableList()
+        m[1] = M(forward = true)
+        m[3] = M(backward = true)
+        val xml = score(m)
+            .replace("""<note id="n1">""", """<direction><sound tempo="66"/></direction><note id="n1">""")
+            .replace("""<note id="n3">""", """<direction><sound tempo="100"/></direction><note id="n3">""")
+        val unrolled = Unfold.unroll(xml)
+        // 1 2 3 4 | 2 3 4: the second 2 at 66 again
+        val second = unrolled.substringAfter("""id="fosscore-measure-2-rend2"""").substringBefore("</measure>")
+        assertTrue(second, second.contains("""tempo="66""""))
+        // played on, no tempo added: the first 2 has none
+        val first = unrolled.substringAfter("""id="fosscore-measure-2"""").substringBefore("</measure>")
+        assertFalse(first, first.contains("tempo"))
+    }
+
     /** The unrolled score has no repeat left, its copies named after the measures and notes they repeat. */
     @Test
     fun theUnrolledScoreHasCopiesNamedAfterTheirOriginals() {

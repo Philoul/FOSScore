@@ -46,6 +46,20 @@ class DirectionsTest {
         assertEquals(listOf(Words(200.0, "Rall."), Words(300.0, "a tempo")), read(emptyList(), texts))
     }
 
+    /**
+     * "To" and a sign ("To 𝄋", "3. To ⊕"), as the OCR reads them with the sign ("To $", "3. To @"),
+     * are directions: taken for lyrics, Savoir aimer's jumps were lost (2026-11-20).
+     */
+    @Test
+    fun toAndASignIsADirection() {
+        val texts = listOf(
+            DrawnText("3. To @", "ocr", 200.0, top - 2 * space, 9.0),
+            DrawnText("To $", "ocr", 300.0, top - 2 * space, 9.0),
+            DrawnText("Tout le monde", "font_1", 400.0, top - 2 * space, 10.0),
+        )
+        assertEquals(listOf(Words(200.0, "3. To @"), Words(300.0, "To $")), read(emptyList(), texts))
+    }
+
     /** A segno and a coda over the staff are where a jump goes; "D.S. al Coda", "Fine" say when to jump. */
     @Test
     fun segnoCodaAndJumpWords() {

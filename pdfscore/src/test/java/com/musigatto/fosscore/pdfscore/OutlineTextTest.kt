@@ -45,6 +45,18 @@ class OutlineTextTest {
         assertEquals(110.0, mark.right, 0.01)
     }
 
+    /**
+     * A flat outline over the staff (a hyphen, an "=" alone) is no word: reading it cost the Tab 3
+     * a third of a second each, dozens per score, for "=" (2026-11-20).
+     */
+    @Test
+    fun aFlatOutlineIsNoWord() {
+        // 0.7 space high, as the "=" of J'ai encore rêvé d'elle
+        val dash = text(200.0, 85.0, 212.0, 88.5, fill = 3)
+        val spots = OutlineText.spots(PageDrawing(600.0, 800.0, emptyList(), staff, word + dash, emptyList()))
+        assertEquals(listOf(boxOf(word)), spots.filter { it.kind == OutlineText.Kind.WORDS }.map { it.box })
+    }
+
     @Test
     fun withoutAMetronomeNoteItsNumberIsWords() {
         val spots = OutlineText.spots(PageDrawing(600.0, 800.0, emptyList(), staff, number + word, emptyList()))

@@ -70,7 +70,7 @@ object BitmapPage {
         val rules = SymbolRules(page.blobs, page.staves, page.space, page.thickness, page.deskewed, model)
         val prediction = rules.predict(scores(page, model), model.symbols.classes)
         val keep = rules.select(prediction)
-        val glyphs = rules.symbols(prediction, keep).map { s ->
+        val glyphs = trusted(rules.symbols(prediction, keep)).map { s ->
             DrawnGlyph(s.name, Box(s.x0 * scale, s.y0 * scale, (s.x1 + 1) * scale, (s.y1 + 1) * scale), confidence = s.confidence, font = "bitmap")
         }
         val lines = staffLines(page) + ledgerLines(page) + stemsAndBarlines(page, prediction)
@@ -87,6 +87,16 @@ object BitmapPage {
             texts = emptyList(),
         )
     }
+
+    /**
+     * The symbols to read: a head named with less confidence than [MIN_HEAD_CONFIDENCE] is left
+     * out (junk read as a half note made its measure two beats long). Benchmark: 0.3 changed
+     * nothing, 0.45 the best (699 -> 701 measures right), 0.6 lost real heads (678).
+     */
+    internal fun trusted(symbols: List<BitmapSymbol>): List<BitmapSymbol> =
+        symbols.filter { it.name !in HEADS || it.confidence >= MIN_HEAD_CONFIDENCE }
+
+    private const val MIN_HEAD_CONFIDENCE = 0.45
 
     /** A brace found on a scan, in pixels. */
     internal class BraceBox(val x0: Int, val y0: Int, val x1: Int, val y1: Int)

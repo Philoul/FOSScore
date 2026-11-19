@@ -93,8 +93,21 @@ object BitmapPage {
      * out (junk read as a half note made its measure two beats long). Benchmark: 0.3 changed
      * nothing, 0.45 the best (699 -> 701 measures right), 0.6 lost real heads (678).
      */
-    internal fun trusted(symbols: List<BitmapSymbol>): List<BitmapSymbol> =
-        symbols.filter { it.name !in HEADS || it.confidence >= MIN_HEAD_CONFIDENCE }
+    internal fun trusted(symbols: List<BitmapSymbol>): List<BitmapSymbol> {
+        val heads = symbols.filter { it.name in HEADS && it.confidence >= MIN_HEAD_CONFIDENCE }
+        // a head over most of a surer one at its height is a second reading of it
+        fun doubled(h: BitmapSymbol) = heads.any { g ->
+            g !== h && g.confidence > h.confidence && overlap(g, h) >= DOUBLE_OVERLAP * minOf(area(g), area(h))
+        }
+        return symbols.filter { it.name !in HEADS || (it.confidence >= MIN_HEAD_CONFIDENCE && !doubled(it)) }
+    }
+
+    private fun area(s: BitmapSymbol) = (s.x1 - s.x0 + 1) * (s.y1 - s.y0 + 1)
+
+    private fun overlap(a: BitmapSymbol, b: BitmapSymbol) =
+        maxOf(0, minOf(a.x1, b.x1) - maxOf(a.x0, b.x0) + 1) * maxOf(0, minOf(a.y1, b.y1) - maxOf(a.y0, b.y0) + 1)
+
+    private const val DOUBLE_OVERLAP = 0.3
 
     private const val MIN_HEAD_CONFIDENCE = 0.45
 

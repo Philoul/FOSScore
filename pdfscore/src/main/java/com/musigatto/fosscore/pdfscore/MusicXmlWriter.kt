@@ -115,7 +115,10 @@ object MusicXmlWriter {
                 cursor = Fraction.ZERO
                 val changes = if (voice == voices.firstKey()) staff.clefChanges.toMutableList() else mutableListOf()
                 val directions = if (voice == voices.firstKey()) staff.directions.toMutableList() else mutableListOf()
-                for ((index, placed) in events.sortedWith(compareBy({ it.value.event.onset }, { if ((it.value.event as? Chord)?.grace == true) 0 else 1 }))) {
+                val ordered = events.sortedWith(compareBy({ it.value.event.onset }, { if ((it.value.event as? Chord)?.grace == true) 0 else 1 }))
+                val tuplets = tupletMarks(ordered.map { it.value.event })
+                for ((position, indexed) in ordered.withIndex()) {
+                    val (index, placed) = indexed
                     val event = placed.event
                     while (changes.isNotEmpty() && changes.first().x < placed.box.left) {
                         out.append("      <attributes>\n").append(clef(changes.removeAt(0).value, s + 1, staffCount)).append("      </attributes>\n")
@@ -136,7 +139,7 @@ object MusicXmlWriter {
                     }
                     val ids = { k: Int -> ScoreReading.noteId(measure.rank, firstStaff + s + 1, index, k) }
                     val musicXmlVoice = s * 4 + voice
-                    writeEvent(out, event, length, divisions, musicXmlVoice, if (staffCount > 1) s + 1 else null, staff.clef, ids, running[s].tied)
+                    writeEvent(out, event, length, divisions, musicXmlVoice, if (staffCount > 1) s + 1 else null, staff.clef, ids, running[s].tied, tuplets[position].orEmpty())
                     if (!(event is Chord && event.grace)) cursor = event.onset + duration(event, length)
                 }
                 changes.forEach { out.append("      <attributes>\n").append(clef(it.value, s + 1, staffCount)).append("      </attributes>\n") }
@@ -177,6 +180,7 @@ object MusicXmlWriter {
         clef: Clef?,
         id: (Int) -> String,
         tied: MutableSet<Pitch>,
+        tuplet: String = "",
     ) {
         val tail = StringBuilder()
         val duration = event.duration
@@ -198,7 +202,7 @@ object MusicXmlWriter {
             is Rest -> {
                 out.append("      <note><rest/><duration>${units(duration.length, divisions)}</duration>").append(tail).append(after)
                 staff?.let { out.append("<staff>$it</staff>") }
-                if (event.fermata) out.append("<notations>$FERMATA</notations>")
+                if (event.fermata || tuplet.isNotEmpty()) out.append("<notations>").append(tuplet).append(if (event.fermata) FERMATA else "").append("</notations>")
                 out.append("</note>\n")
             }
             is Chord -> {
@@ -227,7 +231,7 @@ object MusicXmlWriter {
                     event.accidentals[k]?.let { alter -> ACCIDENTALS[alter]?.let { out.append("<accidental>$it</accidental>") } }
                     out.append(after)
                     if (k == 0) out.append(beams)
-                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + articulations +
+                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + (if (k == 0) tuplet else "") + articulations +
                         (if (event.arpeggiate) "<arpeggiate/>" else "") + (if (event.fermata && k == 0) FERMATA else "")
                     if (notations.isNotEmpty()) out.append("<notations>").append(notations).append("</notations>")
                     // the syllable once, on the chord's first note
@@ -237,6 +241,45 @@ object MusicXmlWriter {
             }
         }
     }
+
+    /**
+     * Where the tuplets of a voice's [events] (in order) start and stop, by position: MusicXML's
+     * `<tuplet>` notations, which Verovio needs to play time-modified notes at their time (else it
+     * plays them at their written value). A tuplet is a run of notes and rests of one ratio; it
+     * closes when what is written in it makes its actual notes of its smallest value (three eighths
+     * for a triplet of eighths, a quarter and an eighth too), or when the run ends.
+     */
+    internal fun tupletMarks(events: List<Event>): Map<Int, String> {
+        val marks = HashMap<Int, String>()
+        var start = -1
+        var written = Fraction.ZERO
+        var smallest = Fraction.ZERO
+        fun close(last: Int) {
+            marks[start] = if (start == last) START + STOP else START
+            if (last != start) marks[last] = STOP
+            start = -1
+        }
+        events.forEachIndexed { i, event ->
+            if ((event as? Chord)?.grace == true) return@forEachIndexed
+            val ratio = event.duration.tuplet
+            if (start >= 0 && (ratio == Fraction.of(1) || ratio != events[start].duration.tuplet)) close(i - 1)
+            if (ratio == Fraction.of(1)) return@forEachIndexed
+            val value = Duration(event.duration.type, event.duration.dots).length
+            if (start < 0) {
+                start = i
+                written = Fraction.ZERO
+                smallest = value
+            }
+            written += value
+            if (value < smallest) smallest = value
+            if (written >= smallest * Fraction.of(ratio.denominator)) close(i)
+        }
+        if (start >= 0) close(events.lastIndex)
+        return marks
+    }
+
+    private const val START = "<tuplet type=\"start\" bracket=\"no\"/>"
+    private const val STOP = "<tuplet type=\"stop\"/>"
 
     /** MusicXML's accidentals by the alter they show. */
     private val ACCIDENTALS = mapOf(-2 to "flat-flat", -1 to "flat", 0 to "natural", 1 to "sharp", 2 to "double-sharp")

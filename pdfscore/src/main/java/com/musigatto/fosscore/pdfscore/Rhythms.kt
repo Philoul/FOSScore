@@ -368,6 +368,14 @@ object Rhythms {
             }.map { b -> a to b }
         }
         val byStem = together.all { (upper, lower) -> upper.stem == Stem.UP && lower.stem == Stem.DOWN }
+        // a whole note (no stem) struck with notes on stems: it is a voice, the notes on stems the
+        // other, however low they go (no line between the voices then)
+        val wholeVoice = when {
+            byStem || together.isEmpty() -> null
+            together.all { (upper, lower) -> lower.stem == Stem.NONE && upper.stem != Stem.NONE } -> 2
+            together.all { (upper, lower) -> upper.stem == Stem.NONE && lower.stem != Stem.NONE } -> 1
+            else -> null
+        }
         // where the upper voice ends and the lower one begins, when the stems do not say it
         val split = together.map { (upper, lower) -> (upper.box.bottom + lower.box.top) / 2 }.average()
         val middle = staff.top + 2 * space
@@ -404,6 +412,7 @@ object Rhythms {
                     draft.rest -> besideRests.entries.minBy { abs(it.key.box.centerY - draft.box.centerY) }.let { if (it.value) 2 else 1 }
                     else -> 1
                 }
+            wholeVoice != null && !draft.rest -> if (draft.stem == Stem.NONE) wholeVoice else 3 - wholeVoice
             !byStem -> if (draft.box.centerY > split) 2 else 1
             draft.stem == Stem.UP -> 1
             draft.stem == Stem.DOWN -> 2

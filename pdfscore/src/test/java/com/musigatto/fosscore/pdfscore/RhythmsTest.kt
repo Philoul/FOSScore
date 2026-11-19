@@ -578,6 +578,23 @@ class RhythmsTest {
         assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), lower.map { it.event.onset })
     }
 
+    /**
+     * A whole note under a line of notes on stems, struck with its first: the whole note is a
+     * voice, every note on a stem the other, however low (Lettre à France, measure 45: the low
+     * notes of the line went to the whole note's voice, both past the measure's end).
+     */
+    @Test
+    fun aWholeNoteUnderNotesOnStemsIsAVoiceOfItsOwn() {
+        val whole = head(100.0, top + 6 * space, "noteheadWhole")
+        val ledgers = listOf(DrawnLine(97.0, top + 5 * space, 110.0, top + 5 * space, 0.5), DrawnLine(97.0, top + 6 * space, 110.0, top + 6 * space, 0.5))
+        val quarters = listOf(head(100.0, g4), head(125.0, top + 5 * space), head(150.0, g4), head(175.0, top + 5 * space))
+        val measure = read(listOf(whole) + quarters, ledgers + quarters.map { stemUp(it) }).single()
+        val chords = measure.events.map { it.event as Chord }
+        assertEquals(listOf("G4", "C4", "G4", "C4"), chords.filter { it.voice == 1 }.map { it.pitches.single().toString() })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), chords.filter { it.voice == 1 }.map { it.onset })
+        assertEquals(listOf("A3"), chords.filter { it.voice == 2 }.map { it.pitches.single().toString() })
+    }
+
     /** Stems of two staves on almost the same x stay two stems: the upper one keeps its flag. */
     @Test
     fun stemsOfTwoStavesOnOneXStayApart() {

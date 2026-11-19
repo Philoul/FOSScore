@@ -106,6 +106,17 @@ internal fun resumeElsewhere(cursor: List<String>, onScreen: Set<String>, onsets
     return onsets.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters
 }
 
+/** Whether two lists of channel sounds are the same, channel by channel ([same] for two sounds). */
+internal fun <T> sameSounds(a: List<T?>, b: List<T?>, same: (T, T) -> Boolean): Boolean =
+    a.size == b.size && a.indices.all { i ->
+        val x = a[i]
+        val y = b[i]
+        if (x == null || y == null) x == null && y == null else same(x, y)
+    }
+
+// What the opening of a score warmed: its MIDI, read, with the channels' sounds whose samples are read
+private class Warmed(val midi: ByteArray, val song: MidiSong, val sounds: List<ChannelSound?>)
+
 /** Beats per minute shown for a tempo [factor] of the score's [writtenBpm]. */
 fun bpmOf(factor: Float, writtenBpm: Double): Int = (writtenBpm * factor).roundToInt()
 
@@ -240,6 +251,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private var position = 0.0
     // where ▶ starts next, when it is not "the page on screen": after ⏮, or a stop in a loop
     private var resumeAt: Double? = null
+    // what the opening of the score warmed (set off the main thread, read by ▶)
+    @Volatile private var warmed: Warmed? = null
 
     /**
      * The score to play, with the [shown] parts. [loaded] stands for what the score was loaded
@@ -265,8 +278,11 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                         it.playback(liveSound())?.let { pb ->
                             withContext(Dispatchers.Default) {
                                 val read = MidiSong.read(pb.midi)
-                                made.setSounds(channelSounds(pb, read))
+                                val sounds = channelSounds(pb, read)
+                                made.setSounds(sounds)
                                 made.warm(read)
+                                // ▶ takes it as it is when nothing changed
+                                warmed = Warmed(pb.midi, read, sounds)
                             }
                         }
                     }
@@ -585,12 +601,18 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     ?: loop.a?.takeIf { loop.on }
                     ?: pb.onsets.firstOrNull { o -> o.notes.any { it in onScreen } }?.quarters
                     ?: 0.0
-                val read = withContext(Dispatchers.Default) { MidiSong.read(pb.midi) }
+                // what the opening of the score warmed, when it is this music: read and warmed once
+                val ready = warmed?.takeIf { it.midi.contentEquals(pb.midi) }
+                val read = ready?.song ?: withContext(Dispatchers.Default) { MidiSong.read(pb.midi) }
                 val next = livePlayer()
                 // the parts' sounds, and the samples read now, not by the first notes on the audio thread
                 withContext(Dispatchers.Default) {
-                    next.setSounds(channelSounds(pb, read))
-                    next.warm(read)
+                    val sounds = channelSounds(pb, read)
+                    next.setSounds(sounds)
+                    if (ready == null || !sameSounds(ready.sounds, sounds) { a, b -> a.font === b.font && a.bank == b.bank && a.program == b.program }) {
+                        next.warm(read)
+                        warmed = Warmed(pb.midi, read, sounds)
+                    }
                 }
                 if (!isActive) return@launch
                 next.tempoFactor = _tempo.value.toDouble()

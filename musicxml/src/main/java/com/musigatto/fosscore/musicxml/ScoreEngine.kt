@@ -276,10 +276,17 @@ class ScoreEngine(
             }
         }
         val tempo = sound.tempo.coerceIn(VerovioOptions.MIN_TEMPO, VerovioOptions.MAX_TEMPO)
+        // the same sound of the same music: the playback made last (its MIDI edited again took
+        // 40 to 110 ms of each ▶ on the Tab 3)
+        val key = listOf(sound, spec, played, doc)
+        lastPlayback?.takeIf { it.first == key }?.let { return it.second }
         return withContext(Dispatchers.Default) {
             Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), played.onsets, played.bars, partTracks)
-        }
+        }.also { lastPlayback = key to it }
     }
+
+    @Volatile
+    private var lastPlayback: Pair<List<Any>, Playback>? = null
 
     /**
      * Plays the score as [spec] (its transposition and parts) without laying it out: the music and

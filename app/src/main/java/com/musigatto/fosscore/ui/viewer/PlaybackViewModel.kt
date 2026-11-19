@@ -2,6 +2,7 @@ package com.musigatto.fosscore.ui.viewer
 
 import android.app.Application
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -570,6 +571,8 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         stop()
         _state.value = PlayState.PREPARING
         _failed.value = false
+        // how long ▶ takes to sound (the maintainer wants it under half a second)
+        val tapped = SystemClock.uptimeMillis()
         starting = viewModelScope.launch {
             try {
                 val pb = pages.playback(liveSound()) ?: run {
@@ -598,6 +601,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 playback = pb
                 applyClicks(pb, read)
                 playFrom(next, from)
+                Log.i(LOG_TAG, "playing ${SystemClock.uptimeMillis() - tapped} ms after ▶")
                 lastPlayback = pb
                 position = from
                 resumeAt = null

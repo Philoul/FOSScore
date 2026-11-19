@@ -16,9 +16,12 @@ import com.musigatto.fosscore.pdfscore.music.Rest
 object ImpliedTuplets {
     private val TRIPLET = Fraction.of(2, 3)
 
-    /** [events] of one staff in a measure [length] long, with the triplets its voices imply. */
-    fun apply(events: List<PlacedEvent>, length: Fraction?): List<PlacedEvent> {
-        if (length == null || events.isEmpty()) return events
+    /**
+     * [events] of one staff in a measure [length] long, with the triplets its voices imply; none
+     * in a [compound] time (6/8, 9/8, 12/8): three eighths are its beat, never a triplet.
+     */
+    fun apply(events: List<PlacedEvent>, length: Fraction?, compound: Boolean = false): List<PlacedEvent> {
+        if (length == null || compound || events.isEmpty()) return events
         val fixed = events.groupBy { it.event.voice }.mapValues { (_, voice) -> fix(voice, length) }
         val byVoice = fixed.mapValues { (_, voice) -> voice.iterator() }
         // the events in their order, each replaced by its voice's fixed one

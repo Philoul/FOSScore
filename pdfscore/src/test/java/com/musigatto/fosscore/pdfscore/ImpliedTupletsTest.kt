@@ -64,6 +64,20 @@ class ImpliedTupletsTest {
         assertEquals(read, ImpliedTuplets.apply(read, whole))
     }
 
+    /**
+     * In 6/8 three beamed eighths are a beat, never a triplet: a voice an eighth too long there
+     * (a note read a quarter, its flag missed) is a misread value (Halleluya, a scan: 17 measures
+     * with false triplets).
+     */
+    @Test
+    fun inACompoundTimeThreeEighthsAreABeat() {
+        val read = voice(
+            eighth to BeamMark.BEGIN, eighth to BeamMark.CONTINUE, eighth to BeamMark.END,
+            Duration(NoteType.QUARTER) to null, eighth to BeamMark.BEGIN, eighth to BeamMark.END,
+        )
+        assertEquals(read, ImpliedTuplets.apply(read, Fraction.of(3, 4), compound = true))
+    }
+
     /** Too long by what no triplet explains (a misread value): left to the writer. */
     @Test
     fun anExcessNoTripletExplainsIsLeftAlone() {

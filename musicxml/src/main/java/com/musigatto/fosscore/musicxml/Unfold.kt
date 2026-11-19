@@ -23,7 +23,9 @@ import javax.xml.transform.stream.StreamResult
  *   pass; out of an ending, it goes back once (or as its `times` says).
  * - To Coda is taken after a D.S. or D.C., or within an ending (it belongs to that pass).
  * - A final barline (light-heavy, no repeat) ends the piece; Fine ends it after a D.S. or D.C.
- * - After a D.S. or D.C., repeats are not taken again.
+ * - "To" written before a sign is a jump to it: "To 𝄋" a D.S., "3. To ⊕" a To Coda.
+ * - After a D.S. or D.C., repeats are not taken again, but those of the coda.
+ * - A jump takes the tempo in force where it lands.
  */
 object Unfold {
     /** The measures of [xml] (0 up, as the first part has them) in the order they are played. */
@@ -102,10 +104,11 @@ object Unfold {
                 var end = i
                 while (end < n - 1 && !info[end].endingStop && info[end + 1].endingStart == null) end++
                 // an ending stopped before the backward repeat that follows it, with no other ending
-                // in between, goes on to it (MuseScore stops "1. 2." after its first measure)
+                // in between and another one right after it, goes on to it (MuseScore stops "1. 2."
+                // after its first measure); a last ending ("2." of Savoir aimer) does not
                 if (!info[end].backward) {
                     val back = (end + 1 until n).firstOrNull { info[it].backward || info[it].endingStart != null }
-                    if (back != null && info[back].backward && info[back].endingStart == null) end = back
+                    if (back != null && info[back].backward && info[back].endingStart == null && info.getOrNull(back + 1)?.endingStart != null) end = back
                 }
                 blocks += Block(i, end, numbers)
                 i = end + 1
@@ -120,6 +123,8 @@ object Unfold {
         var sectionStart = 0
         var pass = 1
         var jumped = false
+        // where the coda reached after a jump starts (-1: none yet)
+        var coda = -1
         var cameBack = false
         i = 0
         while (i < n && order.size < n * MAX_PASSES) {
@@ -139,11 +144,13 @@ object Unfold {
             if (m.toCoda && (jumped || blockAt(i) != null)) {
                 val target = (i + 1 until n).firstOrNull { info[it].coda }
                 if (target != null) {
+                    if (jumped) coda = target
                     i = target
                     continue
                 }
             }
-            if (m.backward && !jumped) {
+            // after a jump, only the repeats of the coda are played
+            if (m.backward && (!jumped || (coda >= 0 && sectionStart >= coda))) {
                 val inBlock = blockAt(i)
                 val again = if (inBlock != null) {
                     blocks.any { it.start >= sectionStart && it.numbers.any { k -> k > pass } }
@@ -187,6 +194,10 @@ object Unfold {
         val sounds = measure.descendants("sound")
         val words = measure.descendants("words").joinToString(" ") { it.textContent.trim().lowercase() }
         fun sound(attribute: String) = sounds.any { it.hasAttribute(attribute) }
+        val segnoSign = sound("segno") || measure.descendants("segno").isNotEmpty()
+        val codaSign = sound("coda") || measure.descendants("coda").isNotEmpty()
+        // "To" and a sign ("3. To ⊕", "To 𝄋"): the sign is where to go, not where one is
+        val toSign = measure.descendants("words").any { TO_SIGN.containsMatchIn(it.textContent.trim().lowercase()) }
         return Info(
             forward = left.flatMap { it.childElements("repeat") }.any { it.getAttribute("direction") == "forward" },
             backward = repeatBack != null,
@@ -194,10 +205,10 @@ object Unfold {
             endingStart = startEnding?.let { numbersOf(it) },
             endingStop = right.flatMap { it.childElements("ending") }.any { it.getAttribute("type") == "stop" || it.getAttribute("type") == "discontinue" },
             finalBar = repeatBack == null && right.flatMap { it.childElements("bar-style") }.any { it.textContent.trim() == "light-heavy" },
-            segno = sound("segno") || measure.descendants("segno").isNotEmpty(),
-            coda = sound("coda") || (measure.descendants("coda").isNotEmpty() && !sound("tocoda") && "to coda" !in words),
-            toCoda = sound("tocoda") || "to coda" in words,
-            dalSegno = sound("dalsegno") || Regex("""\bd\.\s*s\.""").containsMatchIn(words),
+            segno = segnoSign && !(toSign && !codaSign),
+            coda = codaSign && !sound("tocoda") && "to coda" !in words && !toSign,
+            toCoda = sound("tocoda") || "to coda" in words || (toSign && codaSign),
+            dalSegno = sound("dalsegno") || Regex("""\bd\.\s*s\.""").containsMatchIn(words) || (toSign && segnoSign && !codaSign),
             daCapo = sound("dacapo") || Regex("""\bd\.\s*c\.""").containsMatchIn(words),
             fine = sound("fine") || Regex("""\bfine\b""").containsMatchIn(words),
         )
@@ -252,6 +263,9 @@ object Unfold {
         getElementsByTagName(name).let { list -> (0 until list.length).map { list.item(it) as Element } }
 
     private val DIGITS = Regex("""\d+""")
+
+    // words ending in "to", a sign drawn after them: "To" (segno), "3. To" (coda)
+    private val TO_SIGN = Regex("""(^|[\s.])to$""")
 
     // a score whose jumps would loop is cut after this many times its length
     private const val MAX_PASSES = 8

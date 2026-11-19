@@ -20,6 +20,7 @@ class UnfoldTest {
         val segno: Boolean = false,
         val dalSegno: Boolean = false,
         val fine: Boolean = false,
+        val words: String? = null,
     )
 
     /** A one-part score of [measures], numbered 1 up, each a whole note with an id. */
@@ -37,6 +38,7 @@ class UnfoldTest {
             if (m.segno) append("""<direction><direction-type><segno/></direction-type><sound segno="s"/></direction>""")
             if (m.coda) append("""<direction><direction-type><coda/></direction-type><sound coda="c"/></direction>""")
             if (m.toCoda) append("""<direction><direction-type><words>To Coda</words></direction-type><sound tocoda="1"/></direction>""")
+            if (m.words != null) append("""<direction><direction-type><words>${m.words}</words></direction-type></direction>""")
             append("""<note id="n${i + 1}"><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>""")
             if (m.dalSegno) append("""<direction><direction-type><words>D.S. al Coda</words></direction-type><sound dalsegno="s"/></direction>""")
             if (m.fine) append("""<direction><direction-type><words>Fine</words></direction-type><sound fine="yes"/></direction>""")
@@ -106,6 +108,28 @@ class UnfoldTest {
         m[30] = M(coda = true)
         m[45] = M(backward = true)
         val expected = (1..28) + (17..28) + (17..23) + listOf(29) + (31..46) + (17..23) + listOf(30)
+        assertEquals(expected, played(m))
+    }
+
+    /**
+     * Savoir aimer as its PDF is read: |: at 1, :| at 40, "2." at 41; the segno at 25; "3. To"
+     * and a coda sign at 39; "To" and a segno sign at 56 (go to the segno), with a final-looking
+     * barline; the segno and coda signs at 57; |: 74 :| 77 in the coda. A sign beside "To" is
+     * where to go, not where one is: 56 went on to 57 (2026-11-19).
+     */
+    @Test
+    fun savoirAimer() {
+        val m = List(77) { M() }.toMutableList()
+        m[0] = M(forward = true)
+        m[24] = M(segno = true)
+        m[38] = M(coda = true, words = "3. To")
+        m[39] = M(backward = true)
+        m[40] = M(ending = "2.", endingStop = true)
+        m[55] = M(segno = true, words = "To", finalBar = true)
+        m[56] = M(segno = true, coda = true)
+        m[73] = M(forward = true)
+        m[76] = M(backward = true)
+        val expected = (1..40) + (1..56) + (25..39) + (57..77) + (74..77)
         assertEquals(expected, played(m))
     }
 

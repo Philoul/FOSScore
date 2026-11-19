@@ -292,8 +292,9 @@ object Unfold {
 
     private val DIGITS = Regex("""\d+""")
 
-    // words ending in "to", a sign drawn after them: "To" (segno), "3. To" (coda)
-    private val TO_SIGN = Regex("""(^|[\s.])to$""")
+    // words ending in "to", a sign drawn after them: "To" (segno), "3. To" (coda); the OCR may
+    // read the sign too ("To $", "3. To @")
+    private val TO_SIGN = Regex("""(^|[\s.])to[^a-z0-9]*$""")
 
     // a score whose jumps would loop is cut after this many times its length
     private const val MAX_PASSES = 8

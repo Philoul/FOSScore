@@ -18,4 +18,18 @@ class TrustedHeadsTest {
         )
         assertEquals(listOf(1, 2), BitmapPage.trusted(symbols).map { it.blob })
     }
+
+    /**
+     * A head read over most of a surer head (a second reading of one blob's piece) is the same
+     * head: kept, it was a second note (scan benchmark 701 -> 708 measures right without it).
+     */
+    @Test
+    fun aHeadOverASurerOneIsTheSameHead() {
+        val symbols = listOf(
+            BitmapSymbol("noteheadBlack", 20, 0, 30, 8, 1.0, 1),
+            BitmapSymbol("noteheadBlack", 23, 1, 33, 9, 0.6, 2),
+            BitmapSymbol("noteheadBlack", 40, 0, 50, 8, 0.6, 3),
+        )
+        assertEquals(listOf(1, 3), BitmapPage.trusted(symbols).map { it.blob })
+    }
 }

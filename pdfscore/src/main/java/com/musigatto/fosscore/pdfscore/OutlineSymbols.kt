@@ -43,7 +43,17 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
             } else {
                 null
             }
-            match?.let { glyphs += DrawnGlyph(it.name, box, confidence = it.score) } ?: kept.addAll(fill)
+            // a small note (a cue line, "synthé"): its head looks like a head at a smaller scale only;
+            // near the staff and held by a stem, so that no letter of the lyrics is one
+            val cue = if (!beam && (match == null || match.score < CUE_OVER) && distance(box.centerY, staff) <= 2 * space &&
+                max(box.width, box.height) <= 1.2 * space && onStem(box, page.lines, space, CUE * 2)
+            ) {
+                classifier.name(fill.map { shape -> shape.points.map { Point(it.x / (CUE * space), it.y / (CUE * space)) } })
+                    ?.takeIf { it.name in CUE_HEADS && it.score > (match?.score ?: 0.0) }
+            } else {
+                null
+            }
+            (cue ?: match)?.let { glyphs += DrawnGlyph(it.name, box, confidence = it.score) } ?: kept.addAll(fill)
         }
         return PageDrawing(page.width, page.height, page.glyphs + glyphs, page.lines, kept, page.texts)
     }
@@ -57,6 +67,15 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
 
         /** The least score a segno or coda named by its look needs (real ones scored 0.82-0.91, a false one 0.71). */
         const val JUMP_SIGN = 0.8
+
+        /** The size of a small note's head against a normal one's (cue notes are printed at 60 to 75 %). */
+        const val CUE = 0.7
+
+        /** A fill named less surely than this may be a small note's head. */
+        const val CUE_OVER = 0.8
+
+        /** What a small note's fill may be named. */
+        val CUE_HEADS = setOf("noteheadBlack", "noteheadHalf")
 
         /** A four-cornered fill wider than this (in spaces) is a beam: a whole rest is about 1.2 wide. */
         const val BEAM = 1.6
@@ -76,8 +95,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
         fun upright(corners: List<Point>): Boolean =
             (corners + corners[0]).zipWithNext().all { (a, b) -> kotlin.math.abs(a.x - b.x) < 0.05 || kotlin.math.abs(a.y - b.y) < 0.05 }
 
-        /** The rests drawn as a rectangle against a line: out of the staff, against a ledger line. */
-        val LEDGER_RESTS = setOf("restWhole", "restHalf")
+        /** The rests drawn as a rectangle against a line: out of the staff, against a ledger line (a letter of the lyrics looks like a breve rest). */
+        val LEDGER_RESTS = setOf("restWhole", "restHalf", "restDoubleWhole")
 
         /** Whether [box] is between the staff's top and bottom lines (a rest may touch them). */
         fun inside(box: Box, staff: Staff): Boolean =
@@ -91,8 +110,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
         }
 
         /** Whether a stem (an upright line) runs along the left or right end of [box], across it. */
-        fun onStem(box: Box, lines: List<DrawnLine>, space: Double): Boolean = lines.any { line ->
-            line.isVertical && line.length >= 2 * space &&
+        fun onStem(box: Box, lines: List<DrawnLine>, space: Double, length: Double = 2.0): Boolean = lines.any { line ->
+            line.isVertical && line.length >= length * space &&
                 (kotlin.math.abs(line.x1 - box.left) < 0.2 * space || kotlin.math.abs(line.x1 - box.right) < 0.2 * space) &&
                 minOf(line.y1, line.y2) <= box.bottom && maxOf(line.y1, line.y2) >= box.top
         }

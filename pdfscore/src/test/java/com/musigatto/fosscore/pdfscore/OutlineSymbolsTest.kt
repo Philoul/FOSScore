@@ -111,6 +111,39 @@ class OutlineSymbolsTest {
     }
 
     /**
+     * A letter of the lyrics under the staff (an "l", an "n") looks like a breve rest: read as one,
+     * it put two whole notes of rest in the measure and pushed its notes into the next ones (J'ai
+     * encore rêvé d'elle, measure 7, 2026-11-19). Out of the staff, it needs a ledger line too.
+     */
+    @Test
+    fun aBreveRestOutOfTheStaffHangsFromALedgerLine() {
+        val rests = SymbolClassifier(listOf(FontSymbol("A", "restDoubleWhole", listOf(rect(0.0, 0.0, 0.5, 1.0)))))
+        // where a ledger line would be, two spaces under the staff, but none is drawn
+        val letter = listOf(rect(100.0, top + 6 * space, 102.5, top + 7 * space))
+        val inside = listOf(rect(200.0, top + space, 202.5, top + 2 * space))
+        val named = OutlineSymbols(rests).name(page(letter, inside))
+        assertEquals(listOf(200.0), named.glyphs.map { it.box.left })
+    }
+
+    /**
+     * A small note's head (a cue line, "synthé", printed at about 70 %) looks like a head at that
+     * scale only: held by its short stem, it is one (J'ai encore rêvé d'elle, measure 18, where the
+     * synth's notes were not read); a small round fill without a stem (a letter "o") is not.
+     */
+    @Test
+    fun aSmallHeadOnAStemIsAHead() {
+        val y = top + 2 * space
+        val small = listOf(ellipse(100.0, y, 0.6 * 0.7 * space, 0.5 * 0.7 * space))
+        val letter = listOf(ellipse(200.0, y, 0.6 * 0.7 * space, 0.5 * 0.7 * space))
+        val stem = DrawnLine(100.0 + 0.42 * space, y, 100.0 + 0.42 * space, y - 1.9 * space, 0.25)
+        val drawn = page(small, letter)
+        val named = OutlineSymbols(classifier).name(PageDrawing(drawn.width, drawn.height, drawn.glyphs, drawn.lines + stem, drawn.shapes, drawn.texts))
+        // named at the small scale (sure), the letter at most at the normal one (unsure, too small)
+        assertEquals(listOf(100.0), named.glyphs.filter { it.name == "noteheadBlack" && it.confidence > 0.9 }.map { it.box.centerX })
+        assertEquals(emptyList<Double>(), named.glyphs.filter { it.box.centerX > 150 && it.confidence > 0.9 }.map { it.box.centerX })
+    }
+
+    /**
      * A flat beam hook (a sixteenth after a dotted eighth) is a rectangle on a line like a whole
      * rest, but it holds on to a stem: it stays a beam for the rhythm (read as a rest, it pushed
      * its voice past the measure's end, J'te l'dis quand même, 2026-11-18).

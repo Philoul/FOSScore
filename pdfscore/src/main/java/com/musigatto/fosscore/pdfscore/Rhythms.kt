@@ -27,11 +27,15 @@ data class MeasureReading(val index: Int, val events: List<PlacedEvent>) {
  * - a note's value from its head (whole, half, black), then the flags or beams at its stem's end;
  * - the augmentation dots after it, the staccato dots over or under it;
  * - a rest's value from its symbol (a whole rest hangs from a line, a half rest sits on one);
+ * - small notes are grace notes, unless struck with a normal note or rest (a cue line);
  * - two voices where notes with stems up and down are struck together, else one;
  * - each event's onset in its measure, the durations of its voice before it added up.
  * - tuplets from their number (and its bracket, or the beam it sits on).
  */
 object Rhythms {
+    /** How near (in spaces) a small note is to a normal note or rest struck with it: a cue line, not grace notes. */
+    private const val CUE_ALIGN = 0.6
+
     fun read(page: PageDrawing, reading: StaffReading): List<MeasureReading> {
         val staff = reading.staff
         val space = staff.space
@@ -39,14 +43,20 @@ object Rhythms {
         val stems = stems(page.lines, space)
         val normalHead = reading.notes.map { it.head.box.height }.sorted().let { if (it.isEmpty()) space else it[it.size / 2] }
 
-        val drafts = chords(reading, stems, space).map { chord ->
+        val chords = chords(reading, stems, space)
+        val rests = rests(reading)
+        fun small(chord: Draft) = chord.notes.all { it.head.box.height < 0.8 * normalHead }
+        // small notes struck with a normal note or rest (at its x) are a cue line, played; the
+        // others are grace notes, before the note they lead to
+        val normal = chords.filterNot(::small) + rests
+        val drafts = chords.map { chord ->
             val onStem = beamsAt(chord, beams, space)
             chord.copy(
                 type = chord.type ?: blackValue(chord, onStem, reading.symbols, space),
-                grace = chord.notes.all { it.head.box.height < 0.8 * normalHead },
+                grace = small(chord) && normal.none { abs(it.box.left - chord.box.left) < CUE_ALIGN * space },
                 beams = onStem,
             )
-        } + rests(reading)
+        } + rests
         dots(drafts, reading, space)
         beamMarks(drafts)
         arpeggios(drafts, reading.symbols, space)
@@ -386,7 +396,14 @@ object Rhythms {
                 val besideVoice = if (lowerStems.isNotEmpty()) 2 else 1
                 if (draft.stem == besideStem) besideVoice else 3 - besideVoice
             }
-            together.isEmpty() -> besideRests[draft]?.let { under -> if (under) 2 else 1 } ?: if (besideRests.containsValue(true)) 1 else 2
+            // a rest beside no chord, when rests lie under chords: the voice of the rest at its height
+            // (a voice's rests are drawn at one height: a whole note over chords, their rests under it)
+            together.isEmpty() -> besideRests[draft]?.let { under -> if (under) 2 else 1 }
+                ?: when {
+                    !besideRests.containsValue(true) -> 2
+                    draft.rest -> besideRests.entries.minBy { abs(it.key.box.centerY - draft.box.centerY) }.let { if (it.value) 2 else 1 }
+                    else -> 1
+                }
             !byStem -> if (draft.box.centerY > split) 2 else 1
             draft.stem == Stem.UP -> 1
             draft.stem == Stem.DOWN -> 2

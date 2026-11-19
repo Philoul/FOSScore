@@ -540,6 +540,44 @@ class RhythmsTest {
         assertEquals(listOf(Fraction.ZERO, Fraction.ZERO), chords.map { it.onset })
     }
 
+    /**
+     * Small notes struck with the other voice's notes (a cue line, "synthé" over a piano's chords)
+     * are a voice of their own, not grace notes: read as grace notes, their rest came first and
+     * the piano's rest after it, the piano a beat late (J'ai encore rêvé d'elle, measure 18).
+     */
+    @Test
+    fun smallNotesStruckWithTheOtherVoiceAreACueVoice() {
+        val upperRest = DrawnGlyph("restQuarter", Box(100.0, top - 0.5 * space, 100.0 + 1.1 * space, top + 1.5 * space))
+        val lowerRest = DrawnGlyph("restQuarter", Box(100.0, top + 2.5 * space, 100.0 + 1.1 * space, top + 4.5 * space))
+        val cues = listOf(150.0, 200.0, 250.0).map { head(it, top, height = 0.65) }
+        val notes = listOf(150.0, 200.0, 250.0).map { head(it, g4) }
+        val measure = read(listOf(upperRest, lowerRest) + cues + notes, cues.map { stemUp(it) } + notes.map { stemDown(it) }).single()
+        val cueChords = measure.events.filter { (it.event as? Chord)?.pitches?.single()?.toString() == "F5" }.map { it.event as Chord }
+        assertEquals(listOf(false, false, false), cueChords.map { it.grace })
+        assertEquals(listOf(Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), cueChords.map { it.onset })
+        val rests = measure.events.filter { it.event is Rest }
+        assertEquals(listOf(Fraction.ZERO, Fraction.ZERO), rests.map { it.event.onset })
+        val lower = measure.events.filter { (it.event as? Chord)?.pitches?.single()?.toString() == "G4" }
+        assertEquals(listOf(Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), lower.map { it.event.onset })
+    }
+
+    /**
+     * A whole note over chords with a rest beside it: a rest further on, among the chords, is
+     * theirs (it went to the whole note's voice, the chords' measure a beat too long: J'ai encore
+     * rêvé d'elle, measure 19).
+     */
+    @Test
+    fun aRestAmongAVoicesChordsIsTheirs() {
+        val whole = head(100.0, top, "noteheadWhole")
+        val firstRest = DrawnGlyph("restQuarter", Box(100.0, top + 2.5 * space, 100.0 + 1.1 * space, top + 4.5 * space))
+        val notes = listOf(150.0, 250.0).map { head(it, g4) }
+        val laterRest = DrawnGlyph("restQuarter", Box(200.0, top + 2.5 * space, 200.0 + 1.1 * space, top + 4.5 * space))
+        val measure = read(listOf(whole, firstRest, laterRest) + notes, notes.map { stemDown(it) }).single()
+        val lower = measure.events.filter { it.box.left > 99.0 && it.event.let { e -> e is Rest || (e as Chord).pitches.single().toString() == "G4" } }
+        assertEquals(setOf(2), lower.map { it.event.voice }.toSet())
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 4), Fraction.of(1, 2), Fraction.of(3, 4)), lower.map { it.event.onset })
+    }
+
     /** Stems of two staves on almost the same x stay two stems: the upper one keeps its flag. */
     @Test
     fun stemsOfTwoStavesOnOneXStayApart() {

@@ -97,7 +97,7 @@ object OutlineText {
             if (i >= 0) runs[i] = union(runs[i], box) else runs += box
         }
         // a lone dot or dash is no text
-        return runs.filter { it.height >= 0.6 * space }
+        return runs.filter { it.height >= FLAT * space }
     }
 
     private fun overlaps(a: Box, b: Box) = min(a.right, b.right) > max(a.left, b.left) && min(a.bottom, b.bottom) > max(a.top, b.top)
@@ -114,6 +114,10 @@ object OutlineText {
 
     // this many runs of text on one line over a system are a line of lyrics
     private const val LYRICS_ROW = 4
+
+    // a run less high than this (spaces) is a dot, a dash, an "=" alone: no text. The Tab 3 read
+    // dozens of "=" 0.66 space high a score, a third of a second each, at 0.6
+    private const val FLAT = 0.8
 
     private fun union(a: Box, b: Box) = Box(min(a.left, b.left), min(a.top, b.top), max(a.right, b.right), max(a.bottom, b.bottom))
 }

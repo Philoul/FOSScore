@@ -11,7 +11,7 @@ class CompanionPlacesTest {
     private val pages = mapOf(0 to PageSize(595.0, 842.0), 2 to PageSize(595.0, 842.0))
     private val places = mapOf(
         "fosscore-note-1-1-0-0" to FollowPlace(0, 120.5, 100.0, 90.0, 150.0, 6.5, 560.0),
-        "fosscore-note-9-1-0-0" to FollowPlace(2, 80.0, 300.0, 280.0, 340.0, 6.5, 555.0),
+        "fosscore-note-9-1-0-0" to FollowPlace(2, 80.0, 300.0, 280.0, 340.0, 6.5, 555.0, 210.0),
     )
 
     /** The bar is drawn on the PDF where the music was read: each note on its page, with its system. */
@@ -28,6 +28,8 @@ class CompanionPlacesTest {
         assertEquals(340f, head.bottom)
         assertEquals(6.5f, head.space)
         assertEquals(555f, head.lineEnd)
+        // where its measure ends: the bar stops there before a repeat back
+        assertEquals(210f, head.measureEnd)
         assertNull(geo.head("fosscore-note-1-1-0-0"))
         assertEquals(0, read.pageOf("fosscore-note-1-1-0-0"))
         assertEquals(2, read.pageOf("fosscore-note-9-1-0-0"))

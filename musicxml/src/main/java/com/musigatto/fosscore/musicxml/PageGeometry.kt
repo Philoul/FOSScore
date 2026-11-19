@@ -20,9 +20,9 @@ class PageGeometry private constructor(
 ) {
     /**
      * Notehead centre ([x], [y]), the vertical extent of its system and the staff [space], and
-     * where the system's staves end on the right ([lineEnd]).
+     * where the system's staves end on the right ([lineEnd]) and where its measure ends ([measureEnd]).
      */
-    class Head(val x: Float, val y: Float, val top: Float, val bottom: Float, val space: Float, val lineEnd: Float = x)
+    class Head(val x: Float, val y: Float, val top: Float, val bottom: Float, val space: Float, val lineEnd: Float = x, val measureEnd: Float = lineEnd)
 
     /**
      * A measure: its number as the file writes it ([n], "" without one, free text such as "12a"
@@ -106,9 +106,18 @@ class PageGeometry private constructor(
                 System(start, (ys.minOrNull() ?: 0f) + my, (ys.maxOrNull() ?: 0f) + my, space, (right ?: 0f) + mx)
             }
 
+            // where each measure starts in the SVG, and where its staff lines end on the right
+            val measureRights = MEASURE.findAll(svg).toList().let { starts ->
+                starts.mapIndexed { i, m ->
+                    val end = starts.getOrNull(i + 1)?.range?.first ?: svg.length
+                    m.range.first to STAFF_LINES.findAll(svg.substring(m.range.last, end))
+                        .flatMap { s -> LINE_END.findAll(s.groupValues[2]).map { it.groupValues[1].toFloat() + mx } }.maxOrNull()
+                }
+            }
             // an invisible note (a line of lyrics, a hidden voice) gets no cursor: it is not drawn
             val heads = HEAD.findAll(svg).filterNot { "visibility=\"hidden\"" in it.value }.associate { m ->
                 val system = systems.lastOrNull { it.start < m.range.first }
+                val measureEnd = measureRights.lastOrNull { it.first < m.range.first }?.second
                 val space = system?.space ?: DEFAULT_SPACE
                 // The notehead glyph starts at x and is about 1.2 staff spaces wide.
                 m.groupValues[1] to Head(
@@ -118,6 +127,7 @@ class PageGeometry private constructor(
                     system?.bottom ?: 0f,
                     space,
                     system?.right ?: 0f,
+                    measureEnd ?: system?.right ?: 0f,
                 )
             }
             // Verovio draws the staff lines measure by measure: their ends are the measure's ends

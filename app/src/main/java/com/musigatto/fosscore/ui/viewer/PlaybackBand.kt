@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.metronome.Tick
+import com.musigatto.fosscore.musicxml.Onset
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.Playback
@@ -46,6 +47,10 @@ import kotlin.math.max
 internal const val ICON_PLAY = "M8,5v14l11,-7z"
 internal const val ICON_PAUSE = "M6,19h4V5H6v14zM14,5v14h4V5h-4z"
 private const val ICON_TO_START = "M6,6h2v12H6zM9.5,12l8.5,6V6z"
+
+// score positions come from floating-point sums of durations
+private const val EPSILON = 1e-6
+
 // Material "tune": the playback options
 internal const val ICON_OPTIONS = "M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,21v-2h8v-2h-8v-2h-2v6h2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2H11v2h10zM15,9h2V7h4V5h-4V3h-2v6z"
 private const val ICON_LOOP =
@@ -288,30 +293,70 @@ fun PlaybackOptionsOverlay(
  * Where the playback bar is on a page: [x], and the [top] and [bottom] lines of the line of music
  * it crosses, with its staff [space]. SVG units.
  */
-class BarSpot(val x: Float, val top: Float, val bottom: Float, val space: Float, internal val lineEnd: Float = x)
+class BarSpot(
+    val x: Float,
+    val top: Float,
+    val bottom: Float,
+    val space: Float,
+    internal val lineEnd: Float = x,
+    internal val measureEnd: Float = lineEnd,
+)
 
 /**
  * The way the playback bar goes over one page laid out as [geometry]: through the notes of each
- * onset of [playback] on the page, gliding from one to the next at the speed of the music, and
- * to the end of the line after the last notes of a line. An onset of hidden notes alone (the
- * line of lyrics kept for a part not shown) has nothing to point at: the bar glides past it.
+ * of the [onsets] on the page, gliding from one to the next at the speed of the music, and to the
+ * end of the measure when the music goes on elsewhere (a new line, a repeat back, a jump, another
+ * page). Within a measure played ([bars]: where they start) it never goes back: notes played
+ * later but drawn more to the left (a voice read wrong) do not pull it back. An onset of hidden
+ * notes alone (the line of lyrics kept for a part not shown) has nothing to point at: the bar
+ * glides past it.
  */
-class BarPath(private val playback: Playback, private val geometry: PageGeometry) {
+class BarPath(private val onsets: List<Onset>, private val bars: List<Double>, private val geometry: PageGeometry) {
+    constructor(playback: Playback, geometry: PageGeometry) : this(playback.onsets, playback.bars, geometry)
+
     /** The page's width in SVG units. */
     val width: Float get() = geometry.width
 
-    private val onsets = playback.onsets
     // whether each onset is on this page (hidden notes included), and where its notes are drawn
     private val onPage = BooleanArray(onsets.size) { i -> onsets[i].notes.any { it in geometry.noteIds } }
-    private val spots = Array(onsets.size) { i ->
-        onsets[i].notes.mapNotNull { geometry.head(it) }.takeIf { it.isNotEmpty() }?.let { heads ->
-            BarSpot(heads.minOf { it.x }, heads.first().top, heads.first().bottom, heads.first().space, heads.first().lineEnd)
+    private val spots: Array<BarSpot?> = arrayOfNulls<BarSpot>(onsets.size).also { spots ->
+        var bar = -1
+        var previous: BarSpot? = null
+        for (i in onsets.indices) {
+            val heads = onsets[i].notes.mapNotNull { geometry.head(it) }
+            if (heads.isEmpty()) continue
+            val first = heads.first()
+            // the measure played this onset is in: the bar never goes back within it
+            val inBar = bars.indexOfLast { it <= onsets[i].quarters + EPSILON }
+            val x = heads.minOf { it.x }.let { x ->
+                previous?.takeIf { inBar == bar && it.top == first.top && it.x > x && it.x <= first.measureEnd }?.x ?: x
+            }
+            spots[i] = BarSpot(x, first.top, first.bottom, first.space, first.lineEnd, first.measureEnd)
+            bar = inBar
+            previous = spots[i]
         }
+    }
+
+    // the last onset at or before [quarters], or -1
+    private fun onsetIndexAt(quarters: Double): Int {
+        var lo = 0
+        var hi = onsets.size - 1
+        var found = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) / 2
+            if (onsets[mid].quarters <= quarters + EPSILON) {
+                found = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        return found
     }
 
     /** Where the bar is with the music at [quarters]; null when the music is not on this page. */
     fun at(quarters: Double): BarSpot? {
-        var i = playback.onsetIndexAt(quarters)
+        var i = onsetIndexAt(quarters)
         if (i < 0 || !onPage[i]) return null
         // back to the last notes drawn, past onsets of hidden notes
         while (i >= 0 && onPage[i] && spots[i] == null) i--
@@ -323,9 +368,9 @@ class BarPath(private val playback: Playback, private val geometry: PageGeometry
         val to = onsets.getOrNull(j)?.quarters ?: return here
         val there = if (onPage[j]) spots[j] else null
         val from = onsets[i].quarters
-        // the next notes further on the same line, else the end of the line (a new line, a
-        // repeat going back, another page)
-        val toX = if (there != null && there.top == here.top && there.x >= here.x) there.x else max(here.x, here.lineEnd)
+        // the next notes further on the same line, else the end of the measure (a new line, a
+        // repeat going back, a jump, another page): the measure after it is not played then
+        val toX = if (there != null && there.top == here.top && there.x >= here.x) there.x else max(here.x, here.measureEnd)
         val f = if (to > from) ((quarters - from) / (to - from)).toFloat().coerceIn(0f, 1f) else 0f
         return BarSpot(here.x + (toX - here.x) * f, here.top, here.bottom, here.space)
     }

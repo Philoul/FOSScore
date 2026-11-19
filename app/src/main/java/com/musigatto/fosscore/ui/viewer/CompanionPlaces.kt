@@ -32,7 +32,7 @@ internal class CompanionPlaces private constructor(
             append("$READER $reader\n")
             for ((index, size) in pages.toSortedMap()) append("page $index ${n(size.width)} ${n(size.height)}\n")
             for ((id, p) in places) {
-                append("note $id ${p.page} ${n(p.x)} ${n(p.y)} ${n(p.top)} ${n(p.bottom)} ${n(p.space)} ${n(p.lineEnd)}\n")
+                append("note $id ${p.page} ${n(p.x)} ${n(p.y)} ${n(p.top)} ${n(p.bottom)} ${n(p.space)} ${n(p.lineEnd)} ${n(p.measureEnd)}\n")
             }
         }
 
@@ -58,11 +58,12 @@ internal class CompanionPlaces private constructor(
                         val h = f[3].toDoubleOrNull() ?: continue
                         sizes[index] = PageSize(w, h)
                     }
-                    f[0] == "note" && f.size == 9 -> {
+                    // the measure's end came later (older places end at the line's end)
+                    f[0] == "note" && (f.size == 9 || f.size == 10) -> {
                         val page = f[2].toIntOrNull() ?: continue
-                        val v = f.subList(3, 9).map { it.toFloatOrNull() ?: Float.NaN }
+                        val v = f.subList(3, f.size).map { it.toFloatOrNull() ?: Float.NaN }
                         if (v.any { it.isNaN() }) continue
-                        heads.getOrPut(page) { HashMap() }[f[1]] = PageGeometry.Head(v[0], v[1], v[2], v[3], v[4], v[5])
+                        heads.getOrPut(page) { HashMap() }[f[1]] = PageGeometry.Head(v[0], v[1], v[2], v[3], v[4], v[5], v.getOrElse(6) { v[5] })
                         pageOf[f[1]] = page
                     }
                 }

@@ -323,7 +323,7 @@ private fun containsImage(svg: ByteArray): Boolean {
  * pages it could not, or more of them (3: the tempo of PDFs without fonts, by OCR; 4: voices that
  * keep their measure's length, rests and beam hooks told apart; 5: companions prepared to play at once; 6: played in the order of their repeats and jumps; 7: heads with two stems, implied triplets; 8: endings and words read by OCR; 9: clefs of scans; 10: staves drawn in pieces, endings over lyrics; 11: no false segno).
  */
-internal const val READER_VERSION = 14
+internal const val READER_VERSION = 15
 
 /**
  * Reads [doc] page by page under the viewer's lock ([lock]), so the pages keep being drawn between

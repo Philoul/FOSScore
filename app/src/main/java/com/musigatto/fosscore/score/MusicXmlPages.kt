@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.musigatto.fosscore.musicxml.LayoutSpec
+import com.musigatto.fosscore.musicxml.MUSIC_CACHE_VERSION
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Part
 import com.musigatto.fosscore.musicxml.Playback
@@ -376,7 +377,10 @@ class MusicXmlPages private constructor(
         }
 
         // the name of a layout's pages in a score's cache
-        private fun nameOf(spec: LayoutSpec) = "${spec.toString().hashCode().toUInt().toString(16)}.$CACHE_VERSION"
+        private fun nameOf(spec: LayoutSpec) = pageCacheName(spec)
+
+        /** The name of a layout's pages in a score's cache: their notes are named as the music played names them. */
+        internal fun pageCacheName(spec: LayoutSpec) = "${spec.toString().hashCode().toUInt().toString(16)}.$CACHE_VERSION.$MUSIC_CACHE_VERSION"
 
         private const val SCREENS = "musicxml-screens.$CACHE_VERSION.json"
 

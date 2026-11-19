@@ -92,6 +92,13 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry, val svg: Stri
  * Pages are drawn by MuPDF. If the app also uses MuPDF from other threads and needs its calls
  * serialized, pass the same lock as [rasterLock].
  */
+/**
+ * The version of the music kept in the cache (MIDI, timing map, the names of the notes played):
+ * bumped when it is made differently, so the old files are not used. The pages kept of a layout
+ * follow it, so that they name their notes as the music does.
+ */
+const val MUSIC_CACHE_VERSION = 6
+
 class ScoreEngine(
     context: Context,
     private val rasterLock: Any = Any(),
@@ -420,6 +427,6 @@ class ScoreEngine(
         const val MAX_SOUND_WAIT_MS = 15_000L
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
-        const val CACHE_VERSION = 6
+        const val CACHE_VERSION = MUSIC_CACHE_VERSION
     }
 }

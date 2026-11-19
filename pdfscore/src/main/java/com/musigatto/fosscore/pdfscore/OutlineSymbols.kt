@@ -1,5 +1,6 @@
 package com.musigatto.fosscore.pdfscore
 
+import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -19,6 +20,7 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
         val kept = mutableListOf<DrawnShape>()
         // a shape whose fill is not known is a fill of its own
         val fills = page.shapes.withIndex().groupBy { (i, shape) -> if (shape.fill < 0) -1 - i else shape.fill }.values.map { it.map { s -> s.value } }
+        val boxes = fills.map { fill -> Box(fill.minOf { it.left }, fill.minOf { it.top }, fill.maxOf { it.right }, fill.maxOf { it.bottom }) }
         for (fill in fills) {
             val box = Box(fill.minOf { it.left }, fill.minOf { it.top }, fill.maxOf { it.right }, fill.maxOf { it.bottom })
             val staff = staves.minBy { distance(box.centerY, it) }
@@ -53,7 +55,25 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
             } else {
                 null
             }
-            (cue ?: match)?.let { glyphs += DrawnGlyph(it.name, box, confidence = it.score) } ?: kept.addAll(fill)
+            // a metronome mark's note drawn as a head and a stem line ("♩ = 100"): well over the
+            // staff, on a stem, on no ledger line, with "=" right after it
+            val overStaff = !beam && box.bottom < staff.top - MET_HEIGHT * space && !onLedger(box, page.lines, space) &&
+                equalAfter(box, boxes, page.lines, space)
+            fun scaled(scale: Double) = fill.map { shape -> shape.points.map { Point(it.x / (scale * space), it.y / (scale * space)) } }
+            val met = when {
+                // the head alone, its stem a line
+                overStaff && max(box.width, box.height) <= 1.2 * space && onStem(box, page.lines, space, CUE * 2) ->
+                    listOf(1.0, CUE).mapNotNull { classifier.name(scaled(it)) }
+                        .filter { it.name in CUE_HEADS }.maxByOrNull { it.score }
+                        ?.let { SymbolMatch(if (it.name == "noteheadHalf") "metNoteHalfUp" else "metNoteQuarterUp", it.score) }
+                // the note in one piece, often smaller than the font's: compared with the metronome notes only
+                overStaff && match?.name?.startsWith("met") != true && box.height in 1.5 * space..4.0 * space && box.width <= 1.5 * space ->
+                    MET_SCALES.flatMap { classifier.rank(scaled(it)) }
+                        .filter { it.name.startsWith("metNote") && !it.name.contains("Dot") }.maxByOrNull { it.score }
+                        ?.takeIf { it.score >= MET_SCORE }
+                else -> null
+            }
+            (met ?: cue ?: match)?.let { glyphs += DrawnGlyph(it.name, box, confidence = it.score) } ?: kept.addAll(fill)
         }
         return PageDrawing(page.width, page.height, page.glyphs + glyphs, page.lines, kept, page.texts)
     }
@@ -73,6 +93,26 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
 
         /** A fill named less surely than this may be a small note's head. */
         const val CUE_OVER = 0.8
+
+        /** How far over the staff (in spaces) a metronome mark's note is at least: a high note is on ledger lines nearer. */
+        const val MET_HEIGHT = 2.5
+
+        /** The scales a metronome mark's note in one piece is compared at: printed from 60 % of the font's to its size. */
+        val MET_SCALES = listOf(1.0, 0.8, 0.65)
+
+        /** The least score a metronome mark's note in one piece needs. */
+        const val MET_SCORE = 0.6
+
+        /**
+         * Whether an "=" follows [box] on its line, within three spaces: a fill wider than twice its
+         * height, or two short level lines one over the other.
+         */
+        fun equalAfter(box: Box, boxes: List<Box>, lines: List<DrawnLine>, space: Double): Boolean {
+            fun after(left: Double, y: Double) = left > box.right && left - box.right < 3 * space && y in box.top - 0.5 * space..box.bottom + 0.5 * space
+            if (boxes.any { after(it.left, it.centerY) && it.width > 2 * it.height && it.height < space }) return true
+            val bars = lines.filter { it.isHorizontal && it.length < 2 * space && after(minOf(it.x1, it.x2), it.y1) }
+            return bars.any { a -> bars.any { b -> b !== a && abs(a.y1 - b.y1) in 0.2 * space..space && abs(a.x1 - b.x1) < 0.3 * space } }
+        }
 
         /** What a small note's fill may be named. */
         val CUE_HEADS = setOf("noteheadBlack", "noteheadHalf")

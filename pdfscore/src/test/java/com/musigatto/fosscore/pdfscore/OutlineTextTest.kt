@@ -31,6 +31,20 @@ class OutlineTextTest {
         assertEquals(listOf(boxOf(word)), spots.filter { it.kind == OutlineText.Kind.WORDS }.map { it.box })
     }
 
+    /**
+     * "♩ = 100" with "=" as two lines and the number three spaces after the note (J'ai encore rêvé
+     * d'elle): the lines are part of the mark, its number read with them (played at 120 without).
+     */
+    @Test
+    fun anEqualSignOfTwoLinesBindsTheNumberToItsNote() {
+        val equal = listOf(DrawnLine(88.0, 83.5, 94.0, 83.5, 0.4), DrawnLine(88.0, 85.5, 94.0, 85.5, 0.4))
+        val far = text(96.0, 81.0, 110.0, 90.0, fill = 1)
+        val spots = OutlineText.spots(PageDrawing(600.0, 800.0, listOf(note), staff + equal, far, emptyList()))
+        val mark = spots.filter { it.kind == OutlineText.Kind.METRONOME }.map { it.box }.single()
+        assertEquals(88.0, mark.left, 0.01)
+        assertEquals(110.0, mark.right, 0.01)
+    }
+
     @Test
     fun withoutAMetronomeNoteItsNumberIsWords() {
         val spots = OutlineText.spots(PageDrawing(600.0, 800.0, emptyList(), staff, number + word, emptyList()))

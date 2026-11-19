@@ -33,7 +33,10 @@ object OutlineText {
             // the outlines on the note's line, one after the other from right after it
             var right = note.box.right
             val line = mutableListOf<Box>()
-            for (box in boxes.filter { it.centerY in note.box.top..note.box.bottom + 0.5 * space && it.left > note.box.centerX }.sortedBy { it.left }) {
+            // "=" may be two short lines: part of the mark, between the note and its number
+            val bars = page.lines.filter { it.isHorizontal && it.length < 2 * space }
+                .map { Box(minOf(it.x1, it.x2), it.y1 - it.width / 2, maxOf(it.x1, it.x2), it.y1 + it.width / 2) }
+            for (box in (boxes + bars).filter { it.centerY in note.box.top..note.box.bottom + 0.5 * space && it.left > note.box.centerX }.sortedBy { it.left }) {
                 if (box.left - right > GAP * space) break
                 if (box.height > TALLEST * space) continue
                 line += box

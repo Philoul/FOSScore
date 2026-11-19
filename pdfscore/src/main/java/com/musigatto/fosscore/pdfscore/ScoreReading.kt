@@ -264,7 +264,7 @@ object ScoreReader {
             time = times[n],
             clefChanges = staff.clefs.filter { it.x >= music && it.x < right },
             // with the triplets the time signature implies where their number was not read or printed
-            events = ImpliedTuplets.apply(events, times[n]?.measureLength),
+            events = ImpliedTuplets.apply(events, times[n]?.measureLength, times[n]?.let { it.beatType >= 8 && it.beats > 3 && it.beats % 3 == 0 } ?: false),
             barStyle = staff.barStyles.getOrNull(m),
             // a repeat starts after the barline before (or with the system), ends at the one closing it
             repeatStart = staff.barRepeats.getOrNull(m - 1).let { it == Repeat.FORWARD || it == Repeat.BOTH } || (m == 0 && staff.opensRepeat),

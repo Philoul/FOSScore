@@ -25,6 +25,17 @@ class DirectionsTest {
         assertEquals(listOf(TempoMark(108.0, NoteType.QUARTER, 0, 62)), read(listOf(note), listOf(text)))
     }
 
+    /**
+     * A mark high over the staff, over the chord symbols (J'ai encore rêvé d'elle: 6.9 spaces
+     * over it; the Tab 3 read "= 100" and played at 120): still the tempo.
+     */
+    @Test
+    fun aMetronomeMarkHighOverTheStaffIsATempo() {
+        val note = DrawnGlyph("metNoteQuarterUp", Box(108.0, top - 9.3 * space, 111.0, top - 7 * space))
+        val text = DrawnText("= 100", "ocr", 112.0, top - 7 * space, 8.0)
+        assertEquals(listOf(TempoMark(108.0, NoteType.QUARTER, 0, 100)), read(listOf(note), listOf(text)))
+    }
+
     /** A dotted quarter = 40 (a 6/8 tempo): the dot after the note symbol counts. */
     @Test
     fun aDottedNoteMarkKeepsItsDot() {

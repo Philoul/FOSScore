@@ -37,7 +37,8 @@ object Directions {
         val staff = system.staves.first()
         val space = staff.space
         val over = { y: Double -> y < staff.top && y >= staff.top - REACH * space }
-        val tempos = page.glyphs.filter { over(it.box.bottom) }.mapNotNull { note ->
+        // a metronome mark may stand over the chord symbols, higher than words
+        val tempos = page.glyphs.filter { it.box.bottom < staff.top && it.box.bottom >= staff.top - ENDING_REACH * space }.mapNotNull { note ->
             val beat = BEATS[note.name] ?: return@mapNotNull null
             val dots = page.glyphs.count { dot ->
                 dot.name == "metAugmentationDot" && dot.box.left >= note.box.right - 0.1 * space &&

@@ -70,6 +70,7 @@ object Unfold {
                 previous = i
                 part.appendChild(copy)
             }
+            pairOctaveShifts(part)
         }
         return serialize(doc)
     }
@@ -227,6 +228,33 @@ object Unfold {
         }
         for (sound in measure.descendants("sound")) {
             listOf("segno", "coda", "tocoda", "dalsegno", "dacapo", "fine").forEach { sound.removeAttribute(it) }
+        }
+    }
+
+    /**
+     * Leaves out the octave lines of [part] that start and never stop, and the stops of none
+     * (a reading may miss one; the measures unrolled may part them): Verovio 6.3 crashes making
+     * the MIDI of a line that does not stop.
+     */
+    private fun pairOctaveShifts(part: Element) {
+        val open = mutableMapOf<String, Element>()
+        val unmatched = mutableListOf<Element>()
+        for (shift in part.descendants("octave-shift")) {
+            val number = shift.getAttribute("number").ifEmpty { "1" }
+            if (shift.getAttribute("type") == "stop") {
+                if (open.remove(number) == null) unmatched += shift
+            } else {
+                open.put(number, shift)?.let { unmatched += it }
+            }
+        }
+        unmatched += open.values
+        for (shift in unmatched) {
+            val type = shift.parentNode as? Element ?: continue
+            type.removeChild(shift)
+            if (type.childElements().isNotEmpty()) continue
+            val direction = type.parentNode as? Element ?: continue
+            direction.removeChild(type)
+            if (direction.childElements("direction-type").isEmpty()) direction.parentNode?.removeChild(direction)
         }
     }
 

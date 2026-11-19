@@ -164,6 +164,29 @@ class UnfoldTest {
         assertFalse(first, first.contains("tempo"))
     }
 
+    /**
+     * An octave line that starts and never stops (Audiveris's Halleluya has two starts for one
+     * stop) is left out of the unrolled score: Verovio 6.3 crashed making its MIDI (HandleOctave,
+     * 2026-11-19). One that stops is kept, in each copy of its measures.
+     */
+    @Test
+    fun anOctaveLineThatNeverStopsIsLeftOut() {
+        val m = List(3) { M() }.toMutableList()
+        m[0] = M(forward = true)
+        m[1] = M(backward = true)
+        fun shift(type: String) = """<direction><direction-type><octave-shift type="$type" number="1" size="8"/></direction-type></direction>"""
+        val xml = score(m)
+            .replace("""<note id="n1">""", shift("down") + """<note id="n1">""")
+            .replace("""<note id="n2">""", shift("stop") + """<note id="n2">""")
+            .replace("""<note id="n3">""", shift("up") + """<note id="n3">""")
+        val unrolled = Unfold.unroll(xml)
+        // 1 2 1 2 3: two lines down to stop, the line up at 3 never stops
+        assertEquals(2, Regex("""type="down"""").findAll(unrolled).count())
+        assertEquals(2, Regex("""type="stop"""").findAll(unrolled).count())
+        assertFalse(unrolled.contains("""type="up""""))
+        assertFalse(unrolled.contains("<direction-type/>"))
+    }
+
     /** The unrolled score has no repeat left, its copies named after the measures and notes they repeat. */
     @Test
     fun theUnrolledScoreHasCopiesNamedAfterTheirOriginals() {

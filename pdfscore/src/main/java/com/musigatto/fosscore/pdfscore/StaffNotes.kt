@@ -189,16 +189,21 @@ object StaffNotes {
 
     /**
      * Whether a head is where a note is written: on the staff or just out of it, else on ledger
-     * lines (the first one, from the staff, crosses or touches it). A head-like shape far out with
-     * none (a chord symbol's letter drawn as outlines) is no note.
+     * lines, every one from the staff to it crossing or touching it. A head-like shape far out
+     * without them (a chord symbol's letter, a letter of the lyrics under a note on a ledger line,
+     * drawn as outlines) is no note.
      */
     private fun onLedgers(head: DrawnGlyph, staff: Staff, lines: List<DrawnLine>): Boolean {
         val step = staff.step(head.box.centerY)
         if (step in -2..10) return true
-        val firstLedger = if (step < 0) staff.bottom + staff.space else staff.top - staff.space
-        return lines.any { line ->
-            line.isHorizontal && abs(line.y1 - firstLedger) < 0.3 * staff.space && line.length <= 4 * staff.space &&
-                minOf(line.x1, line.x2) <= head.box.right && maxOf(line.x1, line.x2) >= head.box.left
+        // the ledger lines from the staff to the head: one every two steps, the last on or over it
+        val count = (if (step < 0) -step else step - 8) / 2
+        return (1..count).all { k ->
+            val y = if (step < 0) staff.bottom + k * staff.space else staff.top - k * staff.space
+            lines.any { line ->
+                line.isHorizontal && abs(line.y1 - y) < 0.3 * staff.space && line.length <= 4 * staff.space &&
+                    minOf(line.x1, line.x2) <= head.box.right && maxOf(line.x1, line.x2) >= head.box.left
+            }
         }
     }
 

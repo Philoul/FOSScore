@@ -113,6 +113,27 @@ class StaffNotesTest {
         assertEquals(listOf("C4"), system[1].notes.map { it.pitch.toString() })
     }
 
+    /**
+     * A head two ledger lines under the staff stands on both: a letter of the lyrics (an "e" under
+     * a note on its first ledger line) is no note (J'ai encore rêvé d'elle, measure 43: a D♭ more
+     * pushed the vocal line past the measure's end).
+     */
+    @Test
+    fun aHeadFarOutStandsOnEveryLedgerLine() {
+        val top = 100.0
+        val first = DrawnLine(118.0, top + 5 * space, 129.0, top + 5 * space, 0.5)
+        val second = DrawnLine(158.0, top + 6 * space, 169.0, top + 6 * space, 0.5)
+        val firstUnderIt = DrawnLine(158.0, top + 5 * space, 169.0, top + 5 * space, 0.5)
+        val glyphs = listOf(
+            gClef(55.0, top),
+            head(120.0, top + 5 * space), // C4 on its ledger line
+            head(121.0, top + 6.5 * space), // a letter under it: no second ledger line there
+            head(160.0, top + 6 * space), // A3 on both its ledger lines
+        )
+        val staff = read(staffLines(top) + first + second + firstUnderIt, glyphs).single().single()
+        assertEquals(listOf("C4", "A3"), staff.notes.map { it.pitch.toString() })
+    }
+
     /** A note on ledger lines over a system is that system's, not the one above it (also within reach). */
     @Test
     fun aNoteBetweenTwoSystemsGoesToTheCloserStaff() {

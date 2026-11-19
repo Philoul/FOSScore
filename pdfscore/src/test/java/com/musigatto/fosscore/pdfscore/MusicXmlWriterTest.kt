@@ -105,9 +105,24 @@ class MusicXmlWriterTest {
         assertEquals(listOf("C5", "E5"), notes.take(2).map { it.text("step") + it.text("octave") })
         assertEquals("3", notes[2].text("actual-notes"))
         assertEquals("2", notes[2].text("normal-notes"))
+        // the triplet starts and stops: without it, Verovio plays the time-modified notes at their
+        // written value (Lettre à France, measure 1: three eighths, the last in the next measure)
+        assertEquals(listOf("start", "", "stop"), notes.subList(2, 5).map { n -> n.all("tuplet").joinToString { it.getAttribute("type") } })
         assertEquals("yes", notes[6].all("rest").single().getAttribute("measure"))
         assertEquals(ScoreReading.noteId(1, 1, 0, 1), notes[1].getAttribute("id"))
         assertEquals(listOf("fosscore-measure-1", "fosscore-measure-2"), doc.all("measure").map { it.getAttribute("id") })
+    }
+
+    /** Six sixteenths in the time of four (LilyPond's "3" over each group of three): two triplets, each started and stopped. */
+    @Test
+    fun sixTripletSixteenthsAreTwoTriplets() {
+        val third = Fraction.of(2, 3)
+        val notes = (0 until 6).map { i ->
+            placed(chord(Pitch(i % 7, 5), type = NoteType.SIXTEENTH, onset = Fraction.of(i.toLong(), 24), tuplet = third), 70.0 + 10 * i)
+        } + placed(Rest(Duration(NoteType.QUARTER), Fraction.of(1, 4), 1), 140.0) + placed(Rest(Duration(NoteType.QUARTER), Fraction.of(1, 2), 1), 150.0)
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, newSystem = true, newPage = true, staves = listOf(staff(1, notes)))))
+        val tuplets = parse(MusicXmlWriter.write(score)).all("note").take(6).map { n -> n.all("tuplet").joinToString { it.getAttribute("type") } }
+        assertEquals(listOf("start", "", "stop", "start", "", "stop"), tuplets)
     }
 
     /** Two voices on one staff, a piano's second staff: each written after a backup, numbered apart. */

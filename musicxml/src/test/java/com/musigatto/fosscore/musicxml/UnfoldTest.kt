@@ -134,6 +134,26 @@ class UnfoldTest {
         assertEquals(expected, played(m))
     }
 
+    /**
+     * The same as the Tab 3 read it: the signs after "To" not named, only read by the OCR in the
+     * words ("@" for ⊕, "$" for 𝄋). The sign read says where to go (56 went on to 57, 2026-11-20).
+     */
+    @Test
+    fun savoirAimerWithTheSignsReadInTheWordsOnly() {
+        val m = List(77) { M() }.toMutableList()
+        m[0] = M(forward = true)
+        m[24] = M(segno = true)
+        m[38] = M(words = "3. To @")
+        m[39] = M(backward = true)
+        m[40] = M(ending = "2.", endingStop = true)
+        m[55] = M(words = "To \$", finalBar = true)
+        m[56] = M(segno = true, coda = true)
+        m[73] = M(forward = true)
+        m[76] = M(backward = true)
+        val expected = (1..40) + (1..56) + (25..39) + (57..77) + (74..77)
+        assertEquals(expected, played(m))
+    }
+
     @Test
     fun dalSegnoAlCodaSkipsToTheCodaTheSecondTime() {
         val m = List(8) { M() }.toMutableList()

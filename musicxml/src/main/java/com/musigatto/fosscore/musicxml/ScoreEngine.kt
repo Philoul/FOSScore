@@ -97,7 +97,7 @@ class RenderedPage(val bitmap: Bitmap, val geometry: PageGeometry, val svg: Stri
  * bumped when it is made differently, so the old files are not used. The pages kept of a layout
  * follow it, so that they name their notes as the music does.
  */
-const val MUSIC_CACHE_VERSION = 7
+const val MUSIC_CACHE_VERSION = 8
 
 class ScoreEngine(
     context: Context,

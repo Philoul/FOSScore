@@ -140,6 +140,9 @@ class ScoreReaderTest {
         assertEquals(score.measures.last().staves.single().box.right, second.lineEnd, 1e-9)
         // the first measure's note ends its line at the same place: one system
         assertEquals(second.lineEnd, score.followPlaces().getValue(ScoreReading.noteId(1, 1, 0, 0)).lineEnd, 1e-9)
+        // and its measure at its barline: before a repeat back, the bar goes there, not to the
+        // end of the line (Savoir aimer, measure 40, 2026-11-19)
+        assertEquals(300.0, score.followPlaces().getValue(ScoreReading.noteId(1, 1, 0, 0)).measureEnd, 1e-9)
     }
 
     /**

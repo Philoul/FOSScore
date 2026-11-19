@@ -202,6 +202,50 @@ class OutlineSymbolsTest {
         assertEquals(100.0, named.glyphs.single().box.centerX, 0.01)
     }
 
+    /**
+     * A metronome mark drawn as a head, a stem line and "=" (J'ai encore rêvé d'elle: "♩ = 100"
+     * not read, played at 120): a head well over the staff, on a stem, with "=" after it, is the
+     * mark's note. A note over the staff on its ledger lines is a note.
+     */
+    @Test
+    fun aHeadOnAStemBeforeAnEqualSignOverTheStaffIsAMetronomeNote() {
+        val y = top - 5 * space
+        val head = listOf(ellipse(100.0, y, 0.45 * space, 0.38 * space))
+        val stem = DrawnLine(100.0 + 0.4 * space, y, 100.0 + 0.4 * space, y - 2.6 * space, 0.3)
+        val equal = listOf(rect(108.0, y - 1.2, 114.0, y - 0.7), rect(108.0, y + 0.7, 114.0, y + 1.2))
+        // a high note on a ledger line, with a stem too, and a word after it ("=" alone makes it)
+        val note = listOf(ellipse(200.0, top - 2 * space, 0.6 * space, 0.5 * space))
+        val noteStem = DrawnLine(200.0 + 0.55 * space, top - 2 * space, 200.0 + 0.55 * space, top + 1.5 * space, 0.3)
+        val ledger = DrawnLine(195.0, top - 2 * space, 205.0, top - 2 * space, 0.5)
+        val drawn = page(head, equal, note)
+        val named = OutlineSymbols(classifier).name(PageDrawing(drawn.width, drawn.height, drawn.glyphs, drawn.lines + stem + noteStem + ledger, drawn.shapes, drawn.texts))
+        assertEquals(listOf("metNoteQuarterUp"), named.glyphs.filter { it.box.centerX < 150 }.map { it.name })
+        assertEquals(listOf("noteheadBlack"), named.glyphs.filter { it.box.centerX > 150 }.map { it.name })
+    }
+
+    /**
+     * The same mark printed with the note in one piece (head and stem one fill) and "=" as two
+     * lines, as J'ai encore rêvé d'elle has it: the note is compared with the metronome notes only.
+     */
+    @Test
+    fun aOnePieceNoteBeforeTwoLinesOverTheStaffIsAMetronomeNote() {
+        val notes = SymbolClassifier(
+            listOf(
+                FontSymbol("A", "metNoteQuarterUp", listOf(ellipse(0.0, 0.0, 0.6, 0.5), rect(0.5, -3.0, 0.62, 0.0))),
+                FontSymbol("A", "noteheadBlack", listOf(ellipse(0.0, 0.0, 0.6, 0.5))),
+                FontSymbol("A", "flag8thUp", listOf(rect(0.0, 0.0, 0.8, 3.0))),
+            ),
+        )
+        val y = top - 6 * space
+        // much smaller than the font's (0.8 x 2.4 spaces against 1.2 x 3.5): compared at its size, it is too small for any
+        val k = 0.6 * space
+        val note = listOf(ellipse(100.0, y, 0.6 * k, 0.5 * k), rect(100.0 + 0.5 * k, y - 3 * k, 100.0 + 0.62 * k, y))
+        val equal = listOf(DrawnLine(108.0, y - 1.0, 114.0, y - 1.0, 0.4), DrawnLine(108.0, y + 1.0, 114.0, y + 1.0, 0.4))
+        val drawn = page(note)
+        val named = OutlineSymbols(notes).name(PageDrawing(drawn.width, drawn.height, drawn.glyphs, drawn.lines + equal, drawn.shapes, drawn.texts))
+        assertEquals(listOf("metNoteQuarterUp"), named.glyphs.map { it.name })
+    }
+
     /** A page whose music font names its symbols has no symbol drawn as outlines: its curves (ties, slurs) stay shapes. */
     @Test
     fun aPageWithAMusicFontIsLeftAsItIs() {

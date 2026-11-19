@@ -60,6 +60,29 @@ class ScoreReaderTest {
     }
 
     /**
+     * A barline the other staves of the system have at the same place, missed on one staff (a
+     * scan breaks it), is that staff's too: otherwise its measures after it were one off, the
+     * notes of two measures in one. As Audiveris aligns barlines across the staves of a system.
+     */
+    @Test
+    fun aBarlineMissedOnOneStaffIsTakenFromTheOthers() {
+        val upper = 100.0
+        val lower = 140.0
+        // the whole system's barlines are drawn per staff: the lower staff misses the one at 300
+        val page = PageDrawing(
+            600.0, 800.0,
+            listOf(gClef(upper), gClef(lower), whole(120.0, upper + 2 * space), whole(320.0, upper + 2 * space), whole(120.0, lower + 2 * space), whole(320.0, lower + 2 * space)),
+            // the line that opens the system joins its two staves
+            staffLines(upper) + staffLines(lower) + DrawnLine(50.0, upper, 50.0, lower + 4 * space, 0.8) +
+                barline(300.0, upper) + barline(549.0, upper) + barline(549.0, lower),
+            emptyList(), emptyList(),
+        )
+        val score = ScoreReader.read(listOf(page))
+        assertEquals(2, score.measures.size)
+        assertEquals(listOf(1, 1), score.measures.map { it.staves[1].events.size })
+    }
+
+    /**
      * A head inside a clef is a piece of it (a scan read the treble clef's curl as a black head:
      * Halleluya's first note, heard before the music).
      */

@@ -73,19 +73,44 @@ object StaffNotes {
             notes.minByOrNull { (box, _) -> distance(box, number.box.centerX, number.box.centerY) }?.let { assigned[number] = it.second }
         }
         val byStaff = assigned.entries.groupBy({ it.value }, { it.key })
-        fun readStaff(system: StaffSystem, staff: Staff, fallbackClef: Clef? = null): StaffReading {
+        fun readStaff(
+            system: StaffSystem,
+            staff: Staff,
+            fallbackClef: Clef? = null,
+            extraBars: List<Double> = emptyList(),
+        ): StaffReading {
             val index = staves.indexOfFirst { it.second === staff }
-            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef)
+            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef, extraBars)
         }
         val readings = systems.map { system -> system.staves.map { staff -> readStaff(system, staff) } }
         // a staff whose clef was not read (a scan) takes the one its place has in the nearest
         // other system of the page: a clef seldom changes from one line to the next
+        val clefs = readings.map { system -> system.map { it.clef } }.let { found ->
+            found.mapIndexed { si, system ->
+                system.mapIndexed { s, clef ->
+                    clef ?: found.indices.filter { it != si }.sortedBy { kotlin.math.abs(it - si) }
+                        .firstNotNullOfOrNull { found[it].takeIf { r -> r.size == system.size }?.getOrNull(s) }
+                }
+            }
+        }
         return readings.mapIndexed { si, system ->
+            val space = systems[si].staves.minOf { it.space }
+            // a barline the system's other staves have at the same place, missed on a staff (a
+            // scan breaks it), is that staff's too when no note stands there: its measures after it
+            // were one off (Audiveris aligns barlines across a system's staves the same way)
+            val missing = system.map { reading ->
+                if (system.size < 2) return@map emptyList<Double>()
+                val others = system.filter { it !== reading }.flatMap { it.barlines }
+                others.filter { x ->
+                    reading.barlines.none { kotlin.math.abs(it - x) < space } &&
+                        reading.notes.none { note -> x >= note.head.box.left - 0.3 * space && x <= note.head.box.right + 0.3 * space } &&
+                        x > reading.staff.left + space && x < reading.staff.right - space
+                }.sorted().fold(mutableListOf<Double>()) { kept, x -> kept.apply { if (none { kotlin.math.abs(it - x) < space }) add(x) } }
+            }
             system.mapIndexed { s, reading ->
-                if (reading.clef != null) return@mapIndexed reading
-                val other = readings.indices.filter { it != si }.sortedBy { kotlin.math.abs(it - si) }
-                    .firstNotNullOfOrNull { readings[it].takeIf { r -> r.size == system.size }?.getOrNull(s)?.clef }
-                other?.let { readStaff(systems[si], systems[si].staves[s], it) } ?: reading
+                val clef = clefs[si][s]
+                if (reading.clef == clef && missing[s].isEmpty()) reading
+                else readStaff(systems[si], systems[si].staves[s], clef, missing[s])
             }
         }
     }
@@ -177,7 +202,14 @@ object StaffNotes {
         }
     }
 
-    private fun read(staff: Staff, system: StaffSystem, symbols: List<DrawnGlyph>, lines: List<DrawnLine>, fallbackClef: Clef? = null): StaffReading {
+    private fun read(
+        staff: Staff,
+        system: StaffSystem,
+        symbols: List<DrawnGlyph>,
+        lines: List<DrawnLine>,
+        fallbackClef: Clef? = null,
+        extraBars: List<Double> = emptyList(),
+    ): StaffReading {
         val space = staff.space
         val heads = symbols.filter { isHead(it.name) && onLedgers(it, staff, lines) }
         val clefs = symbols.mapNotNull { glyph ->
@@ -190,7 +222,8 @@ object StaffNotes {
         // of a system) closes no measure.
         // (a repeat it starts still starts with the system)
         val dots = symbols.filter { it.name == "augmentationDot" || it.name == "repeatDot" }
-        val allBars = barlines(staff, system, lines, heads, dots)
+        // with the barlines the system's other staves found where this one missed them
+        val allBars = (barlines(staff, system, lines, heads, dots) + extraBars.map { Bar(it, BarStyle.REGULAR, Repeat.NONE) }).sortedBy { it.x }
         val bars = allBars.dropWhile { bar ->
             symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < bar.x }
         }

@@ -88,6 +88,16 @@ Maintainer, 2026-11-20 (next, in this order of value):
    of staves a page (a zoom worked out from the PDF's staff space and systems a page).
 4. Later, maybe a separate PR: a display option to show or hide the annotations.
 
+Maintainer, 2026-11-20, what the PR to musigatto waits for (reading quality is no longer blocking):
+1. A smooth playback bar everywhere (MusicXML scores, and PDFs, which follow their companion but
+   place notes their own way): no jumping back and forth. Built first on the measures (barlines,
+   their time from the time signature, local changes included, and the tempo), then on the beats
+   within them for a finer speed. Done 2026-11-20 (BarPath on the measures played: each crossed in
+   its own time, the notes of the measure only, in an order that goes right): to be seen on the
+   Tab 3.
+2. A clean PDF user interface: the playback band first (sounds and playback settings usable at
+   once), then the layout menu, shown but greyed until the PDF is fully read.
+
 Steps: (1) companion file and playback from it, (2) red bar on the PDF, (3) streaming decode while
 playing, (4) the MusicXML view on demand (transposition, zoom), (5) instruments, (6) annotations.
 

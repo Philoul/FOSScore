@@ -148,6 +148,14 @@ fun factorOf(bpm: Int, writtenBpm: Double): Float =
  * when the user muted them all (the bar goes on without sound); when none of the parts picked is
  * left in the file, every part plays.
  */
+/**
+ * The parts the playback panel lists, with those shown: a MusicXML score's own ([scoreParts],
+ * [shown] by its layout), or for a PDF those of the music read from it ([read], null before it is
+ * read), all shown since the PDF is the page.
+ */
+internal fun panelParts(isMusicXml: Boolean, scoreParts: List<Part>, shown: Set<String>, read: List<Part>?): Pair<List<Part>, Set<String>> =
+    if (isMusicXml) scoreParts to shown else read.orEmpty().let { ps -> ps to ps.map { it.id }.toSet() }
+
 fun heardParts(picked: Set<String>?, shown: Set<String>, parts: List<Part>): Set<String> {
     val ids = parts.map { it.id }.toSet()
     if (picked?.isEmpty() == true) return emptySet()

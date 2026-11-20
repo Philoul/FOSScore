@@ -72,6 +72,22 @@ class PlaybackLogicTest {
         assertEquals(setOf("P2"), heardParts(setOf("P2"), setOf("P1"), parts))
     }
 
+    /**
+     * The playback panel of a PDF listed no part, so its sounds, the parts heard and the
+     * transposition heard could not be set (maintainer, 2026-11-20): it lists the parts of the
+     * music read from it, all shown, the PDF being the page.
+     */
+    @Test
+    fun aPdfListsThePartsOfItsMusicRead() {
+        val read = listOf(Part("P1", "Voice"), Part("P2", "Piano"))
+        assertEquals(read to setOf("P1", "P2"), panelParts(false, emptyList(), emptySet(), read))
+        // not read yet: nothing to list
+        assertEquals(emptyList<Part>() to emptySet<String>(), panelParts(false, emptyList(), emptySet(), null))
+        // a MusicXML score lists its own parts, with those its layout shows
+        val own = listOf(Part("A", "Flute"), Part("B", "Cello"))
+        assertEquals(own to setOf("B"), panelParts(true, own, setOf("B"), read))
+    }
+
     @Test
     fun theMusicNeverGoesSilentByAccident() {
         val parts = listOf(Part("P1", "Voice"), Part("P2", "Piano"))

@@ -201,6 +201,8 @@ internal fun ViewerOverlays(
                         resolve = { saved, score -> withContext(Dispatchers.IO) { SoundBank.resolve(context, saved, score) } },
                     )
                 }
+                // a PDF lists the parts of its music read (its companion)
+                val (listed, listedShown) = panelParts(format.isMusicXml, parts, shownIds, music?.parts)
                 PlaybackOptionsOverlay(
                     bpm = bpmOf(tempoFactor, writtenBpm),
                     writtenBpm = bpmOf(1f, writtenBpm),
@@ -216,9 +218,9 @@ internal fun ViewerOverlays(
                         menu.transpose(scoreLayout.semitones + playTranspose)
                         playbackVm.setTranspose(0)
                     }) else null,
-                    parts = parts,
-                    heard = heardParts(heardPicked, shownIds, parts),
-                    onHeard = { id, on -> playbackVm.setHeard(id, on, parts) },
+                    parts = listed,
+                    heard = heardParts(heardPicked, listedShown, listed),
+                    onHeard = { id, on -> playbackVm.setHeard(id, on, listed) },
                     partSounds = partSounds,
                     soundChoices = soundChoices,
                     onPartSound = playbackVm::setPartSound,

@@ -95,6 +95,8 @@ internal fun Modifier.pageGestures(
     // The measured rects (draw = hit = selection) come from the shared map.
     textRects: Map<Long, RectPx> = emptyMap(),
     onTextBoxTap: (Offset, Stamp?, Offset) -> Unit = { _, _, _ -> },
+    // reading: a long press on the page, where (0..1 of the page): play from the measure there
+    onLongPress: (Offset) -> Unit = {},
 ): Modifier {
     // The gesture's pointerInput(Unit) never restarts, so everything it reads from outside its own
     // loop goes through rememberUpdatedState: a captured value would keep the first composition's
@@ -107,6 +109,7 @@ internal fun Modifier.pageGestures(
     // the text tool's tap reads the page as it is now (its texts' boxes, the text being typed):
     // the lambda of the first composition would keep the boxes of that moment
     val currentOnTextBoxTap by rememberUpdatedState(onTextBoxTap)
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
     val currentInkStrokes by rememberUpdatedState(inkStrokes)
     // the page (and the score) the edit belongs to. Not a local copy: this one rests on the page the
     // score opened at, so ink written on page 6 was stored under page 8 and showed up there after
@@ -137,6 +140,7 @@ internal fun Modifier.pageGestures(
     // touch noise, the double-tap window and the swipe that turns a page: they belong to the
     // gesture, so they are read here
     val touchSlopPx = LocalViewConfiguration.current.touchSlop
+    val longPressMs = LocalViewConfiguration.current.longPressTimeoutMillis
     val doubleTapSlopPx = with(LocalDensity.current) { 40.dp.toPx() }
     val swipeThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
     // double tap: fit <-> zoom. We keep the time and the point of the previous tap.
@@ -570,8 +574,12 @@ internal fun Modifier.pageGestures(
                                 val isSwipe = zoom.transform.scale <= 1f &&
                                     totalPan.getDistance() > swipeThresholdPx &&
                                     abs(totalPan.x) > abs(totalPan.y)
+                                val held = (event.changes.firstOrNull()?.uptimeMillis ?: down.uptimeMillis) - down.uptimeMillis
                                 if (isSwipe) {
                                     if (totalPan.x < 0f) onTurn(PageTurn.NEXT) else onTurn(PageTurn.PREV)
+                                } else if (held >= longPressMs && totalPan.getDistance() <= touchSlopPx && !onMatte) {
+                                    // a long press on the music: play from the measure under the finger
+                                    currentOnLongPress(pxToNormalized(downF, currentHitFit))
                                 } else {
                                     // tap zones: the top-left corner opens the menu, left third prev,
                                     // right third next, center toggles the bars

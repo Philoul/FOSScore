@@ -1141,6 +1141,20 @@ fun PdfViewerScreen(
     // does nothing.
     // ▶ / ⏸: the music, a MusicXML score's or a PDF's companion. A PDF whose music is not read yet
     // has it read first, then played; one in which none was found has the metronome instead
+    // A long press on the music ([p]: 0..1 of the page under the finger, the next page right of 1
+    // when two are shown): the music plays from the measure there (maintainer, 2026-11-20)
+    fun playFromPress(p: Offset) {
+        val pages = places ?: return
+        val (index, x) = if (branch.showTwoUp && p.x > 1f) currentPage + 1 to p.x - 1f else currentPage to p.x
+        val geo = pages.geometry(index) ?: return
+        editScope.launch {
+            val onsets = (playbackVm.currentPlayback ?: playbackVm.music())?.onsets ?: return@launch
+            val at = measureStartAt(geo, x * geo.width, p.y * geo.height, onsets) ?: return@launch
+            metronomeVm.stop()
+            playbackVm.playFromMeasure(at)
+        }
+    }
+
     fun playPause() {
         val pdf = pageSource is MuPdfDoc
         when (playAction(music != null, format.isMusicXml, pdf, pdf && PdfCompanion.file(context, companionKey).isFile, pdf && PdfCompanion.hasNoMusic(context, companionKey))) {
@@ -1369,6 +1383,7 @@ fun PdfViewerScreen(
                             else -> navVisible = !navVisible
                         }
                     },
+                    onLongPress = { p -> playFromPress(p) },
                     onPageTouched = { pageTouched = it },
                     onLoupeAnchor = { loupeAnchor = it },
                     onLoupe = { loupeAt = it },

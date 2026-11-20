@@ -325,6 +325,25 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         if (pb != null) showNotesAt(pb, at) else _toFirstPage.value++
     }
 
+    /**
+     * A long press on a measure ([quarters]: where it is first played): the music plays from
+     * there, at once when it plays, from a pause or a stop too.
+     */
+    fun playFromMeasure(quarters: Double) {
+        position = quarters
+        followPaused = false
+        countIn = null
+        when (_state.value) {
+            PlayState.PLAYING -> player?.seek(quarters)
+            PlayState.PAUSED -> resumeFrom(quarters)
+            PlayState.PREPARING -> resumeAt = quarters
+            PlayState.STOPPED -> {
+                resumeAt = quarters
+                start(emptySet())
+            }
+        }
+    }
+
     fun toggleLoop() = setLoop(_loop.value.toggle())
 
     fun tapA() = setLoop(_loop.value.tapA(position))

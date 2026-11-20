@@ -49,11 +49,13 @@ object Rhythms {
         // small notes struck with a normal note or rest (at its x) are a cue line, played; the
         // others are grace notes, before the note they lead to
         val normal = chords.filterNot(::small) + rests
-        val drafts = chords.map { chord ->
+        fun cue(chord: Draft) = normal.any { abs(it.box.left - chord.box.left) < CUE_ALIGN * space }
+        // a grace note has a stem: a small whole head on its own is a curve misread
+        val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && !cue(it) }.map { chord ->
             val onStem = beamsAt(chord, beams, space)
             chord.copy(
                 type = chord.type ?: blackValue(chord, onStem, reading.symbols, space),
-                grace = small(chord) && normal.none { abs(it.box.left - chord.box.left) < CUE_ALIGN * space },
+                grace = small(chord) && !cue(chord),
                 beams = onStem,
             )
         } + rests

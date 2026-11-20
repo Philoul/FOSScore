@@ -577,6 +577,23 @@ fun PdfViewerScreen(
         }
     }
     val convertToMusicXml: () -> Unit = { readMusic(fromPlay = false) }
+    // a companion of an older reader is read again at once, quietly: the old one is shown and
+    // plays until the new one opens (the reading's end opens it, as a reading in the background)
+    LaunchedEffect(companionKey, pageSource) {
+        val doc = pageSource as? MuPdfDoc ?: return@LaunchedEffect
+        val stale = withContext(Dispatchers.IO) {
+            readAgainOnOpen(PdfCompanion.file(context, companionKey).isFile, PdfCompanion.isCurrent(context, companionKey))
+        }
+        if (!stale) return@LaunchedEffect
+        PdfMusicReading.readings.join(editScope, companionKey) {
+            convertPdfToMusicXml(
+                context, doc, title, companionKey,
+                lock = { read -> paper.withRenderLock { read() } },
+                onProgress = {},
+            ).also { PdfMusicReading.ended(companionKey) }
+        }
+        PdfMusicReading.readings.hurry(companionKey)
+    }
     // double-tap animation in flight: any new touch cancels it
     var zoomAnimJob by remember { mutableStateOf<Job?>(null) }
 

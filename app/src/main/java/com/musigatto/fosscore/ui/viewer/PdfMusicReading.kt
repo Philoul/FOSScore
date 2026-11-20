@@ -41,6 +41,13 @@ internal fun companionToOpen(opened: Boolean, openedAfter: Int, readings: Int, e
     !opened || openedAfter != readings || ended.key == key
 
 /**
+ * Whether a PDF opened is read again at once: its companion was [kept][companionKept] by an older
+ * reader (not [current]). The reading in the background takes the library in turn and waits for
+ * the tablet to be left alone; the PDF on screen comes first.
+ */
+internal fun readAgainOnOpen(companionKept: Boolean, current: Boolean): Boolean = companionKept && !current
+
+/**
  * One piece of work per key at a time: who asks for a key already being worked on gets that work
  * instead of a second one. A work can be hurried ([hurry]): it then stops yielding to the user.
  */

@@ -62,6 +62,32 @@ class MusicXmlScoreTest {
         </score-partwise>
     """.trimIndent().toByteArray()
 
+    /**
+     * A part that names no MIDI channel was played on the first one, with all the others: they all
+     * took the instrument chosen for one (maintainer, 2026-11-20, the music read from a PDF). Each
+     * gets a channel of its own, free, never the drums' 10.
+     */
+    @Test
+    fun everyPartPlaysOnAChannelOfItsOwn() {
+        fun part(id: String, channel: Int?) = "<score-part id=\"$id\"><part-name>$id</part-name>" +
+            (channel?.let { "<midi-instrument id=\"$id-I1\"><midi-channel>$it</midi-channel></midi-instrument>" } ?: "") +
+            "</score-part>"
+        val parts = listOf("A" to null, "B" to 1, "C" to null, "D" to 10) + (1..8).map { "E$it" to null }
+        val xml = "<score-partwise version=\"4.0\"><part-list>" + parts.joinToString("") { (id, c) -> part(id, c) } + "</part-list>" +
+            parts.joinToString("") { (id, _) ->
+                "<part id=\"$id\"><measure number=\"1\"><attributes><divisions>1</divisions></attributes>" +
+                    "<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part>"
+            } + "</score-partwise>"
+        val prepared = MusicXmlScore.parse(xml.toByteArray()).prepare()
+        val channels = Regex("""<score-part id="([^"]+)">(?:(?!</score-part>).)*?<midi-channel>(\d+)</midi-channel>""").findAll(prepared)
+            .associate { it.groupValues[1] to it.groupValues[2].toInt() }
+        assertEquals(
+            mapOf("A" to 2, "B" to 1, "C" to 3, "D" to 10, "E1" to 4, "E6" to 9, "E7" to 11, "E8" to 12),
+            channels.filterKeys { it in setOf("A", "B", "C", "D", "E1", "E6", "E7", "E8") },
+        )
+        assertEquals(parts.size, channels.size)
+    }
+
     @Test
     fun readsPartsAndWhetherTheAuthorHidThem() {
         val parts = MusicXmlScore.parse(song).parts

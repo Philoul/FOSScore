@@ -426,8 +426,40 @@ class MusicXmlScore private constructor(private val doc: Document) {
             hideInvisibleNotes(doc)
             rankMeasures(doc)
             nameNotes(doc)
+            giveChannels(doc)
             return MusicXmlScore(doc)
         }
+
+        /**
+         * Gives every part that names no MIDI channel one of its own, the first free one (never the
+         * drums' 10, and again from 1 past 16). Verovio plays such parts on the first channel, all
+         * together, and the player gives a channel one instrument: a flute chosen for the voice
+         * played every part (the music read from a PDF names none).
+         */
+        private fun giveChannels(doc: Document) {
+            val scoreParts = doc.documentElement.child("part-list")?.children("score-part").orEmpty()
+            val used = scoreParts.flatMap { p ->
+                p.children("midi-instrument").mapNotNull { it.child("midi-channel")?.textContent?.trim()?.toIntOrNull() }
+            }.toMutableSet()
+            val melodic = (1..MIDI_CHANNELS).filter { it != DRUM_CHANNEL }
+            val free = melodic.filter { it !in used }.toMutableList()
+            var shared = 0
+            for (part in scoreParts) {
+                if (part.children("midi-instrument").any { it.child("midi-channel") != null }) continue
+                // more parts than channels: they share them again from the first
+                val channel = free.removeFirstOrNull() ?: melodic[shared++ % melodic.size]
+                val instrument = part.children("midi-instrument").firstOrNull()
+                    ?: doc.createElement("midi-instrument").also {
+                        it.setAttribute("id", part.getAttribute("id") + "-I1")
+                        part.appendChild(it)
+                    }
+                // midi-channel comes first in a midi-instrument
+                instrument.insertBefore(doc.createElement("midi-channel").apply { textContent = channel.toString() }, instrument.firstChild)
+            }
+        }
+
+        private const val MIDI_CHANNELS = 16
+        private const val DRUM_CHANNEL = 10
 
         /**
          * Gives every note without an id one from its place (part, measure, note, 1 up): the music

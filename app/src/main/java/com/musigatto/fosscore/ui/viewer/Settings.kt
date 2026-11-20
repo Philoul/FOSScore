@@ -109,6 +109,7 @@ object Settings {
     private const val KEY_HEARD = "heard_"
     private const val KEY_PLAY_CLICKS = "play_clicks"
     private const val KEY_MUSIC_OFF = "music_off_"
+    private const val KEY_MUSIC_VIEW = "music_view_"
     private const val KEY_SOUND_BANK = "sound_bank"
     private const val KEY_BANK_FOLDER = "sound_bank_folder"
     private const val KEY_PART_SOUNDS = "part_sounds_"
@@ -352,6 +353,16 @@ object Settings {
 
     fun setScoreTempo(context: Context, uri: String, factor: Float) {
         context.prefs().edit { putFloat(KEY_SCORE_TEMPO + uri, factor) }
+    }
+
+    /**
+     * Whether a PDF is shown as the music read from it (its companion, laid out as a MusicXML
+     * score) rather than as itself. Per score: [key] is what its companion is kept under.
+     */
+    fun musicView(context: Context, key: String): Boolean = context.prefs().getBoolean(KEY_MUSIC_VIEW + key, false)
+
+    fun setMusicView(context: Context, key: String, on: Boolean) {
+        context.prefs().edit { putBoolean(KEY_MUSIC_VIEW + key, on) }
     }
 
     /** Whether the music of a score is silenced (the metronome alone). Per score. */

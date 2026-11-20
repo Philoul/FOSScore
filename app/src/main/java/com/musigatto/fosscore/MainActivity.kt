@@ -75,9 +75,12 @@ import com.musigatto.fosscore.ui.settings.PreferencesScreen
 import com.musigatto.fosscore.ui.theme.FOSScoreTheme
 import com.musigatto.fosscore.ui.viewer.AppLanguage
 import com.musigatto.fosscore.ui.viewer.InkPerfMetrics
+import com.musigatto.fosscore.ui.viewer.PdfCompanion
 import com.musigatto.fosscore.ui.viewer.PdfViewerScreen
+import com.musigatto.fosscore.ui.viewer.ScoreView
 import com.musigatto.fosscore.ui.viewer.SetlistPlace
 import com.musigatto.fosscore.ui.viewer.Settings
+import com.musigatto.fosscore.ui.viewer.viewedFile
 import com.musigatto.fosscore.ui.viewer.StartPage
 import com.musigatto.fosscore.ui.viewer.ThemeMode
 import java.io.File
@@ -360,9 +363,19 @@ private fun FOSScoreNav(
             // this key its annotation session (undo stack, selection, hidden ids) would leak from one
             // score into the next — and undo would then write one score's stamps over the other's.
             // and by place: the same score twice in a row in a setlist opens again on its first page
-            key(sheet.hash, s.playItem) {
+            // a PDF whose music is read is shown as the PDF or as that music (its companion, laid
+            // out as a MusicXML score): the choice is kept per score, in the layout panel
+            var musicView by remember(sheet.hash) { mutableStateOf(Settings.musicView(context, sheet.hash)) }
+            val companion = remember(sheet.hash) { PdfCompanion.file(context, sheet.hash) }
+            val shown = viewedFile(sheet.path, musicView, companion)
+            val asMusic = shown != File(sheet.path)
+            val view = if (SheetFormat.of(sheet.path).isMusicXml) null else ScoreView(asMusic) { on ->
+                Settings.setMusicView(context, sheet.hash, on)
+                musicView = on
+            }
+            key(sheet.hash, s.playItem, asMusic) {
                 PdfViewerScreen(
-                    pdfUri = Uri.fromFile(File(sheet.path)),
+                    pdfUri = Uri.fromFile(shown),
                     title = sheet.title,
                     composer = credits[sheet.id]?.line.orEmpty(),
                     // back leaves the score for where it came from: score -> setlist or library -> exit
@@ -372,7 +385,8 @@ private fun FOSScoreNav(
                     themeMode = themeMode,
                     onToggleTheme = toggleTheme,
                     onOpenPreferences = { nav = nav.copy(preferences = true) },
-                    sheetId = sheet.id,
+                    // the MusicXML view of a PDF: the PDF's marks are on its pages, not on this music
+                    sheetId = sheet.id.takeIf { !asMusic },
                     scoreHash = sheet.hash,
                     onOpenSetlist = { nav = nav.toGroups(s.playKind, s.playGroup, s.playFacet) },
                     onPastEnd = openPlace(neighbour(playingIds, s.playItem, 1), StartPage.FIRST),
@@ -380,6 +394,9 @@ private fun FOSScoreNav(
                     start = s.start,
                     setlistPlace = place,
                     chromeShown = s.chromeShown,
+                    // the PDF's sounds and tempo in its MusicXML view too
+                    settingsKey = Uri.fromFile(File(sheet.path)).toString(),
+                    scoreView = view,
                 )
             }
         }

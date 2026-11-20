@@ -156,6 +156,11 @@
     <string name="menu_settings">Ajustes</string>
     <string name="menu_hint_soon">Próximamente</string>
     <string name="menu_hint_musicxml_only">Solo partituras MusicXML</string>
+    <string name="menu_hint_after_reading">Cuando la música del PDF esté leída</string>
+    <string name="view_section_label">Vista</string>
+    <string name="view_pdf">PDF</string>
+    <string name="view_musicxml">MusicXML, la música leída del PDF</string>
+    <string name="view_layout_note">Los ajustes de diseño se aplican a la vista MusicXML.</string>
     <string name="menu_hint_not_on_musicxml">Aún no en partituras MusicXML</string>
     <string name="transposition_section_label">Transposición</string>
     <string name="transpose_label">Semitonos</string>

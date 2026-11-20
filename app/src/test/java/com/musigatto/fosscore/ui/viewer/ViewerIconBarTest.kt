@@ -15,14 +15,18 @@ class ViewerIconBarTest {
             ),
             barItems(isMusicXml = true, annotatable = true),
         )
-        // a PDF has no layout nor playback of its own (they are MusicXML's)
+        // a PDF's layout and playback are there before its music is read, greyed until it is
+        // (maintainer, 2026-11-20)
         assertEquals(
             listOf(
-                ViewerMenuItem.LIBRARY, ViewerMenuItem.SETLIST, ViewerMenuItem.DISPLAY,
-                ViewerMenuItem.METRONOME, ViewerMenuItem.ANNOTATE, ViewerMenuItem.SETTINGS,
+                ViewerMenuItem.LIBRARY, ViewerMenuItem.SETLIST, ViewerMenuItem.DISPLAY, ViewerMenuItem.LAYOUT,
+                ViewerMenuItem.METRONOME, ViewerMenuItem.PLAYBACK, ViewerMenuItem.ANNOTATE, ViewerMenuItem.SETTINGS,
             ),
             barItems(isMusicXml = false, annotatable = true),
         )
+        assertEquals(false, barItemEnabled(ViewerMenuItem.LAYOUT, isMusicXml = false, playable = false))
+        assertEquals(true, barItemEnabled(ViewerMenuItem.LAYOUT, isMusicXml = false, playable = true))
+        assertEquals(true, barItemEnabled(ViewerMenuItem.ANNOTATE, isMusicXml = false, playable = false))
     }
 
     @Test

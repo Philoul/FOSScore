@@ -122,19 +122,22 @@ class ViewerMenuViewModelTest {
     }
 
     @Test
-    fun theLayoutPanelIsForMusicXmlAndAnnotationsForBoth() {
-        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false))
-        // a PDF plays once it has a MIDI file attached (roadmap 3.2)
-        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.PLAYBACK, isMusicXml = false))
+    fun theLayoutPanelWaitsForThePdfToBeReadAndAnnotationsAreForBoth() {
+        // a PDF's music not read yet: playback and layout are shown, greyed until it is
+        assertEquals(MenuItemState.AFTER_READING, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false))
+        assertEquals(MenuItemState.AFTER_READING, menuItemState(ViewerMenuItem.PLAYBACK, isMusicXml = false))
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = true))
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.ANNOTATE, isMusicXml = false))
     }
 
-    /** A PDF whose music was read (its companion) plays it: its playback panel opens, its layout does not. */
+    /**
+     * A PDF whose music is read in full (its companion) plays it, and its layout panel opens: it
+     * chooses between the PDF and the MusicXML view of it (maintainer, 2026-11-20).
+     */
     @Test
-    fun aPdfWithItsMusicReadHasPlaybackButNoLayout() {
+    fun aPdfWithItsMusicReadHasPlaybackAndLayout() {
         assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.PLAYBACK, isMusicXml = false, playable = true))
-        assertEquals(MenuItemState.MUSICXML_ONLY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false, playable = true))
+        assertEquals(MenuItemState.READY, menuItemState(ViewerMenuItem.LAYOUT, isMusicXml = false, playable = true))
         assertEquals(true, ViewerMenuItem.PLAYBACK in barItems(isMusicXml = false, annotatable = true, playable = true))
     }
 

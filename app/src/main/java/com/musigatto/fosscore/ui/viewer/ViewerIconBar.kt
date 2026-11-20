@@ -78,8 +78,12 @@ private val SEPARATOR_WIDTH = 1.dp
  * Annotate's place (beside the pages) when it can be annotated.
  */
 internal fun barItems(isMusicXml: Boolean, annotatable: Boolean, playable: Boolean = isMusicXml): List<ViewerMenuItem> =
-    (BAR_ITEMS.filter { menuItemState(it, isMusicXml, playable) == MenuItemState.READY } +
+    (BAR_ITEMS.filter { menuItemState(it, isMusicXml, playable).let { s -> s == MenuItemState.READY || s == MenuItemState.AFTER_READING } } +
         listOfNotNull(ViewerMenuItem.ANNOTATE.takeIf { annotatable })).sorted()
+
+/** Whether an entry of the bar reacts to a tap: a PDF's layout and playback wait for its music read. */
+internal fun barItemEnabled(item: ViewerMenuItem, isMusicXml: Boolean, playable: Boolean): Boolean =
+    item == ViewerMenuItem.ANNOTATE || menuItemState(item, isMusicXml, playable) == MenuItemState.READY
 
 /**
  * The entries shown when only [fits] icons fit (⋯ apart): the first ones, ✎ always among them;
@@ -144,7 +148,10 @@ fun ViewerIconBar(
                     if (item == ViewerMenuItem.ANNOTATE) {
                         BarIcon(LINE_EDIT, stringResource(R.string.action_edit), panelOpen = false, size = button, onClick = onAnnotate)
                     } else {
-                        BarIcon(item.icon, item.label(), panelOpen = item == open, size = button) { onSelect(item) }
+                        BarIcon(
+                            item.icon, item.label(), panelOpen = item == open, size = button,
+                            enabled = barItemEnabled(item, isMusicXml, playable),
+                        ) { onSelect(item) }
                     }
                 }
                 BarIcon(LINE_MORE, stringResource(R.string.menu_label), panelOpen = false, size = button, onClick = onMore)
@@ -190,9 +197,10 @@ private fun GroupSeparator() {
 // one icon of the bar, [size] wide; framed while its panel shows, as an annotation tool is while its
 // settings show: a frame means a panel open, everywhere
 @Composable
-private fun BarIcon(icon: String, label: String, panelOpen: Boolean, size: Dp, onClick: () -> Unit) {
+private fun BarIcon(icon: String, label: String, panelOpen: Boolean, size: Dp, enabled: Boolean = true, onClick: () -> Unit) {
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .size(size)
             .semantics { contentDescription = label },
@@ -204,7 +212,9 @@ private fun BarIcon(icon: String, label: String, panelOpen: Boolean, size: Dp, o
                 .then(if (panelOpen) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
-            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { LineIcon(icon, size = minOf(BAR_ICON, size - BAR_ICON_MARGIN)) }
+            // greyed as the menu greys an entry that waits
+            val color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            CompositionLocalProvider(LocalContentColor provides color) { LineIcon(icon, size = minOf(BAR_ICON, size - BAR_ICON_MARGIN)) }
         }
     }
 }

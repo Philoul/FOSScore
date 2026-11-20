@@ -264,6 +264,13 @@ fun PdfViewerScreen(
     setlistPlace: SetlistPlace? = null,
     /** The top bar shows on opening: the score before in the setlist was left with it. */
     chromeShown: Boolean = false,
+    /**
+     * What the playback settings (sounds, parts heard, tempo, transposition heard) are kept under:
+     * the MusicXML view of a PDF shares the PDF's.
+     */
+    settingsKey: String = pdfUri.toString(),
+    /** A PDF whose music is read: shown as the PDF or as that music; null for a MusicXML score. */
+    scoreView: ScoreView? = null,
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -280,8 +287,8 @@ fun PdfViewerScreen(
 
     // MusicXML playback: the MIDI player, the cursor and the A–B loop (PlaybackViewModel)
     val playbackVm: PlaybackViewModel = viewModel(
-        key = "playback:$pdfUri",
-        factory = PlaybackViewModel.factory(context, pdfUri.toString()),
+        key = "playback:$settingsKey",
+        factory = PlaybackViewModel.factory(context, settingsKey),
     )
     val playState by playbackVm.state.collectAsState()
     val playClicking by playbackVm.clicking.collectAsState()
@@ -1926,6 +1933,7 @@ fun PdfViewerScreen(
             isLandscape = isLandscape,
             meterFromScore = meterFromScore,
             parts = parts,
+            view = scoreView,
             heardPicked = heardPicked,
             shownIds = shownIds,
             scoreLayout = scoreLayout,

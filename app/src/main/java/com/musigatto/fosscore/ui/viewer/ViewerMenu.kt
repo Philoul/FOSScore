@@ -88,6 +88,7 @@ private fun MenuItemState.hint(): String? = when (this) {
     MenuItemState.SOON -> stringResource(R.string.menu_hint_soon)
     MenuItemState.MUSICXML_ONLY -> stringResource(R.string.menu_hint_musicxml_only)
     MenuItemState.NOT_ON_MUSICXML -> stringResource(R.string.menu_hint_not_on_musicxml)
+    MenuItemState.AFTER_READING -> stringResource(R.string.menu_hint_after_reading)
 }
 
 /**
@@ -188,8 +189,11 @@ fun ScoreLayoutOverlay(
     onPartShown: (String, Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    // the MusicXML view of a PDF: the choice to go back to the PDF comes first
+    view: ScoreView? = null,
 ) {
     PanelOverlay(stringResource(R.string.menu_layout), onDismiss, modifier) {
+        view?.let { ViewChoice(it) }
         SectionLabel(stringResource(R.string.engraving_section_label))
         NumberFieldRow(
             label = stringResource(R.string.note_size_label),

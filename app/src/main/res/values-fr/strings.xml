@@ -177,6 +177,11 @@
     <string name="menu_settings">Préférences</string>
     <string name="menu_hint_soon">Bientôt</string>
     <string name="menu_hint_musicxml_only">Partitions MusicXML seulement</string>
+    <string name="menu_hint_after_reading">Une fois la musique du PDF lue</string>
+    <string name="view_section_label">Affichage</string>
+    <string name="view_pdf">PDF</string>
+    <string name="view_musicxml">MusicXML, la musique lue dans le PDF</string>
+    <string name="view_layout_note">Les réglages de mise en page s’appliquent à la vue MusicXML.</string>
     <string name="menu_hint_not_on_musicxml">Pas encore pour les partitions MusicXML</string>
     <string name="transposition_section_label">Transposition</string>
     <string name="transpose_label">Demi-tons</string>

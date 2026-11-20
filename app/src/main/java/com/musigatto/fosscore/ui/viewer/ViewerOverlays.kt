@@ -109,6 +109,8 @@ internal fun ViewerOverlays(
     tempoFactor: Float,
     panelTop: Dp,
     chromeStyle: ChromeStyle = ChromeStyle.MENU,
+    // a PDF whose music is read: shown as the PDF or as that music (null for a MusicXML score)
+    view: ScoreView? = null,
 ) {
     CompositionLocalProvider(LocalPanelTop provides panelTop, LocalChromeStyle provides chromeStyle) {
         when (surface) {
@@ -230,16 +232,22 @@ internal fun ViewerOverlays(
                     onDismiss = menu::dismiss,
                 )
             }
-            ViewerSurface.LAYOUT -> ScoreLayoutOverlay(
-                layout = scoreLayout,
-                parts = parts,
-                onMusicSize = menu::setMusicSize,
-                onTranspose = menu::transpose,
-                onLyrics = menu::setLyrics,
-                onKeepHiddenLyrics = menu::setKeepHiddenLyrics,
-                onPartShown = menu::setPartShown,
-                onDismiss = menu::dismiss,
-            )
+            // a PDF is laid out as printed: its panel offers the MusicXML view of its music
+            ViewerSurface.LAYOUT -> if (!format.isMusicXml) {
+                view?.let { PdfLayoutOverlay(it, onDismiss = menu::dismiss) }
+            } else {
+                ScoreLayoutOverlay(
+                    view = view,
+                    layout = scoreLayout,
+                    parts = parts,
+                    onMusicSize = menu::setMusicSize,
+                    onTranspose = menu::transpose,
+                    onLyrics = menu::setLyrics,
+                    onKeepHiddenLyrics = menu::setKeepHiddenLyrics,
+                    onPartShown = menu::setPartShown,
+                    onDismiss = menu::dismiss,
+                )
+            }
             ViewerSurface.SHARE -> LayerExportSheet(
                 editor = editor,
                 shareName = shareName,

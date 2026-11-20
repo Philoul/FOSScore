@@ -541,6 +541,19 @@ class RhythmsTest {
     }
 
     /**
+     * A grace note has a stem: a small whole head is a curve misread (a slur's end in J'ai encore
+     * rêvé d'elle, measure 28), and read as a grace note it broke the beam it sat in.
+     */
+    @Test
+    fun aSmallWholeHeadIsNoGraceNote() {
+        val first = head(100.0, g4)
+        val misread = head(110.0, c5, name = "noteheadWhole", height = 0.7)
+        val second = head(120.0, g4)
+        val measure = read(listOf(first, misread, second), listOf(stemUp(first), stemUp(second))).single()
+        assertEquals(listOf("G4", "G4"), measure.events.map { (it.event as Chord).pitches.single().toString() })
+    }
+
+    /**
      * Small notes struck with the other voice's notes (a cue line, "synthé" over a piano's chords)
      * are a voice of their own, not grace notes: read as grace notes, their rest came first and
      * the piano's rest after it, the piano a beat late (J'ai encore rêvé d'elle, measure 18).

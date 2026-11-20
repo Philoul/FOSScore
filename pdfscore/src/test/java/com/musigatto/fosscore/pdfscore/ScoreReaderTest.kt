@@ -193,4 +193,44 @@ class ScoreReaderTest {
         assertEquals(listOf(Part(1), Part(2)), score.parts)
         assertEquals(3, score.measures.single().staves.size)
     }
+
+    /**
+     * A song whose voice rests on its first page: the page has the piano only, braced, then the
+     * voice comes in over it. The piano stayed the score's first staves, the voice's (maintainer,
+     * 2026-11-20, J'ai encore rêvé d'elle): the brace tells which part a system's staves are, and
+     * a part left out of a system rests there.
+     */
+    @Test
+    fun aSystemWithoutAPartHasItsStavesWhereTheBraceSays() {
+        fun system(tops: List<Double>, x: Double) = tops.map { whole(x, it + 2 * space) }
+        val piano = listOf(100.0, 150.0)
+        val first = PageDrawing(
+            600.0, 800.0,
+            piano.map { gClef(it) } + DrawnGlyph("brace", Box(42.0, 99.0, 48.0, 171.0)) + system(piano, 120.0),
+            piano.flatMap { staffLines(it) } + DrawnLine(50.0, 100.0, 50.0, 170.0, 1.0),
+            emptyList(), emptyList(),
+        )
+        val all = listOf(100.0, 150.0, 200.0)
+        val second = PageDrawing(
+            600.0, 800.0,
+            all.map { gClef(it) } + DrawnGlyph("brace", Box(42.0, 149.0, 48.0, 221.0)) + system(all, 120.0),
+            all.flatMap { staffLines(it) } + DrawnLine(50.0, 100.0, 50.0, 220.0, 1.0),
+            emptyList(), emptyList(),
+        )
+        val score = ScoreReader.read(listOf(first, second))
+        assertEquals(listOf(Part(1), Part(2)), score.parts)
+        val (rests, sings) = score.measures
+        // the voice rests on the first page; the piano's two notes are on its staves, 2 and 3
+        assertEquals(listOf(0, 1, 1), rests.staves.map { it.events.size })
+        assertEquals(listOf(1, 2, 3), rests.staves.map { it.box.n })
+        assertEquals(Clef(Clef.Sign.G, 2), rests.staves[0].clef)
+        assertEquals(listOf(1, 1, 1), sings.staves.map { it.events.size })
+        // the piano's notes are named after its staves, so the bar follows them on the page
+        val places = score.notePlaces()
+        assertEquals(true, ScoreReading.noteId(1, 2, 0, 0) in places && ScoreReading.noteId(1, 3, 0, 0) in places)
+        // the voice's measure is a rest
+        val xml = MusicXmlWriter.write(score)
+        val voice = xml.substringAfter("<part id=\"P1\">").substringBefore("</part>")
+        assertEquals(true, "<rest measure=\"yes\"/>" in voice.substringBefore("<measure number=\"2\""))
+    }
 }

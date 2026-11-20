@@ -6,6 +6,7 @@ import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
+import kotlin.math.abs
 
 /**
  * A whole score read from its pages: its [parts] (one staff each, or several joined by a brace), its
@@ -174,17 +175,33 @@ object ScoreReader {
         }.orEmpty()
 
         val measures = mutableListOf<ScoreMeasure>()
-        val times = mutableMapOf<Int, TimeSignature>() // staff → the time last drawn on it
+        val times = mutableMapOf<Int, TimeSignature>() // score staff → the time last drawn on it
+        val total = parts.sumOf { it.staves }
+        // which staff of the score each staff of a system is
+        val places = read.map { (found, _, _) -> found.map { staffPlaces(it.staves.size, it.braces, parts) } }
+        // the clef of each staff of the score: the last one drawn, else (it is not drawn yet) the first
+        val clefs = mutableMapOf<Int, Clef>()
+        read.zip(places).forEach { (page, pagePlaces) ->
+            page.second.zip(pagePlaces).forEach { (system, place) ->
+                system.forEachIndexed { s, (staff, _) -> staff.clef?.let { clefs.putIfAbsent(place[s], it) } }
+            }
+        }
         read.forEachIndexed { page, (_, systems, signs) ->
             systems.forEachIndexed { si, system ->
+                val place = places[page][si]
                 val count = system.maxOfOrNull { (staff, rhythms) ->
                     maxOf(staff.barlines.size, (staff.notes.maxOfOrNull { it.measure } ?: -1) + 1, (rhythms.maxOfOrNull { it.index } ?: -1) + 1)
                 } ?: 0
                 for (m in 0 until count) {
-                    val staves = system.mapIndexed { s, (staff, rhythms) ->
+                    val drawn = system.mapIndexed { s, (staff, rhythms) ->
                         // what is written over the system goes with its top staff
                         val (directions, endings) = signs.getOrNull(si) ?: (emptyList<Direction>() to emptyList())
-                        measureStaff(s + 1, staff, rhythms.firstOrNull { it.index == m }?.events.orEmpty(), m, times, if (s == 0) directions else emptyList(), if (s == 0) endings else emptyList())
+                        measureStaff(place[s] + 1, staff, rhythms.firstOrNull { it.index == m }?.events.orEmpty(), m, times, if (s == 0) directions else emptyList(), if (s == 0) endings else emptyList())
+                    }
+                    drawn.forEach { staff -> (staff.clefChanges.lastOrNull()?.value ?: staff.clef)?.let { clefs[staff.box.n - 1] = it } }
+                    // a staff the system leaves out (its part rests) is there, empty
+                    val staves = (0 until maxOf(total, drawn.size)).mapNotNull { n ->
+                        drawn.getOrNull(place.indexOf(n)) ?: drawn.minByOrNull { abs(it.box.n - 1 - n) }?.let { absent(n, it, clefs[n]) }
                     }
                     measures += ScoreMeasure(measures.size + 1, page, newSystem = m == 0, newPage = m == 0 && si == 0, staves = staves)
                 }
@@ -196,6 +213,44 @@ object ScoreReader {
         val named = first?.takeIf { it.staves.size == parts.sumOf { p -> p.staves } }?.let { named(parts, pages[0], it) } ?: parts
         return ScoreReading(named, measures, header)
     }
+
+    /**
+     * Which staff of the score (0 up) each of the [count] staves of a system is, the score's staves
+     * being those of [parts] and the system's braces [braces]. A system with every staff has them
+     * in order. One with fewer leaves out the parts that rest: its brace is the braced part of
+     * that size (counted from the bottom, the parts left out being the top ones), and the staves
+     * around it are the ones around that part. Without a brace to go by, they are the top ones.
+     */
+    internal fun staffPlaces(count: Int, braces: List<IntRange>, parts: List<Part>): List<Int> {
+        val total = parts.sumOf { it.staves }
+        val inOrder = (0 until count).toList()
+        if (count >= total) return inOrder
+        // the first staff of each braced part, by its number of staves
+        val firsts = parts.runningFold(0) { s, p -> s + p.staves }.zip(parts).filter { it.second.staves > 1 }
+        val shift = braces.sortedByDescending { it.first }.firstNotNullOfOrNull { brace ->
+            val size = brace.last - brace.first + 1
+            val ofSize = firsts.filter { it.second.staves == size }
+            // the system's braces of that size, and the score's, both from the bottom
+            val rank = braces.filter { it.last - it.first + 1 == size }.sortedByDescending { it.first }.indexOf(brace)
+            ofSize.reversed().getOrNull(rank)?.let { (first, _) -> first - brace.first }
+        } ?: return inOrder
+        return inOrder.map { it + shift }.takeIf { places -> places.all { it in 0 until total } } ?: inOrder
+    }
+
+    /** The empty staff [n] (0 up) of a measure whose system leaves it out: drawn where [near] is, with its [clef]. */
+    private fun absent(n: Int, near: MeasureStaff, clef: Clef?): MeasureStaff = MeasureStaff(
+        box = near.box.copy(n = n + 1),
+        clef = clef,
+        key = near.key,
+        time = near.time,
+        clefChanges = emptyList(),
+        events = emptyList(),
+        barStyle = near.barStyle,
+        repeatStart = near.repeatStart,
+        repeatEnd = near.repeatEnd,
+        endingStart = near.endingStart,
+        endingStop = near.endingStop,
+    )
 
     /** Each part with the name written left of its staves in [system] (its lines joined), if any. */
     private fun named(parts: List<Part>, page: PageDrawing, system: StaffSystem): List<Part> {

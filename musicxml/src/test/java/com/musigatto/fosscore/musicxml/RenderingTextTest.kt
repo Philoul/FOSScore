@@ -143,6 +143,23 @@ class RenderingTextTest {
     }
 
     @Test
+    fun aNoteKnowsItsMeasureWhateverItsId() {
+        // a MusicXML file whose notes have their own ids: the playback bar finds their measure by
+        // where Verovio draws them (2026-11-20)
+        val svg = """<svg viewBox="0 0 2100 2970"><svg class="definition-scale" color="black" viewBox="0 0 21000 29700">""" +
+            """<g class="page-margin" transform="translate(400, 400)"><g class="system">""" +
+            """<g id="${PageGeometry.measureId(3)}" class="measure" data-n="3"><g id="s1" class="staff" data-n="1"><path d="M0 100 L500 100" stroke-width="13"/></g>""" +
+            """<g id="a12" class="note"><g class="notehead"><use xlink:href="#E0A4" transform="translate(100, 190)"/></g></g></g>""" +
+            """<g id="${PageGeometry.measureId(4)}" class="measure" data-n="4"><g id="s2" class="staff" data-n="1"><path d="M500 100 L900 100" stroke-width="13"/></g>""" +
+            """<g id="b7" class="note"><g class="notehead"><use xlink:href="#E0A4" transform="translate(600, 190)"/></g></g></g>""" +
+            """</g></g></svg></svg>"""
+        val page = PageGeometry.parse(svg)
+        assertEquals(3, page.measureRank("a12"))
+        assertEquals(4, page.measureRank("b7"))
+        assertNull(page.measureRank("c1"))
+    }
+
+    @Test
     fun pageGeometryFindsMeasuresAndTheirStaves() {
         // as Verovio draws them with svgAdditionalAttribute measure@n and staff@n: the staff lines
         // of each measure run from its left to its right end

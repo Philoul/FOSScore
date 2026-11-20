@@ -17,7 +17,14 @@ class PageGeometry private constructor(
     val height: Float = 0f,
     /** The measures of the page, in reading order. */
     val measures: List<Measure> = emptyList(),
+    private val noteRanks: Map<String, Int> = emptyMap(),
 ) {
+    /**
+     * The rank of the measure the note with this id is drawn in (see [Measure.rank]), hidden notes
+     * included; null when not known (a PDF read, a note not on this page).
+     */
+    fun measureRank(id: String): Int? = noteRanks[id]
+
     /**
      * Notehead centre ([x], [y]), the vertical extent of its system and the staff [space], and
      * where the system's staves end on the right ([lineEnd]) and where its measure ends ([measureEnd]).
@@ -158,7 +165,15 @@ class PageGeometry private constructor(
                 val rank = m.groupValues[1].takeIf { it.startsWith(MEASURE_ID) }?.removePrefix(MEASURE_ID)?.toIntOrNull()
                 Measure(m.groupValues[2], staves, rank)
             }.filter { it.staves.isNotEmpty() }
-            return PageGeometry(NOTE.findAll(svg).map { it.groupValues[1] }.toSet(), heads, innerWidth, innerHeight, measures)
+            // the measure each note is drawn in: the last measure started before it
+            val measureRanks = MEASURE.findAll(svg).map { m ->
+                m.range.first to m.groupValues[1].takeIf { it.startsWith(MEASURE_ID) }?.removePrefix(MEASURE_ID)?.toIntOrNull()
+            }.toList()
+            val notes = NOTE.findAll(svg).toList()
+            val noteRanks = notes.mapNotNull { n ->
+                measureRanks.lastOrNull { it.first < n.range.first }?.second?.let { n.groupValues[1] to it }
+            }.toMap()
+            return PageGeometry(notes.map { it.groupValues[1] }.toSet(), heads, innerWidth, innerHeight, measures, noteRanks)
         }
     }
 }

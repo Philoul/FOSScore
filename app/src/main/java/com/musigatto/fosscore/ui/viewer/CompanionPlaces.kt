@@ -16,10 +16,14 @@ internal data class PageSize(val width: Double, val height: Double)
 internal class CompanionPlaces private constructor(
     private val pages: Map<Int, PageGeometry>,
     private val pageOfNote: Map<String, Int>,
+    private val look: PdfLook? = null,
 ) : MusicPlaces {
     override fun geometry(index: Int): PageGeometry? = pages[index]
 
     override suspend fun pageOf(id: String): Int = pageOfNote[id] ?: -1
+
+    /** How the PDF lays its music out ([PdfLook]); null when no music was read on it. */
+    fun look(): PdfLook? = look
 
     companion object {
         private const val HEADER = "fosscore-places 1"
@@ -71,7 +75,19 @@ internal class CompanionPlaces private constructor(
             val pages = sizes.mapValues { (index, size) ->
                 PageGeometry.of(size.width.toFloat(), size.height.toFloat(), heads[index].orEmpty())
             }
-            return CompanionPlaces(pages, pageOf.filterValues { it in pages })
+            return CompanionPlaces(pages, pageOf.filterValues { it in pages }, lookOf(sizes, heads))
+        }
+
+        /** The look ([PdfLook]) of the pages of [sizes] whose notes are [heads]; null without notes. */
+        private fun lookOf(sizes: Map<Int, PageSize>, heads: Map<Int, Map<String, PageGeometry.Head>>): PdfLook? {
+            val read = heads.filter { (page, notes) -> page in sizes && notes.isNotEmpty() }
+            if (read.isEmpty()) return null
+            // the staff space most notes have (a cue staff is smaller)
+            val spaces = read.values.flatMap { notes -> notes.values.map { it.space.toDouble() } }.filter { it > 0 }.sorted()
+            val space = spaces.getOrNull(spaces.size / 2) ?: return null
+            val page = sizes.getValue(read.keys.min())
+            val music = read.values.maxOf { notes -> notes.values.maxOf { it.bottom } - notes.values.minOf { it.top } }
+            return PdfLook(page.width / space, page.height / space, music / space)
         }
     }
 }

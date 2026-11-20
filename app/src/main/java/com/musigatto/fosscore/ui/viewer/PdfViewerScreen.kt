@@ -1008,7 +1008,11 @@ fun PdfViewerScreen(
             twoUp = twoUpSlots,
         )
         // annotating spaces the lines of music out: room to write, and a clear line between them
-        val spec = screen.spec(scoreLayout, parts, annotating = editing)
+        // the MusicXML view of a PDF is laid out like the PDF: its lines, its pages, its size
+        val look = if (scoreView?.musicXml == true) {
+            withContext(Dispatchers.IO) { PdfCompanion.places(context, companionKey)?.look() }
+        } else null
+        val spec = screen.spec(scoreLayout, parts, annotating = editing, look = look)
         // the other scores get laid out and drawn ahead for this screen too
         withContext(Dispatchers.IO) { MusicXmlPages.rememberScreen(context, screen) }
         try {

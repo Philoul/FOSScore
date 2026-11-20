@@ -2,6 +2,7 @@ package com.musigatto.fosscore.score
 
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.Part
+import com.musigatto.fosscore.ui.viewer.PdfLook
 import com.musigatto.fosscore.ui.viewer.ScoreLayout
 import com.musigatto.fosscore.ui.viewer.ZoomMath
 import com.musigatto.fosscore.ui.viewer.fitRect
@@ -23,12 +24,19 @@ data class MusicXmlScreen(
     val marginBottom: Int,
     val twoUp: Boolean,
 ) {
-    /** The layout of a score with [layout] and [parts] on this screen, spaced out when [annotating]. */
-    fun spec(layout: ScoreLayout, parts: List<Part>, annotating: Boolean = false) = LayoutSpec(
+    /**
+     * The layout of a score with [layout] and [parts] on this screen, spaced out when [annotating].
+     * The music read from a PDF of [look] is laid out like the PDF: its lines and pages, its size
+     * at a note size of 100 % (smaller keeps its lines and pages; larger, or annotating, would
+     * not fit them and breaks the music to fit the screen).
+     */
+    fun spec(layout: ScoreLayout, parts: List<Part>, annotating: Boolean = false, look: PdfLook? = null) = LayoutSpec(
         width = pageWidth,
         height = viewportHeight,
         // the music size follows the whole screen, so two-up does not shrink the notes
-        scale = (baseScale * layout.musicSize / 100).coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
+        scale = ((look?.scale(pageWidth, viewportHeight, marginTop, marginBottom) ?: baseScale) * layout.musicSize / 100)
+            .coerceIn(LayoutSpec.MIN_SCALE, LayoutSpec.MAX_SCALE),
+        fileBreaks = look != null && layout.musicSize <= 100 && !annotating,
         marginTop = marginTop,
         marginBottom = marginBottom,
         semitones = layout.semitones,

@@ -77,6 +77,17 @@ class PlaybackAndOptionsTest {
         assertFalse(o.getBoolean("adjustPageHeight"))
     }
 
+    /**
+     * The MusicXML view of a PDF keeps the PDF's lines and pages (maintainer, 2026-11-20): the
+     * breaks its file writes are kept, where a score of its own is broken to fit the screen.
+     */
+    @Test
+    fun aScoreCanKeepTheBreaksItsFileWrites() {
+        val spec = LayoutSpec(width = 1200, height = 1800)
+        assertEquals("auto", VerovioOptions.layout(spec).getString("breaks"))
+        assertEquals("encoded", VerovioOptions.layout(spec.copy(fileBreaks = true)).getString("breaks"))
+    }
+
     @Test
     fun annotatingSpacesTheLinesOfMusicOut() {
         val spec = LayoutSpec(width = 1200, height = 1800)

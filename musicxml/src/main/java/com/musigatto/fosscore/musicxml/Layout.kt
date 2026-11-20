@@ -10,7 +10,8 @@ import org.json.JSONObject
  * shows them all) with lyrics placed as [lyrics], keeping the lyrics of the parts left out when
  * [hiddenLyrics]. [marginTop] and [marginBottom] pixels of every page stay free of music, for
  * bars the viewer draws over the page. [annotating] spaces the lines of music out, to leave room
- * for annotations between them.
+ * for annotations between them. [fileBreaks] keeps the lines and pages the file writes (the
+ * MusicXML read from a PDF keeps the PDF's), where the music is otherwise broken to fit the page.
  */
 data class LayoutSpec(
     val width: Int,
@@ -22,7 +23,8 @@ data class LayoutSpec(
     val hiddenLyrics: Boolean = false,
     val marginTop: Int = 0,
     val marginBottom: Int = 0,
-    val annotating: Boolean = false
+    val annotating: Boolean = false,
+    val fileBreaks: Boolean = false
 ) {
     init {
         require(width > 0 && height > 0) { "empty viewport" }
@@ -94,7 +96,7 @@ internal object VerovioOptions {
         put("pageMarginBottom", MARGIN + spec.marginBottom * 100 / spec.scale)
         // the number of each measure and staff in the SVG (data-n): what annotations hang on
         put("svgAdditionalAttribute", JSONArray(listOf("measure@n", "staff@n")))
-        put("breaks", "auto")
+        put("breaks", if (spec.fileBreaks) "encoded" else "auto")
         put("footer", "none")
         put("header", "auto")
         put("adjustPageHeight", false)

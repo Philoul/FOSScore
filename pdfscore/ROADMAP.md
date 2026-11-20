@@ -78,6 +78,16 @@ The Score layout panel on a PDF (maintainer, 2026-11-18, later): the panel a Mus
 has (parts played or not where several sound together, MIDI sounds, transposition heard and
 written, display zoom) for a PDF's music too.
 
+Maintainer, 2026-11-20 (next, in this order of value):
+1. The playback menu of a MusicXML score on a PDF, from its companion: the parts played, the
+   transposition heard, the instrument of each part.
+2. The layout panel on a PDF too, the companion being there: either the same panel or one with a
+   PDF / MusicXML view choice. It gives the zoom, the transposition written, where the lyrics go
+   and the voices shown.
+3. The MusicXML view of a PDF laid out by default close to the PDF: the same size, the same number
+   of staves a page (a zoom worked out from the PDF's staff space and systems a page).
+4. Later, maybe a separate PR: a display option to show or hide the annotations.
+
 Steps: (1) companion file and playback from it, (2) red bar on the PDF, (3) streaming decode while
 playing, (4) the MusicXML view on demand (transposition, zoom), (5) instruments, (6) annotations.
 

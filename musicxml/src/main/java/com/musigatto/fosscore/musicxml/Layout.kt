@@ -111,8 +111,10 @@ internal object VerovioOptions {
         if (spec.fileBreaks) {
             put("justifyVertically", true)
             put("justificationMaxVertical", 1.0)
-            // the lines spread apart, not the staves a brace joins (a piano's two)
+            // the lines spread apart, not the staves of one line (a piano's two, a voice over its piano)
             put("justificationBraceGroup", 0.0)
+            put("justificationBracketGroup", 0.0)
+            put("justificationStaff", 0.0)
             // and its last line goes across the page, as the PDF's
             put("minLastJustification", 0.0)
         }

@@ -102,6 +102,9 @@ class PlaybackAndOptionsTest {
         assertEquals(1.0, pdf.getDouble("justificationMaxVertical"), 0.0)
         // the lines spread, not a piano's two staves (51 px apart for the PDF's 35, measured on the Tab 3)
         assertEquals(0.0, pdf.getDouble("justificationBraceGroup"), 0.0)
+        // nor the staves of one line of music (a voice 182 px over its piano, Pas de boogie woogie)
+        assertEquals(0.0, pdf.getDouble("justificationStaff"), 0.0)
+        assertEquals(0.0, pdf.getDouble("justificationBracketGroup"), 0.0)
     }
 
     /**

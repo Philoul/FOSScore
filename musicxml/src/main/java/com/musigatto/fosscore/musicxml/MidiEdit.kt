@@ -42,8 +42,11 @@ internal object MidiEdit {
                 }
                 meta >= 0 -> Unit
                 kind == NOTE_ON || kind == NOTE_OFF -> {
-                    if (semitones != 0 && !drums) b[at] = ((b[at].toInt() and 0x7F) + semitones).coerceIn(0, 127).toByte()
-                    if (kind == NOTE_ON && track in silent) b[at + 1] = 0
+                    // a note with no pitch (x heads: a drum written over a piano) has the key 0 in
+                    // Verovio's MIDI: not played, and not moved
+                    val unpitched = b[at].toInt() and 0x7F == 0 && !drums
+                    if (semitones != 0 && !drums && !unpitched) b[at] = ((b[at].toInt() and 0x7F) + semitones).coerceIn(0, 127).toByte()
+                    if (kind == NOTE_ON && (track in silent || unpitched)) b[at + 1] = 0
                 }
                 kind == PROGRAM -> programs[track]?.let { b[at] = (it - 1).coerceIn(0, 127).toByte() }
             }

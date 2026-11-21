@@ -179,6 +179,21 @@ class PlaybackAndOptionsTest {
         assertEquals(listOf(listOf("n1"), listOf("n1", "n2")), Playback.onsetsOf(timemap).map { it.notes })
     }
 
+    /**
+     * A note with no pitch (a snare drum's x heads over a piano, J'ai encore rêvé d'elle measure
+     * 41) is not played: Verovio gives it the MIDI key 0, which a piano would sound.
+     */
+    @Test
+    fun aNoteWithNoPitchIsNotPlayed() {
+        val unpitched = midi().also { it[43] = 0 }
+        val out = MidiEdit.edit(unpitched, 1.0, semitones = 2)
+        assertEquals(0, out[43].toInt())
+        assertEquals(0, out[44].toInt())
+        // the other notes play, moved
+        assertEquals(64, out[47].toInt())
+        assertEquals(90, out[48].toInt())
+    }
+
     @Test
     fun aTranspositionMovesTheNotes() {
         val out = MidiEdit.edit(midi(), 1.0, semitones = 2)

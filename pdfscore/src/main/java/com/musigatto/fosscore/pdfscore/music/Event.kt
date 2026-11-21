@@ -42,6 +42,13 @@ data class Chord(
     val lyric: Lyric? = null,
     /** The notes (by index) drawn with an x head: a drum's, with no pitch. */
     val crossHeads: Set<Int> = emptySet(),
+    /**
+     * The notes (by index) a tie read ends on; null when not known (a tie then ends on the next
+     * note of its pitch). The ties of [ties] in [openTies] go on over the line break: their end is
+     * the next note of their pitch.
+     */
+    val tieEnds: Set<Int>? = null,
+    val openTies: Set<Int> = emptySet(),
 ) : Event
 
 /** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */

@@ -104,6 +104,7 @@ object Rhythms {
         // each tie's first note, and the note it ends on (null: over the line break)
         val starts = java.util.IdentityHashMap<StaffNote, StaffNote?>()
         val besideHead = { p: Point, head: Box -> abs(p.y - head.centerY) <= 1.5 * space }
+        val dots = page.glyphs.filter { it.name == "augmentationDot" }.map { it.box }
         for (curve in page.shapes) {
             val box = curve.box
             // a long tie bulges more (a whole note's to the next measure: Pas de boogie woogie's choirs)
@@ -112,8 +113,12 @@ object Rhythms {
             val right = curve.points.maxBy { it.x }
             val start = notes.filter { note ->
                 val head = note.head.box
-                left.x >= head.left + 0.2 * head.width && left.x <= head.right + 1.0 * space && besideHead(left, head)
-            }.minByOrNull { abs(left.x - it.head.box.right) + abs(left.y - it.head.box.centerY) } ?: continue
+                // after its dot, when it has one (a dotted note's tie starts past the dot; a chord's dots
+                // line up after its head set off right, by a second)
+                val reach = dots.filter { it.left >= head.right - 0.2 * space && it.left <= head.right + 3.0 * space && abs(it.centerY - head.centerY) <= space }.maxOfOrNull { it.right } ?: head.right
+                left.x >= head.left + 0.2 * head.width && left.x <= reach + 1.0 * space && besideHead(left, head)
+            // the head at its height first: in a chord with a second, the head set off right is not it
+            }.minByOrNull { abs(left.y - it.head.box.centerY) + 0.25 * abs(left.x - it.head.box.right) } ?: continue
             // the next note on its line, in a later column: not the head set beside it (two voices
             // on one note, Pas de boogie woogie's choirs, one chord), however close the next note is
             // (two tied sixteenths, Lucie measure 126)
@@ -121,7 +126,7 @@ object Rhythms {
             val next = notes.filter { note -> note.step == start.step && note.head.box.left > start.head.box.right && chordOf.none { it === note } }.minByOrNull { it.head.box.left }
             val ends = next?.let { note ->
                 val head = note.head.box
-                right.x >= head.left - 1.0 * space && right.x <= head.right - 0.2 * head.width && besideHead(right, head)
+                right.x >= head.left - 1.0 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
             } ?: (right.x >= staff.right - 1.5 * space)
             if (ends) starts[start] = next
         }

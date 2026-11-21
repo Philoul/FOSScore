@@ -361,6 +361,44 @@ class RhythmsTest {
         assertEquals(listOf(setOf(0)), tied(measures[0]))
     }
 
+    /**
+     * A tie from a dotted note starts after its dot, and may end over the next head, set off in a
+     * chord with a second (Né en 17 à Leidenstadt, measure 16's right hand: these ties were lost,
+     * the chords played again).
+     */
+    @Test
+    fun aTieStartsAfterTheDot() {
+        val a = head(100.0, g4, name = "noteheadHalf")
+        val dot = DrawnGlyph("augmentationDot", Box(a.box.right + 0.6 * space, g4 - 0.2 * space, a.box.right + 0.95 * space, g4 + 0.2 * space))
+        val b = head(140.0, g4)
+        val tie = arc(dot.box.right + 0.15 * space, g4 + 0.6 * space, b.box.right + 0.2 * space, g4 + 0.6 * space, 0.6 * space)
+        val measure = read(listOf(a, dot, b), listOf(stemUp(a), stemUp(b)), listOf(tie)).single()
+        assertEquals(setOf(0), (measure.events.first().event as Chord).ties)
+    }
+
+    /**
+     * Each note of a dotted chord with a second (its head set off right, the dots lined up after
+     * it) has its tie: its own, at its height, not its neighbour's beside it (Né en 17 à
+     * Leidenstadt, measure 16: only the set-off note was tied, the others played again).
+     */
+    @Test
+    fun eachNoteOfADottedChordWithASecondHasItsTie() {
+        val a4 = g4 - 0.5 * space
+        val low = head(100.0, g4, name = "noteheadHalf")
+        val second = head(low.box.right - 0.1 * space, a4, name = "noteheadHalf")
+        val high = head(100.0, c5, name = "noteheadHalf")
+        val stem = DrawnLine(low.box.right, g4, low.box.right, c5 - stemLength, 0.5)
+        val dots = listOf(g4, a4, c5).map { y -> DrawnGlyph("augmentationDot", Box(second.box.right + 0.5 * space, y - 0.2 * space, second.box.right + 0.85 * space, y + 0.2 * space)) }
+        val next = listOf(g4, a4, c5).map { head(200.0, it) }
+        val nextStem = DrawnLine(next[0].box.right, g4, next[0].box.right, c5 - stemLength, 0.5)
+        val from = dots[0].box.right + 0.15 * space
+        val ties = listOf(g4 + 0.6 * space, a4, c5 - 0.6 * space).zip(listOf(0.5, 0.3, -0.5)).map { (y, bulge) ->
+            arc(from, y, next[0].box.left - 0.2 * space, y, bulge * space)
+        }
+        val measure = read(listOf(low, second, high) + dots + next, listOf(stem, nextStem), ties).single()
+        assertEquals(setOf(0, 1, 2), (measure.events.first().event as Chord).ties)
+    }
+
     /** A curve from one note to a note on another line is a slur, no tie. */
     @Test
     fun aCurveToAnotherLineIsNoTie() {

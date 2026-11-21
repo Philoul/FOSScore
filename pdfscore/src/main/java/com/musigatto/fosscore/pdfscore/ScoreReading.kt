@@ -3,6 +3,7 @@ package com.musigatto.fosscore.pdfscore
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
+import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
@@ -150,8 +151,8 @@ data class StaffBox(
 object ScoreReader {
     /**
      * The score drawn on [pages]. The parts are the staves of the fullest system, a brace joining
-     * several into one part. A system with fewer staves (a staff left out while it rests) has its
-     * staves taken from the top: which one is missing is not read yet.
+     * several into one part. A system with fewer staves (parts left out while they rest) has its
+     * staves given to the parts where the music goes on most ([StaffParts]).
      */
     fun read(pages: List<PageDrawing>): ScoreReading {
         val read = pages.map { page ->
@@ -178,7 +179,9 @@ object ScoreReader {
         val times = mutableMapOf<Int, TimeSignature>() // score staff → the time last drawn on it
         val total = parts.sumOf { it.staves }
         // which staff of the score each staff of a system is
-        val places = read.map { (found, _, _) -> found.map { staffPlaces(it.staves.size, it.braces, parts) } }
+        val looks = read.flatMap { (found, systems, _) -> found.zip(systems) { system, staves -> SystemLook(staves.map { (staff, rhythms) -> look(staff, rhythms) }, system.braces) } }
+        val chosen = StaffParts.places(looks, parts).iterator()
+        val places = read.map { (found, _, _) -> found.map { chosen.next() } }
         // the clef of each staff of the score: the last one drawn, else (it is not drawn yet) the first
         val clefs = mutableMapOf<Int, Clef>()
         read.zip(places).forEach { (page, pagePlaces) ->
@@ -235,6 +238,28 @@ object ScoreReader {
             ofSize.reversed().getOrNull(rank)?.let { (first, _) -> first - brace.first }
         } ?: return inOrder
         return inOrder.map { it + shift }.takeIf { places -> places.all { it in 0 until total } } ?: inOrder
+    }
+
+    /** What the staff [staff] of a system shows, to tell which part it is ([StaffParts]). */
+    private fun look(staff: StaffReading, rhythms: List<MeasureReading>): StaffLook {
+        val ordered = rhythms.sortedBy { it.index }
+        val chords = ordered.flatMap { m -> m.events.map { it.event }.sortedBy { it.onset } }.mapNotNull { it as? Chord }.filter { !it.grace }
+        val pitches = chords.flatMap { c -> c.pitches.mapNotNull { it?.diatonic } }.sorted()
+        fun top(chord: Chord?) = chord?.pitches?.mapNotNull { it?.diatonic }?.maxOrNull()?.toDouble()
+        // a staff sounds at its start when a note is struck on its first beat (not after a rest),
+        // at its end when its last measure ends on a note
+        fun startsOnANote(m: MeasureReading?) = m?.events?.any { (it.event as? Chord)?.grace == false && it.event.onset == Fraction.ZERO } == true
+        fun endsOnANote(m: MeasureReading?) = m?.events?.filter { (it.event as? Chord)?.grace != true }?.maxByOrNull { it.event.onset }?.event is Chord
+        return StaffLook(
+            clefStart = staff.clef?.sign,
+            clefEnd = (staff.clefs.lastOrNull()?.value ?: staff.clef)?.sign,
+            pitch = pitches.getOrNull(pitches.size / 2)?.toDouble(),
+            lyrics = chords.any { it.lyric != null },
+            startsSounding = startsOnANote(ordered.firstOrNull()),
+            endsSounding = endsOnANote(ordered.lastOrNull()),
+            first = top(chords.firstOrNull()),
+            last = top(chords.lastOrNull()),
+        )
     }
 
     /** The empty staff [n] (0 up) of a measure whose system leaves it out: drawn where [near] is, with its [clef]. */

@@ -57,7 +57,19 @@ object Directions {
                 else -> null
             }
         }
-        (tempos + words + marks).sortedBy { it.x }
+        // a coda or segno in the margin left of the system, by any of its staves: its start
+        val bottom = system.staves.last().lineYs.last()
+        val margin = page.glyphs.filter { glyph ->
+            glyph.box.right <= staff.left + 0.5 * space && glyph.box.right >= staff.left - MARGIN_REACH * space &&
+                glyph.box.bottom >= staff.top - space && glyph.box.top <= bottom + space
+        }.mapNotNull { glyph ->
+            when (glyph.name) {
+                "segno" -> Mark(staff.left, Mark.Kind.SEGNO)
+                "coda", "codaSquare" -> Mark(staff.left, Mark.Kind.CODA)
+                else -> null
+            }
+        }
+        (tempos + words + marks + margin).sortedBy { it.x }
     }
 
     /**
@@ -90,6 +102,9 @@ object Directions {
 
     /** Whether [text] is a tempo or expression word ("Rall.", "a tempo"), not a lyric. */
     fun isWords(text: String): Boolean = WORDS.containsMatchIn(text)
+
+    /** How far left of a system (in spaces) a coda or segno in its margin may be. */
+    private const val MARGIN_REACH = 8.0
 
     /** How far over the top line (in spaces) a direction is written. */
     private const val REACH = 6.0

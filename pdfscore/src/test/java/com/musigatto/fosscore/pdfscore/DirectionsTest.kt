@@ -71,6 +71,16 @@ class DirectionsTest {
         assertEquals(listOf(Words(200.0, "3. To @"), Words(300.0, "To $")), read(emptyList(), texts))
     }
 
+    /**
+     * A coda drawn in the margin left of a system (by its lower staves, "CODA" over it: J'ai encore
+     * rêvé d'elle, measure 69) marks the system's start: "To Coda" jumps there.
+     */
+    @Test
+    fun aCodaLeftOfASystemMarksItsStart() {
+        val coda = DrawnGlyph("coda", Box(30.0, top + space, 46.0, top + 4 * space))
+        assertEquals(listOf(Mark(50.0, Mark.Kind.CODA)), read(listOf(coda), emptyList()))
+    }
+
     /** A segno and a coda over the staff are where a jump goes; "D.S. al Coda", "Fine" say when to jump. */
     @Test
     fun segnoCodaAndJumpWords() {

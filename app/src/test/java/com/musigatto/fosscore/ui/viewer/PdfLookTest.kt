@@ -58,6 +58,21 @@ class PdfLookTest {
         assertEquals(44, own.scale)
     }
 
+    /**
+     * The notes as large as the PDF's when the PDF's page fits the screen (J'te l'dis quand même,
+     * measured on the Tab 3, 2026-11-21): a space of 5.5 px on the PDF, 4.9 px in its MusicXML view,
+     * shrunk for room Verovio did not take (its lines of music took 3 % less height than the PDF's,
+     * not 20 % more).
+     */
+    @Test
+    fun theNotesAreAsLargeAsThePdfsWhenItsPageFits() {
+        // 842 × 1190 units, spaces of 5.85, the music from 144 to 1090
+        val look = PdfLook(width = 842 / 5.85, height = 1190 / 5.85, music = 946 / 5.85)
+        val spec = tablet.spec(ScoreLayout(), parts, look = look)
+        // the PDF shown 800 px wide: a space of 5.56 px, 18 px at a scale of 100
+        assertEquals(30, spec.scale)
+    }
+
     @Test
     fun aPageOfThePdfAlwaysFitsOnTheScreen() {
         // a page full of music, the screen shorter than the PDF's page shape

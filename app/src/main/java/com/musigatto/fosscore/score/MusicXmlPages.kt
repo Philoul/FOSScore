@@ -41,7 +41,7 @@ private const val LOG_TAG = "FOSScore-MusicXML"
 private const val MAX_CACHED_BITMAPS = 4
 
 // bumped when what is kept in the cache is drawn or read differently, so old files are not used
-private const val CACHE_VERSION = 4
+private const val CACHE_VERSION = 5
 
 // the layouts whose pages are kept: portrait, landscape, two-up, and annotating in both orientations
 private const val KEPT_LAYOUTS = 5

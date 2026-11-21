@@ -18,7 +18,7 @@ data class PdfLook(val width: Double, val height: Double, val music: Double) {
         // the PDF shown whole: px per staff space
         val shown = min(pageWidth / width, viewportHeight / height)
         val same = shown / VEROVIO_SPACE_PX * 100
-        // Verovio spaces lines out more than an engraver does, and writes the title over the
+        // Verovio packs the lines of music about as an engraver does, and writes the title over the
         // first one: room for it, and Verovio's page margins (MARGIN, 40 units, on both sides)
         val usable = (viewportHeight - marginTop - marginBottom).coerceAtLeast(1)
         val fit = usable / ((music * PDF_MUSIC_ROOM + PDF_MUSIC_AIR) * VEROVIO_SPACE_PX / 100 + 0.8)
@@ -29,8 +29,8 @@ data class PdfLook(val width: Double, val height: Double, val music: Double) {
 // Verovio's staff space at a scale of 100, in px (a staff 72 px high)
 private const val VEROVIO_SPACE_PX = 18.0
 
-/** How much higher than the PDF's the lines of music come out in Verovio. */
-internal const val PDF_MUSIC_ROOM = 1.2
+/** How much higher than the PDF's the lines of music come out in Verovio: about as high (3 % less for J'te l'dis quand même, measured on the Tab 3). */
+internal const val PDF_MUSIC_ROOM = 1.0
 
 /** Staff spaces more for what is not between the staff lines: the title, lyrics under the last line. */
 internal const val PDF_MUSIC_AIR = 8.0

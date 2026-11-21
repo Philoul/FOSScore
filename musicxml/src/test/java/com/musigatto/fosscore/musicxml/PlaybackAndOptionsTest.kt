@@ -100,6 +100,8 @@ class PlaybackAndOptionsTest {
         val pdf = VerovioOptions.layout(spec.copy(fileBreaks = true))
         assertEquals(true, pdf.getBoolean("justifyVertically"))
         assertEquals(1.0, pdf.getDouble("justificationMaxVertical"), 0.0)
+        // the lines spread, not a piano's two staves (51 px apart for the PDF's 35, measured on the Tab 3)
+        assertEquals(0.0, pdf.getDouble("justificationBraceGroup"), 0.0)
     }
 
     /**

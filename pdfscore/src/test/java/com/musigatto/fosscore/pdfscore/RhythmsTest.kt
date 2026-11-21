@@ -456,6 +456,22 @@ class RhythmsTest {
         assertEquals(setOf(Stem.UP, Stem.DOWN), measure.events.map { (it.event as Chord).stem }.toSet())
     }
 
+    /**
+     * A head shared by a stem up and a stem down goes to each stem's voice, even when other notes
+     * of the measure do not tell the voices by their stems (Lettre à France, measure 15: one pair
+     * of stems down struck together, and the shared B♭s down all went to the upper voice, which
+     * overflowed its measure).
+     */
+    @Test
+    fun aSharedHeadGoesToTheVoiceOfEachStem() {
+        val shared = head(100.0, c5)
+        val high = head(160.0, c5)
+        val low = head(160.5, g4 + space)
+        val measure = read(listOf(shared, high, low), listOf(stemUp(shared), stemDown(shared), stemDown(high), stemDown(low))).single()
+        val sharedEvents = measure.events.filter { it.box.left == shared.box.left }.map { it.event as Chord }
+        assertEquals(mapOf(Stem.UP to 1, Stem.DOWN to 2), sharedEvents.associate { it.stem to it.voice })
+    }
+
     @Test
     fun aWholeRestHangsFromALineAndAHalfRestSitsOnOne() {
         // measure 1: a half rest on the middle line, then a half note; measure 2: a whole rest alone

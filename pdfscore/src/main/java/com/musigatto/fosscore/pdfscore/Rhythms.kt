@@ -375,7 +375,11 @@ object Rhythms {
                     abs(a.x - b.x) < (if (a.stem != b.stem && a.stem != Stem.NONE && b.stem != Stem.NONE) 1.3 else 0.3) * space
             }.map { b -> a to b }
         }
-        val byStem = together.all { (upper, lower) -> upper.stem == Stem.UP && lower.stem == Stem.DOWN }
+        // a head shared by a stem up and a stem down says the stems tell the voices, whatever a pair
+        // of stems one way struck together says (Lettre à France, measure 15: the shared B♭s down
+        // went to the upper voice, which overflowed its measure)
+        val sharedHead = together.any { (a, b) -> a.box == b.box && a.stem == Stem.UP && b.stem == Stem.DOWN }
+        val byStem = sharedHead || together.all { (upper, lower) -> upper.stem == Stem.UP && lower.stem == Stem.DOWN }
         // a whole note (no stem) struck with notes on stems: it is a voice, the notes on stems the
         // other, however low they go (no line between the voices then)
         val wholeVoice = when {

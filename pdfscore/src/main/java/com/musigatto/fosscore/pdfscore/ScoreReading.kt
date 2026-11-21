@@ -214,7 +214,7 @@ object ScoreReader {
         val first = read.firstOrNull()?.first?.firstOrNull()
         val header = first?.let { header(pages[0], it) } ?: Header()
         val named = first?.takeIf { it.staves.size == parts.sumOf { p -> p.staves } }?.let { named(parts, pages[0], it) } ?: parts
-        return ScoreReading(named, measures, header)
+        return ScoreReading(named, tiedAlterations(measures), header)
     }
 
     /**
@@ -238,6 +238,39 @@ object ScoreReader {
             ofSize.reversed().getOrNull(rank)?.let { (first, _) -> first - brace.first }
         } ?: return inOrder
         return inOrder.map { it + shift }.takeIf { places -> places.all { it in 0 until total } } ?: inOrder
+    }
+
+    /**
+     * The [measures] with each note tied over a barline given the alteration of the note it is tied
+     * from (written on that one only), unless one is written on it. The notes after it in its
+     * measure keep the key's, as read.
+     */
+    internal fun tiedAlterations(measures: List<ScoreMeasure>): List<ScoreMeasure> {
+        // per staff of the score: the alterations of the notes tied on over the last barline, by white key
+        val carried = mutableMapOf<Int, Map<Int, Int>>()
+        return measures.map { measure ->
+            measure.copy(staves = measure.staves.mapIndexed { s, staff ->
+                val open = carried[s].orEmpty().toMutableMap()
+                val next = mutableMapOf<Int, Int>()
+                val order = staff.events.indices.sortedBy { staff.events[it].event.onset }
+                val events = staff.events.toMutableList()
+                for (i in order) {
+                    val chord = events[i].event as? Chord ?: continue
+                    if (chord.grace) continue
+                    val pitches = chord.pitches.mapIndexed { k, pitch ->
+                        // the note a tie over the barline ends on
+                        val alter = pitch?.let { open.remove(it.diatonic) }
+                        if (pitch != null && alter != null && k !in chord.accidentals) pitch.copy(alter = alter) else pitch
+                    }
+                    pitches.forEachIndexed { k, pitch -> if (pitch != null && k in chord.ties) next[pitch.diatonic] = pitch.alter }
+                    // a tie inside the measure ends on a note of the measure: not carried over
+                    pitches.forEach { pitch -> if (pitch != null && chord.ties.none { pitches.getOrNull(it) == pitch }) next.remove(pitch.diatonic) }
+                    if (pitches != chord.pitches) events[i] = events[i].copy(event = chord.copy(pitches = pitches))
+                }
+                carried[s] = next
+                staff.copy(events = events)
+            })
+        }
     }
 
     /** What the staff [staff] of a system shows, to tell which part it is ([StaffParts]). */

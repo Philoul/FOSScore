@@ -162,6 +162,7 @@ the benchmark before it is installed.
 | 35 | J'ai encore rêvé d'elle (measure 41) | the snare drum (x heads, "caisse claire") is played as piano | not looked at yet | to do |
 | 36 | J'ai encore rêvé d'elle (tenor, measure 40) | a small slashed eighth (a short grace note) is read as a half note | not looked at yet | to do |
 | 37 | J'ai encore rêvé d'elle (choirs, measure 54) | "choeurs 2° fois": the choirs should sing the second time only | words not read as a play-once mark | to do, minor |
+| 38 | a score not remembered (maintainer, 2026-11-21) | a C♯ or F♯ tied to the next measure's first note read without its sharp there | the alterations of a measure were read before its ties: the tied note took the key's | fixed 2026-11-21: a note tied over a barline keeps the alteration of the note it is tied from, unless one is written on it (J'ai encore rêvé d'elle, choirs m57: C♭ read C) |
 | 31 | Pas de boogie woogie (MusicXML view) | the arpeggios of the start, across several voices, read wrong | not looked at yet | to do |
 
 Speed requirement (maintainer, 2026-11-18): reading must go faster than the music at the

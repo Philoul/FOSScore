@@ -338,6 +338,24 @@ class MusicXmlWriterTest {
         assertEquals(listOf("<note ", "<octave-shift", "<note ", "<note ", "<octave-shift", "<note "), notes)
     }
 
+    /** An x head is written as a note with no pitch, an x, where it is drawn: Verovio does not play it as a piano's. */
+    @Test
+    fun anXHeadIsANoteWithNoPitch() {
+        val events = listOf(
+            placed(Chord(listOf(Pitch(0, 5)), Duration(NoteType.HALF), Stem.DOWN, Fraction.ZERO, 1, crossHeads = setOf(0)), 70.0),
+            placed(chord(Pitch(4, 4), type = NoteType.QUARTER, onset = Fraction.of(1, 2)), 150.0),
+        )
+        val doc = parse(MusicXmlWriter.write(ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, events)))))))
+        val notes = doc.all("note")
+        assertEquals(listOf("C", "5"), listOf(notes[0].text("display-step"), notes[0].text("display-octave")))
+        assertEquals(0, notes[0].all("pitch").size)
+        assertEquals("x", notes[0].text("notehead"))
+        assertEquals(null, notes[1].text("notehead"))
+        // the notehead between the stem and the staff, as MusicXML orders them
+        val children = (0 until notes[0].childNodes.length).map { notes[0].childNodes.item(it).nodeName }
+        assert(children.indexOf("stem") < children.indexOf("notehead") && children.indexOf("notehead") < children.indexOf("staff").let { if (it < 0) Int.MAX_VALUE else it })
+    }
+
     /** A grace note takes no time; a staccato is written; a clef drawn mid-measure comes before the note after it. */
     @Test
     fun graceNotesStaccatoAndAClefChange() {

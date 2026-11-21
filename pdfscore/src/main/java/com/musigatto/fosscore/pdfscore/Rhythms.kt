@@ -262,6 +262,9 @@ object Rhythms {
 
     private val FLAG = Regex("^flag(\\d+)")
 
+    /** An x head (a drum's, with no pitch): SMuFL's noteheadX… and noteheadCircleX… */
+    private fun crossHead(name: String?): Boolean = name?.let { it.startsWith("noteheadX") || it.startsWith("noteheadCircleX") } == true
+
     /** The value a head shows by itself (whole, half), null for a black one (its stem says the rest). */
     private fun headValue(name: String?): NoteType? = when {
         name == null -> null
@@ -453,6 +456,7 @@ object Rhythms {
                         notes.withIndex().mapNotNull { (i, note) -> note.accidental?.let { i to it } }.toMap(),
                         draft.arpeggiate,
                         draft.fermata,
+                        crossHeads = notes.indices.filter { crossHead(notes[it].head.name) }.toSet(),
                     )
                 }
                 result += PlacedEvent(event, draft.box)

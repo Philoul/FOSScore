@@ -211,7 +211,8 @@ object MusicXmlWriter {
                     Stem.DOWN -> after.append("<stem>down</stem>")
                     Stem.NONE -> Unit
                 }
-                staff?.let { after.append("<staff>$it</staff>") }
+                // an x head between the stem and the staff, as MusicXML orders them
+                val onStaff = staff?.let { "<staff>$it</staff>" }.orEmpty()
                 // the beams once, on the chord's first note (as MuseScore writes them)
                 val beams = event.beams.withIndex().joinToString("") { (level, mark) -> "<beam number=\"${level + 1}\">${mark.musicXml}</beam>" }
                 val articulations = if (Articulation.STACCATO in event.articulations) "<articulations><staccato/></articulations>" else ""
@@ -225,12 +226,15 @@ object MusicXmlWriter {
                     // a grace eighth alone is an acciaccatura, drawn slashed
                     if (event.grace) out.append(if (event.duration.type == NoteType.EIGHTH && event.beams.isEmpty()) "<grace slash=\"yes\"/>" else "<grace/>")
                     if (k > 0) out.append("<chord/>")
-                    out.append(pitchElement(pitch, clef))
+                    val cross = k in event.crossHeads
+                    out.append(pitchElement(pitch, clef, unpitched = cross))
                     if (!event.grace) out.append("<duration>${units(duration.length, divisions)}</duration>")
                     ties.forEach { out.append("<tie type=\"$it\"/>") }
                     out.append(tail)
                     event.accidentals[k]?.let { alter -> ACCIDENTALS[alter]?.let { out.append("<accidental>$it</accidental>") } }
                     out.append(after)
+                    if (cross) out.append("<notehead>x</notehead>")
+                    out.append(onStaff)
                     if (k == 0) out.append(beams)
                     val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + (if (k == 0) tuplet else "") + articulations +
                         (if (event.arpeggiate) "<arpeggiate/>" else "") + (if (event.fermata && k == 0) FERMATA else "")
@@ -286,9 +290,10 @@ object MusicXmlWriter {
     private val ACCIDENTALS = mapOf(-2 to "flat-flat", -1 to "flat", 0 to "natural", 1 to "sharp", 2 to "double-sharp")
 
     /** A note's pitch, or where it sits on a percussion staff (or unknown: no clef read). */
-    private fun pitchElement(pitch: Pitch?, clef: Clef?): String = when {
+    private fun pitchElement(pitch: Pitch?, clef: Clef?, unpitched: Boolean = false): String = when {
         pitch == null -> "<unpitched/>"
-        clef?.sign == Clef.Sign.PERCUSSION ->
+        // a drum's note (an x head) where it is drawn, with no pitch to play
+        clef?.sign == Clef.Sign.PERCUSSION || unpitched ->
             "<unpitched><display-step>${Pitch.STEPS[pitch.step]}</display-step><display-octave>${pitch.octave}</display-octave></unpitched>"
         else -> "<pitch><step>${Pitch.STEPS[pitch.step]}</step>" +
             (if (pitch.alter != 0) "<alter>${pitch.alter}</alter>" else "") + "<octave>${pitch.octave}</octave></pitch>"

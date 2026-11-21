@@ -305,6 +305,33 @@ class MusicXmlWriterTest {
         assertEquals(listOf("whole"), stops.map { it.text("type") })
     }
 
+    /**
+     * Two ties of one pitch may be open at once (two voices on one note): the choirs' G tied over
+     * the barline, the melody's G tied within the next measure, written first (Pas de boogie
+     * woogie, measures 7-8: the melody's tie took the choirs' place, and their whole note was
+     * played again).
+     */
+    @Test
+    fun twoTiesOfOnePitchMayBeOpen() {
+        val g4 = Pitch(4, 4)
+        val m1 = listOf(placed(Chord(listOf(g4), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 2, ties = setOf(0), tieEnds = emptySet()), 70.0))
+        val m2 = listOf(
+            placed(Chord(listOf(g4), Duration(NoteType.QUARTER), Stem.UP, Fraction.ZERO, 1, ties = setOf(0), tieEnds = emptySet()), 80.0),
+            placed(Chord(listOf(g4), Duration(NoteType.HALF), Stem.UP, Fraction.of(1, 4), 1, tieEnds = setOf(0)), 120.0),
+            placed(Chord(listOf(g4), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 2, tieEnds = setOf(0)), 70.0),
+        )
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, m1, time = TimeSignature(4, 4)))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, m2, time = TimeSignature(4, 4)))),
+            ),
+        )
+        val notes = parse(MusicXmlWriter.write(score)).all("note").filter { it.all("rest").isEmpty() }
+        val stops = notes.filter { n -> n.all("tie").any { it.getAttribute("type") == "stop" } }
+        assertEquals(listOf("half", "whole"), stops.mapNotNull { it.text("type") }.sorted())
+    }
+
     /** A tie starts on its note and stops on the next note of that pitch on the staff, over the barline. */
     @Test
     fun aTieStopsOnTheNextNoteOfItsPitch() {

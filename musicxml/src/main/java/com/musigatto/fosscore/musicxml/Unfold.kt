@@ -118,6 +118,14 @@ object Unfold {
             }
         }
         fun blockAt(m: Int) = blocks.firstOrNull { m in it.start..it.end }
+        // in a repeat played again, the last time through: its backward repeat was taken every time.
+        // With a D.S. or D.C. in the score, "To Coda" waits for it instead (Savoir aimer's "3. To ⊕")
+        val jumpsBack = info.any { it.dalSegno || it.daCapo }
+        fun lastTimeThrough(m: Int, pass: Int, backs: IntArray): Boolean {
+            if (pass <= 1 || jumpsBack) return false
+            val back = (m until n).firstOrNull { info[it].backward } ?: return false
+            return backs[back] >= info[back].times - 1
+        }
 
         val order = mutableListOf<Int>()
         val backs = IntArray(n)
@@ -142,7 +150,7 @@ object Unfold {
             order += i
             val m = info[i]
             if (m.fine && jumped) break
-            if (m.toCoda && (jumped || blockAt(i) != null)) {
+            if (m.toCoda && (jumped || blockAt(i) != null || lastTimeThrough(i, pass, backs))) {
                 val target = (i + 1 until n).firstOrNull { info[it].coda }
                 if (target != null) {
                     if (jumped) coda = target

@@ -154,6 +154,20 @@ class UnfoldTest {
         assertEquals(expected, played(m))
     }
 
+    /**
+     * "To Coda" inside a repeat jumps to the coda the last time through (J'ai encore rêvé d'elle:
+     * 54 to 68 twice, the second time from 63 on to the coda at 69).
+     */
+    @Test
+    fun toCodaInARepeatJumpsTheLastTime() {
+        val m = List(9) { M() }.toMutableList()
+        m[1] = M(forward = true)
+        m[3] = M(toCoda = true)
+        m[5] = M(backward = true)
+        m[6] = M(coda = true)
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 2, 3, 4, 7, 8, 9), played(m))
+    }
+
     @Test
     fun dalSegnoAlCodaSkipsToTheCodaTheSecondTime() {
         val m = List(8) { M() }.toMutableList()

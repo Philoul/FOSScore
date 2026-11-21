@@ -36,6 +36,9 @@ object Rhythms {
     /** How near (in spaces) a small note is to a normal note or rest struck with it: a cue line, not grace notes. */
     private const val CUE_ALIGN = 0.6
 
+    /** How far (in spaces) a grace note may be from the note it leads to, or from the next grace note. */
+    private const val GRACE_LEAD = 2.5
+
     fun read(page: PageDrawing, reading: StaffReading): List<MeasureReading> {
         val staff = reading.staff
         val space = staff.space
@@ -49,9 +52,18 @@ object Rhythms {
         // small notes struck with a normal note or rest (at its x) are a cue line, played; the
         // others are grace notes, before the note they lead to
         val normal = chords.filterNot(::small) + rests
-        fun cue(chord: Draft) = normal.any { abs(it.box.left - chord.box.left) < CUE_ALIGN * space }
+        val struck = { chord: Draft -> normal.any { abs(it.box.left - chord.box.left) < CUE_ALIGN * space } }
+        // a grace note leads to the normal note close after it, maybe by other grace notes close
+        // after it; small notes spaced as notes are, leading to none, are a voice of their own (the
+        // choirs' small notes of Pas de boogie woogie, measure 41)
+        val leading = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Draft, Boolean>())
+        for (chord in chords.filter(::small).sortedByDescending { it.x }) {
+            val next = chords.filter { it.measure == chord.measure && it.x > chord.x + 0.1 * space }.minByOrNull { it.x } ?: continue
+            if (next.x - chord.x <= GRACE_LEAD * space && (!small(next) || next in leading)) leading += chord
+        }
+        fun cue(chord: Draft) = struck(chord) || chord !in leading
         // a grace note has a stem: a small whole head on its own is a curve misread
-        val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && !cue(it) }.map { chord ->
+        val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && !struck(it) }.map { chord ->
             val onStem = beamsAt(chord, beams, space)
             val grace = small(chord) && !cue(chord)
             val value = chord.type ?: blackValue(chord, onStem, reading.symbols, space)
@@ -166,11 +178,13 @@ object Rhythms {
                 )
             }
         }
-        // Stemless heads that touch (a whole-note chord, its seconds side by side) are one chord.
+        // Stemless heads that touch (a whole-note chord, its seconds side by side) are one chord, and
+        // so are those set a little apart (two voices on one note: one after the other, two whole
+        // notes would last two measures, Pas de boogie woogie measure 15).
         val groups = mutableListOf<MutableList<StaffNote>>()
         for (note in stemless.sortedBy { it.head.box.left }) {
             groups.lastOrNull { group ->
-                group.first().measure == note.measure && group.any { note.head.box.left <= it.head.box.right + 0.2 * space }
+                group.first().measure == note.measure && group.any { note.head.box.left <= it.head.box.right + 0.5 * space }
             }?.add(note) ?: groups.add(mutableListOf(note))
         }
         val whole = groups.map { notes ->
@@ -410,8 +424,12 @@ object Rhythms {
         // rest stem up. The chords like those beside rests are their voice, the others the other one.
         val besideStem = (lowerStems + upperStems).singleOrNull()
         val stemVoices = besideStem != null && chords.any { it.stem != besideStem }
+        // rests under the chords of one stem and over those of the other: that stem is the upper
+        // voice, the other the lower one (Pas de boogie woogie, measure 41)
+        val bothSides = upperStems.size == 1 && lowerStems.size == 1 && upperStems != lowerStems
         fun voiceOf(draft: Draft): Int = when {
             together.isEmpty() && besideRests.isEmpty() -> 1
+            together.isEmpty() && bothSides && !draft.rest -> if (draft.stem in lowerStems) 2 else 1
             together.isEmpty() && stemVoices && !draft.rest -> {
                 val besideVoice = if (lowerStems.isNotEmpty()) 2 else 1
                 if (draft.stem == besideStem) besideVoice else 3 - besideVoice

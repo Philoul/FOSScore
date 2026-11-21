@@ -53,9 +53,12 @@ object Rhythms {
         // a grace note has a stem: a small whole head on its own is a curve misread
         val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && !cue(it) }.map { chord ->
             val onStem = beamsAt(chord, beams, space)
+            val grace = small(chord) && !cue(chord)
+            val value = chord.type ?: blackValue(chord, onStem, reading.symbols, space)
             chord.copy(
-                type = chord.type ?: blackValue(chord, onStem, reading.symbols, space),
-                grace = small(chord) && !cue(chord),
+                // a grace note alone is an eighth (an acciaccatura): its small flag is seldom read
+                type = if (grace && value == NoteType.QUARTER && onStem.isEmpty()) NoteType.EIGHTH else value,
+                grace = grace,
                 beams = onStem,
             )
         } + rests

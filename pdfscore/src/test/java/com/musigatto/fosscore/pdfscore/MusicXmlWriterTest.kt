@@ -354,6 +354,8 @@ class MusicXmlWriterTest {
         val doc = parse(xml)
         val notes = doc.all("note")
         assertEquals(1, notes[0].all("grace").size)
+        // an eighth alone: an acciaccatura, slashed as drawn
+        assertEquals("yes", notes[0].all("grace").single().getAttribute("slash"))
         assertEquals(null, notes[0].text("duration"))
         assertEquals(1, notes[1].all("staccato").size)
         assertEquals(listOf("G", "F"), doc.all("clef").map { it.text("sign") })

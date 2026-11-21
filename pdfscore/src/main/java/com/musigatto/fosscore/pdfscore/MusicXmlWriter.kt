@@ -222,7 +222,8 @@ object MusicXmlWriter {
                     if (start && pitch != null) tied += pitch
                     val ties = listOf("stop" to stop, "start" to start).filter { it.second }.map { it.first }
                     out.append("      <note id=\"${id(k)}\">")
-                    if (event.grace) out.append("<grace/>")
+                    // a grace eighth alone is an acciaccatura, drawn slashed
+                    if (event.grace) out.append(if (event.duration.type == NoteType.EIGHTH && event.beams.isEmpty()) "<grace slash=\"yes\"/>" else "<grace/>")
                     if (k > 0) out.append("<chord/>")
                     out.append(pitchElement(pitch, clef))
                     if (!event.grace) out.append("<duration>${units(duration.length, divisions)}</duration>")

@@ -102,6 +102,18 @@ class PlaybackAndOptionsTest {
         assertEquals(1.0, pdf.getDouble("justificationMaxVertical"), 0.0)
     }
 
+    /**
+     * The last line of a page laid out like its PDF goes across the page as the PDF's does: Verovio
+     * stretched it only when it took 80 % of the width already, and the last line of Savoir aimer
+     * took half the screen (maintainer, 2026-11-21).
+     */
+    @Test
+    fun theLastLineOfAPdfGoesAcrossThePage() {
+        val spec = LayoutSpec(width = 1200, height = 1800)
+        assertFalse(VerovioOptions.layout(spec).has("minLastJustification"))
+        assertEquals(0.0, VerovioOptions.layout(spec.copy(fileBreaks = true)).getDouble("minLastJustification"), 0.0)
+    }
+
     @Test
     fun annotatingSpacesTheLinesOfMusicOut() {
         val spec = LayoutSpec(width = 1200, height = 1800)

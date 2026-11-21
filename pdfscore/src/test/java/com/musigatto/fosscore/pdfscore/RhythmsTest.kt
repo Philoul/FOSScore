@@ -541,6 +541,28 @@ class RhythmsTest {
     }
 
     /**
+     * A grace note alone, its flag too small to be read, is an eighth (an acciaccatura, slashed),
+     * not a quarter (J'ai encore rêvé d'elle, tenor, measure 40).
+     */
+    /** X heads are a drum's, not pitches (a snare drum over a piano, J'ai encore rêvé d'elle measure 41). */
+    @Test
+    fun xHeadsAreMarked() {
+        val drum = head(100.0, c5, name = "noteheadXBlack")
+        val note = head(130.0, g4)
+        val measure = read(listOf(drum, note), listOf(stemUp(drum), stemUp(note))).single()
+        assertEquals(listOf(setOf(0), emptySet<Int>()), measure.events.map { (it.event as Chord).crossHeads })
+    }
+
+    @Test
+    fun aGraceNoteAloneIsAnEighth() {
+        val grace = head(100.0, c5, height = 0.65)
+        val note = head(110.0, g4)
+        val measure = read(listOf(grace, note), listOf(stemUp(grace), stemUp(note))).single()
+        val chords = measure.events.map { it.event as Chord }
+        assertEquals(listOf(NoteType.EIGHTH, NoteType.QUARTER), chords.map { it.duration.type })
+    }
+
+    /**
      * A grace note has a stem: a small whole head is a curve misread (a slur's end in J'ai encore
      * rêvé d'elle, measure 28), and read as a grace note it broke the beam it sat in.
      */

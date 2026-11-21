@@ -40,6 +40,8 @@ data class Chord(
     val arpeggiate: Boolean = false,
     val fermata: Boolean = false,
     val lyric: Lyric? = null,
+    /** The notes (by index) drawn with an x head: a drum's, with no pitch. */
+    val crossHeads: Set<Int> = emptySet(),
 ) : Event
 
 /** What a beam does at one stem: begins, goes on or ends there, or is a hook on that stem alone. */

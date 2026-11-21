@@ -53,9 +53,12 @@ object Rhythms {
         // a grace note has a stem: a small whole head on its own is a curve misread
         val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && !cue(it) }.map { chord ->
             val onStem = beamsAt(chord, beams, space)
+            val grace = small(chord) && !cue(chord)
+            val value = chord.type ?: blackValue(chord, onStem, reading.symbols, space)
             chord.copy(
-                type = chord.type ?: blackValue(chord, onStem, reading.symbols, space),
-                grace = small(chord) && !cue(chord),
+                // a grace note alone is an eighth (an acciaccatura): its small flag is seldom read
+                type = if (grace && value == NoteType.QUARTER && onStem.isEmpty()) NoteType.EIGHTH else value,
+                grace = grace,
                 beams = onStem,
             )
         } + rests
@@ -259,6 +262,9 @@ object Rhythms {
 
     private val FLAG = Regex("^flag(\\d+)")
 
+    /** An x head (a drum's, with no pitch): SMuFL's noteheadX… and noteheadCircleX… */
+    private fun crossHead(name: String?): Boolean = name?.let { it.startsWith("noteheadX") || it.startsWith("noteheadCircleX") } == true
+
     /** The value a head shows by itself (whole, half), null for a black one (its stem says the rest). */
     private fun headValue(name: String?): NoteType? = when {
         name == null -> null
@@ -450,6 +456,7 @@ object Rhythms {
                         notes.withIndex().mapNotNull { (i, note) -> note.accidental?.let { i to it } }.toMap(),
                         draft.arpeggiate,
                         draft.fermata,
+                        crossHeads = notes.indices.filter { crossHead(notes[it].head.name) }.toSet(),
                     )
                 }
                 result += PlacedEvent(event, draft.box)

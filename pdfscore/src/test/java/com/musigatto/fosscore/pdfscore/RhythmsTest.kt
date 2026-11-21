@@ -560,6 +560,19 @@ class RhythmsTest {
      * A grace note alone, its flag too small to be read, is an eighth (an acciaccatura, slashed),
      * not a quarter (J'ai encore rêvé d'elle, tenor, measure 40).
      */
+    /**
+     * Two whole notes side by side, a little apart (two voices on one note, the second head set
+     * off: Pas de boogie woogie, measure 15), are struck together: one after the other they would
+     * last two measures.
+     */
+    @Test
+    fun wholeNotesSideBySideAreStruckTogether() {
+        val first = head(100.0, c5, name = "noteheadWhole")
+        val second = head(first.box.right + 0.3 * space, c5, name = "noteheadWhole")
+        val measure = read(listOf(first, second), emptyList()).single()
+        assertEquals(listOf(Fraction.ZERO), measure.events.map { it.event.onset }.distinct())
+    }
+
     /** X heads are a drum's, not pitches (a snare drum over a piano, J'ai encore rêvé d'elle measure 41). */
     @Test
     fun xHeadsAreMarked() {
@@ -596,6 +609,43 @@ class RhythmsTest {
      * are a voice of their own, not grace notes: read as grace notes, their rest came first and
      * the piano's rest after it, the piano a beat late (J'ai encore rêvé d'elle, measure 18).
      */
+    /**
+     * Rests drawn under the notes with stems up and over the notes with stems down say the stems
+     * tell the voices: up the upper voice, down the lower one (Pas de boogie woogie, measure 41:
+     * the melody's B♭ and rests over the choirs' notes, which went to the melody's voice).
+     */
+    @Test
+    fun restsBesideBothStemsSayTheStemsTellTheVoices() {
+        val melody = head(100.0, c5)
+        val underMelody = DrawnGlyph("restQuarter", Box(100.0, g4, 100.0 + 1.1 * space, g4 + 2 * space))
+        val choirs = listOf(140.0, 160.0).map { head(it, g4) }
+        val overChoirs = DrawnGlyph("restQuarter", Box(140.0, top - 2 * space, 140.0 + 1.1 * space, top))
+        val measure = read(listOf(melody, underMelody, overChoirs) + choirs, listOf(stemUp(melody)) + choirs.map { stemDown(it) }).single()
+        val voiceOf: Map<String, Int> = measure.events.associate { placed ->
+            val key = (placed.event as? Chord)?.let { c -> "${c.pitches.single()}@${placed.box.left}" } ?: "rest@${placed.box.top}"
+            key to placed.event.voice
+        }
+        assertEquals(1, voiceOf["C5@100.0"])
+        assertEquals(2, voiceOf["G4@140.0"])
+        assertEquals(2, voiceOf["G4@160.0"])
+    }
+
+    /**
+     * Small notes spaced as notes are, leading to no normal note close after them, are a voice of
+     * their own, not grace notes (the choirs' "boogie woogie" in small notes, Pas de boogie woogie
+     * measure 41): read as grace notes, they took no time and the other voice overflowed.
+     */
+    @Test
+    fun smallNotesSpacedAsNotesAreAVoice() {
+        // the melody's notes, normal ones, then the choirs' small ones
+        val normals = listOf(80.0, 95.0, 110.0, 125.0).map { head(it, g4) }
+        val smalls = listOf(150.0, 170.0, 190.0).map { head(it, c5, height = 0.65) }
+        val measure = read(normals + smalls, normals.map { stemUp(it) } + smalls.map { stemDown(it) }).single()
+        val chords = measure.events.map { it.event as Chord }.filter { it.pitches.single().toString() == "C5" }
+        assertEquals(listOf(false, false, false), chords.map { it.grace })
+        assertEquals(3, chords.map { it.onset }.distinct().size)
+    }
+
     @Test
     fun smallNotesStruckWithTheOtherVoiceAreACueVoice() {
         val upperRest = DrawnGlyph("restQuarter", Box(100.0, top - 0.5 * space, 100.0 + 1.1 * space, top + 1.5 * space))

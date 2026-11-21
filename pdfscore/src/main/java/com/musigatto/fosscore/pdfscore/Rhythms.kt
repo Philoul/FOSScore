@@ -36,6 +36,10 @@ object Rhythms {
     /** How near (in spaces) a small note is to a normal note or rest struck with it: a cue line, not grace notes. */
     private const val CUE_ALIGN = 0.6
 
+    /** How high a tie may bulge for its length. */
+    private const val TIE_BULGE = 0.12
+
+
     /** How far (in spaces) a grace note may be from the note it leads to, or from the next grace note. */
     private const val GRACE_LEAD = 2.5
 
@@ -79,9 +83,13 @@ object Rhythms {
         arpeggios(drafts, reading.symbols, space)
         fermatas(drafts, reading.symbols, space)
         val tuplets = tuplets(reading, page.lines, beams, space)
-        val ties = ties(page, reading, space)
+        val ties = ties(page, reading, space, drafts)
 
-        return drafts.groupBy { it.measure }.toSortedMap().map { (measure, items) -> MeasureReading(measure, timed(items, staff, tuplets, ties)) }
+        // the chords each head is a note of (two, for a head shared by two stems)
+        val owners = java.util.IdentityHashMap<StaffNote, MutableList<Draft>>().apply {
+            drafts.filter { !it.rest }.forEach { draft -> draft.notes.forEach { getOrPut(it) { mutableListOf() } += draft } }
+        }
+        return drafts.groupBy { it.measure }.toSortedMap().map { (measure, items) -> MeasureReading(measure, timed(items, staff, tuplets, ties, owners)) }
     }
 
     /**
@@ -90,26 +98,32 @@ object Rhythms {
      * goes on over the line break (its other half starts the next system, before the note it ends
      * on). A curve to a note on another line or space is a slur.
      */
-    private fun ties(page: PageDrawing, reading: StaffReading, space: Double): Set<StaffNote> {
+    private fun ties(page: PageDrawing, reading: StaffReading, space: Double, chords: List<Draft>): Map<StaffNote, StaffNote?> {
         val staff = reading.staff
         val notes = reading.notes
-        val starts = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<StaffNote, Boolean>())
+        // each tie's first note, and the note it ends on (null: over the line break)
+        val starts = java.util.IdentityHashMap<StaffNote, StaffNote?>()
         val besideHead = { p: Point, head: Box -> abs(p.y - head.centerY) <= 1.5 * space }
         for (curve in page.shapes) {
             val box = curve.box
-            if (!curve.curved || box.width < 0.8 * space || box.height > 1.5 * space) continue
+            // a long tie bulges more (a whole note's to the next measure: Pas de boogie woogie's choirs)
+            if (!curve.curved || box.width < 0.8 * space || box.height > maxOf(1.5 * space, TIE_BULGE * box.width)) continue
             val left = curve.points.minBy { it.x }
             val right = curve.points.maxBy { it.x }
             val start = notes.filter { note ->
                 val head = note.head.box
                 left.x >= head.left + 0.2 * head.width && left.x <= head.right + 1.0 * space && besideHead(left, head)
             }.minByOrNull { abs(left.x - it.head.box.right) + abs(left.y - it.head.box.centerY) } ?: continue
-            val next = notes.filter { it.step == start.step && it.head.box.left > start.head.box.right }.minByOrNull { it.head.box.left }
+            // the next note on its line, in a later column: not the head set beside it (two voices
+            // on one note, Pas de boogie woogie's choirs, one chord), however close the next note is
+            // (two tied sixteenths, Lucie measure 126)
+            val chordOf = chords.firstOrNull { chord -> chord.notes.any { it === start } }?.notes.orEmpty()
+            val next = notes.filter { note -> note.step == start.step && note.head.box.left > start.head.box.right && chordOf.none { it === note } }.minByOrNull { it.head.box.left }
             val ends = next?.let { note ->
                 val head = note.head.box
                 right.x >= head.left - 1.0 * space && right.x <= head.right - 0.2 * head.width && besideHead(right, head)
             } ?: (right.x >= staff.right - 1.5 * space)
-            if (ends) starts += start
+            if (ends) starts[start] = next
         }
         return starts
     }
@@ -378,7 +392,9 @@ object Rhythms {
      * voice 1 over them); else everything is one voice. A voice is silent until it shows: an event
      * drawn at the time of another voice's starts then (the rests before it are hidden).
      */
-    private fun timed(items: List<Draft>, staff: Staff, tuplets: List<Tuplet>, ties: Set<StaffNote>): List<PlacedEvent> {
+    private fun timed(items: List<Draft>, staff: Staff, tuplets: List<Tuplet>, ties: Map<StaffNote, StaffNote?>, owners: Map<StaffNote, List<Draft>>): List<PlacedEvent> {
+        // the notes a tie read ends on
+        val tieEnds = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<StaffNote, Boolean>()).apply { ties.values.filterNotNull().forEach { add(it) } }
         val space = staff.space
         val chords = items.filter { !it.rest && !it.grace }
         // chords on two stems struck together: a stem up beside a stem down (heads side by side
@@ -474,11 +490,21 @@ object Rhythms {
                         if (draft.staccato) setOf(Articulation.STACCATO) else emptySet(),
                         draft.beamMarks,
                         draft.notes.firstOrNull()?.octaves ?: 0,
-                        notes.indices.filter { notes[it] in ties }.toSet(),
+                        // a head shared by two stems ties in the voice whose stem the note it ends on has
+                        notes.indices.filter { k ->
+                            val note = notes[k]
+                            val stems = owners[note].orEmpty().map { it.stem }
+                            // the stems of the note it ends on, none of them this head's (a whole note): the stem up's
+                            val endStems = ties[note]?.let { end -> owners[end].orEmpty().map { it.stem }.filter { it in stems } }.orEmpty()
+                            // both shared too: the melody's, the stem up's (Lettre à France, measure 15)
+                            note in ties && (stems.size < 2 || if (endStems.size != 1) draft.stem == Stem.UP else draft.stem in endStems)
+                        }.toSet(),
                         notes.withIndex().mapNotNull { (i, note) -> note.accidental?.let { i to it } }.toMap(),
                         draft.arpeggiate,
                         draft.fermata,
                         crossHeads = notes.indices.filter { crossHead(notes[it].head.name) }.toSet(),
+                        tieEnds = notes.indices.filter { notes[it] in tieEnds }.toSet(),
+                        openTies = notes.indices.filter { notes[it] in ties && ties[notes[it]] == null }.toSet(),
                     )
                 }
                 result += PlacedEvent(event, draft.box)

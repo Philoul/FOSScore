@@ -55,9 +55,16 @@ object OutlineText {
                     (box.width <= LETTER * space || outlines[i] >= 2) && box.height <= TALLEST * space && min(box.width, box.height) > 1.0 &&
                     taken.none { overlaps(it, box) }
             }
-            // a row of several runs on one line is lyrics, not the words of a direction
-            lines(letters, space).groupBy { run -> Math.round(run.bottom / (0.5 * space)) }.values
-                .filter { row -> row.size < LYRICS_ROW }.flatten()
+            // a row of several runs on one line is lyrics or chord symbols, not the words of a
+            // direction; but words wider than a chord symbol in it may be one ("To Coda" at the end
+            // of the chords' line, J'ai encore rêvé d'elle)
+            // letters named as music symbols (the "o", "d", "a" of "To Coda") go with the word they
+            // stand in, never making one alone (a tuplet's number)
+            val named = page.glyphs.map { it.box }.filter { box ->
+                box.bottom <= staff.top && box.top >= staff.top - REACH * space && box.height <= TALLEST * space && taken.none { overlaps(it, box) }
+            }
+            withNamedLetters(lines(letters, space), named, space).groupBy { run -> Math.round(run.bottom / (0.5 * space)) }.values
+                .flatMap { row -> if (row.size < LYRICS_ROW) row else row.filter { it.width >= WIDE_WORDS * space } }
         }.map { Spot(it, Kind.WORDS) }
         return metronome + endings + words
     }
@@ -87,6 +94,28 @@ object OutlineText {
         }
     }
 
+    // [runs] of text with the [named] boxes beside them on their line, close enough to be letters of theirs
+    private fun withNamedLetters(runs: List<Box>, named: List<Box>, space: Double): List<Box> {
+        val out = runs.toMutableList()
+        var grew = true
+        val left = named.toMutableList()
+        while (grew) {
+            grew = false
+            for (box in left.toList()) {
+                val i = out.indexOfFirst { run ->
+                    min(run.bottom, box.bottom) - max(run.top, box.top) >= 0.5 * min(run.height, box.height) &&
+                        box.left - run.right <= GAP * space && run.left - box.right <= GAP * space
+                }
+                if (i >= 0) {
+                    out[i] = union(out[i], box)
+                    left.remove(box)
+                    grew = true
+                }
+            }
+        }
+        return out
+    }
+
     // [letters] in lines of text: side by side, at one height, close enough to be one run
     private fun lines(letters: List<Box>, space: Double): List<Box> {
         val runs = mutableListOf<Box>()
@@ -114,6 +143,9 @@ object OutlineText {
 
     // this many runs of text on one line over a system are a line of lyrics
     private const val LYRICS_ROW = 4
+
+    // how wide (in spaces) words are, in a row of lyrics or chord symbols, to be read all the same
+    private const val WIDE_WORDS = 8.0
 
     // a run less high than this (spaces) is a dot, a dash, an "=" alone: no text. The Tab 3 read
     // dozens of "=" 0.66 space high a score, a third of a second each, at 0.6

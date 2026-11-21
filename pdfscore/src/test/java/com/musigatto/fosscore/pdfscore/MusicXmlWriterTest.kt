@@ -280,6 +280,31 @@ class MusicXmlWriterTest {
         assertEquals(listOf("sharp", "natural", "flat"), notes.map { it.text("accidental") })
     }
 
+    /**
+     * A tie read to its end stops there, not on a note of its pitch written before it: the choirs'
+     * whole B♭ tied from measure 3 to 4 stopped on the melody's B♭ eighth, written first (Pas de
+     * boogie woogie), and the whole note was played again.
+     */
+    @Test
+    fun aTieReadToItsEndStopsThere() {
+        val b4 = Pitch(6, 4, -1)
+        val m1 = listOf(placed(Chord(listOf(b4), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 1, ties = setOf(0), tieEnds = emptySet()), 70.0))
+        val m2 = listOf(
+            placed(Chord(listOf(b4), Duration(NoteType.HALF), Stem.UP, Fraction.of(1, 2), 1, tieEnds = emptySet()), 150.0),
+            placed(Chord(listOf(b4), Duration(NoteType.WHOLE), Stem.NONE, Fraction.ZERO, 2, tieEnds = setOf(0)), 70.0),
+        )
+        val score = ScoreReading(
+            listOf(Part(1)),
+            listOf(
+                ScoreMeasure(1, 0, true, true, listOf(staff(1, m1, time = TimeSignature(4, 4)))),
+                ScoreMeasure(2, 0, false, false, listOf(staff(1, m2, time = TimeSignature(4, 4)))),
+            ),
+        )
+        val notes = parse(MusicXmlWriter.write(score)).all("note").filter { it.all("rest").isEmpty() }
+        val stops = notes.filter { n -> n.all("tie").any { it.getAttribute("type") == "stop" } }
+        assertEquals(listOf("whole"), stops.map { it.text("type") })
+    }
+
     /** A tie starts on its note and stops on the next note of that pitch on the staff, over the barline. */
     @Test
     fun aTieStopsOnTheNextNoteOfItsPitch() {

@@ -294,6 +294,73 @@ class RhythmsTest {
         assertEquals(listOf(setOf(0), emptySet<Int>()), tied(measure))
     }
 
+    /**
+     * A tie from a head shared by two stems is the voice's of the note it ends on (Lettre à France,
+     * measures 9-12: the stem down's half started a tie too, which ended a measure later, a long
+     * arc over the staff).
+     */
+    @Test
+    fun aTieFromASharedHeadIsTheVoiceOfItsEnd() {
+        val shared = head(100.0, g4)
+        val next = head(130.0, g4)
+        val tie = arc(shared.box.right + 0.2 * space, g4 - 0.6 * space, next.box.left - 0.2 * space, g4 - 0.6 * space, -0.6 * space)
+        val measure = read(listOf(shared, next), listOf(stemUp(shared), stemDown(shared), stemUp(next)), listOf(tie)).single()
+        val sharedTies = measure.events.filter { it.box.left == shared.box.left }.associate { (it.event as Chord).stem to (it.event as Chord).ties }
+        assertEquals(mapOf(Stem.UP to setOf(0), Stem.DOWN to emptySet<Int>()), sharedTies)
+    }
+
+    /** A tie from a shared head to a whole note (no stem to go by) stays: the stem up's. */
+    @Test
+    fun aTieFromASharedHeadToAWholeNoteStays() {
+        val shared = head(100.0, g4)
+        val whole = head(200.0, g4, name = "noteheadWhole")
+        val tie = arc(shared.box.right + 0.2 * space, g4 - 0.6 * space, whole.box.left - 0.2 * space, g4 - 0.6 * space, -0.6 * space)
+        val measures = read(listOf(shared, whole), listOf(stemUp(shared), stemDown(shared), barline(170.0)), listOf(tie))
+        val sharedTies = measures[0].events.associate { (it.event as Chord).stem to (it.event as Chord).ties }
+        assertEquals(mapOf(Stem.UP to setOf(0), Stem.DOWN to emptySet<Int>()), sharedTies)
+    }
+
+    /**
+     * Two tied notes as close as a unison's heads, on stems of their own, are tied (Lucie, measure
+     * 126's sixteenths: a tie's end was looked for half a space past its start, and they were lost).
+     */
+    @Test
+    fun closeNotesOnTheirOwnStemsAreTied() {
+        val a = head(100.0, g4)
+        val b = head(a.box.right + 0.45 * space, g4)
+        val tie = arc(a.box.right - 0.2 * space, g4 + 0.6 * space, b.box.left + 0.2 * space, g4 + 0.6 * space, 0.4 * space)
+        val measure = read(listOf(a, b), listOf(stemUp(a), stemUp(b)), listOf(tie)).single()
+        assertEquals(listOf(setOf(0), emptySet<Int>()), tied(measure))
+    }
+
+    /**
+     * A tie from one of two heads side by side (two voices on one note, the second set off) goes
+     * on to the next note, not to the head beside it (the choirs' whole notes of Pas de boogie
+     * woogie, tied from measure 3 to 4).
+     */
+    @Test
+    fun aTieFromAUnisonGoesOnToTheNextNote() {
+        val a = head(100.0, g4, name = "noteheadWhole")
+        val beside = head(a.box.right + 0.3 * space, g4, name = "noteheadWhole")
+        val next = head(200.0, g4, name = "noteheadWhole")
+        val tie = arc(beside.box.right + 0.2 * space, g4 + 0.6 * space, next.box.left - 0.2 * space, g4 + 0.6 * space, 0.6 * space)
+        val measures = read(listOf(a, beside, next), listOf(barline(170.0)), listOf(tie))
+        assertTrue(measures[0].events.any { (it.event as Chord).ties.isNotEmpty() })
+    }
+
+    /**
+     * A long tie bulges more: from a whole note to the next measure's (Pas de boogie woogie, the
+     * choirs' whole notes from measure 3 to 4), two spaces high over twenty-five long.
+     */
+    @Test
+    fun aLongTieBulgesMore() {
+        val a = head(100.0, g4, name = "noteheadWhole")
+        val b = head(240.0, g4, name = "noteheadWhole")
+        val tie = arc(a.box.right + 0.2 * space, g4 + 0.6 * space, b.box.left - 0.2 * space, g4 + 0.6 * space, 2.2 * space)
+        val measures = read(listOf(a, b), listOf(barline(170.0)), listOf(tie))
+        assertEquals(listOf(setOf(0)), tied(measures[0]))
+    }
+
     /** A curve from one note to a note on another line is a slur, no tie. */
     @Test
     fun aCurveToAnotherLineIsNoTie() {

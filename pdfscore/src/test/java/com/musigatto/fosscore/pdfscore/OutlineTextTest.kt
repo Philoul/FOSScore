@@ -130,6 +130,37 @@ class OutlineTextTest {
         assertEquals(emptyList<OutlineText.Spot>(), spots)
     }
 
+    /**
+     * Words in a row of chord symbols ("To Coda" at the end of J'ai encore rêvé d'elle's measure
+     * 63, on the line of the chords) are read: wider than a chord symbol, two words. Taken for
+     * lyrics, the jump to the coda was never read.
+     */
+    @Test
+    fun wideWordsInARowOfChordsAreRead() {
+        val chords = (0 until 5).flatMap { text(100.0 + 60 * it, top - 2 * space, 120.0 + 60 * it, top - space, fill = 20 + it) }
+        val toCoda = text(450.0, top - 2 * space, 500.0, top - space, fill = 30)
+        val spots = OutlineText.spots(PageDrawing(600.0, 800.0, emptyList(), staff, chords + toCoda, emptyList()))
+        assertEquals(listOf(boxOf(toCoda)), spots.map { it.box })
+    }
+
+    /**
+     * Letters named as music symbols ("o", "d", "a" of "To Coda" named a circled x head, a
+     * tuplet's 4, a double sharp: J'ai encore rêvé d'elle, page 6) go with the word they stand in:
+     * the spot read held only "T" and "C".
+     */
+    @Test
+    fun lettersNamedAsSymbolsGoWithTheirWord() {
+        val t = rect(400.0, top - 2 * space, 405.0, top - space, fill = 40)
+        val c = rect(410.0, top - 2 * space, 415.0, top - space, fill = 41)
+        val named = listOf("noteheadCircleX", "tuplet4", "accidentalDoubleSharp").mapIndexed { i, name ->
+            DrawnGlyph(name, Box(406.0 + 10 * i, top - 1.8 * space, 409.0 + 10 * i, top - space))
+        }
+        // a tuplet's number alone over the staff is no word
+        val tuplet = DrawnGlyph("tuplet3", Box(200.0, top - 2 * space, 203.0, top - space))
+        val spots = OutlineText.spots(PageDrawing(600.0, 800.0, named + tuplet, staff, listOf(t, c), emptyList()))
+        assertEquals(listOf(Box(400.0, top - 2 * space, 429.0, top - space)), spots.map { it.box })
+    }
+
     /** Words over the music ("To Coda") read from the pixels are directions, not lyrics. */
     @Test
     fun wordsReadAreDirections() {

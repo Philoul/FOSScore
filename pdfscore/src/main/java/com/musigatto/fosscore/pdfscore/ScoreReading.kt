@@ -3,9 +3,11 @@ package com.musigatto.fosscore.pdfscore
 import com.musigatto.fosscore.pdfscore.music.Chord
 import com.musigatto.fosscore.pdfscore.music.BarStyle
 import com.musigatto.fosscore.pdfscore.music.Clef
+import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
 import com.musigatto.fosscore.pdfscore.music.Repeat
+import com.musigatto.fosscore.pdfscore.music.Rest
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import kotlin.math.abs
 
@@ -214,7 +216,7 @@ object ScoreReader {
         val first = read.firstOrNull()?.first?.firstOrNull()
         val header = first?.let { header(pages[0], it) } ?: Header()
         val named = first?.takeIf { it.staves.size == parts.sumOf { p -> p.staves } }?.let { named(parts, pages[0], it) } ?: parts
-        return ScoreReading(named, tiedAlterations(measures), header)
+        return ScoreReading(named, tiedAlterations(fitVoices(crossStaffStarts(measures, parts))), header)
     }
 
     /**
@@ -238,6 +240,92 @@ object ScoreReader {
             ofSize.reversed().getOrNull(rank)?.let { (first, _) -> first - brace.first }
         } ?: return inOrder
         return inOrder.map { it + shift }.takeIf { places -> places.all { it in 0 until total } } ?: inOrder
+    }
+
+    /**
+     * The [measures] with the time of a part's staves running left to right on all of them: a voice
+     * that does not fill its measure, its first note drawn after notes of another staff of its part,
+     * starts when those end, if it then fits its measure.
+     */
+    internal fun crossStaffStarts(measures: List<ScoreMeasure>, parts: List<Part>): List<ScoreMeasure> {
+        val firsts = parts.runningFold(0) { s, p -> s + p.staves }
+        val partOf = parts.indices.flatMap { p -> List(parts[p].staves) { p } }
+        return measures.map { measure ->
+            val length = measure.staves.firstNotNullOfOrNull { it.time }?.measureLength ?: return@map measure
+            measure.copy(staves = measure.staves.mapIndexed { s, staff ->
+                val part = partOf.getOrNull(s) ?: return@mapIndexed staff
+                if (parts[part].staves < 2) return@mapIndexed staff
+                val others = (firsts[part] until firsts[part] + parts[part].staves).filter { it != s }.mapNotNull { measure.staves.getOrNull(it) }
+                val shifts = staff.events.groupBy { it.event.voice }.mapValues { (_, voice) ->
+                    val first = voice.filter { (it.event as? Chord)?.grace != true }.minByOrNull { it.event.onset } ?: return@mapValues null
+                    if (first.event.onset != Fraction.ZERO || first.event !is Chord) return@mapValues null
+                    val end = voice.filter { (it.event as? Chord)?.grace != true }.maxOf { it.event.onset + it.event.duration.length }
+                    if (end >= length) return@mapValues null
+                    // only a hand silent at the measure's start goes on from the other one: another
+                    // voice of its staff playing then says it starts then too (Lettre à France 24,
+                    // two voices' G2s side by side)
+                    if (staff.events.any { it.event.voice != first.event.voice && it.event.onset == Fraction.ZERO && it.event is Chord }) {
+                        return@mapValues null
+                    }
+                    // the notes of the other staves drawn before it: it starts when they end
+                    val before = others.flatMap { it.events }.filter { it.event is Chord && it.box.right < first.box.left }
+                    val start = before.maxOfOrNull { it.event.onset + it.event.duration.length } ?: return@mapValues null
+                    start.takeIf { it > Fraction.ZERO && end + it <= length }
+                }
+                if (shifts.values.all { it == null }) staff
+                else staff.copy(events = staff.events.map { placed ->
+                    shifts[placed.event.voice]?.let { by -> placed.copy(event = shifted(placed.event, by)) } ?: placed
+                })
+            })
+        }
+    }
+
+    /**
+     * The [measures] with every voice of a staff filling its measure where moving one event does it
+     * (maintainer, 2026-11-21: the time each note is played comes first): a voice longer than its
+     * measure by an event's duration gives that event to a voice of its staff shorter by as much,
+     * where it is drawn among that voice's events.
+     */
+    internal fun fitVoices(measures: List<ScoreMeasure>): List<ScoreMeasure> = measures.map { measure ->
+        val length = measure.staves.firstNotNullOfOrNull { it.time }?.measureLength ?: return@map measure
+        measure.copy(staves = measure.staves.map { staff -> fitVoices(staff, length) })
+    }
+
+    private fun fitVoices(staff: MeasureStaff, length: Fraction): MeasureStaff {
+        fun timed(e: PlacedEvent) = (e.event as? Chord)?.grace != true
+        fun end(events: List<PlacedEvent>) = events.filter(::timed).maxOfOrNull { it.event.onset + it.event.duration.length } ?: Fraction.ZERO
+        val voices = staff.events.groupBy { it.event.voice }
+        for ((a, inA) in voices) {
+            val excess = end(inA) - length
+            if (excess <= Fraction.ZERO) continue
+            for ((b, inB) in voices) {
+                if (b == a || length - end(inB) != excess) continue
+                // a rest first: what a reading gives the wrong voice most
+                val candidates = inA.filter { timed(it) && it.event.duration.length == excess }.sortedBy { if (it.event is Rest) 0 else 1 }
+                for (e in candidates) {
+                    val d = e.event.duration.length
+                    val newA = inA.filter { it !== e }.map { if (it.event.onset > e.event.onset) it.copy(event = shifted(it.event, Fraction.ZERO - d)) else it }
+                    val at = inB.filter { timed(it) && it.box.left < e.box.left }.maxOfOrNull { it.event.onset + it.event.duration.length } ?: Fraction.ZERO
+                    val newB = inB.map { if (it.event.onset >= at) it.copy(event = shifted(it.event, d)) else it } +
+                        e.copy(event = revoiced(e.event, b, at))
+                    if (end(newA) == length && end(newB) == length) {
+                        val others = staff.events.filter { it.event.voice != a && it.event.voice != b }
+                        return staff.copy(events = (others + newA + newB).sortedWith(compareBy<PlacedEvent>({ it.event.onset }, { it.event.voice })))
+                    }
+                }
+            }
+        }
+        return staff
+    }
+
+    private fun revoiced(event: Event, voice: Int, onset: Fraction): Event = when (event) {
+        is Chord -> event.copy(voice = voice, onset = onset)
+        is Rest -> event.copy(voice = voice, onset = onset)
+    }
+
+    private fun shifted(event: Event, by: Fraction): Event = when (event) {
+        is Chord -> event.copy(onset = event.onset + by)
+        is Rest -> event.copy(onset = event.onset + by)
     }
 
     /**

@@ -11,7 +11,8 @@ import org.json.JSONObject
  * [hiddenLyrics]. [marginTop] and [marginBottom] pixels of every page stay free of music, for
  * bars the viewer draws over the page. [annotating] spaces the lines of music out, to leave room
  * for annotations between them. [fileBreaks] keeps the lines and pages the file writes (the
- * MusicXML read from a PDF keeps the PDF's), where the music is otherwise broken to fit the page.
+ * MusicXML read from a PDF keeps the PDF's) and spreads the lines over each page as the PDF
+ * does, where the music is otherwise broken to fit the page and packed at its top.
  */
 data class LayoutSpec(
     val width: Int,
@@ -106,6 +107,11 @@ internal object VerovioOptions {
         put("transpose", interval(spec.semitones))
         put("lyricWordSpace", LYRIC_WORD_SPACE)
         if (spec.annotating) put("spacingSystem", ANNOTATION_SYSTEM_SPACING)
+        // the lines of a page laid out like its PDF spread over the page, as the PDF's do
+        if (spec.fileBreaks) {
+            put("justifyVertically", true)
+            put("justificationMaxVertical", 1.0)
+        }
     }
 
     /** The cheapest layout (one endless system), for a toolkit that is never drawn. */

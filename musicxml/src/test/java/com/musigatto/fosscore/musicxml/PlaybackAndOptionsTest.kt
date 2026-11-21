@@ -88,6 +88,20 @@ class PlaybackAndOptionsTest {
         assertEquals("encoded", VerovioOptions.layout(spec.copy(fileBreaks = true)).getString("breaks"))
     }
 
+    /**
+     * A page laid out like its PDF fills the screen as the PDF does (maintainer, 2026-11-21): Verovio
+     * packs the lines of music at the top, two thirds of the screen for a page the PDF fills, with
+     * its staves as large. Its lines are spread over the whole page.
+     */
+    @Test
+    fun aScoreKeepingItsBreaksFillsThePageLikeItsPdf() {
+        val spec = LayoutSpec(width = 1200, height = 1800)
+        assertFalse(VerovioOptions.layout(spec).optBoolean("justifyVertically"))
+        val pdf = VerovioOptions.layout(spec.copy(fileBreaks = true))
+        assertEquals(true, pdf.getBoolean("justifyVertically"))
+        assertEquals(1.0, pdf.getDouble("justificationMaxVertical"), 0.0)
+    }
+
     @Test
     fun annotatingSpacesTheLinesOfMusicOut() {
         val spec = LayoutSpec(width = 1200, height = 1800)

@@ -158,6 +158,10 @@ the benchmark before it is installed.
 | 30 | J'ai encore rêvé d'elle (playback) | every part plays the piano; a flute chosen for the voice plays every part | the MusicXML read names no MIDI channel: Verovio played every part on channel 1, and the player gives a channel one instrument | fixed 2026-11-20 (`:musicxml`, for any MusicXML): a part naming no channel gets a free one of its own (never 10); MIDI cache 9 |
 | 32 | J'ai encore rêvé d'elle (MusicXML view, measure 28) | stems up to the sky through the staves above | a slur's end read as a small whole head (0.47), so a grace note in the middle of the voice's beam | fixed 2026-11-21: a small whole head not struck with a normal note is no note (a grace note has a stem) |
 | 33 | J'ai encore rêvé d'elle (MusicXML view, parts) | the tenor on the soprano's or the choirs' staff, the soprano on the tenor's, as the systems leave out the voices that rest | reader 21 counted the staves from the piano's brace up; the lyrics are drawn, not written, so not read | fixed 2026-11-21 (`StaffParts`): of every way to give a system's staves to the parts in order, the one where the music goes on most (pitch, last note to next one, clef, a part ending on a note going on) |
+| 34 | J'ai encore rêvé d'elle (repeat, coda) | the repeat ending measure 68 does not go back to 54; the second time, To Coda at 63 jumps to 69 and on to the end | not looked at yet | to do |
+| 35 | J'ai encore rêvé d'elle (measure 41) | the snare drum (x heads, "caisse claire") is played as piano | not looked at yet | to do |
+| 36 | J'ai encore rêvé d'elle (tenor, measure 40) | a small slashed eighth (a short grace note) is read as a half note | not looked at yet | to do |
+| 37 | J'ai encore rêvé d'elle (choirs, measure 54) | "choeurs 2° fois": the choirs should sing the second time only | words not read as a play-once mark | to do, minor |
 | 31 | Pas de boogie woogie (MusicXML view) | the arpeggios of the start, across several voices, read wrong | not looked at yet | to do |
 
 Speed requirement (maintainer, 2026-11-18): reading must go faster than the music at the

@@ -115,7 +115,9 @@ object Rhythms {
                 val head = note.head.box
                 // after its dot, when it has one (a dotted note's tie starts past the dot; a chord's dots
                 // line up after its head set off right, by a second)
-                val reach = dots.filter { it.left >= head.right - 0.2 * space && it.left <= head.right + 3.0 * space && abs(it.centerY - head.centerY) <= space }.maxOfOrNull { it.right } ?: head.right
+                // or right of its chord, past the head set off by a second
+                val chordRight = chords.firstOrNull { chord -> chord.notes.any { it === note } }?.notes?.maxOfOrNull { it.head.box.right } ?: head.right
+                val reach = dots.filter { it.left >= head.right - 0.2 * space && it.left <= head.right + 3.0 * space && abs(it.centerY - head.centerY) <= space }.maxOfOrNull { it.right } ?: chordRight
                 left.x >= head.left + 0.2 * head.width && left.x <= reach + 1.0 * space && besideHead(left, head)
             // the head at its height first: in a chord with a second, the head set off right is not it
             }.minByOrNull { abs(left.y - it.head.box.centerY) + 0.25 * abs(left.x - it.head.box.right) } ?: continue
@@ -126,7 +128,8 @@ object Rhythms {
             val next = notes.filter { note -> note.step == start.step && note.head.box.left > start.head.box.right && chordOf.none { it === note } }.minByOrNull { it.head.box.left }
             val ends = next?.let { note ->
                 val head = note.head.box
-                right.x >= head.left - 1.0 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
+                // from before it, or from the barline before it (over the barline)
+                right.x >= head.left - 1.5 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
             } ?: (right.x >= staff.right - 1.5 * space)
             if (ends) starts[start] = next
         }

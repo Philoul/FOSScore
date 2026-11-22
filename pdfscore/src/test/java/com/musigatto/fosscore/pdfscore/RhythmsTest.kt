@@ -399,6 +399,27 @@ class RhythmsTest {
         assertEquals(setOf(0, 1, 2), (measure.events.first().event as Chord).ties)
     }
 
+    /**
+     * Ties from a chord with a second start right of the chord, past the head set off, and stop
+     * at the barline, more than a space before the next measure's chord (Né en 17 à
+     * Leidenstadt, the accented chord ending measure 16).
+     */
+    @Test
+    fun tiesFromAChordWithASecondOverTheBarline() {
+        val a4 = g4 - 0.5 * space
+        val low = head(100.0, g4)
+        val second = head(low.box.right - 0.1 * space, a4)
+        val stem = DrawnLine(low.box.right, g4, low.box.right, a4 + stemLength, 0.5)
+        val bar = barline(second.box.right + 3.0 * space)
+        val next = listOf(g4, a4).map { head(second.box.right + 4.4 * space, it) }
+        val nextStem = DrawnLine(next[0].box.right, g4, next[0].box.right, a4 - stemLength, 0.5)
+        val from = second.box.right + 0.2 * space
+        val to = bar.x1 - 0.1 * space
+        val ties = listOf(arc(from, g4 + 0.6 * space, to, g4 + 0.6 * space, 0.5 * space), arc(from, a4 - 0.6 * space, to, a4 - 0.6 * space, -0.5 * space))
+        val measures = read(listOf(low, second) + next, listOf(stem, nextStem, bar), ties)
+        assertEquals(setOf(0, 1), (measures[0].events.single().event as Chord).ties)
+    }
+
     /** A curve from one note to a note on another line is a slur, no tie. */
     @Test
     fun aCurveToAnotherLineIsNoTie() {

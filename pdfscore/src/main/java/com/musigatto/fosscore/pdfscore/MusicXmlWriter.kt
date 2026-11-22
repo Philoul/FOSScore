@@ -179,7 +179,7 @@ object MusicXmlWriter {
         staff: Int?,
         clef: Clef?,
         id: (Int) -> String,
-        tied: MutableMap<Pitch, Boolean>,
+        tied: MutableMap<Pitch, MutableList<Boolean>>,
         tuplet: String = "",
     ) {
         val tail = StringBuilder()
@@ -219,11 +219,22 @@ object MusicXmlWriter {
                 event.pitches.forEachIndexed { k, pitch ->
                     // a tie stops on the note it was read to end on, else on the next note of its
                     // pitch (over a line break), and may start again there
-                    val known = pitch?.let { tied[it] }
-                    val stop = pitch != null && !event.grace && known != null && (!known || event.tieEnds?.contains(k) == true)
-                    if (stop && pitch != null) tied.remove(pitch)
+                    // several ties of one pitch may be open (two voices on one note): a note a tie
+                    // was read to end on takes one read to its end, any other one a tie over a line break
+                    val open = pitch?.let { tied[it] }
+                    val taken = when {
+                        open == null || event.grace -> null
+                        event.tieEnds == null -> open.indices.firstOrNull()
+                        k in event.tieEnds -> open.indexOf(true).takeIf { it >= 0 } ?: open.indexOf(false).takeIf { it >= 0 }
+                        else -> open.indexOf(false).takeIf { it >= 0 }
+                    }
+                    val stop = taken != null
+                    if (taken != null && open != null) {
+                        open.removeAt(taken)
+                        if (open.isEmpty()) tied.remove(pitch)
+                    }
                     val start = pitch != null && !event.grace && k in event.ties
-                    if (start && pitch != null) tied[pitch] = event.tieEnds != null && k !in event.openTies
+                    if (start && pitch != null) tied.getOrPut(pitch) { mutableListOf() } += event.tieEnds != null && k !in event.openTies
                     val ties = listOf("stop" to stop, "start" to start).filter { it.second }.map { it.first }
                     out.append("      <note id=\"${id(k)}\">")
                     // a grace eighth alone is an acciaccatura, drawn slashed
@@ -347,7 +358,7 @@ object MusicXmlWriter {
     /** What runs on over barlines on a staff: the octave line in force, the pitches tied on to their next note. */
     private class Running {
         var ottava = 0
-        val tied = mutableMapOf<Pitch, Boolean>()
+        val tied = mutableMapOf<Pitch, MutableList<Boolean>>()
     }
 
     /**

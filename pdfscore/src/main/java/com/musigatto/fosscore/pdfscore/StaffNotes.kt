@@ -69,7 +69,11 @@ object StaffNotes {
         // A tuplet's number goes with the notes nearest to it, stems included (it stands at their
         // end): high over a melody's stems, it may be closer to the staff above.
         val notes = assigned.entries.filter { isHead(it.key.name) }.map { (head, staff) -> withStem(head, page.lines) to staff }
-        for (number in tupletNumbers(page.texts) + page.glyphs.filter { isTupletNumber(it.name) }) {
+        // an outlined "8va" (its "8" named a tuplet's number) is the octave line of the staff it is
+        // closest to, not of the notes closest to it (between two staves: Pas de boogie woogie)
+        val octaveDigits = page.glyphs.filter { it.name in OCTAVE_DIGITS && dashedAfter(it, page) }
+        for (digit in octaveDigits) staffOf(digit.box, staves.map { it.second })?.let { assigned[digit] = it }
+        for (number in tupletNumbers(page.texts) + page.glyphs.filter { isTupletNumber(it.name) && it !in octaveDigits }) {
             notes.minByOrNull { (box, _) -> distance(box, number.box.centerX, number.box.centerY) }?.let { assigned[number] = it.second }
         }
         val byStaff = assigned.entries.groupBy({ it.value }, { it.key })
@@ -80,7 +84,7 @@ object StaffNotes {
             extraBars: List<Double> = emptyList(),
         ): StaffReading {
             val index = staves.indexOfFirst { it.second === staff }
-            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef, extraBars)
+            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef, extraBars, page.shapes)
         }
         val readings = systems.map { system -> system.staves.map { staff -> readStaff(system, staff) } }
         // a staff whose clef was not read (a scan) takes the one its place has in the nearest
@@ -116,6 +120,24 @@ object StaffNotes {
     }
 
     private fun isTupletNumber(name: String?): Boolean = name != null && name.startsWith("tuplet")
+
+    /** Whether dashes run on from [digit] at its height (its own height the scale): an octave line's. */
+    private fun dashedAfter(digit: DrawnGlyph, page: PageDrawing): Boolean {
+        val h = digit.box.height
+        val dashes = page.lines.filter { it.isHorizontal && it.length <= h }
+            .map { Box(minOf(it.x1, it.x2), it.y1 - it.width / 2, maxOf(it.x1, it.x2), it.y1 + it.width / 2) } +
+            page.shapes.filter { !it.curved && it.box.height <= 0.25 * h && it.box.width <= h }.map { it.box }
+        var end = digit.box.right
+        var count = 0
+        dashes.filter { it.centerY >= digit.box.top - 0.3 * h && it.centerY <= digit.box.bottom + 0.3 * h && it.left >= digit.box.right }
+            .sortedBy { it.left }.forEach { dash ->
+                if (dash.left - end <= (if (count == 0) 2.0 else 1.5) * h) {
+                    end = maxOf(end, dash.right)
+                    count++
+                }
+            }
+        return count >= MIN_DASHES
+    }
 
     /**
      * The notes on one stem are one chord, on one staff: a bass chord's top note over the bass staff
@@ -214,6 +236,7 @@ object StaffNotes {
         lines: List<DrawnLine>,
         fallbackClef: Clef? = null,
         extraBars: List<Double> = emptyList(),
+        shapes: List<DrawnShape> = emptyList(),
     ): StaffReading {
         val space = staff.space
         val heads = symbols.filter { isHead(it.name) && onLedgers(it, staff, lines) }
@@ -257,7 +280,7 @@ object StaffNotes {
             }.minByOrNull { it.box.left }?.let { head -> written[head] = ALTERS.getValue(accidental.name.orEmpty()) }
         }
 
-        val ottavas = ottavas(staff, symbols, lines)
+        val ottavas = ottavas(staff, symbols, lines, shapes)
 
         // An accidental holds for the rest of its measure, on its line or space.
         val inMeasure = mutableMapOf<Int, Int>()
@@ -294,9 +317,32 @@ object StaffNotes {
      * The octave lines of a staff: from their "8" (or "15") to the end of the dashed line after it,
      * with the octaves they move the notes under them.
      */
-    private fun ottavas(staff: Staff, symbols: List<DrawnGlyph>, lines: List<DrawnLine>): List<Pair<ClosedFloatingPointRange<Double>, Int>> {
+    private fun ottavas(staff: Staff, symbols: List<DrawnGlyph>, lines: List<DrawnLine>, shapes: List<DrawnShape>): List<Pair<ClosedFloatingPointRange<Double>, Int>> {
         val space = staff.space
-        return symbols.mapNotNull { glyph ->
+        // "8va" drawn as outlines: its "8" named as a digit (a tuplet's, a time's, a fingering's),
+        // out of the staff, then a run of dashes at its height, short lines or small filled
+        // rectangles (Pas de boogie woogie); over the staff an octave up, under it down
+        val dashes = lines.filter { it.isHorizontal && it.length <= 1.2 * space }
+            .map { Box(minOf(it.x1, it.x2), it.y1 - it.width / 2, maxOf(it.x1, it.x2), it.y1 + it.width / 2) } +
+            shapes.filter { !it.curved && it.box.height <= 0.35 * space && it.box.width in 0.2 * space..1.2 * space }.map { it.box }
+        val outlined = symbols.filter { it.name in OCTAVE_DIGITS }.mapNotNull { digit ->
+            val over = digit.box.bottom < staff.top - 0.3 * space
+            val under = digit.box.top > staff.bottom + 0.3 * space
+            if (!over && !under) return@mapNotNull null
+            var end = digit.box.right
+            var count = 0
+            dashes.filter { it.centerY >= digit.box.top - 0.5 * space && it.centerY <= digit.box.bottom + 0.5 * space && it.left >= digit.box.right }
+                .sortedBy { it.left }.forEach { dash ->
+                    // the first dash after the "va", the others close after the last
+                    if (dash.left - end <= (if (count == 0) 3.0 else 2.0) * space) {
+                        end = maxOf(end, dash.right)
+                        count++
+                    }
+                }
+            if (count < MIN_DASHES) return@mapNotNull null
+            (digit.box.left - space..end) to (if (under) -1 else 1)
+        }
+        return outlined + symbols.mapNotNull { glyph ->
             val name = glyph.name.orEmpty()
             val octaves = when {
                 name.startsWith("ottava") -> 1
@@ -551,6 +597,10 @@ object StaffNotes {
         "accidentalDoubleSharp" to 2,
         "accidentalDoubleFlat" to -2,
     )
+
+    /** The names an outlined "8" of "8va" may be given (a tuplet's, a time's, a fingering's digit), and the dashes after it that make it an octave line. */
+    private val OCTAVE_DIGITS = setOf("tuplet8", "timeSig8", "fingering8")
+    private const val MIN_DASHES = 3
 
     private val KEY_SIGNS = setOf("accidentalSharp", "accidentalFlat")
 

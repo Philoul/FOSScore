@@ -215,6 +215,42 @@ class StaffNotesTest {
         assertEquals(listOf(1, 1, 0), staff.notes.map { it.octaves })
     }
 
+    /**
+     * "8va" drawn as outlines: its "8" named a tuplet's number, its dashes small filled rectangles
+     * (Pas de boogie woogie, measures 43-45: the octave line was not read, the notes an octave low).
+     */
+    @Test
+    fun anOttavaDrawnAsOutlinesRaisesTheNotes() {
+        val top = 100.0
+        val eight = DrawnGlyph("tuplet8", Box(95.0, top - 3.5 * space, 99.0, top - 2 * space))
+        fun rect(l: Double, t: Double, r: Double, b: Double) = DrawnShape(listOf(Point(l, t), Point(r, t), Point(r, b), Point(l, b), Point(l, t)), curved = false, fill = 9)
+        val dashes = (0 until 10).map { i -> rect(104.0 + i * 5, top - 3.4 * space, 106.8 + i * 5, top - 3.25 * space) }
+        val glyphs = listOf(gClef(55.0, top), eight, head(100.0, top), head(140.0, top), head(170.0, top))
+        val page = PageDrawing(600.0, 800.0, glyphs, staffLines(top), dashes, emptyList())
+        val staff = StaffNotes.read(page, Staves.find(page)).single().single()
+        assertEquals(listOf(1, 1, 0), staff.notes.map { it.octaves })
+    }
+
+    /**
+     * An outlined "8" with its dashes between two staves is the octave line of the staff it is
+     * closest to, not of the notes closest to it (Pas de boogie woogie, the "(8)" of measures
+     * 48-52 over the piano: given to the voice above, its notes went an octave down).
+     */
+    @Test
+    fun anOttavaBetweenTwoStavesIsTheClosestStaffs() {
+        val upper = 100.0
+        val lower = upper + 12 * space
+        val eight = DrawnGlyph("tuplet8", Box(95.0, lower - 3.5 * space, 99.0, lower - 2 * space))
+        fun rect(l: Double, t: Double, r: Double, b: Double) = DrawnShape(listOf(Point(l, t), Point(r, t), Point(r, b), Point(l, b), Point(l, t)), curved = false, fill = 9)
+        val dashes = (0 until 12).map { i -> rect(104.0 + i * 5, lower - 3.4 * space, 106.8 + i * 5, lower - 3.25 * space) }
+        // a low note of the upper staff, closer to the "8" than any note of the lower one
+        val glyphs = listOf(gClef(55.0, upper), gClef(55.0, lower), eight, head(100.0, upper + 5 * space), head(140.0, lower), head(200.0, lower))
+        val page = PageDrawing(600.0, 800.0, glyphs, staffLines(upper) + staffLines(lower), dashes, emptyList())
+        val staves = StaffNotes.read(page, Staves.find(page)).flatten()
+        assertEquals(listOf(0), staves[0].notes.map { it.octaves })
+        assertEquals(listOf(1, 0), staves[1].notes.map { it.octaves })
+    }
+
     private fun repeatDots(x: Double, top: Double) =
         listOf(glyph("augmentationDot", x, top + 1.5 * space, 0.4, 0.5, 0.4), glyph("augmentationDot", x, top + 2.5 * space, 0.4, 0.5, 0.4))
 

@@ -41,6 +41,26 @@ class OutlineSymbolsTest {
         assertEquals(emptyList<DrawnShape>(), named.shapes)
     }
 
+    /**
+     * A fermata (an arc over a dot) looks like no letter: it is named (Pas de boogie woogie, printed
+     * without its fonts: none of its fermatas was read).
+     */
+    @Test
+    fun aFermataIsNamed() {
+        // an arc, thick, over a dot
+        fun arc(cx: Double, cy: Double, r: Double): List<Point> =
+            (0..16).map { i -> Point(cx - r * cos(PI * i / 16), cy - r * sin(PI * i / 16)) } +
+                (16 downTo 0).map { i -> Point(cx - 0.75 * r * cos(PI * i / 16), cy - 0.6 * r * sin(PI * i / 16)) }
+        val fermata = SymbolClassifier(listOf(FontSymbol("A", "fermataAbove", listOf(arc(0.0, 0.0, 1.0), ellipse(0.0, -0.2, 0.15, 0.15)))))
+        val drawn = listOf(arc(100.0, top - 2 * space, space), ellipse(100.0, top - 2.2 * space, 0.15 * space, 0.15 * space))
+        val named = OutlineSymbols(fermata).name(page(drawn))
+        assertEquals(listOf("fermataAbove"), named.glyphs.map { it.name })
+        // a flat arc, no dot (a tie): it looks like one only a little, and holds no note (Lettre à France, page 2)
+        val flat = (0..16).map { i -> Point(100.0 - space * cos(PI * i / 16), top - 2 * space - 0.3 * space * sin(PI * i / 16)) } +
+            (16 downTo 0).map { i -> Point(100.0 - space * cos(PI * i / 16), top - 2 * space - 0.15 * space * sin(PI * i / 16)) }
+        assertEquals(emptyList<String?>(), OutlineSymbols(fermata).name(page(listOf(flat))).glyphs.map { it.name })
+    }
+
     /** The outlines of one fill are one symbol: a half note's head is its outline and its hole. */
     @Test
     fun theSubpathsOfOneFillAreOneSymbol() {

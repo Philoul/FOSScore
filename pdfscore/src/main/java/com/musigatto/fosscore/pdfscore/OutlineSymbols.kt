@@ -36,6 +36,8 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
                     ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
                     // a jump's sign must look like one: a false segno makes the music jump
                     ?.takeIf { !(it.name == "segno" || it.name.startsWith("coda")) || it.score >= JUMP_SIGN }
+                    // and a fermata: a tie's arc looks a little like one (0.6, a fermata 0.96 and over)
+                    ?.takeIf { !it.name.startsWith("fermata") || it.score >= JUMP_SIGN }
                     // so must a clef: a false one changes the pitch of every note after it
                     ?.takeIf { !it.name.contains("Clef") || it.score >= CLEF_SIGN }
                     // a tuplet's number out of the staff only (inside, a digit is a time signature's)
@@ -128,11 +130,11 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
         /**
          * The symbols named by their look: those no letter or digit looks like. Text drawn as
          * outlines (measure numbers, lyrics, "rit.") would otherwise read as octave lines, dynamics,
-         * ornaments. A time signature's digits are named inside the staff only; a metronome mark's
+         * ornaments; a fermata (an arc over a dot) looks like none. A time signature's digits are named inside the staff only; a metronome mark's
          * note and dot ("♩. = 60") over it only; a tuplet's number out of it only (it joins the
          * notes of a beam or a bracket, which a measure number or a fingering does not).
          */
-        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda", "metNote", "metAugmentationDot", "tuplet")
+        private val NAMED = listOf("notehead", "accidental", "rest", "flag", "augmentationDot", "timeSig", "segno", "coda", "metNote", "metAugmentationDot", "tuplet", "fermata")
 
         fun named(name: String): Boolean = NAMED.any { name.startsWith(it) } || name.contains("Clef")
 

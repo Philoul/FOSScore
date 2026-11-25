@@ -93,6 +93,22 @@ class StavesTest {
         assertEquals(emptyList<IntRange>(), systems[1].braces)
     }
 
+    /**
+     * Two systems side by side on one row (the end of a piece, then its coda after a gap: Pas de
+     * boogie woogie, page 6): each staff goes with the one above it on its side, not with the
+     * staff beside it, read left to right.
+     */
+    @Test
+    fun twoSystemsSideBySideAreTwoSystemsOfThreeStaves() {
+        val tops = listOf(100.0, 150.0, 200.0)
+        val lines = tops.flatMap { staffLines(it, 50.0, 280.0) + staffLines(it, 320.0, 550.0) } +
+            DrawnLine(50.0, 100.0, 50.0, 220.0, 1.0) + DrawnLine(320.0, 100.0, 320.0, 220.0, 1.0)
+        val systems = Staves.find(page(lines))
+        assertEquals(listOf(3, 3), systems.map { it.staves.size })
+        assertEquals(listOf(50.0, 320.0), systems.map { it.staves.first().left })
+        assertEquals(listOf(listOf(50.0, 50.0, 50.0), listOf(320.0, 320.0, 320.0)), systems.map { s -> s.staves.map { it.left } })
+    }
+
     /** MuseScore 3 draws its braces as outlines; a scan's brace will come the same way. */
     @Test
     fun aBraceDrawnAsATallCurvedShapeJoinsTheStaves() {

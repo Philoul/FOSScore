@@ -444,8 +444,7 @@ class ScoreEngine(
         const val CACHE_VERSION = MUSIC_CACHE_VERSION
         // the music kept in the cache (MIDI, timing, fermatas): staccatos played made it 2,
         // shorter staccatos, fermatas held by their length and repeats to each forward repeat 3;
-        // a new one makes the music
-        // again, not the pages
+        // a new one makes the music again, not the pages
         private const val SOUND_VERSION = 3
     }
 }

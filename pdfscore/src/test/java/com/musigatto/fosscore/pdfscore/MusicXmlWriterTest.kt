@@ -431,4 +431,19 @@ class MusicXmlWriterTest {
         assertEquals(listOf("G", "F"), doc.all("clef").map { it.text("sign") })
         assert(xml.indexOf("<sign>F</sign>") in xml.indexOf("C</step>")..xml.indexOf("<step>G</step><octave>2"))
     }
+
+    /**
+     * The staccato of a chord is one dot: written on its first note only.
+     * Written on each note, Verovio drew a dot per note, stacked over the chord (Savoir aimer, La
+     * groupie du pianiste).
+     */
+    @Test
+    fun aChordHasOneStaccato() {
+        val events = listOf(
+            placed(Chord(listOf(Pitch(0, 4), Pitch(2, 4), Pitch(4, 4)), Duration(NoteType.QUARTER), Stem.UP, Fraction.ZERO, 1, articulations = setOf(Articulation.STACCATO)), 70.0),
+        )
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, events)))))
+        val notes = parse(MusicXmlWriter.write(score)).all("note")
+        assertEquals(listOf(1, 0, 0), notes.map { it.all("staccato").size })
+    }
 }

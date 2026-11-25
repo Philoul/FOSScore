@@ -215,6 +215,9 @@ object Unfold {
         val readSign = toWords.firstNotNullOfOrNull { w -> w.substringAfterLast("to").trim().firstOrNull() }
         val toSegnoRead = !segnoSign && !codaSign && readSign != null && readSign in SEGNO_READ
         val toCodaRead = !segnoSign && !codaSign && readSign != null && readSign in CODA_READ
+        // "al Coda" with no D.S. or D.C. before it ("3° fois al Coda" and its sign): a To Coda,
+        // and its sign is where to go, not where the coda is
+        val alCoda = AL_CODA.containsMatchIn(words) && !Regex("""\bd\.\s*[sc]\.|dal segno|da capo""").containsMatchIn(words)
         return Info(
             forward = left.flatMap { it.childElements("repeat") }.any { it.getAttribute("direction") == "forward" },
             backward = repeatBack != null,
@@ -223,8 +226,8 @@ object Unfold {
             endingStop = right.flatMap { it.childElements("ending") }.any { it.getAttribute("type") == "stop" || it.getAttribute("type") == "discontinue" },
             finalBar = repeatBack == null && right.flatMap { it.childElements("bar-style") }.any { it.textContent.trim() == "light-heavy" },
             segno = segnoSign && !(toSign && !codaSign),
-            coda = codaSign && !sound("tocoda") && "to coda" !in words && !toSign,
-            toCoda = sound("tocoda") || "to coda" in words || (toSign && codaSign) || toCodaRead,
+            coda = codaSign && !sound("tocoda") && "to coda" !in words && !alCoda && !toSign,
+            toCoda = sound("tocoda") || "to coda" in words || alCoda || (toSign && codaSign) || toCodaRead,
             dalSegno = sound("dalsegno") || Regex("""\bd\.\s*s\.""").containsMatchIn(words) || (toSign && segnoSign && !codaSign) || toSegnoRead,
             daCapo = sound("dacapo") || Regex("""\bd\.\s*c\.""").containsMatchIn(words),
             fine = sound("fine") || Regex("""\bfine\b""").containsMatchIn(words),
@@ -311,6 +314,9 @@ object Unfold {
     // words ending in "to", a sign drawn after them: "To" (segno), "3. To" (coda); the OCR may
     // read the sign too ("To $", "3. To @")
     private val TO_SIGN = Regex("""(^|[\s.])to[^a-z0-9]*$""")
+
+    // "al Coda", "3° fois al Coda": a jump to the coda
+    private val AL_CODA = Regex("""\bal coda\b""")
 
     // what the OCR reads a segno and a coda sign as (Savoir aimer on the Tab 3: "$" and "@")
     private val SEGNO_READ = setOf('$', '§', '%', 's')

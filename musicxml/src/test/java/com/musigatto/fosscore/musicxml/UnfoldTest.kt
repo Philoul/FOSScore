@@ -235,4 +235,25 @@ class UnfoldTest {
         assertTrue(xml.contains("id=\"fosscore-measure-2-rend2\""))
         assertTrue(xml.contains("id=\"n3\""))
     }
+
+    /**
+     * Pas de boogie woogie: a segno at the repeat's start; "3° fois al Coda" and its sign at the
+     * end of the measure before the endings; "1." then "2."; a D.S. (the segno ending 72) back to
+     * the segno, the third pass to the coda. "al Coda" with its sign is a jump, not the coda.
+     */
+    @Test
+    fun alCodaWithItsSignIsAJumpTakenAfterTheDalSegno() {
+        val boogie = listOf(
+            M(),
+            M(forward = true, segno = true),
+            M(coda = true, words = "3° fois al Coda"),
+            M(ending = "1."),
+            M(endingStop = true, backward = true),
+            M(ending = "2."),
+            M(words = "D.S."),
+            M(coda = true),
+            M(finalBar = true),
+        )
+        assertEquals(listOf(1, 2, 3, 4, 5, 2, 3, 6, 7, 2, 3, 8, 9), played(boogie))
+    }
 }

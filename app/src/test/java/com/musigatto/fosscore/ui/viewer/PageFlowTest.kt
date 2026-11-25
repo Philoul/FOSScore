@@ -68,6 +68,16 @@ class PageFlowTest {
     }
 
     @Test
+    fun halfPage_aJumpBackToTheTopOfThePageTurnedShowsTheWholePage() {
+        // turned: the end of page 2 under the top of page 3; a repeat goes back to the top of
+        // page 2, which the top of page 3 covers
+        val turned = half(1, halfTurned = true)
+        assertEquals(half(1), turned.follow(target = 1, aheadInLowerPart = false, onScreen = false, ahead = 1))
+        // the music at the end of page 2, on screen: the turn stays
+        assertEquals(turned, turned.follow(target = 1, aheadInLowerPart = false, onScreen = true, ahead = 2))
+    }
+
+    @Test
     fun follow_jumpsToAPageOffScreen() {
         assertEquals(3, single(0).follow(target = 3, aheadInLowerPart = false, onScreen = false).page)
         val f = half(0, halfTurned = true).follow(target = 4, aheadInLowerPart = false, onScreen = false)

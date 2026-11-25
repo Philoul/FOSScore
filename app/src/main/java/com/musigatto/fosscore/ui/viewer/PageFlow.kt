@@ -63,8 +63,10 @@ data class PageFlow(
         showHalf -> when {
             !halfTurned && ahead > page && target in page..page + 1 && page + 1 < pageCount -> copy(halfTurned = true)
             halfTurned && target == page + 1 && (ahead > page + 1 || aheadInLowerPart) -> copy(page = target, halfTurned = false)
-            // turned, the music at the end of this page or at the top of the next: both on screen
-            halfTurned && target in page..page + 1 -> this
+            // turned, the music at the end of this page or at the top of the next: both on screen.
+            // Not the top of this page, which the next one covers: a jump back there (56 -> 25 in
+            // Savoir aimer) shows the whole page.
+            halfTurned && (target == page + 1 || (target == page && onScreen)) -> this
             onScreen -> this
             else -> copy(page = target, halfTurned = false)
         }

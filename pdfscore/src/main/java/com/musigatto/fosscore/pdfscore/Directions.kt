@@ -37,8 +37,10 @@ object Directions {
         val staff = system.staves.first()
         val space = staff.space
         val over = { y: Double -> y < staff.top && y >= staff.top - REACH * space }
+        // over this system only: two systems may stand side by side on one row (a coda after a gap)
+        val across = { x: Double -> x >= staff.left - 2 * space && x <= staff.right }
         // a metronome mark may stand over the chord symbols, higher than words
-        val tempos = page.glyphs.filter { it.box.bottom < staff.top && it.box.bottom >= staff.top - ENDING_REACH * space }.mapNotNull { note ->
+        val tempos = page.glyphs.filter { it.box.bottom < staff.top && it.box.bottom >= staff.top - ENDING_REACH * space && across(it.box.left) }.mapNotNull { note ->
             val beat = BEATS[note.name] ?: return@mapNotNull null
             val dots = page.glyphs.count { dot ->
                 dot.name == "metAugmentationDot" && dot.box.left >= note.box.right - 0.1 * space &&
@@ -49,8 +51,8 @@ object Directions {
                 ?.let { PER_MINUTE.find(it.text)?.groupValues?.get(1)?.toIntOrNull() }
                 ?.let { TempoMark(note.box.left, beat, dots, it) }
         }
-        val words = page.texts.filter { over(it.y) && isWords(it.text) }.map { Words(it.x, it.text.trim()) }
-        val marks = page.glyphs.filter { over(it.box.bottom) }.mapNotNull { glyph ->
+        val words = page.texts.filter { over(it.y) && across(it.x) && isWords(it.text) }.map { Words(it.x, it.text.trim()) }
+        val marks = page.glyphs.filter { over(it.box.bottom) && across(it.box.left) }.mapNotNull { glyph ->
             when (glyph.name) {
                 "segno" -> Mark(glyph.box.left, Mark.Kind.SEGNO)
                 "coda", "codaSquare" -> Mark(glyph.box.left, Mark.Kind.CODA)
@@ -84,7 +86,8 @@ object Directions {
         val strokes = Strokes.of(page)
         val hooks = strokes.filter { it.isVertical && it.length in 0.5 * space..3.0 * space }
         strokes.filter { line ->
-            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - ENDING_REACH * space
+            line.isHorizontal && line.length >= 2 * space && line.y1 < staff.top - 0.5 * space && line.y1 >= staff.top - ENDING_REACH * space &&
+                minOf(line.x1, line.x2) >= staff.left - 2 * space && minOf(line.x1, line.x2) <= staff.right
         }.mapNotNull { line ->
             val left = minOf(line.x1, line.x2)
             val right = maxOf(line.x1, line.x2)
@@ -124,7 +127,9 @@ object Directions {
 
     /** The usual tempo and expression words, at the start of the text. */
     private val WORDS = Regex(
-        """^\s*(rall|rit|ritard|riten|accel|a tempo|tempo|rubato|poco|molto|meno|più|piu|cresc|decresc|dim|smorz|morendo|""" +
+        // the pass it is for first, maybe: "3° fois al Coda", "2nd time to Coda"
+        """^\s*(?:\d+\s*(?:°|ème|eme|e|st|nd|rd|th)?\.?\s*(?:fois|times?)\s+)?""" +
+            """(rall|rit|ritard|riten|accel|a tempo|tempo|rubato|poco|molto|meno|più|piu|cresc|decresc|dim|smorz|morendo|""" +
             """calando|allarg|string|sostenuto|dolce|espress|fine|d\.\s?c\.|d\.\s?s\.|da capo|dal segno|al coda|to coda|""" +
             """lento|largo|adagio|andante|moderato|allegr|presto|vivace|""" +
             // "To" and a sign: "To 𝄋", "3. To ⊕" (the OCR reads the sign too: "To $", "3. To @")

@@ -471,7 +471,12 @@ object ScoreReader {
             repeatStart = staff.barRepeats.getOrNull(m - 1).let { it == Repeat.FORWARD || it == Repeat.BOTH } || (m == 0 && staff.opensRepeat),
             repeatEnd = staff.barRepeats.getOrNull(m).let { it == Repeat.BACKWARD || it == Repeat.BOTH },
             // a direction over the clef and key of a system's first measure is its
-            directions = directions.filter { (m == 0 || it.x >= left) && it.x < right },
+            // a segno after the measure's last note is where to go back to, not where one is: a
+            // segno marks the start of its measure (Pas de boogie woogie, 72: back to 19)
+            directions = directions.filter { (m == 0 || it.x >= left) && it.x < right }.map { direction ->
+                val end = events.maxOfOrNull { it.box.right }
+                if (direction is Mark && direction.kind == Mark.Kind.SEGNO && end != null && direction.x > end) Words(direction.x, "D.S.") else direction
+            },
             // an ending starts in the measure its bracket starts over, stops in the one it reaches the end of
             endingStart = endings.firstOrNull { (m == 0 || it.x >= left - lines.space) && it.x < right - lines.space }?.numbers,
             endingStop = endings.firstOrNull { it.right > left + lines.space && it.right <= right + lines.space }?.let { it.numbers to it.closed },

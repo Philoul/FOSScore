@@ -72,6 +72,33 @@ class DirectionsTest {
     }
 
     /**
+     * Two systems side by side on one row: what is over one is not the other's (Pas de boogie
+     * woogie, page 6: the segno ending 72 was read over the coda beside it too).
+     */
+    @Test
+    fun whatIsOverTheSystemBesideIsNotThisOnes() {
+        val lines = (0..4).flatMap { listOf(DrawnLine(50.0, top + it * space, 280.0, top + it * space, 0.5), DrawnLine(320.0, top + it * space, 550.0, top + it * space, 0.5)) }
+        val segno = DrawnGlyph("segno", Box(260.0, top - 4 * space, 268.0, top - 1.5 * space))
+        val page = PageDrawing(600.0, 800.0, listOf(segno), lines, emptyList(), listOf(DrawnText("Fine", "font_4", 400.0, top - 2 * space, 12.0)))
+        val read = Directions.read(page, Staves.find(page))
+        assertEquals(listOf(listOf(Mark(260.0, Mark.Kind.SEGNO)), listOf(Words(400.0, "Fine"))), read)
+    }
+
+    /**
+     * The pass a jump is for comes first: "3° fois al Coda" (Pas de boogie woogie, 52) is a
+     * direction; a verse number before the lyrics ("3. Mainte-") is not.
+     */
+    @Test
+    fun aJumpForOnePassIsADirection() {
+        val texts = listOf(
+            DrawnText("3° fois al Coda", "ocr", 200.0, top - 2 * space, 9.0),
+            DrawnText("2nd time to Coda", "font_4", 300.0, top - 2 * space, 9.0),
+            DrawnText("3.Mainte-", "font_1", 400.0, top - 2 * space, 10.0),
+        )
+        assertEquals(listOf(Words(200.0, "3° fois al Coda"), Words(300.0, "2nd time to Coda")), read(emptyList(), texts))
+    }
+
+    /**
      * A coda drawn in the margin left of a system (by its lower staves, "CODA" over it: J'ai encore
      * rêvé d'elle, measure 69) marks the system's start: "To Coda" jumps there.
      */

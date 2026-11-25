@@ -35,7 +35,7 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
                     // a metronome mark's note and dot, over the staff only (where the tempo is written)
                     ?.takeIf { !it.name.startsWith("met") || box.bottom < staff.top }
                     // a jump's sign must look like one: a false segno makes the music jump
-                    ?.takeIf { !(it.name == "segno" || it.name.startsWith("coda")) || it.score >= JUMP_SIGN }
+                    ?.takeIf { !(it.name == "segno" || it.name.startsWith("coda")) || it.score >= JUMP_SIGN || (it.score >= DRAWN_SIGN && fill.size >= SIGN_OUTLINES) }
                     // and a fermata: a tie's arc looks a little like one (0.6, a fermata 0.96 and over)
                     ?.takeIf { !it.name.startsWith("fermata") || it.score >= JUMP_SIGN }
                     // so must a clef: a false one changes the pitch of every note after it
@@ -91,6 +91,15 @@ class OutlineSymbols(private val classifier: SymbolClassifier) {
 
         /** The least score a segno or coda named by its look needs (real ones scored 0.82-0.91, a false one 0.71). */
         const val JUMP_SIGN = 0.8
+
+        /**
+         * Less is enough for a sign drawn in its parts, as a segno (its S, its two dots) or a coda
+         * (its ring, its cross): at least [SIGN_OUTLINES] outlines. Pas de boogie woogie's segnos
+         * scored 0.785 with three, its "al Coda" sign 0.747 with five; the false signs read so far
+         * scored 0.71 or less.
+         */
+        const val DRAWN_SIGN = 0.74
+        const val SIGN_OUTLINES = 3
 
         /** The least score a clef named by its look needs (real ones scored 0.91-0.97, a false bass clef change 0.57). */
         const val CLEF_SIGN = 0.75

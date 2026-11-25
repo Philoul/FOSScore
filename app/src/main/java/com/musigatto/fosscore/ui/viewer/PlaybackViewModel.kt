@@ -64,6 +64,8 @@ private const val MIDI_CHANNELS = 16
 
 // the clicks over the music at the metronome's volume 100: a little under the music's loudest
 private const val CLICK_LEVEL = 0.6f
+// a fermata lasts twice what is written: the music slows down over it, every voice together
+private const val FERMATA_HOLD = 2.0
 
 enum class PlayState { STOPPED, PREPARING, PLAYING, PAUSED }
 
@@ -289,7 +291,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                         val made = livePlayer()
                         it.playback(liveSound())?.let { pb ->
                             withContext(Dispatchers.Default) {
-                                val read = MidiSong.read(pb.midi)
+                                val read = MidiSong.read(pb.midi).holding(pb.holds, FERMATA_HOLD)
                                 val sounds = channelSounds(pb, read)
                                 made.setSounds(sounds)
                                 made.warm(read)
@@ -635,7 +637,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                     ?: 0.0
                 // what the opening of the score warmed, when it is this music: read and warmed once
                 val ready = warmed?.takeIf { it.midi.contentEquals(pb.midi) }
-                val read = ready?.song ?: withContext(Dispatchers.Default) { MidiSong.read(pb.midi) }
+                val read = ready?.song ?: withContext(Dispatchers.Default) { MidiSong.read(pb.midi).holding(pb.holds, FERMATA_HOLD) }
                 val next = livePlayer()
                 // the parts' sounds, and the samples read now, not by the first notes on the audio thread
                 withContext(Dispatchers.Default) {
@@ -692,7 +694,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
                 val pb = pages.playback(liveSound()) ?: return@launch
                 // the samples first, then the new music with its sounds: nothing is decoded while it plays
                 val (read, sounds) = withContext(Dispatchers.Default) {
-                    val music = MidiSong.read(pb.midi)
+                    val music = MidiSong.read(pb.midi).holding(pb.holds, FERMATA_HOLD)
                     val chosen = channelSounds(pb, music)
                     player?.warm(music, chosen)
                     music to chosen

@@ -53,6 +53,46 @@ class MusicXmlScore private constructor(private val doc: Document) {
 
     val info: ScoreInfo = readInfo()
 
+    /**
+     * The notes and rests held by a fermata, by measure (0 up, as the parts have them): where each
+     * starts in its measure and where it ends, in quarter notes. Every part's: one fermata holds
+     * the whole music.
+     */
+    val fermatas: Map<Int, List<Hold>> by lazy { readFermatas() }
+
+    private fun readFermatas(): Map<Int, List<Hold>> {
+        val out = sortedMapOf<Int, MutableList<Hold>>()
+        for (part in root.children("part")) {
+            var divisions = 1
+            part.children("measure").forEachIndexed { index, measure ->
+                var time = 0
+                var onset = 0
+                for (e in measure.children()) {
+                    val duration = e.child("duration")?.text()?.toIntOrNull() ?: 0
+                    when (e.tagName) {
+                        "attributes" -> e.child("divisions")?.text()?.toIntOrNull()?.takeIf { it > 0 }?.let { divisions = it }
+                        "backup" -> time -= duration
+                        "forward" -> time += duration
+                        "note" -> {
+                            // a grace note takes no time: nothing to hold
+                            if (e.child("grace") != null) continue
+                            if (e.child("chord") == null) {
+                                onset = time
+                                time += duration
+                            }
+                            val held = e.child("notations")?.child("fermata") != null
+                            if (held && duration > 0) {
+                                out.getOrPut(index) { mutableListOf() } +=
+                                    Hold(onset.toDouble() / divisions, (onset + duration).toDouble() / divisions)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return out
+    }
+
     /** True when most lyrics of the file ask to be drawn above the staff. */
     private val lyricsAboveInFile: Boolean = doc.getElementsByTagName("lyric").let { lyrics ->
         val places = (0 until lyrics.length).map { (lyrics.item(it) as Element).getAttribute("placement") }

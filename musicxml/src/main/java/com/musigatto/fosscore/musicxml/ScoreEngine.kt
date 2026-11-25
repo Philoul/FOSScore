@@ -134,7 +134,7 @@ class ScoreEngine(
     @Volatile private var music: Deferred<Music>? = null
 
     // the music played: its MIDI, when which notes start ([Playback.onsetsOf]) and its measures
-    private class Music(val midi: ByteArray, val onsets: List<Onset>, val bars: List<Double>)
+    private class Music(val midi: ByteArray, val onsets: List<Onset>, val bars: List<Double>, val holds: List<Hold>)
 
     private var resourcePath: String? = null
 
@@ -181,14 +181,15 @@ class ScoreEngine(
         music = scope.async(soundDispatcher) {
             val cache = cacheDir?.let { File(it, "music.$CACHE_VERSION.mid") }
             val timemap = cacheDir?.let { File(it, "timemap.$CACHE_VERSION.json") }
-            if (cache?.isFile != true || timemap?.isFile != true) {
+            val holds = cacheDir?.let { File(it, "holds.$HOLDS_VERSION.json") }
+            if (cache?.isFile != true || timemap?.isFile != true || holds?.isFile != true) {
                 var waited = 0L
                 while ((!drawn || busy.get() > 0) && waited < MAX_SOUND_WAIT_MS) {
                     delay(IDLE_POLL_MS)
                     waited += IDLE_POLL_MS
                 }
             }
-            musicOf(doc.await(), cache, timemap)
+            musicOf(doc.await(), cache, timemap, holds)
         }
     }
 
@@ -281,7 +282,7 @@ class ScoreEngine(
         val key = listOf(sound, spec, played, doc)
         lastPlayback?.takeIf { it.first == key }?.let { return it.second }
         return withContext(Dispatchers.Default) {
-            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), played.onsets, played.bars, partTracks)
+            Playback.of(MidiEdit.edit(midi, tempo, silent, spec.semitones, programs), played.onsets, played.bars, partTracks, played.holds)
         }.also { lastPlayback = key to it }
     }
 
@@ -358,23 +359,29 @@ class ScoreEngine(
     // score in the order it is played (Unfold: Verovio's own expansion missed endings of several
     // passes and jumps), laid out as cheaply as possible. The notes keep their ids (MusicXmlScore
     // names them), so the cursor finds them on the pages drawn.
-    private fun musicOf(doc: MusicXmlScore, cache: File?, timemapCache: File?): Music {
+    private fun musicOf(doc: MusicXmlScore, cache: File?, timemapCache: File?, holdsCache: File?): Music {
         runCatching {
-            if (cache?.isFile == true && timemapCache?.isFile == true) {
+            if (cache?.isFile == true && timemapCache?.isFile == true && holdsCache?.isFile == true) {
                 val timemap = timemapCache.readText()
-                return Music(cache.readBytes(), Playback.onsetsOf(timemap), Playback.barsOf(timemap))
+                return Music(cache.readBytes(), Playback.onsetsOf(timemap), Playback.barsOf(timemap), Playback.holdsFromJson(holdsCache.readText()))
             }
         }
         val t = Verovio(resources())
         try {
             t.setOptions(VerovioOptions.unpaged(0).toString())
             val prepared = synchronized(doc) { doc.prepare() }
-            load(t, runCatching { Unfold.unroll(prepared) }.getOrDefault(prepared))
+            val unrolled = runCatching { Unfold.unrolled(prepared) }.getOrNull()
+            load(t, unrolled?.first ?: prepared)
             val midi = Base64.decode(t.renderMidi(), Base64.DEFAULT)
             val timemap = t.renderTimemap()
+            val bars = Playback.barsOf(timemap)
+            // the fermatas where they are played: the score's own order when it could not be unrolled
+            val order = unrolled?.second ?: bars.indices.toList()
+            val holds = Playback.holdsOf(order, bars, synchronized(doc) { doc.fermatas })
             cache?.let { keep(it, midi) }
             timemapCache?.let { keep(it, timemap.toByteArray()) }
-            return Music(midi, Playback.onsetsOf(timemap), Playback.barsOf(timemap))
+            holdsCache?.let { keep(it, Playback.holdsJson(holds).toByteArray()) }
+            return Music(midi, Playback.onsetsOf(timemap), bars, holds)
         } finally {
             t.close()
         }
@@ -435,5 +442,7 @@ class ScoreEngine(
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
         const val CACHE_VERSION = MUSIC_CACHE_VERSION
+        // the fermatas kept with the music: a score's music made before them is made again once
+        private const val HOLDS_VERSION = 1
     }
 }

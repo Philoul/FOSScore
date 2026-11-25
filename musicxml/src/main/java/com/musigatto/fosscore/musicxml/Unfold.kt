@@ -36,7 +36,10 @@ object Unfold {
      * a measure played again, and everything with an id in it, gets "-rend2", "-rend3"... after
      * its id, as Verovio names its own copies ([Playback] maps them back).
      */
-    fun unroll(xml: String): String {
+    fun unroll(xml: String): String = unrolled(xml).first
+
+    /** [unroll], with the order it played the measures in ([order]): one reading of [xml]. */
+    fun unrolled(xml: String): Pair<String, List<Int>> {
         val doc = parse(xml)
         val order = order(doc)
         doc.documentElement.childElements("part").forEachIndexed { p, part ->
@@ -72,7 +75,7 @@ object Unfold {
             }
             pairOctaveShifts(part)
         }
-        return serialize(doc)
+        return serialize(doc) to order
     }
 
     private class Info(

@@ -1,5 +1,8 @@
 package com.musigatto.fosscore.sound
 
+import com.musigatto.fosscore.musicxml.Hold
+import kotlin.math.roundToInt
+
 /**
  * A standard MIDI file read for the live player: its channel events in time order, placed in
  * quarter notes (the score's own time, whatever the tempo), and its tempo changes. The player
@@ -32,6 +35,21 @@ class MidiSong private constructor(
         return if (tempoAt.isEmpty()) DEFAULT_TEMPO else tempoMicros[i]
     }
 
+    /**
+     * This song slowed down [factor] times over [holds], the fermatas: every voice holds together,
+     * and the music goes on at its own tempo after them.
+     */
+    fun holding(holds: List<Hold>, factor: Double): MidiSong {
+        if (holds.isEmpty() || factor == 1.0) return this
+        val points = (tempoAt.toList() + holds.flatMap { listOf(it.from, it.to) })
+            .filter { it >= 0.0 }.distinct().sorted()
+        val micros = points.map { q ->
+            val written = microsPerQuarter(q)
+            if (holds.any { q >= it.from - EPSILON && q < it.to - EPSILON }) (written * factor).roundToInt() else written
+        }
+        return MidiSong(events, points.toDoubleArray(), micros.toIntArray(), length, trackChannels)
+    }
+
     /** Where the next tempo change after [quarters] is, or null. */
     fun nextTempoChange(quarters: Double): Double? = tempoAt.firstOrNull { it > quarters + 1e-9 }
 
@@ -55,6 +73,8 @@ class MidiSong private constructor(
         // MIDI's own default: ♩ = 120
         private const val DEFAULT_TEMPO = 500_000
         private const val TEMPO = 0x51
+        // positions in quarter notes come from sums of durations
+        private const val EPSILON = 1e-9
 
         /** Reads [midi]; an empty song when it is not a MIDI file timed in quarter notes. */
         fun read(midi: ByteArray): MidiSong {

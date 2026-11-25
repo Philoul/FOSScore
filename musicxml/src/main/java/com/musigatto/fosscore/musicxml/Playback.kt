@@ -6,6 +6,12 @@ import org.json.JSONArray
 class Onset(val quarters: Double, val notes: List<String>)
 
 /**
+ * Music held longer than written, a fermata: from [from] to [to], in quarter notes. Verovio's MIDI
+ * plays fermatas in time; the player slows down over them, every voice together.
+ */
+data class Hold(val from: Double, val to: Double)
+
+/**
  * What playback needs: a standard MIDI file, a map from audio time to score position, and the
  * onsets of the score shown. Score positions in quarter notes link the two, so the sound can
  * come from other parts than the ones on screen (a second layout), and the cursor still follows.
@@ -20,6 +26,8 @@ class Playback internal constructor(
     val bars: List<Double> = emptyList(),
     /** The MIDI tracks of each part, by part id (one track per staff, counted from 1). */
     val partTracks: Map<String, List<Int>> = emptyMap(),
+    /** The fermatas, in the order played, apart and in time order ([holdsOf]). */
+    val holds: List<Hold> = emptyList(),
 ) {
     /** Score position, in quarter notes, at [ms] of audio. */
     fun quartersAt(ms: Long): Double {
@@ -80,9 +88,44 @@ class Playback internal constructor(
             onsets: List<Onset>,
             bars: List<Double> = emptyList(),
             partTracks: Map<String, List<Int>> = emptyMap(),
+            holds: List<Hold> = emptyList(),
         ): Playback {
             val (ms, quarters) = MidiEdit.timing(midi)
-            return Playback(midi, ms, quarters, onsets, bars, partTracks)
+            return Playback(midi, ms, quarters, onsets, bars, partTracks, holds)
+        }
+
+        /**
+         * The fermatas in the order played: [fermatas] of each written measure (see
+         * [MusicXmlScore.fermatas]) placed from the start of each time it is played. [order] are
+         * the written measures in the order played ([Unfold.order]), [bars] where each played
+         * measure starts; none when they do not match. Overlapping holds (a chord, voices held
+         * together) make one.
+         */
+        fun holdsOf(order: List<Int>, bars: List<Double>, fermatas: Map<Int, List<Hold>>): List<Hold> {
+            if (fermatas.isEmpty() || order.size != bars.size) return emptyList()
+            val placed = order.flatMapIndexed { i, m ->
+                fermatas[m].orEmpty().map { Hold(bars[i] + it.from, bars[i] + it.to) }
+            }.sortedBy { it.from }
+            val out = mutableListOf<Hold>()
+            for (h in placed) {
+                val last = out.lastOrNull()
+                if (last != null && h.from < last.to - EPSILON) {
+                    out[out.size - 1] = Hold(last.from, maxOf(last.to, h.to))
+                } else {
+                    out += h
+                }
+            }
+            return out
+        }
+
+        /** [holds] as JSON, for the cache: [[from, to], ...]. */
+        fun holdsJson(holds: List<Hold>): String =
+            JSONArray(holds.map { JSONArray(listOf(it.from, it.to)) }).toString()
+
+        /** The holds written by [holdsJson]. */
+        fun holdsFromJson(json: String): List<Hold> {
+            val a = JSONArray(json)
+            return (0 until a.length()).map { a.getJSONArray(it).let { h -> Hold(h.getDouble(0), h.getDouble(1)) } }
         }
 
         /** Where the measures start in a Verovio timemap made with "includeMeasures". */

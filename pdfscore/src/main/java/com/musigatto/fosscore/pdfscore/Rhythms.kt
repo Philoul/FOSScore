@@ -71,8 +71,9 @@ object Rhythms {
             if (next.x - chord.x - between <= GRACE_LEAD * space && (!small(next) || next in leading)) leading += chord
         }
         fun cue(chord: Draft) = struck(chord) || chord !in leading
-        // a grace note has a stem: a small whole head on its own is a curve misread
-        val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && !struck(it) }.map { chord ->
+        // a grace note has a stem: a small whole head on its own is a curve misread; small whole
+        // heads one on the other are a chord (a choir's, Pas de boogie woogie, 10)
+        val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && it.notes.size < 2 && !struck(it) }.map { chord ->
             val onStem = beamsAt(chord, beams, space)
             val grace = small(chord) && !cue(chord)
             val value = chord.type ?: blackValue(chord, onStem, reading.symbols, space)
@@ -137,7 +138,9 @@ object Rhythms {
                 // chord, for a head set off right by a second (Né en 17 à Leidenstadt, 18-20)
                 val chordLeft = chords.firstOrNull { chord -> chord.notes.any { it === note } }?.notes?.minOfOrNull { it.head.box.left } ?: head.left
                 right.x >= minOf(head.left, chordLeft) - 1.5 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
-            } ?: (right.x >= staff.right - 1.5 * space)
+            // over the line break: to the staff's end, or to the barline before a key or clef
+            // announcing the next line, with no head after it (Né en 17 à Leidenstadt, 49)
+            } ?: (right.x >= staff.right - 1.5 * space || (right.x > start.head.box.right + 0.5 * space && notes.none { it.head.box.left > right.x }))
             if (ends) starts[start] = next
         }
         return starts
@@ -458,7 +461,15 @@ object Rhythms {
         // rests under the chords of one stem and over those of the other: that stem is the upper
         // voice, the other the lower one (Pas de boogie woogie, measure 41)
         val bothSides = upperStems.size == 1 && lowerStems.size == 1 && upperStems != lowerStems
+        // a whole rest drawn with notes it lies beside none of rests the whole measure in a voice of
+        // its own: over the notes the upper voice (Pas de boogie woogie, 10: the melody rests, the
+        // choir holds its chord)
+        val notesY = chords.map { it.box.centerY }.average()
+        val wholeRest = items.singleOrNull { it.rest && it.type == NoteType.WHOLE }
+            ?.takeIf { together.isEmpty() && besideRests.isEmpty() && chords.isNotEmpty() && items.count { it.rest } == 1 }
+        val wholeRestVoice = wholeRest?.let { if (it.box.centerY < notesY) 1 else 2 }
         fun voiceOf(draft: Draft): Int = when {
+            wholeRestVoice != null -> if (draft === wholeRest) wholeRestVoice else 3 - wholeRestVoice
             together.isEmpty() && besideRests.isEmpty() -> 1
             together.isEmpty() && bothSides && !draft.rest -> if (draft.stem in lowerStems) 2 else 1
             together.isEmpty() && stemVoices && !draft.rest -> {

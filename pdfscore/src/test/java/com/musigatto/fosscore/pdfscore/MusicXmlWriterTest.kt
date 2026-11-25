@@ -157,6 +157,14 @@ class MusicXmlWriterTest {
         )
     }
 
+    /** A whole-measure rest held keeps its fermata (Pas de boogie woogie, 10: the melody waits). */
+    @Test
+    fun aWholeMeasureRestHeldKeepsItsFermata() {
+        val events = listOf(placed(Rest(Duration(NoteType.WHOLE), Fraction.ZERO, 1, wholeMeasure = true, fermata = true), 150.0))
+        val score = ScoreReading(listOf(Part(1)), listOf(ScoreMeasure(1, 0, true, true, listOf(staff(1, events)))))
+        assertEquals(1, parse(MusicXmlWriter.write(score)).all("fermata").size)
+    }
+
     /**
      * A tempo mark and words over the staff are written before the note they stand over, the tempo
      * with the sound it gives (in quarters a minute: a dotted quarter at 40 is 60); an arpeggio

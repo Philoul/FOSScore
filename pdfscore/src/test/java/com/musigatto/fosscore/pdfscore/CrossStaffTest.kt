@@ -88,6 +88,29 @@ class CrossStaffTest {
     }
 
     /**
+     * A voice short of its measure by the value of its one flagged 32nd, while the other hand fills
+     * it: the flag was a 16th's (Né en 17 à Leidenstadt, 35: a dotted eighth rest, a sixteenth read
+     * as a 32nd, then eighths come early). The notes after it start later.
+     */
+    @Test
+    fun aVoiceShortByItsFlaggedNoteHasThatNoteAFlagLess() {
+        fun rest(x: Double, onset: Fraction, type: NoteType, dots: Int) =
+            PlacedEvent(com.musigatto.fosscore.pdfscore.music.Rest(Duration(type, dots), onset, 1), Box(x, 0.0, x + 5.0, 5.0))
+        val voice = listOf(
+            rest(10.0, Fraction.ZERO, NoteType.EIGHTH, 1),
+            note(30.0, Fraction.of(3, 16), NoteType.THIRTY_SECOND),
+            note(50.0, Fraction.of(7, 32), NoteType.EIGHTH),
+            note(70.0, Fraction.of(11, 32), NoteType.HALF),
+        )
+        val sevenEighths = MeasureStaff(StaffBox(1, 0.0, 400.0, 0.0, 20.0, 5.0, 10.0), Clef(Clef.Sign.G, 2), Key(0), TimeSignature(7, 8), emptyList(), voice)
+        val left = MeasureStaff(StaffBox(2, 0.0, 400.0, 0.0, 20.0, 5.0, 10.0), Clef(Clef.Sign.F, 4), Key(0), null, emptyList(),
+            listOf(note(10.0, Fraction.ZERO, NoteType.HALF, octave = 3), note(60.0, Fraction.of(1, 2), NoteType.QUARTER, octave = 3), note(80.0, Fraction.of(3, 4), NoteType.EIGHTH, octave = 3)))
+        val read = ScoreReader.fitVoices(listOf(ScoreMeasure(1, 0, true, true, listOf(sevenEighths, left)))).single().staves[0].events
+        assertEquals(NoteType.SIXTEENTH, read[1].event.duration.type)
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(3, 16), Fraction.of(1, 4), Fraction.of(3, 8)), read.map { it.event.onset })
+    }
+
+    /**
      * A voice struck with another voice of its staff at the measure's start starts then, whatever
      * the other hand draws a little left of it (Lettre à France, measure 24's left hand).
      */

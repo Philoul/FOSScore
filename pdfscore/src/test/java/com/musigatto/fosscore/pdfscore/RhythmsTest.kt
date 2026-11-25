@@ -474,6 +474,19 @@ class RhythmsTest {
     }
 
     /**
+     * A tie from the last note to the double barline, a key announcing the next line after it,
+     * goes on over the line break too (Né en 17 à Leidenstadt, 49: the E played again in 50).
+     */
+    @Test
+    fun aTieToTheBarlineBeforeTheNextLinesKeyIsATie() {
+        val a = head(480.0, g4)
+        val tie = arc(a.box.right + 0.2 * space, g4 + 0.6 * space, 500.0, g4 + 0.6 * space, 0.4 * space)
+        val natural = DrawnGlyph("accidentalNatural", Box(520.0, top - space, 523.0, top + space))
+        val measure = read(listOf(a, natural), listOf(stemUp(a), barline(505.0), barline(507.0)), listOf(tie)).first()
+        assertEquals(listOf(setOf(0)), tied(measure))
+    }
+
+    /**
      * A staccato over a note (its stem down) can sit at the height of the note before it: it is
      * the staccato of the note it is over, not a dot of the one before.
      */
@@ -765,6 +778,40 @@ class RhythmsTest {
         val second = head(120.0, g4)
         val measure = read(listOf(first, misread, second), listOf(stemUp(first), stemUp(second))).single()
         assertEquals(listOf("G4", "G4"), measure.events.map { (it.event as Chord).pitches.single().toString() })
+    }
+
+    /**
+     * A whole rest drawn beside a whole chord, over it: the melody rests the whole measure while
+     * the choir holds its chord, two voices (Pas de boogie woogie, 10: one voice, the rest after
+     * the chord, overflowed and was cut with its fermata).
+     */
+    @Test
+    fun aWholeRestBesideAWholeChordIsAVoiceOfItsOwn() {
+        val d = head(80.0, bottomLine + space / 2, name = "noteheadWhole")
+        val f = head(80.0, bottomLine - space / 2, name = "noteheadWhole")
+        val rest = DrawnGlyph("restWhole", Box(150.0, top + space, 157.0, top + 1.5 * space))
+        val measure = read(listOf(d, f, rest), listOf(ledger(d, bottomLine + space))).single()
+        val events = measure.events.map { it.event }
+        val silence = events.filterIsInstance<com.musigatto.fosscore.pdfscore.music.Rest>().single()
+        val chord = events.filterIsInstance<Chord>().single()
+        assertEquals(Fraction.ZERO, silence.onset)
+        assertEquals(Fraction.ZERO, chord.onset)
+        assertEquals(listOf(1, 2), listOf(silence.voice, chord.voice))
+    }
+
+    /**
+     * Two small whole heads one on the other are a chord, not a curve misread: a choir's whole
+     * notes tied over from the line before, alone in their measure (Pas de boogie woogie, 10; lost,
+     * their tie ended on the choir's next D and F, in 25 and 47).
+     */
+    @Test
+    fun aChordOfSmallWholeHeadsIsAChord() {
+        val g = head(100.0, g4, name = "noteheadWhole", height = 0.7)
+        val b = head(100.0, g4 - space, name = "noteheadWhole", height = 0.7)
+        // the next measure's notes, of the normal size
+        val next = listOf(250.0, 300.0, 350.0, 400.0).map { head(it, g4) }
+        val measure = read(listOf(g, b) + next, listOf(barline(200.0)) + next.map { stemUp(it) }).first()
+        assertEquals(listOf("B4", "G4"), measure.events.flatMap { (it.event as Chord).pitches.map { p -> p.toString() } }.sorted())
     }
 
     /**

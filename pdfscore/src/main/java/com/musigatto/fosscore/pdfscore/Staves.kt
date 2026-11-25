@@ -122,21 +122,24 @@ object Staves {
 
     /**
      * Neighbouring staves are in one system when a vertical line runs from one to the other (the
-     * line at the start of a system, or barlines drawn through both) or a brace holds them.
+     * line at the start of a system, or barlines drawn through both) or a brace holds them. A
+     * staff goes with the system just above it on its side of the page: two systems may stand
+     * side by side on one row (a coda after a gap), their staves at the same heights.
      */
     internal fun systems(staves: List<Staff>, lines: List<DrawnLine>, braces: List<Box>): List<StaffSystem> {
         val verticals = lines.filter { it.isVertical }.map { Triple(it.x1, minOf(it.y1, it.y2), maxOf(it.y1, it.y2)) }
-        val sorted = staves.sortedBy { it.top }
+        // top to bottom; on one row (the same lines' heights), left to right
+        val sorted = staves.sortedWith(compareBy<Staff>({ Math.round(it.top / it.space) }, { it.left }))
         val groups = mutableListOf<MutableList<Staff>>()
+        fun joined(last: Staff, staff: Staff) = last.bottom < staff.top && (
+            verticals.any { (x, top, bottom) ->
+                x >= maxOf(last.left, staff.left) - last.space && x <= minOf(last.right, staff.right) + last.space &&
+                    top <= last.bottom + 0.5 * last.space && bottom >= staff.top - 0.5 * last.space
+            } || braces.any { holds(it, last) && holds(it, staff) }
+            )
         for (staff in sorted) {
-            val last = groups.lastOrNull()?.last()
-            val joined = last != null && (
-                verticals.any { (x, top, bottom) ->
-                    x >= maxOf(last.left, staff.left) - last.space && x <= minOf(last.right, staff.right) + last.space &&
-                        top <= last.bottom + 0.5 * last.space && bottom >= staff.top - 0.5 * last.space
-                } || braces.any { holds(it, last) && holds(it, staff) }
-                )
-            if (joined) groups.last() += staff else groups += mutableListOf(staff)
+            val group = groups.lastOrNull { joined(it.last(), staff) }
+            if (group != null) group += staff else groups += mutableListOf(staff)
         }
         return groups.map { group ->
             val braced = braces.mapNotNull { brace ->

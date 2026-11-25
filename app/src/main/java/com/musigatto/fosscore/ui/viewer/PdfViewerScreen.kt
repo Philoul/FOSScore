@@ -97,6 +97,7 @@ import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.metronome.BarPages
 import com.musigatto.fosscore.metronome.Meter
 import com.musigatto.fosscore.metronome.MetronomeMode
+import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.musicxml.LayoutSpec
 import com.musigatto.fosscore.musicxml.PageGeometry
 import com.musigatto.fosscore.musicxml.Playback
@@ -112,6 +113,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -292,22 +294,25 @@ fun PdfViewerScreen(
     )
     val playState by playbackVm.state.collectAsState()
     val playClicking by playbackVm.clicking.collectAsState()
-    val playTick by playbackVm.tick.collectAsState()
     val loop by playbackVm.loop.collectAsState()
-    val cursorNotes by playbackVm.cursor.collectAsState()
     val tempoFactor by playbackVm.tempo.collectAsState()
     val heardPicked by playbackVm.heard.collectAsState()
     val playbackFailed by playbackVm.failed.collectAsState()
-    val aheadNotes by playbackVm.ahead.collectAsState()
+    // The notes heard and the beats change many times a second while the music plays: they are
+    // never read here, where a change would compose this whole screen again (30 ms on the Tab 3,
+    // at every note: the bar stopped and taps waited). Effects collect them, and the beat flash
+    // reads them in a composable of its own.
     // another score opened, or the viewer closed: this score's music stops (its ViewModel stays
     // in memory with the screen, and its player would go on playing)
     DisposableEffect(playbackVm) { onDispose { playbackVm.stop() } }
     // the music heard, read from the audio clock at every frame while it plays: the playback bar
     // glides with it (only the bar is drawn again, nothing is composed again)
     var playQuarters by remember { mutableStateOf<Double?>(null) }
-    LaunchedEffect(playState, cursorNotes) {
+    LaunchedEffect(playState) {
         playQuarters = playbackVm.positionNow()
         if (playState == PlayState.PLAYING) while (true) withFrameNanos { playQuarters = playbackVm.positionNow() }
+        // paused or stopped, the bar goes where the cursor is put (⏮, a long press on a measure)
+        playbackVm.cursor.collect { playQuarters = playbackVm.positionNow() }
     }
 
     // the metronome: its band, its clicks and the page turns it drives (MetronomeViewModel)
@@ -320,7 +325,8 @@ fun PdfViewerScreen(
     val metronomeOn by metronomeVm.running.collectAsState()
     // leaving the score stops its metronome, as it stops its music
     DisposableEffect(metronomeVm) { onDispose { metronomeVm.stop() } }
-    val metronomeTick by metronomeVm.tick.collectAsState()
+    // read only by the band and the flash (see the notes heard above)
+    val metronomeTick = metronomeVm.tick.collectAsState()
     val meterFromScore by metronomeVm.meterFromScore.collectAsState()
 
     // the page edits: undo/redo, the ink and stamps waiting for the DB, the selection
@@ -1136,7 +1142,9 @@ fun PdfViewerScreen(
         halfTurned = f.halfTurned
     }
 
-    LaunchedEffect(cursorNotes) { followMusic(cursorNotes, aheadNotes) }
+    // the latest of this screen's state for every note (the effect itself is started once)
+    val onNotesHeard by rememberUpdatedState<suspend (List<String>) -> Unit> { followMusic(it, playbackVm.ahead.value) }
+    LaunchedEffect(playbackVm) { playbackVm.cursor.collectLatest { onNotesHeard(it) } }
 
     // a MusicXML score: the metronome keeps the tempo of playback and the score's time signature
     val scoreInfo = (pageSource as? MusicXmlPages)?.info
@@ -1233,18 +1241,18 @@ fun PdfViewerScreen(
     // The pages turn with the metronome: a MusicXML score knows its bars, a PDF score has the
     // bars of each page counted by the user (BarPages). Only forward: a page turned back by hand
     // stays until the metronome gets past it. pageCount: a score laid out again changes the bars.
-    LaunchedEffect(metronomeTick, pageCount) {
-        val bar = metronomeVm.barHeard(metronomeTick) ?: return@LaunchedEffect
-        if (!metronome.autoTurn) return@LaunchedEffect
+    suspend fun turnWithMetronome(tick: Tick?) {
+        val bar = metronomeVm.barHeard(tick) ?: return
+        if (!metronome.autoTurn) return
         val ahead = bar + metronome.turnAhead
         if (format.isMusicXml) {
-            val music = metronomeMusic ?: return@LaunchedEffect
-            val notes = music.notesOfBar(bar) ?: return@LaunchedEffect
+            val music = metronomeMusic ?: return
+            val notes = music.notesOfBar(bar) ?: return
             followMusic(notes, music.notesOfBar(ahead) ?: notes, byHand = false)
-            return@LaunchedEffect
+            return
         }
         val pages = BarPages(metronome.barCounts, pageCount)
-        if (!pages.known) return@LaunchedEffect
+        if (!pages.known) return
         val target = pages.pageOf(bar)
         val aheadPage = pages.pageOf(ahead)
         val onScreen = target == currentPage || (spread && target == currentPage + 1)
@@ -1254,6 +1262,9 @@ fun PdfViewerScreen(
             halfTurned = f.halfTurned
         }
     }
+    // the latest of this screen's state for every tick (the effect itself is started once)
+    val onMetronomeTick by rememberUpdatedState<suspend (Tick?) -> Unit> { turnWithMetronome(it) }
+    LaunchedEffect(metronomeVm, pageCount) { metronomeVm.tick.collectLatest { onMetronomeTick(it) } }
 
     // The paper's draws: the zoom step, the page on screen, the neighbours drawn ahead and the cut
     // of a half page (PageRender.kt)
@@ -1647,9 +1658,9 @@ fun PdfViewerScreen(
         if (metronomeOn && metronome.mode != MetronomeMode.SOUND) BeatFlash(metronomeTick)
         // and over the music, while the metronome is switched on in the playback band; with it off,
         // the count-in is still seen
-        val countingIn = (playTick?.bar ?: 0) < 0
-        val flashOverMusic = if (playClicking) metronome.mode != MetronomeMode.SOUND else countingIn
-        if (playState == PlayState.PLAYING && flashOverMusic) BeatFlash(playTick)
+        if (playState == PlayState.PLAYING) {
+            MusicBeatFlash(playbackVm.tick, playClicking, onClicks = metronome.mode != MetronomeMode.SOUND)
+        }
 
         // the loupe goes last: with a finger aiming a stamp the bars step aside, so it has the whole
         // page to read (it is drawn under them: they would cover the circle at the top).
@@ -1882,6 +1893,7 @@ fun PdfViewerScreen(
                     playbackVm = playbackVm,
                     metronome = metronome,
                     metronomeOn = metronomeOn,
+                    // a State, read inside the band: a tick composes the band again, not this screen
                     metronomeTick = metronomeTick,
                     music = music,
                     readingMusic = readingMusic,

@@ -31,6 +31,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +60,7 @@ import com.musigatto.fosscore.metronome.MetronomeSettings
 import com.musigatto.fosscore.metronome.TapTempo
 import com.musigatto.fosscore.metronome.Tick
 import com.musigatto.fosscore.metronome.tempoName
+import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
 
 // the dots of the beats: the first one bigger (the accent)
@@ -111,6 +114,24 @@ fun BeatFlash(tick: Tick?, modifier: Modifier = Modifier) {
             .graphicsLayer { this.alpha = alpha.value }
             .border(FLASH_WIDTH, color)
     )
+}
+
+/**
+ * [BeatFlash] reading its tick itself: a beat composes the flash again, not the screen it is
+ * called from (the viewer took 30 ms per beat on the Tab 3).
+ */
+@Composable
+fun BeatFlash(tick: State<Tick?>, modifier: Modifier = Modifier) = BeatFlash(tick.value, modifier)
+
+/**
+ * The flash over the music: on the beats while the clicks of the playback band are on and
+ * [onClicks] (the metronome's mode shows them), and during the count-in even with the clicks off.
+ */
+@Composable
+fun MusicBeatFlash(ticks: StateFlow<Tick?>, clicking: Boolean, onClicks: Boolean) {
+    val tick by ticks.collectAsState()
+    val countingIn = (tick?.bar ?: 0) < 0
+    if (if (clicking) onClicks else countingIn) BeatFlash(tick)
 }
 
 /** The bars of the page shown, for counting the bars of each page of a PDF score in the settings. */

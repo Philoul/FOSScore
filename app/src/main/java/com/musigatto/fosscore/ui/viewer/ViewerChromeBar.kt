@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -730,7 +731,7 @@ internal fun BottomChrome(
     playbackVm: PlaybackViewModel,
     metronome: MetronomeSettings,
     metronomeOn: Boolean,
-    metronomeTick: Tick?,
+    metronomeTick: State<Tick?>,
     // the score that plays: a MusicXML score, or a PDF's companion; null for a PDF without music
     music: MusicXmlPages?,
     // a PDF's music being read, for ▶ (it plays once read)
@@ -798,7 +799,7 @@ internal fun BottomChrome(
             PlaybackBand(
                 // the bar heard, counted from the start of the piece as the score numbers its
                 // bars, once the bars of the pages are counted
-                barText = if (readingMusic) stringResource(R.string.pdf_reading_music) else metronomeVm.barHeard(metronomeTick)
+                barText = if (readingMusic) stringResource(R.string.pdf_reading_music) else metronomeVm.barHeard(metronomeTick.value)
                     ?.takeIf { BarPages(metronome.barCounts, pageCount).known }
                     ?.let { stringResource(R.string.playback_bar, it + 1) },
                 state = when {
@@ -812,7 +813,7 @@ internal fun BottomChrome(
                 maxBpm = MAX_BPM,
                 // the metronome alone: its beats always show, its settings say what is heard
                 clicking = true,
-                tick = metronomeTick,
+                tick = metronomeTick.value,
                 pulses = metronome.meter.pulses,
                 onPlayPause = onStartStop,
                 onRestart = {

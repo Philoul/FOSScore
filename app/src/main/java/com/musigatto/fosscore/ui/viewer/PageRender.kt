@@ -150,7 +150,7 @@ internal class PagePaper(private val pdfUri: Uri) {
      * layout landing in the middle of a draw is the kind of clash the mutex is there for.
      */
     suspend fun layoutPages(pages: MusicXmlPages, spec: LayoutSpec): Boolean =
-        lock.withLock { withContext(Dispatchers.Default) { pages.layout(spec) } }
+        lock.withLock { withContext(PageWork.dispatcher) { pages.layout(spec) } }
 
     /**
      * Draws [needed] (one page, or the two of a spread) at the current zoom step. A draw that fails
@@ -172,7 +172,7 @@ internal class PagePaper(private val pdfUri: Uri) {
         val fallback = needed.associateWith { bitmaps[it] }
         try {
             val session = lock.withLock {
-                withContext(Dispatchers.Default) {
+                withContext(PageWork.dispatcher) {
                     // a newer draw is already waiting for the lock: leave the whole render to it
                     if (gen != generation) return@withContext emptyMap()
                     // Single page: the draw slot is the fit × zoom step (the bitmap is shown 1:1 on
@@ -241,7 +241,7 @@ internal class PagePaper(private val pdfUri: Uri) {
         suspend fun draw(index: Int): Bitmap? {
             if (index !in 0 until pageCount || job?.isActive == false) return null
             return lock.withLock {
-                withContext(Dispatchers.Default) {
+                withContext(PageWork.dispatcher) {
                     doc.ensurePageSize(index)?.takeIf { it.height > 0f }?.let { box ->
                         val slot = ZoomMath.renderSlot(fitRect(vpW, vpH, box.width / box.height), 1f)
                         doc.render(index, slot.first, slot.second)
@@ -257,7 +257,7 @@ internal class PagePaper(private val pdfUri: Uri) {
         // Under the lock: close() recycles those bitmaps, and reading one as it is freed crashes.
         halfCut = if (showHalf && shown != null && ahead != null) {
             lock.withLock {
-                withContext(Dispatchers.Default) {
+                withContext(PageWork.dispatcher) {
                     val bands = shown.blankBands()
                     val split = HalfSplit.of(bands, ahead.blankBands())
                     // the line goes through the middle of the blank band the cut is in, clear of

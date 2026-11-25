@@ -250,7 +250,8 @@ object MusicXmlWriter {
                     if (cross) out.append("<notehead>x</notehead>")
                     out.append(onStaff)
                     if (k == 0) out.append(beams)
-                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + (if (k == 0) tuplet else "") + articulations +
+                    // the tuplet, the staccato and the fermata once, on the chord's first note: Verovio draws one per note
+                    val notations = ties.joinToString("") { "<tied type=\"$it\"/>" } + (if (k == 0) tuplet + articulations else "") +
                         (if (event.arpeggiate) "<arpeggiate/>" else "") + (if (event.fermata && k == 0) FERMATA else "")
                     if (notations.isNotEmpty()) out.append("<notations>").append(notations).append("</notations>")
                     // the syllable once, on the chord's first note

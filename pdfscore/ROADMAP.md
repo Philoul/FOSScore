@@ -168,6 +168,23 @@ the benchmark before it is installed.
 | 41 | Pas de boogie woogie (fermatas) | no fermata read | fermatas not among the symbols named in a PDF printed without fonts | fixed 2026-11-22: named when they look like one well (>= 0.8): 15 read |
 | 42 | Pas de boogie woogie (pedal) | pedal marks not read | not read at all | to do |
 | 43 | Pas de boogie woogie (repeats) | expected 1-54, 19-32, 55-72, 19-52, 73-90 | endings "1. 2." and "3° fois al Coda" | to do |
+| 44 | every score (playback) | the red bar stops while the next page or half page is being prepared; manual page turns and taps on the bottom bar sometimes ignored while playing | user actions must come before the rest (CPU on the Tab 3) | to do |
+| 45 | Je suis malade (RH, measure 40) | the small slashed eighth before the quarter played as two eighths, not a grace note just before the beat 3 quarter | | to do |
+| 46 | Pas de boogie woogie, Né en 17 à Leidenstadt (fermatas) | fermatas read but not played: the music should hold a little on them, every voice | Verovio's MIDI ignores fermatas | to do |
+| 47 | Pas de boogie woogie (voice, measures 14, 16) | the second voice of the staff missing (a rest and four eighths; a rest, eighth, quarter, eighth), stems up, rests shifted over the staff | | to do |
+| 48 | Pas de boogie woogie (repeats) | 2nd time: misses the jump 52 -> 55 (plays 54 of ending 1); at 72 the voices of 72 and 73 played one after the other, the 3rd time jump (72 -> 19-52 -> 73) ignored | see 43 | to do |
+| 49 | Pas de boogie woogie (measures 23-25) | a phantom tie | | to do |
+| 50 | Né en 17 à Leidenstadt (ties 18-19, 19-20) | the tie of the chords' middle note missed, the note played again | | to do |
+| 51 | Né en 17 à Leidenstadt (PDF view) | the "back to the start" button does not show page 1 until playback starts | | to do |
+| 52 | Lettre à France (LH 17, 18) | 17: the two voices of beats 2 and 4 (opposite stems) read wrong; 18: an odd silence, the low F's tie maybe not played | | to do |
+| 53 | J'te l'dis quand même (LH 30, 41-42) | 30: two voices wrong, the last two eighths on the last beat; 41-42 wrong | | to do |
+| 54 | Mistral gagnant (scan) | many notes missing, clef changes and time changes (6/8, 3/4, 12/8, 9/8) missed | bitmap PDF | to do |
+| 55 | Savoir aimer, La groupie du pianiste (staccato) | two or three dots stacked over or under notes (Savoir aimer RH 23; Groupie RH 47-48 and on); Groupie: every staccato written as two dots, not played (heard only before a rest) | | to do |
+| 56 | Savoir aimer (half-page view) | after the jump 56 -> 25 the view stays on the bottom of page 2 / top of page 3: 25-36 played without the staves or the bar | | to do |
+| 57 | La groupie du pianiste (repeats) | the start-repeat at 11 never used: at 54 back to 11, the 2nd time back to 50 (the second start-repeat) | | to do |
+| 58 | Hallelujah (scan) | many wrong notes; the treble clef's loop read as a note; arpeggio waves missed; eighth rests of the first line's LH missed | | to do |
+| 59 | Aux champs Elysées, Quelques mots d'amour, Mad World | playback (PDF and MusicXML) and even the metronome alone do not start, an error at the bottom | gone with reader 31 (re-tested 2026-11-25) | done |
+| 60 | Quelques mots d'amour (lyrics) | lyrics very partial in MusicXML; shown between the piano staves, the PDF has them over the music (not tied to a melody) | | to do |
 | 31 | Pas de boogie woogie (MusicXML view) | the arpeggios of the start, across several voices, read wrong | the right hand of an arpeggio going on from the left hand started with it (13/16 of a measure); small choir notes read as grace notes; an eighth rest in a whole note's voice; two whole notes side by side played one after the other | fixed 2026-11-21 (reader 28): time runs left to right on a piano's two staves; every voice fills its measure (an event moves to the voice it makes fit); small notes leading to no normal note are a voice; whole notes side by side are struck together; rests beside both stems tell the voices. Overflowing measures 9 -> 4 (14, 17, 47, 87 left) |
 
 Speed requirement (maintainer, 2026-11-18): reading must go faster than the music at the

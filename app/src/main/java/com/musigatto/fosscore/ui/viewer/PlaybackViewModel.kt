@@ -185,6 +185,10 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
     private val _cursor = MutableStateFlow<List<String>>(emptyList())
     val cursor: StateFlow<List<String>> = _cursor.asStateFlow()
 
+    // the notes put under the cursor by hand (⏮, a long press): the page goes to them even when
+    // they were the cursor's already
+    val shown = NotesToShow()
+
     // the notes [turnAhead] bars after the cursor: where the reader looks, for the page turns
     private val _ahead = MutableStateFlow<List<String>>(emptyList())
     val ahead: StateFlow<List<String>> = _ahead.asStateFlow()
@@ -605,6 +609,7 @@ class PlaybackViewModel(app: Application, private val score: String) : AndroidVi
         pb.onsets.getOrNull(index)?.let {
             _ahead.value = emptyList()
             _cursor.value = it.notes
+            shown.show(it.notes)
         }
     }
 

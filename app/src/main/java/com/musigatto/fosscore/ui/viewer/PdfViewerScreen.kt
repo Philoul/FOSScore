@@ -1145,6 +1145,7 @@ fun PdfViewerScreen(
     // the latest of this screen's state for every note (the effect itself is started once)
     val onNotesHeard by rememberUpdatedState<suspend (List<String>) -> Unit> { followMusic(it, playbackVm.ahead.value) }
     LaunchedEffect(playbackVm) { playbackVm.cursor.collectLatest { onNotesHeard(it) } }
+    LaunchedEffect(playbackVm) { playbackVm.shown.requests.collectLatest { onNotesHeard(it) } }
 
     // a MusicXML score: the metronome keeps the tempo of playback and the score's time signature
     val scoreInfo = (pageSource as? MusicXmlPages)?.info

@@ -118,8 +118,12 @@ class MusicXmlScore private constructor(private val doc: Document) {
             .map { words -> words.getAttribute("font-size").toFloatOrNull()?.let { Math.round(it / wordSize * 100) } }
     }
 
-    /** The score changed as [filter] asks, as MusicXML text for Verovio. */
-    fun prepare(filter: ScoreFilter = ScoreFilter()): String {
+    /**
+     * The score changed as [filter] asks, as MusicXML text for Verovio. [played]: the copy the
+     * music is made from, never drawn, with its articulations written as they sound
+     * ([detachStaccatos]).
+     */
+    fun prepare(filter: ScoreFilter = ScoreFilter(), played: Boolean = false): String {
         // Android's DOM cannot clone a Document, and parsing it again takes more than a second
         // on slow tablets: change the DOM in place, serialize, then undo every change in reverse.
         val undo = mutableListOf<() -> Unit>()
@@ -133,12 +137,56 @@ class MusicXmlScore private constructor(private val doc: Document) {
                     lyricsUnderSystem(undo)
                 }
                 setPrograms(filter.programs, undo)
+                if (played) detachStaccatos(undo)
             }
             return serialize()
         } finally {
             undo.asReversed().forEach { it() }
         }
     }
+
+    /**
+     * Verovio's MIDI plays a staccato note for all its value. Here a note (or chord) with a
+     * staccato or staccatissimo lasts half its value, the other half silent in its voice: the
+     * next note starts on time. Left as written: a grace note, a note whose tie goes on, a value
+     * with no shorter type or an odd duration.
+     */
+    private fun detachStaccatos(undo: MutableList<() -> Unit>) {
+        for (measure in root.children("part").flatMap { it.children("measure") }) {
+            val elements = measure.children()
+            var i = 0
+            while (i < elements.size) {
+                val first = elements[i]
+                // the chord: this note and the notes marked <chord/> after it
+                var last = i
+                while (last + 1 < elements.size && elements[last + 1].tagName == "note" && elements[last + 1].child("chord") != null) last++
+                val chord = elements.subList(i, last + 1)
+                i = last + 1
+                if (first.tagName != "note" || first.child("chord") != null) continue
+                if (chord.none { it.isDetached() }) continue
+                if (chord.any { n -> n.child("grace") != null || n.children("tie").any { it.getAttribute("type") == "start" } }) continue
+                val duration = first.child("duration")?.text()?.toIntOrNull() ?: continue
+                val shorter = SHORTER[first.child("type")?.text()] ?: continue
+                if (duration <= 0 || duration % 2 != 0) continue
+                for (note in chord) {
+                    note.child("duration")?.let { setText(it, (duration / 2).toString(), undo) }
+                    note.child("type")?.let { setText(it, shorter, undo) }
+                }
+                // the silent half, in the chord's voice and staff
+                val forward = doc.createElement("forward")
+                forward.appendChild(doc.createElement("duration").apply { textContent = (duration / 2).toString() })
+                first.child("voice")?.let { forward.appendChild(it.cloneNode(true)) }
+                first.child("staff")?.let { forward.appendChild(it.cloneNode(true)) }
+                val after = chord.last().nextSibling
+                measure.insertBefore(forward, after)
+                undo += { measure.removeChild(forward) }
+            }
+        }
+    }
+
+    private fun Element.isDetached(): Boolean =
+        child("notations")?.children("articulations").orEmpty()
+            .any { a -> a.child("staccato") != null || a.child("staccatissimo") != null }
 
     private fun serialize(): String {
         val out = StringWriter()
@@ -442,6 +490,12 @@ class MusicXmlScore private constructor(private val doc: Document) {
     }
 
     companion object {
+        // a note value and the one half as long, for a staccato played (its dots stay)
+        private val SHORTER = mapOf(
+            "breve" to "whole", "whole" to "half", "half" to "quarter", "quarter" to "eighth",
+            "eighth" to "16th", "16th" to "32nd", "32nd" to "64th", "64th" to "128th",
+        )
+
         // Length of each beat unit in quarter notes.
         private val BEAT_UNITS = mapOf(
             "whole" to 4.0, "half" to 2.0, "quarter" to 1.0, "eighth" to 0.5, "16th" to 0.25

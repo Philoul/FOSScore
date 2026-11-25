@@ -179,9 +179,9 @@ class ScoreEngine(
         }
         parsed = doc
         music = scope.async(soundDispatcher) {
-            val cache = cacheDir?.let { File(it, "music.$CACHE_VERSION.mid") }
-            val timemap = cacheDir?.let { File(it, "timemap.$CACHE_VERSION.json") }
-            val holds = cacheDir?.let { File(it, "holds.$HOLDS_VERSION.json") }
+            val cache = cacheDir?.let { File(it, "music.$CACHE_VERSION-$SOUND_VERSION.mid") }
+            val timemap = cacheDir?.let { File(it, "timemap.$CACHE_VERSION-$SOUND_VERSION.json") }
+            val holds = cacheDir?.let { File(it, "holds.$CACHE_VERSION-$SOUND_VERSION.json") }
             if (cache?.isFile != true || timemap?.isFile != true || holds?.isFile != true) {
                 var waited = 0L
                 while ((!drawn || busy.get() > 0) && waited < MAX_SOUND_WAIT_MS) {
@@ -369,7 +369,7 @@ class ScoreEngine(
         val t = Verovio(resources())
         try {
             t.setOptions(VerovioOptions.unpaged(0).toString())
-            val prepared = synchronized(doc) { doc.prepare() }
+            val prepared = synchronized(doc) { doc.prepare(played = true) }
             val unrolled = runCatching { Unfold.unrolled(prepared) }.getOrNull()
             load(t, unrolled?.first ?: prepared)
             val midi = Base64.decode(t.renderMidi(), Base64.DEFAULT)
@@ -442,7 +442,8 @@ class ScoreEngine(
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
         const val CACHE_VERSION = MUSIC_CACHE_VERSION
-        // the fermatas kept with the music: a score's music made before them is made again once
-        private const val HOLDS_VERSION = 1
+        // the music kept in the cache (MIDI, timing, fermatas): staccatos played made it 2; a
+        // new one makes the music again, not the pages
+        private const val SOUND_VERSION = 2
     }
 }

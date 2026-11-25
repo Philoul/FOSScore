@@ -147,8 +147,10 @@ class MusicXmlScore private constructor(private val doc: Document) {
 
     /**
      * Verovio's MIDI plays a staccato note for all its value. Here a note (or chord) with a
-     * staccato or staccatissimo lasts half its value, the other half silent in its voice: the
-     * next note starts on time. Left as written: a grace note, a note whose tie goes on, a value
+     * staccato or staccatissimo sounds a quarter of its value (half when its duration cannot be
+     * split in four); the rest of it is silence in its voice, written as invisible rests: a
+     * `<forward>` at the end of a measure is dropped by Verovio, which then plays the measure
+     * short. Left as written: a grace note, a note whose tie goes on, a tuplet's note, a value
      * with no shorter type or an odd duration.
      */
     private fun detachStaccatos(undo: MutableList<() -> Unit>) {
@@ -164,24 +166,46 @@ class MusicXmlScore private constructor(private val doc: Document) {
                 i = last + 1
                 if (first.tagName != "note" || first.child("chord") != null) continue
                 if (chord.none { it.isDetached() }) continue
-                if (chord.any { n -> n.child("grace") != null || n.children("tie").any { it.getAttribute("type") == "start" } }) continue
+                if (chord.any { n ->
+                        n.child("grace") != null || n.child("time-modification") != null ||
+                            n.children("tie").any { it.getAttribute("type") == "start" }
+                    }) continue
                 val duration = first.child("duration")?.text()?.toIntOrNull() ?: continue
-                val shorter = SHORTER[first.child("type")?.text()] ?: continue
+                val type = first.child("type")?.text() ?: continue
+                val half = SHORTER[type] ?: continue
+                val quarter = SHORTER[half]
                 if (duration <= 0 || duration % 2 != 0) continue
-                for (note in chord) {
-                    note.child("duration")?.let { setText(it, (duration / 2).toString(), undo) }
-                    note.child("type")?.let { setText(it, shorter, undo) }
+                // sounding, then silent: a quarter, then a half and a quarter; or two halves
+                val (sound, silences) = if (quarter != null && duration % 4 == 0) {
+                    (duration / 4 to quarter) to listOf(duration / 2 to half, duration / 4 to quarter)
+                } else {
+                    (duration / 2 to half) to listOf(duration / 2 to half)
                 }
-                // the silent half, in the chord's voice and staff
-                val forward = doc.createElement("forward")
-                forward.appendChild(doc.createElement("duration").apply { textContent = (duration / 2).toString() })
-                first.child("voice")?.let { forward.appendChild(it.cloneNode(true)) }
-                first.child("staff")?.let { forward.appendChild(it.cloneNode(true)) }
+                for (note in chord) {
+                    note.child("duration")?.let { setText(it, sound.first.toString(), undo) }
+                    note.child("type")?.let { setText(it, sound.second, undo) }
+                }
                 val after = chord.last().nextSibling
-                measure.insertBefore(forward, after)
-                undo += { measure.removeChild(forward) }
+                for ((length, value) in silences) {
+                    val rest = silentRest(first, length, value)
+                    measure.insertBefore(rest, after)
+                    undo += { measure.removeChild(rest) }
+                }
             }
         }
+    }
+
+    /** An invisible rest of [duration] and [type], in [note]'s voice and staff, with its dots. */
+    private fun silentRest(note: Element, duration: Int, type: String): Element {
+        val rest = doc.createElement("note")
+        rest.setAttribute("print-object", "no")
+        rest.appendChild(doc.createElement("rest"))
+        rest.appendChild(doc.createElement("duration").apply { textContent = duration.toString() })
+        note.child("voice")?.let { rest.appendChild(it.cloneNode(true)) }
+        rest.appendChild(doc.createElement("type").apply { textContent = type })
+        note.children("dot").forEach { rest.appendChild(it.cloneNode(true)) }
+        note.child("staff")?.let { rest.appendChild(it.cloneNode(true)) }
+        return rest
     }
 
     private fun Element.isDetached(): Boolean =

@@ -187,6 +187,8 @@ object MusicXmlWriter {
         if (event is Rest && event.wholeMeasure) {
             out.append("      <note><rest measure=\"yes\"/><duration>${units(length, divisions)}</duration><voice>$voice</voice>")
             staff?.let { out.append("<staff>$it</staff>") }
+            // held, the whole measure waits (Pas de boogie woogie, 10)
+            if (event.fermata) out.append("<notations>").append(FERMATA).append("</notations>")
             out.append("</note>\n")
             return
         }

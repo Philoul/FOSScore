@@ -768,6 +768,40 @@ class RhythmsTest {
     }
 
     /**
+     * A whole rest drawn beside a whole chord, over it: the melody rests the whole measure while
+     * the choir holds its chord, two voices (Pas de boogie woogie, 10: one voice, the rest after
+     * the chord, overflowed and was cut with its fermata).
+     */
+    @Test
+    fun aWholeRestBesideAWholeChordIsAVoiceOfItsOwn() {
+        val d = head(80.0, bottomLine + space / 2, name = "noteheadWhole")
+        val f = head(80.0, bottomLine - space / 2, name = "noteheadWhole")
+        val rest = DrawnGlyph("restWhole", Box(150.0, top + space, 157.0, top + 1.5 * space))
+        val measure = read(listOf(d, f, rest), listOf(ledger(d, bottomLine + space))).single()
+        val events = measure.events.map { it.event }
+        val silence = events.filterIsInstance<com.musigatto.fosscore.pdfscore.music.Rest>().single()
+        val chord = events.filterIsInstance<Chord>().single()
+        assertEquals(Fraction.ZERO, silence.onset)
+        assertEquals(Fraction.ZERO, chord.onset)
+        assertEquals(listOf(1, 2), listOf(silence.voice, chord.voice))
+    }
+
+    /**
+     * Two small whole heads one on the other are a chord, not a curve misread: a choir's whole
+     * notes tied over from the line before, alone in their measure (Pas de boogie woogie, 10; lost,
+     * their tie ended on the choir's next D and F, in 25 and 47).
+     */
+    @Test
+    fun aChordOfSmallWholeHeadsIsAChord() {
+        val g = head(100.0, g4, name = "noteheadWhole", height = 0.7)
+        val b = head(100.0, g4 - space, name = "noteheadWhole", height = 0.7)
+        // the next measure's notes, of the normal size
+        val next = listOf(250.0, 300.0, 350.0, 400.0).map { head(it, g4) }
+        val measure = read(listOf(g, b) + next, listOf(barline(200.0)) + next.map { stemUp(it) }).first()
+        assertEquals(listOf("B4", "G4"), measure.events.flatMap { (it.event as Chord).pitches.map { p -> p.toString() } }.sorted())
+    }
+
+    /**
      * Small notes struck with the other voice's notes (a cue line, "synthé" over a piano's chords)
      * are a voice of their own, not grace notes: read as grace notes, their rest came first and
      * the piano's rest after it, the piano a beat late (J'ai encore rêvé d'elle, measure 18).

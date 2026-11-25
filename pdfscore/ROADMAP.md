@@ -167,12 +167,12 @@ the benchmark before it is installed.
 | 40 | Pas de boogie woogie (8va) | the right hand an octave low under 8va | "8va" drawn as outlines (its 8 named a tuplet's number, its dashes small rectangles), and the "(8)" of a new line given to the staff above | fixed 2026-11-22: a digit 8 with dashes after it is an octave line, of the staff closest to it |
 | 41 | Pas de boogie woogie (fermatas) | no fermata read | fermatas not among the symbols named in a PDF printed without fonts | fixed 2026-11-22: named when they look like one well (>= 0.8): 15 read |
 | 42 | Pas de boogie woogie (pedal) | pedal marks not read | not read at all | to do |
-| 43 | Pas de boogie woogie (repeats) | expected 1-54, 19-32, 55-72, 19-52, 73-90 | endings "1. 2." and "3° fois al Coda" | to do |
+| 43 | Pas de boogie woogie (repeats) | expected 1-54, 19-32, 55-72, 19-52, 73-90 | read: the segno of 19 (0.785, under the 0.8 a jump sign needed), "3° fois al Coda" and its sign (a To Coda, not the coda), the segno ending 72 (a D.S.), the "2." (named a tuplet 2); page 6 two systems side by side (72 | coda) were six one-staff systems. Order expected 1-54, 19-52, 55-72, 19-52, 73-90 (the report said 19-32: to confirm) | done, to hear |
 | 44 | every score (playback) | the red bar stops while the next page or half page is being prepared; manual page turns and taps on the bottom bar sometimes ignored while playing | the viewer composed again at every note and beat (20-35 ms each on the Tab 3): now only the bar and the flash; pages drawn below the main thread. Missed vsyncs 123 -> 17 in 60 s. Left: the GPU redraws the whole page each frame (10-15 ms) | done, to check |
 | 45 | Je suis malade (RH, measure 40) | the small slashed eighth before the quarter played as two eighths, not a grace note just before the beat 3 quarter | | to do |
 | 46 | Pas de boogie woogie, Né en 17 à Leidenstadt (fermatas) | fermatas read but not played: the music should hold a little on them, every voice | the player slows down twice over each held note or rest, every voice (MidiSong.holding) | done, to hear |
 | 47 | Pas de boogie woogie (voice, measures 14, 16) | the second voice of the staff missing (a rest and four eighths; a rest, eighth, quarter, eighth), stems up, rests shifted over the staff | | to do |
-| 48 | Pas de boogie woogie (repeats) | 2nd time: misses the jump 52 -> 55 (plays 54 of ending 1); at 72 the voices of 72 and 73 played one after the other, the 3rd time jump (72 -> 19-52 -> 73) ignored | see 43 | to do |
+| 48 | Pas de boogie woogie (repeats) | 2nd time: misses the jump 52 -> 55 (plays 54 of ending 1); at 72 the voices of 72 and 73 played one after the other, the 3rd time jump (72 -> 19-52 -> 73) ignored | see 43 | done, to hear |
 | 49 | Pas de boogie woogie (measures 23-25) | a phantom tie | | to do |
 | 50 | Né en 17 à Leidenstadt (ties 18-19, 19-20) | the tie of the chords' middle note missed, the note played again | | to do |
 | 51 | Né en 17 à Leidenstadt (PDF view) | the cursor already at the start did not move the page: the notes put under the cursor by hand are sent each time | done |
@@ -181,7 +181,7 @@ the benchmark before it is installed.
 | 54 | Mistral gagnant (scan) | many notes missing, clef changes and time changes (6/8, 3/4, 12/8, 9/8) missed | bitmap PDF | to do |
 | 55 | Savoir aimer, La groupie du pianiste (staccato) | written on every note of a chord, Verovio drew a dot per note: on its first note only (reader 32). Played: the copy the music is made from has each staccato half its value, then a silence. The Groupie draws a dot per voice, as the PDF | done, to hear |
 | 56 | Savoir aimer (half-page view) | turned, the top of the page under the next one counted as on screen; checked on the Tab 3: whole page 2 after the jump | done |
-| 57 | La groupie du pianiste (repeats) | the start-repeat at 11 never used: at 54 back to 11, the 2nd time back to 50 (the second start-repeat) | | to do |
+| 57 | La groupie du pianiste (repeats) | the PDF has |: at 11 and 50, one :| at 54: by the usual rule the :| goes back to 50 and the |: of 11 is left alone. Question parked: what should be played? | question |
 | 58 | Hallelujah (scan) | many wrong notes; the treble clef's loop read as a note; arpeggio waves missed; eighth rests of the first line's LH missed | | to do |
 | 59 | Aux champs Elysées, Quelques mots d'amour, Mad World | playback (PDF and MusicXML) and even the metronome alone do not start, an error at the bottom | gone with reader 31 (re-tested 2026-11-25) | done |
 | 60 | Quelques mots d'amour (lyrics) | lyrics very partial in MusicXML; shown between the piano staves, the PDF has them over the music (not tied to a melody) | | to do |

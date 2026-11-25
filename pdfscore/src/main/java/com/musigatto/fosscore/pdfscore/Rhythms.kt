@@ -128,8 +128,10 @@ object Rhythms {
             val next = notes.filter { note -> note.step == start.step && note.head.box.left > start.head.box.right && chordOf.none { it === note } }.minByOrNull { it.head.box.left }
             val ends = next?.let { note ->
                 val head = note.head.box
-                // from before it, or from the barline before it (over the barline)
-                right.x >= head.left - 1.5 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
+                // from before it, or from the barline before it (over the barline); before its
+                // chord, for a head set off right by a second (Né en 17 à Leidenstadt, 18-20)
+                val chordLeft = chords.firstOrNull { chord -> chord.notes.any { it === note } }?.notes?.minOfOrNull { it.head.box.left } ?: head.left
+                right.x >= minOf(head.left, chordLeft) - 1.5 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
             } ?: (right.x >= staff.right - 1.5 * space)
             if (ends) starts[start] = next
         }

@@ -107,6 +107,19 @@ class OutlineTextTest {
     }
 
     /**
+     * A tuplet's number under its bracket has no dot: no ending to read (Pas de boogie woogie,
+     * page 1: its 7 was read as an ending "7.").
+     */
+    @Test
+    fun aTupletsNumberUnderItsBracketIsNoEnding() {
+        val bracket = DrawnLine(300.0, top - 3 * space, 330.0, top - 3 * space, 0.5)
+        val hook = DrawnLine(300.0, top - 3 * space, 300.0, top - 2 * space, 0.5)
+        val seven = DrawnGlyph("tuplet7", Box(302.0, top - 2.6 * space, 306.0, top - 1.2 * space))
+        val bracketed = PageDrawing(600.0, 800.0, listOf(seven), staff + bracket + hook, emptyList(), emptyList())
+        assertEquals(emptyList<OutlineText.Spot>(), OutlineText.spots(bracketed).filter { it.kind == OutlineText.Kind.ENDING })
+    }
+
+    /**
      * The same ending as LilyPond prints it without fonts: its bracket and hook are thin filled
      * rectangles, not lines (Lettre à France, page 3): they are strokes all the same.
      */

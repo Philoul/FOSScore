@@ -78,6 +78,9 @@ object OutlineText {
     /** The font of a text read from the pixels. */
     const val FONT = "ocr"
 
+    // a symbol that is a digit: a tuplet's, a time signature's, a fingering's ("tuplet2")
+    private val DIGIT = Regex("""\d$""")
+
     // the numbers under the endings' brackets over [staff]: as Directions.endings finds them
     private fun endings(page: PageDrawing, staff: Staff, boxes: List<Box>): List<Box> {
         val space = staff.space
@@ -90,8 +93,16 @@ object OutlineText {
             val hooked = hooks.any { abs(it.x1 - left) < 0.3 * space && abs(min(it.y1, it.y2) - line.y1) <= 0.3 * space }
             if (!hooked) return@mapNotNull null
             // its digits and dot may have been named as symbols (a tuplet's 2, an augmentation dot:
-            // Pas de boogie woogie's "2." was never read)
-            val parts = boxes.filter { it.width > 0.4 * space } + page.glyphs.map { it.box }
+            // Pas de boogie woogie's "2." was never read): a digit followed by its dot, which a
+            // tuplet's number under its bracket has not (Pas de boogie woogie, page 1: a false "7.")
+            val dotted = page.glyphs.filter { glyph ->
+                DIGIT.containsMatchIn(glyph.name.orEmpty()) && page.glyphs.any { dot ->
+                    dot.name == "augmentationDot" && dot.box.left >= glyph.box.right - 0.2 * space &&
+                        dot.box.left <= glyph.box.right + space && abs(dot.box.bottom - glyph.box.bottom) <= 0.4 * space
+                }
+            }
+            val dots = page.glyphs.filter { it.name == "augmentationDot" && dotted.any { d -> it.box.left >= d.box.right - 0.2 * space && it.box.left <= d.box.right + space } }
+            val parts = boxes.filter { it.width > 0.4 * space } + (dotted + dots).map { it.box }
             parts.filter { it.left >= left - 0.2 * space && it.left <= left + 3 * space && it.top > line.y1 && it.bottom <= line.y1 + 3 * space }
                 .takeIf { it.isNotEmpty() }?.reduce(::union)
         }

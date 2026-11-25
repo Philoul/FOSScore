@@ -75,6 +75,19 @@ class CrossStaffTest {
     }
 
     /**
+     * A voice too long by a note, and no voice of its staff with room for it: the note gets a
+     * voice of its own, on the beat where it is drawn (Né en 17 à Leidenstadt, 21, in 2/4: a half
+     * and, beside it on the second beat, a quarter, both stems up, read one after the other).
+     */
+    @Test
+    fun aNoteNoVoiceHasRoomForGetsAVoiceOfItsOwnWhereItIsDrawn() {
+        val events = listOf(note(10.0, Fraction.ZERO, NoteType.HALF), note(205.0, Fraction.of(1, 2), NoteType.QUARTER))
+        val staff = MeasureStaff(StaffBox(1, 0.0, 400.0, 0.0, 20.0, 5.0, 10.0), Clef(Clef.Sign.F, 4), Key(0), TimeSignature(2, 4), emptyList(), events)
+        val read = ScoreReader.fitVoices(listOf(ScoreMeasure(1, 0, true, true, listOf(staff)))).single().staves[0].events
+        assertEquals(listOf(1 to Fraction.ZERO, 2 to Fraction.of(1, 4)), read.map { it.event.voice to it.event.onset })
+    }
+
+    /**
      * A voice struck with another voice of its staff at the measure's start starts then, whatever
      * the other hand draws a little left of it (Lettre à France, measure 24's left hand).
      */

@@ -10,6 +10,7 @@ import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.Rest
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 /**
  * A whole score read from its pages: its [parts] (one staff each, or several joined by a brace), its
@@ -314,6 +315,25 @@ object ScoreReader {
                     }
                 }
             }
+        }
+        // no voice of the staff has room for it: the note a voice is too long by goes to a voice
+        // of its own, at the beat its place in the measure says (Né en 17 à Leidenstadt, 21: a
+        // quarter on the second beat beside a half, both stems up, played after the half)
+        val span = staff.box.right - staff.box.start
+        for ((a, inA) in voices) {
+            val excess = end(inA) - length
+            if (excess <= Fraction.ZERO || span <= 0.0) continue
+            val e = inA.filter { timed(it) && it.event is Chord && it.event.duration.length == excess }.maxByOrNull { it.event.onset } ?: continue
+            val newA = inA.filter { it !== e }.map { if (it.event.onset > e.event.onset) it.copy(event = shifted(it.event, Fraction.ZERO - excess)) else it }
+            if (end(newA) != length) continue
+            // the beats of its value it may start on, the nearest to where it is drawn
+            val steps = (length.numerator * excess.denominator) / (length.denominator * excess.numerator)
+            if (steps < 2) continue
+            val drawn = ((e.box.left - staff.box.start) / span * steps).roundToLong().coerceIn(1, steps - 1)
+            val voice = voices.keys.max() + 1
+            val moved = e.copy(event = revoiced(e.event, voice, excess * Fraction.of(drawn)))
+            val others = staff.events.filter { it.event.voice != a }
+            return staff.copy(events = (others + newA + moved).sortedWith(compareBy<PlacedEvent>({ it.event.onset }, { it.event.voice })))
         }
         return staff
     }

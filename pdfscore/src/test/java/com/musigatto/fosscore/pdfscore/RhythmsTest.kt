@@ -420,6 +420,29 @@ class RhythmsTest {
         assertEquals(setOf(0, 1), (measures[0].events.single().event as Chord).ties)
     }
 
+    /**
+     * A tie to a chord with a second ends before the chord, not before its head set off right
+     * (Né en 17 à Leidenstadt, 18-19 and 19-20: the middle note of the chords was played again).
+     */
+    @Test
+    fun aTieToTheHeadSetOffInAChordWithASecond() {
+        val a4 = g4 - 0.5 * space
+        val chord = listOf(g4, a4, c5).map { head(100.0, it) }
+        val stem = DrawnLine(chord[0].box.right, g4, chord[0].box.right, c5 - stemLength, 0.5)
+        // the next chord, stem up: its A set off right of the stem, beside its G
+        val low = head(150.0, g4)
+        val second = head(low.box.right - 0.1 * space, a4)
+        val high = head(150.0, c5)
+        val nextStem = DrawnLine(low.box.right, g4, low.box.right, c5 - stemLength, 0.5)
+        // as LilyPond ends them: 1.36 spaces before the chord (2.6 before its head set off)
+        val to = low.box.left - 1.36 * space
+        val ties = listOf(g4 + 0.6 * space, a4, c5 - 0.6 * space).zip(listOf(0.5, 0.3, -0.5)).map { (y, bulge) ->
+            arc(chord[0].box.right + 0.2 * space, y, to, y, bulge * space)
+        }
+        val measure = read(chord + listOf(low, second, high), listOf(stem, nextStem), ties).single()
+        assertEquals(setOf(0, 1, 2), (measure.events.first().event as Chord).ties)
+    }
+
     /** A curve from one note to a note on another line is a slur, no tie. */
     @Test
     fun aCurveToAnotherLineIsNoTie() {
@@ -715,6 +738,20 @@ class RhythmsTest {
         val measure = read(listOf(grace, note), listOf(stemUp(grace), stemUp(note))).single()
         val chords = measure.events.map { it.event as Chord }
         assertEquals(listOf(NoteType.EIGHTH, NoteType.QUARTER), chords.map { it.duration.type })
+    }
+
+    /**
+     * The accidental of the note a grace note leads to stands between them: the grace note is
+     * further from its note by its width (Je suis malade, 40: a slashed D flat 2.7 spaces before
+     * a D natural, played as an eighth of its own).
+     */
+    @Test
+    fun aGraceNoteLeadsToItsNotePastItsAccidental() {
+        val grace = head(100.0, c5, height = 0.65)
+        val natural = DrawnGlyph("accidentalNatural", Box(108.0, c5 - 1.4 * space, 111.0, c5 + 1.4 * space))
+        val note = head(113.5, c5)
+        val measure = read(listOf(grace, natural, note), listOf(stemUp(grace), stemUp(note))).single()
+        assertEquals(listOf(true, false), measure.events.map { (it.event as Chord).grace })
     }
 
     /**

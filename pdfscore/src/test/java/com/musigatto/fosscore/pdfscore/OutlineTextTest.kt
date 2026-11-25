@@ -92,6 +92,21 @@ class OutlineTextTest {
     }
 
     /**
+     * An ending's digit and dot named as symbols (a tuplet's 2, an augmentation dot: Pas de boogie
+     * woogie, 55) are its number all the same: read from the pixels.
+     */
+    @Test
+    fun anEndingsNumberNamedAsSymbolsIsRead() {
+        val bracket = DrawnLine(300.0, top - 3 * space, 400.0, top - 3 * space, 0.5)
+        val hook = DrawnLine(300.0, top - 3 * space, 300.0, top - space, 0.5)
+        val two = DrawnGlyph("tuplet2", Box(302.0, top - 2.6 * space, 306.0, top - 1.2 * space))
+        val dot = DrawnGlyph("augmentationDot", Box(307.0, top - 1.4 * space, 308.0, top - 1.2 * space))
+        val ending = PageDrawing(600.0, 800.0, listOf(two, dot), staff + bracket + hook, emptyList(), emptyList())
+        val spot = OutlineText.spots(ending).single { it.kind == OutlineText.Kind.ENDING }
+        assertEquals(Box(302.0, top - 2.6 * space, 308.0, top - 1.2 * space), spot.box)
+    }
+
+    /**
      * The same ending as LilyPond prints it without fonts: its bracket and hook are thin filled
      * rectangles, not lines (Lettre à France, page 3): they are strokes all the same.
      */

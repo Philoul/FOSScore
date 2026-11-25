@@ -89,7 +89,10 @@ object OutlineText {
             val left = min(line.x1, line.x2)
             val hooked = hooks.any { abs(it.x1 - left) < 0.3 * space && abs(min(it.y1, it.y2) - line.y1) <= 0.3 * space }
             if (!hooked) return@mapNotNull null
-            boxes.filter { it.left >= left - 0.2 * space && it.left <= left + 3 * space && it.top > line.y1 && it.bottom <= line.y1 + 3 * space && it.width > 0.4 * space }
+            // its digits and dot may have been named as symbols (a tuplet's 2, an augmentation dot:
+            // Pas de boogie woogie's "2." was never read)
+            val parts = boxes.filter { it.width > 0.4 * space } + page.glyphs.map { it.box }
+            parts.filter { it.left >= left - 0.2 * space && it.left <= left + 3 * space && it.top > line.y1 && it.bottom <= line.y1 + 3 * space }
                 .takeIf { it.isNotEmpty() }?.reduce(::union)
         }
     }

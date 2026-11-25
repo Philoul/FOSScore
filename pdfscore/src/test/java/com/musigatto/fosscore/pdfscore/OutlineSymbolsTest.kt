@@ -194,6 +194,22 @@ class OutlineSymbolsTest {
     }
 
     /**
+     * A sign drawn in its parts (a segno: its S, its two dots) needs a little less: Pas de boogie
+     * woogie's segnos scored 0.785 with three outlines. The same look in one outline is no sign.
+     */
+    @Test
+    fun aJumpSignInItsPartsIsASignAtALowerScore() {
+        val signs = SymbolClassifier(listOf(FontSymbol("A", "segno", listOf(ellipse(0.0, 0.0, 0.8, 1.1))), FontSymbol("A", "noteheadBlack", listOf(ellipse(0.0, 0.0, 0.6, 0.5)))))
+        val y = top - 4 * space
+        val (a, b, c) = Triple(Point(200.0, y), Point(200.0 + 1.6 * space, y), Point(200.0 + 0.8 * space, y + 2.2 * space))
+        val middle = Point(200.0 + 0.8 * space, y + 0.7 * space)
+        // the triangle of the test above, in three parts
+        val parts = listOf(listOf(a, b, middle, a), listOf(b, c, middle, b), listOf(c, a, middle, c))
+        val named = OutlineSymbols(signs).name(page(parts))
+        assertEquals(listOf("segno"), named.glyphs.map { it.name })
+    }
+
+    /**
      * A clef named by its look must look like one: a false bass clef change (J'te l'dis quand
      * même, measure 16, at 0.57 where the clefs score 0.91 and more) put the treble staff in bass
      * clef, its notes two octaves too low.

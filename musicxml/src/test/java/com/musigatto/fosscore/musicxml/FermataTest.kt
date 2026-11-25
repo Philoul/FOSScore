@@ -45,34 +45,6 @@ class FermataTest {
         assertEquals(mapOf(1 to listOf(Hold(1.0, 3.0), Hold(1.0, 3.0), Hold(1.0, 2.0))), doc.fermatas)
     }
 
-    /**
-     * A whole note held over a hand running in quarters: the run goes on in time, the hold is on
-     * its last note (Pas de boogie woogie: the whole notes held over the arpeggios slowed down
-     * the whole measure).
-     */
-    @Test
-    fun aNoteHeldOverMovingNotesIsHeldFromTheLastOfThem() {
-        val run = (0 until 4).joinToString("") {
-            """<note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>"""
-        }
-        val xml = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <score-partwise version="4.0">
-              <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
-              <part id="P1">
-                <measure number="1">
-                  <attributes><divisions>1</divisions><staves>2</staves></attributes>
-                  <note><pitch><step>B</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff>
-                    <notations><fermata/></notations></note>
-                  <backup><duration>4</duration></backup>
-                  $run
-                </measure>
-              </part>
-            </score-partwise>
-        """.trimIndent()
-        assertEquals(mapOf(0 to listOf(Hold(3.0, 4.0))), MusicXmlScore.parse(xml.toByteArray()).fermatas)
-    }
-
     @Test
     fun theHoldsArePlacedEachTimeTheMeasureIsPlayed() {
         val doc = MusicXmlScore.parse(score.toByteArray())

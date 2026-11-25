@@ -56,6 +56,17 @@ class UnfoldTest {
 
     private fun played(measures: List<M>) = Unfold.order(score(measures)).map { it + 1 }
 
+    /**
+     * Two forward repeats and one backward repeat: back to the first, then to the second, then on
+     * (La groupie du pianiste: |: at 11 and 50, :| at 54; maintainer, 2026-11-25: no forward
+     * repeat is ignored).
+     */
+    @Test
+    fun aBackwardRepeatGoesBackToEachForwardRepeatBeforeItInTurn() {
+        val measures = listOf(M(), M(forward = true), M(), M(forward = true), M(backward = true), M())
+        assertEquals(listOf(1, 2, 3, 4, 5, 2, 3, 4, 5, 4, 5, 6), played(measures))
+    }
+
     @Test
     fun aRepeatIsPlayedTwice() {
         val m = List(4) { M() }.toMutableList()

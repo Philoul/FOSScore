@@ -17,6 +17,7 @@ import javax.xml.transform.stream.StreamResult
  * ending, a repeat back after the coda), even from MuseScore's own MusicXML.
  *
  * - A section starts at a forward repeat (or the start); going back to it starts the next pass.
+ *   Several forward repeats before one backward repeat: it goes back to each of them in turn.
  * - An ending is played on the passes it names, read from its text ("1. 2.") before its number
  *   (MuseScore writes number="2" for "1. 2.").
  * - A backward repeat in an ending goes back while a later ending of the section has a later
@@ -164,6 +165,19 @@ object Unfold {
             // after a jump, only the repeats of the coda are played
             if (m.backward && (!jumped || (coda >= 0 && sectionStart >= coda))) {
                 val inBlock = blockAt(i)
+                // several forward repeats before one backward repeat: back to each of them in turn
+                val after = (i - 1 downTo 0).firstOrNull { info[it].backward } ?: -1
+                val starts = (after + 1..i).filter { info[it].forward }
+                if (inBlock == null && starts.size > 1) {
+                    if (backs[i] < starts.size) {
+                        sectionStart = starts[backs[i]]
+                        backs[i]++
+                        pass++
+                        i = sectionStart
+                        cameBack = true
+                        continue
+                    }
+                }
                 val again = if (inBlock != null) {
                     blocks.any { it.start >= sectionStart && it.numbers.any { k -> k > pass } }
                 } else {

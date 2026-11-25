@@ -6,8 +6,10 @@ import com.musigatto.fosscore.pdfscore.music.Clef
 import com.musigatto.fosscore.pdfscore.music.Event
 import com.musigatto.fosscore.pdfscore.music.Fraction
 import com.musigatto.fosscore.pdfscore.music.Key
+import com.musigatto.fosscore.pdfscore.music.NoteType
 import com.musigatto.fosscore.pdfscore.music.Repeat
 import com.musigatto.fosscore.pdfscore.music.Rest
+import com.musigatto.fosscore.pdfscore.music.Stem
 import com.musigatto.fosscore.pdfscore.music.TimeSignature
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -289,7 +291,44 @@ object ScoreReader {
      */
     internal fun fitVoices(measures: List<ScoreMeasure>): List<ScoreMeasure> = measures.map { measure ->
         val length = measure.staves.firstNotNullOfOrNull { it.time }?.measureLength ?: return@map measure
-        measure.copy(staves = measure.staves.map { staff -> fitVoices(staff, length) })
+        // a measure some voice fills is a whole one (not a pickup): a voice short in it lacks time
+        val full = measure.staves.any { staff ->
+            staff.events.groupBy { it.event.voice }.values.any { inVoice ->
+                inVoice.filter { (it.event as? Chord)?.grace != true }.maxOfOrNull { it.event.onset + it.event.duration.length } == length
+            }
+        }
+        measure.copy(staves = measure.staves.map { staff -> fitVoices(if (full) oneFlagLess(staff, length) else staff, length) })
+    }
+
+    /**
+     * A voice short of its measure by the value of one of its flagged notes, the only one: that
+     * note has a flag less than read, and the notes after it start later. The look of two flags
+     * and three are close, and no height tells them apart in every font (Né en 17 à Leidenstadt,
+     * 35: a sixteenth after a dotted eighth rest read as a 32nd, the notes after it early).
+     */
+    internal fun oneFlagLess(staff: MeasureStaff, length: Fraction): MeasureStaff {
+        var events = staff.events
+        for ((_, inVoice) in staff.events.groupBy { it.event.voice }) {
+            val timed = inVoice.filter { (it.event as? Chord)?.grace != true }
+            val lack = length - (timed.maxOfOrNull { it.event.onset + it.event.duration.length } ?: continue)
+            if (lack <= Fraction.ZERO) continue
+            val flagged = timed.filter { e ->
+                val chord = e.event as? Chord
+                chord != null && chord.beams.isEmpty() && chord.stem != Stem.NONE && chord.duration.type.beams >= 2 && chord.duration.length == lack
+            }
+            val e = flagged.singleOrNull() ?: continue
+            val chord = e.event as Chord
+            val longer = NoteType.withBeams(chord.duration.type.beams - 1) ?: continue
+            val lengthened = e.copy(event = chord.copy(duration = chord.duration.copy(type = longer)))
+            events = events.map { other ->
+                when {
+                    other === e -> lengthened
+                    other.event.voice == chord.voice && other.event.onset > chord.onset -> other.copy(event = shifted(other.event, lack))
+                    else -> other
+                }
+            }
+        }
+        return staff.copy(events = events)
     }
 
     private fun fitVoices(staff: MeasureStaff, length: Fraction): MeasureStaff {

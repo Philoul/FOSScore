@@ -36,16 +36,18 @@ class MidiSong private constructor(
     }
 
     /**
-     * This song slowed down [factor] times over [holds], the fermatas: every voice holds together,
-     * and the music goes on at its own tempo after them.
+     * This song slowed down over [holds], the fermatas, each [stretch] times (a function of its
+     * length in quarter notes): every voice holds together, and the music goes on at its own
+     * tempo after them.
      */
-    fun holding(holds: List<Hold>, factor: Double): MidiSong {
-        if (holds.isEmpty() || factor == 1.0) return this
+    fun holding(holds: List<Hold>, stretch: (Double) -> Double = ::fermataStretch): MidiSong {
+        if (holds.isEmpty()) return this
         val points = (tempoAt.toList() + holds.flatMap { listOf(it.from, it.to) })
             .filter { it >= 0.0 }.distinct().sorted()
         val micros = points.map { q ->
             val written = microsPerQuarter(q)
-            if (holds.any { q >= it.from - EPSILON && q < it.to - EPSILON }) (written * factor).roundToInt() else written
+            val hold = holds.firstOrNull { q >= it.from - EPSILON && q < it.to - EPSILON }
+            if (hold != null) (written * stretch(hold.to - hold.from)).roundToInt() else written
         }
         return MidiSong(events, points.toDoubleArray(), micros.toIntArray(), length, trackChannels)
     }
@@ -69,6 +71,17 @@ class MidiSong private constructor(
         const val NOTE_ON = 0x90
         const val CONTROL = 0xB0
         const val PROGRAM = 0xC0
+
+        /**
+         * How many times longer a fermata of [quarters] lasts: half as long again, and at least a
+         * quarter note longer, so that a short note held is heard held (maintainer, 2026-11-25:
+         * the sixteenths held were not heard, the whole notes held twice too long).
+         */
+        fun fermataStretch(quarters: Double): Double =
+            if (quarters <= 0.0) 1.0 else maxOf(FERMATA_MORE, (quarters + FERMATA_AT_LEAST) / quarters)
+
+        private const val FERMATA_MORE = 1.5
+        private const val FERMATA_AT_LEAST = 1.0
 
         // MIDI's own default: ♩ = 120
         private const val DEFAULT_TEMPO = 500_000

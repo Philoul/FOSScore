@@ -29,7 +29,7 @@ class MidiSongHoldTest {
     @Test
     fun aFermataSlowsTheMusicDownOverItAndOnlyThere() {
         // the second quarter held: twice as long, the first and the third at their written tempo
-        val song = MidiSong.read(midi).holding(listOf(Hold(1.0, 2.0)), 2.0)
+        val song = MidiSong.read(midi).holding(listOf(Hold(1.0, 2.0))) { 2.0 }
         assertEquals(1_000_000, song.microsPerQuarter(0.5))
         assertEquals(2_000_000, song.microsPerQuarter(1.0))
         assertEquals(2_000_000, song.microsPerQuarter(1.99))
@@ -39,7 +39,7 @@ class MidiSongHoldTest {
 
     @Test
     fun aFermataOverATempoChangeHoldsBothTempos() {
-        val song = MidiSong.read(midi).holding(listOf(Hold(1.5, 2.5)), 2.0)
+        val song = MidiSong.read(midi).holding(listOf(Hold(1.5, 2.5))) { 2.0 }
         assertEquals(2_000_000, song.microsPerQuarter(1.5))
         assertEquals(1_000_000, song.microsPerQuarter(2.0))
         assertEquals(500_000, song.microsPerQuarter(2.5))
@@ -48,6 +48,17 @@ class MidiSongHoldTest {
     @Test
     fun noFermataLeavesTheSongAsItIs() {
         val song = MidiSong.read(midi)
-        assertSame(song, song.holding(emptyList(), 2.0))
+        assertSame(song, song.holding(emptyList()))
+    }
+
+    /** A sixteenth held is heard held; a whole note held is not held twice its length. */
+    @Test
+    fun aShortFermataIsHeardAndALongOneIsNotTooLong() {
+        assertEquals(5.0, MidiSong.fermataStretch(0.25), 1e-9)
+        assertEquals(2.0, MidiSong.fermataStretch(1.0), 1e-9)
+        assertEquals(1.5, MidiSong.fermataStretch(4.0), 1e-9)
+        val song = MidiSong.read(midi).holding(listOf(Hold(1.0, 1.25)))
+        assertEquals(5_000_000, song.microsPerQuarter(1.0))
+        assertEquals(1_000_000, song.microsPerQuarter(1.25))
     }
 }

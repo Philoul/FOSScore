@@ -56,12 +56,15 @@ class MusicXmlScore private constructor(private val doc: Document) {
     /**
      * The notes and rests held by a fermata, by measure (0 up, as the parts have them): where each
      * starts in its measure and where it ends, in quarter notes. Every part's: one fermata holds
-     * the whole music.
+     * the whole music. A note held while other notes are struck under it is held from the last
+     * of them on: the music goes on in time, then waits on the chord where it stops.
      */
     val fermatas: Map<Int, List<Hold>> by lazy { readFermatas() }
 
     private fun readFermatas(): Map<Int, List<Hold>> {
         val out = sortedMapOf<Int, MutableList<Hold>>()
+        // where notes are struck, by measure, in quarter notes
+        val struck = mutableMapOf<Int, MutableSet<Double>>()
         for (part in root.children("part")) {
             var divisions = 1
             part.children("measure").forEachIndexed { index, measure ->
@@ -79,6 +82,7 @@ class MusicXmlScore private constructor(private val doc: Document) {
                             if (e.child("chord") == null) {
                                 onset = time
                                 time += duration
+                                if (e.child("rest") == null) struck.getOrPut(index) { mutableSetOf() } += onset.toDouble() / divisions
                             }
                             val held = e.child("notations")?.child("fermata") != null
                             if (held && duration > 0) {
@@ -90,7 +94,10 @@ class MusicXmlScore private constructor(private val doc: Document) {
                 }
             }
         }
-        return out
+        return out.mapValues { (index, holds) ->
+            val onsets = struck[index].orEmpty()
+            holds.map { h -> Hold(onsets.filter { it >= h.from && it < h.to }.maxOrNull() ?: h.from, h.to) }
+        }
     }
 
     /** True when most lyrics of the file ask to be drawn above the staff. */

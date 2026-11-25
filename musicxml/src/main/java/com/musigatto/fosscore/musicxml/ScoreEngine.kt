@@ -442,8 +442,9 @@ class ScoreEngine(
 
         // bumped when what is kept in the cache is made differently, so the old files are not used
         const val CACHE_VERSION = MUSIC_CACHE_VERSION
-        // the music kept in the cache (MIDI, timing, fermatas): staccatos played made it 2; a
-        // new one makes the music again, not the pages
-        private const val SOUND_VERSION = 2
+        // the music kept in the cache (MIDI, timing, fermatas): staccatos played made it 2,
+        // shorter staccatos and fermatas held on their last chord 3; a new one makes the music
+        // again, not the pages
+        private const val SOUND_VERSION = 3
     }
 }

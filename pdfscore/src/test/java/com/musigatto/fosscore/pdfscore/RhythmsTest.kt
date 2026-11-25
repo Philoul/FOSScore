@@ -474,6 +474,19 @@ class RhythmsTest {
     }
 
     /**
+     * A tie from the last note to the double barline, a key announcing the next line after it,
+     * goes on over the line break too (Né en 17 à Leidenstadt, 49: the E played again in 50).
+     */
+    @Test
+    fun aTieToTheBarlineBeforeTheNextLinesKeyIsATie() {
+        val a = head(480.0, g4)
+        val tie = arc(a.box.right + 0.2 * space, g4 + 0.6 * space, 500.0, g4 + 0.6 * space, 0.4 * space)
+        val natural = DrawnGlyph("accidentalNatural", Box(520.0, top - space, 523.0, top + space))
+        val measure = read(listOf(a, natural), listOf(stemUp(a), barline(505.0), barline(507.0)), listOf(tie)).first()
+        assertEquals(listOf(setOf(0)), tied(measure))
+    }
+
+    /**
      * A staccato over a note (its stem down) can sit at the height of the note before it: it is
      * the staccato of the note it is over, not a dot of the one before.
      */

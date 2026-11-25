@@ -138,7 +138,9 @@ object Rhythms {
                 // chord, for a head set off right by a second (Né en 17 à Leidenstadt, 18-20)
                 val chordLeft = chords.firstOrNull { chord -> chord.notes.any { it === note } }?.notes?.minOfOrNull { it.head.box.left } ?: head.left
                 right.x >= minOf(head.left, chordLeft) - 1.5 * space && right.x <= head.right + 0.5 * space && besideHead(right, head)
-            } ?: (right.x >= staff.right - 1.5 * space)
+            // over the line break: to the staff's end, or to the barline before a key or clef
+            // announcing the next line, with no head after it (Né en 17 à Leidenstadt, 49)
+            } ?: (right.x >= staff.right - 1.5 * space || (right.x > start.head.box.right + 0.5 * space && notes.none { it.head.box.left > right.x }))
             if (ends) starts[start] = next
         }
         return starts

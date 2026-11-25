@@ -61,9 +61,14 @@ object Rhythms {
         // after it; small notes spaced as notes are, leading to none, are a voice of their own (the
         // choirs' small notes of Pas de boogie woogie, measure 41)
         val leading = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Draft, Boolean>())
+        val accidentals = page.glyphs.filter { it.name?.startsWith("accidental") == true }.map { it.box }
         for (chord in chords.filter(::small).sortedByDescending { it.x }) {
             val next = chords.filter { it.measure == chord.measure && it.x > chord.x + 0.1 * space }.minByOrNull { it.x } ?: continue
-            if (next.x - chord.x <= GRACE_LEAD * space && (!small(next) || next in leading)) leading += chord
+            // the accidentals of the note it leads to stand between them, and push it away (Je suis
+            // malade, 40: a slashed D flat before a D natural, 2.7 spaces from it)
+            val between = accidentals.filter { it.left >= chord.box.right && it.right <= next.x + 0.2 * space && it.bottom >= next.box.top - space && it.top <= next.box.bottom + space }
+                .sumOf { it.width }
+            if (next.x - chord.x - between <= GRACE_LEAD * space && (!small(next) || next in leading)) leading += chord
         }
         fun cue(chord: Draft) = struck(chord) || chord !in leading
         // a grace note has a stem: a small whole head on its own is a curve misread

@@ -741,6 +741,20 @@ class RhythmsTest {
     }
 
     /**
+     * The accidental of the note a grace note leads to stands between them: the grace note is
+     * further from its note by its width (Je suis malade, 40: a slashed D flat 2.7 spaces before
+     * a D natural, played as an eighth of its own).
+     */
+    @Test
+    fun aGraceNoteLeadsToItsNotePastItsAccidental() {
+        val grace = head(100.0, c5, height = 0.65)
+        val natural = DrawnGlyph("accidentalNatural", Box(108.0, c5 - 1.4 * space, 111.0, c5 + 1.4 * space))
+        val note = head(113.5, c5)
+        val measure = read(listOf(grace, natural, note), listOf(stemUp(grace), stemUp(note))).single()
+        assertEquals(listOf(true, false), measure.events.map { (it.event as Chord).grace })
+    }
+
+    /**
      * A grace note has a stem: a small whole head is a curve misread (a slur's end in J'ai encore
      * rêvé d'elle, measure 28), and read as a grace note it broke the beam it sat in.
      */

@@ -76,6 +76,22 @@ class StaffNotesTest {
     }
 
     /** A section's barline drawn at the start of a system, after the clef and key, closes no measure: nothing came before it. */
+    /**
+     * Nothing is played before a system's opening clef: on a scan, a piece of the brace or of the
+     * opening line read as a head there made the section's barline after the key close a measure
+     * (an empty one, that shifted every measure after it).
+     */
+    @Test
+    fun aHeadBeforeTheOpeningClefIsNoNote() {
+        val top = 100.0
+        val bottom = top + 4 * space
+        val junk = head(48.0, top + 3 * space, "noteheadHalf")
+        val glyphs = listOf(junk, gClef(55.0, top), sharp(70.0, top), head(100.0, top + 3 * space), head(150.0, top + 3 * space))
+        val staff = read(staffLines(top) + barline(82.0, top, bottom) + barline(130.0, top, bottom), glyphs).single().single()
+        assertEquals(listOf(130.0), staff.barlines)
+        assertEquals(listOf(100.0, 150.0), staff.notes.map { it.head.box.left })
+    }
+
     @Test
     fun aBarlineRightAfterTheKeyClosesNoMeasure() {
         val top = 100.0

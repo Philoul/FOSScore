@@ -232,13 +232,20 @@ object StaffNotes {
     private fun read(
         staff: Staff,
         system: StaffSystem,
-        symbols: List<DrawnGlyph>,
+        drawn: List<DrawnGlyph>,
         lines: List<DrawnLine>,
         fallbackClef: Clef? = null,
         extraBars: List<Double> = emptyList(),
         shapes: List<DrawnShape> = emptyList(),
     ): StaffReading {
         val space = staff.space
+        // Nothing is played before the system's opening clef: a head, rest or flag there is a piece
+        // of the brace or of the opening line misread on a scan.
+        val opening = drawn.firstOrNull { clefOf(it.name.orEmpty()) != null && it.box.left < staff.left + OPENING_CLEF_REACH * space }
+        val symbols = drawn.filterNot { glyph ->
+            val name = glyph.name.orEmpty()
+            opening != null && glyph.box.centerX < opening.box.centerX && (isHead(name) || name.startsWith("rest") || name.startsWith("flag"))
+        }
         val heads = symbols.filter { isHead(it.name) && onLedgers(it, staff, lines) }
         val clefs = symbols.mapNotNull { glyph ->
             clefOf(glyph.name.orEmpty())?.let { (sign, shift) ->
@@ -613,6 +620,9 @@ object StaffNotes {
 
     /** A key starts this far (in spaces) after its clef or barline at most: fonts with narrow clefs (MuseJazz) leave almost 2. */
     private const val KEY_REACH = 2.5
+
+    /** A system's opening clef starts within this many spaces of its staff's left end. */
+    private const val OPENING_CLEF_REACH = 3.0
 
     /** How far from its staff (in spaces) a symbol may be and still belong to it. */
     private const val MAX_LEDGER_SPACES = 8.0

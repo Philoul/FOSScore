@@ -229,3 +229,13 @@ What the analysis found, and the order to borrow in (each measured with `bench.p
   stems and the system's opening line taken for barlines). Projection needs Audiveris's other
   checks with it: ink beside the candidate, alignment across the staves, the opening line left
   out.
+- Measured 2026-11-28 against the vector reading of the same PDFs (544 / 548 staff-measures
+  right, so it stands for the score): the scans' barlines are almost all right (3 missed, 11
+  added over the 9 renders), and an added one costs every measure after it. The added ones were
+  an arpeggio's wavy line (its spine, a column inked all along, made a stroke over the staff) and
+  a piece of the brace read as a head before the opening clef (then the section's barline after
+  the key closed an empty measure). Fixed: a barline is as wide as its ink; nothing is played
+  before a system's opening clef. Benchmark 708 / 1170 -> 1126 / 1244 (no score lower); 3 missed
+  and 5 added left (stems of heads not named, an arpeggio read as a stem with heads). What is
+  left is mostly the notes: keys missed on the rough renders (E for E flat over whole
+  stretches), octave lines, heads missed or added.

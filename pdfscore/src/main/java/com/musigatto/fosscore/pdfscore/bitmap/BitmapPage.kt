@@ -159,7 +159,7 @@ object BitmapPage {
     /**
      * Stems: the thin segments of a composite with a notehead piece at one end. Barlines: the
      * segments of a composite or 'other' component without a head, running from a staff's top
-     * line to its bottom one (half a space either way).
+     * line to its bottom one (half a space either way). A barline is as wide as its ink ([spread]).
      */
     private fun stemsAndBarlines(page: PageAnalysis, prediction: Prediction): List<DrawnLine> {
         val d = page.space
@@ -180,13 +180,34 @@ object BitmapPage {
                     continue
                 }
                 if ((names[bi] == "composite" || names[bi] == "other") && heads.isEmpty() &&
-                    page.staves.any { st -> s.y0 <= st.top + 0.5 * d && s.y1 + 1 >= st.bottom - 0.5 * d && st.left - d <= xc && xc <= st.right + d }
+                    page.staves.any { st -> s.y0 <= st.top + 0.5 * d && s.y1 + 1 >= st.bottom - 0.5 * d && st.left - d <= xc && xc <= st.right + d } &&
+                    spread(s, page.lineFree) <= MAX_BARLINE_SPREAD
                 ) {
                     out += line
                 }
             }
         }
         return out
+    }
+
+    /**
+     * The median width of the horizontal ink runs through [s]'s middle column, in [mask], over the
+     * segment's width: about 1 for a barline, 2 to 10 for an arpeggio's wavy line, whose spine is a
+     * column inked all along (read as a barline, it added an empty measure that shifted the rest
+     * of the staff). Benchmark renders: barlines at most 1.5. Not for stems: the heads of a chord
+     * widen a stem's runs as much.
+     */
+    internal fun spread(s: Segment, mask: InkMask): Double {
+        val x = (s.x0 + s.x1) / 2
+        val widths = (s.y0..s.y1).mapNotNull { y ->
+            if (!mask[x, y]) return@mapNotNull null
+            var a = x
+            var b = x
+            while (a > 0 && mask[a - 1, y]) a--
+            while (b + 1 < mask.width && mask[b + 1, y]) b++
+            (b - a + 1).toDouble()
+        }
+        return if (widths.isEmpty()) 0.0 else median(widths) / (s.x1 - s.x0 + 1)
     }
 
     /** The beams of the blobs read as beams, kept or pieces of a composite. */
@@ -275,6 +296,8 @@ object BitmapPage {
             DrawnShape(listOf(Point(xl, yl - th / 2), Point(xr, yr - th / 2), Point(xr, yr + th / 2), Point(xl, yl + th / 2)), curved = false)
         }
     }
+
+    private const val MAX_BARLINE_SPREAD = 1.75
 
     private val HEADS = setOf("noteheadBlack", "noteheadHalf", "noteheadWhole")
 }

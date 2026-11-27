@@ -178,11 +178,11 @@ the benchmark before it is installed.
 | 51 | Né en 17 à Leidenstadt (PDF view) | the cursor already at the start did not move the page: the notes put under the cursor by hand are sent each time | done |
 | 52 | Lettre à France (LH 17, 18) | 17: the two voices of beats 2 and 4 (opposite stems) read wrong; 18: an odd silence, the low F's tie maybe not played | | to do |
 | 53 | J'te l'dis quand même (LH 30, 41-42) | 30: two voices wrong, the last two eighths on the last beat; 41-42 wrong | | to do |
-| 54 | Mistral gagnant (scan) | many notes missing, clef changes and time changes (6/8, 3/4, 12/8, 9/8) missed | bitmap PDF | to do |
+| 54 | Mistral gagnant (scan) | many notes missing, clef changes and time changes (6/8, 3/4, 12/8, 9/8) missed | bitmap PDF; three staves lost: their lines, drawn from 141 dpi strips, are 19 to 21.5 pixels apart and the fifth was expected from the first two; the time signatures' digits touch through a staff line and make one blob named mf, a C clef or a natural | in progress 2026-11-28: each line expected at the mean spacing of the ones before (79 -> 90 measures), a symbol as tall as the staff re-read as digits (two-digit numbers cut in two): measures with a voice not filling them 53 -> 22 of 90. Left: two stems as tall as a staff read as barlines (system 1), notes |
 | 55 | Savoir aimer, La groupie du pianiste (staccato) | written on every note of a chord, Verovio drew a dot per note: on its first note only (reader 32). Played: the copy the music is made from has each staccato half its value, then a silence. The Groupie draws a dot per voice, as the PDF | done; 2026-11-25: shorter (a quarter of the value) and the silence written as invisible rests: Verovio dropped a <forward> ending a measure, the Groupie measures ending on a staccato (14, 15, 19, 20) were a sixteenth short. To hear |
 | 56 | Savoir aimer (half-page view) | turned, the top of the page under the next one counted as on screen; checked on the Tab 3: whole page 2 after the jump | done |
 | 57 | La groupie du pianiste (repeats) | the PDF has |: at 11 and 50, one :| at 54: by the usual rule the :| goes back to 50 and the |: of 11 is left alone. Question parked: what should be played? | done: a backward repeat goes back to each forward repeat before it in turn, to hear |
-| 58 | Hallelujah (scan) | many wrong notes; the treble clef's loop read as a note; arpeggio waves missed; eighth rests of the first line's LH missed | | to do |
+| 58 | Hallelujah (scan) | many wrong notes; the treble clef's loop read as a note; arpeggio waves missed; eighth rests of the first line's LH missed | the eighth rests are cut by the staff lines into pieces the classifier does not know (named a double flat with no confidence, an accent) | in progress 2026-11-28: staves with unevenly spaced lines found (113 -> 124 measures, 65 with a voice not filling them). Next: the eighth rests |
 | 59 | Aux champs Elysées, Quelques mots d'amour, Mad World | playback (PDF and MusicXML) and even the metronome alone do not start, an error at the bottom | gone with reader 31 (re-tested 2026-11-25) | done |
 | 60 | Quelques mots d'amour (lyrics) | lyrics very partial in MusicXML; shown between the piano staves, the PDF has them over the music (not tied to a melody) | | to do |
 | 61 | Né en 17 à Leidenstadt (voice 27, 29, 35, 37...) | the sixteenth after a dotted eighth rest played short, the notes after it early | its flag named a 32nd's (the looks are close, and no height tells them apart in every font: MuseJazz's 32nd flags are as tall as its 16th's); a voice short of its measure by the value of its one flagged note has that note a flag less (reader 36) | done, to hear |
@@ -229,3 +229,13 @@ What the analysis found, and the order to borrow in (each measured with `bench.p
   stems and the system's opening line taken for barlines). Projection needs Audiveris's other
   checks with it: ink beside the candidate, alignment across the staves, the opening line left
   out.
+- Measured 2026-11-28 against the vector reading of the same PDFs (544 / 548 staff-measures
+  right, so it stands for the score): the scans' barlines are almost all right (3 missed, 11
+  added over the 9 renders), and an added one costs every measure after it. The added ones were
+  an arpeggio's wavy line (its spine, a column inked all along, made a stroke over the staff) and
+  a piece of the brace read as a head before the opening clef (then the section's barline after
+  the key closed an empty measure). Fixed: a barline is as wide as its ink; nothing is played
+  before a system's opening clef. Benchmark 708 / 1170 -> 1126 / 1244 (no score lower); 3 missed
+  and 5 added left (stems of heads not named, an arpeggio read as a stem with heads). What is
+  left is mostly the notes: keys missed on the rough renders (E for E flat over whole
+  stretches), octave lines, heads missed or added.

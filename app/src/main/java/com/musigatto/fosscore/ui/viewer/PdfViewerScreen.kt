@@ -648,6 +648,8 @@ fun PdfViewerScreen(
     // while annotating: a mark belongs to the line on its side (MeasureAnchors)
     val musicXmlPages = pageSource as? MusicXmlPages
     val geometryVersion = musicXmlPages?.geometryVersion?.collectAsState()?.value
+    // the bar's way over the pages near this one, worked out before a turn shows them
+    val barPaths = rememberBarPaths(places, playbackVm.currentPlayback, currentPage, pageCount, geometryVersion)
     val lineBoundaries = remember(musicXmlPages, currentPage, geometryVersion) {
         musicXmlPages?.let { pages ->
             pages.geometry(currentPage)?.let { MeasureAnchors.boundaries(MeasureAnchors.slotsOf(it), pages.blankBands(currentPage)) }
@@ -1559,7 +1561,7 @@ fun PdfViewerScreen(
                     invert = invert,
                     pageSource = pageSource,
                     places = places,
-                    playback = playbackVm.currentPlayback,
+                    barPaths = barPaths,
                     playQuarters = { playQuarters },
                     halfCut = paper.halfCut,
                     layoutVersion = layoutVersion,

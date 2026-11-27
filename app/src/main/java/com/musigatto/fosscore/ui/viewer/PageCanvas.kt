@@ -38,25 +38,22 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.createBitmap
 import com.musigatto.fosscore.R
 import com.musigatto.fosscore.library.Stamp
 import com.musigatto.fosscore.library.Stroke
 import com.musigatto.fosscore.library.isTextStamp
 import com.musigatto.fosscore.musicxml.PageGeometry
-import com.musigatto.fosscore.musicxml.Playback
 import com.musigatto.fosscore.score.MusicPlaces
 import com.musigatto.fosscore.score.PageSource
 import kotlin.math.max
 import kotlin.math.roundToInt
-import android.graphics.Rect as AndroidRect
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 
 // inverts page colors (white bg -> black, ink -> white) for OLED dark mode; applied as a
@@ -258,7 +255,8 @@ internal fun PageCanvas(
     pageSource: PageSource?,
     /** Where the music played is drawn: the bar follows it (a MusicXML score's layout, a PDF's companion). */
     places: MusicPlaces?,
-    playback: Playback?,
+    /** The bar's way over each page, prepared away from the main thread (null: no music to follow). */
+    barPaths: BarPaths?,
     playQuarters: () -> Double?,
     halfCut: HalfCut?,
     layoutVersion: Int,
@@ -305,9 +303,7 @@ internal fun PageCanvas(
                             colorFilter = if (invert) INVERT_FILTER else null,
                             modifier = Modifier.fillMaxSize()
                         )
-                        val geo = places?.geometry(index)
-                        if (geo != null && playback != null) {
-                            val path = remember(geo, playback) { BarPath(playback, geo) }
+                        barPaths?.of(places?.geometry(index))?.let { path ->
                             FitPlaybackBar(path, playQuarters, bmp.width, bmp.height, Modifier.fillMaxSize())
                         }
                         // ink and stamps of each page, only on the paper it takes in its half
@@ -330,54 +326,58 @@ internal fun PageCanvas(
             }
         }
         branch.showHalf && halfTurned && bitmaps[currentPage] != null && bitmaps[currentPage + 1] != null -> {
-            // ponytail: compose both halves into a single bitmap the same size as one page,
-            // so it scales identically to the full page and the bottom (reading) half stays put.
-            // Assumes consecutive pages share the same dimensions.
+            // Both parts on the room of one page, so it scales as the full page does and the
+            // bottom (reading) part stays put. Assumes consecutive pages share their size. Drawn
+            // straight from the two pages' pictures, in a layer of its own: no picture is made
+            // for the turn (making one on the main thread stopped the bar at each turn), and the
+            // bar above is drawn again alone at every frame.
             val cur = bitmaps[currentPage]!!
             val next = bitmaps[currentPage + 1]!!
             val w = cur.width
             val h = cur.height
-            val sepColor = MaterialTheme.colorScheme.primary.toArgb()
+            val primary = MaterialTheme.colorScheme.primary
+            val sepColor = if (invert) Color(1f - primary.red, 1f - primary.green, 1f - primary.blue) else primary
             val split = halfSplit()
-            // remember keyed on the BITMAPS (not on the map): with a SnapshotStateMap,
-            // reading the keys above already registers the dependency, so this only
-            // recomposes if they change
-            val combined = remember(cur, next, w, h, split) {
-                val out = createBitmap(w, h)
-                val canvas = android.graphics.Canvas(out)
-                val paint = android.graphics.Paint().apply { isFilterBitmap = true }
-                // a MusicXML page cuts between systems: blank paper between the two parts
-                canvas.drawColor(android.graphics.Color.WHITE)
-                val upper = (h * split.upper).toInt()
-                val lower = (h * split.lower).toInt()
-                canvas.drawBitmap(next, AndroidRect(0, 0, next.width, (next.height * split.upper).toInt()), AndroidRect(0, 0, w, upper), paint)
-                canvas.drawBitmap(cur, AndroidRect(0, (cur.height * split.lower).toInt(), cur.width, cur.height), AndroidRect(0, lower, w, h), paint)
-                paint.color = sepColor
-                paint.strokeWidth = (h / 200f).coerceAtLeast(2f)
-                canvas.drawLine(0f, lower.toFloat(), w.toFloat(), lower.toFloat(), paint)
-                out
-            }
+            val curImage = remember(cur) { cur.asImageBitmap() }
+            val nextImage = remember(next) { next.asImageBitmap() }
             Box(modifier) {
-                Image(
-                    bitmap = combined.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    colorFilter = if (invert) INVERT_FILTER else null,
-                    modifier = Modifier.fillMaxSize()
-                )
+                Canvas(Modifier.fillMaxSize()) {
+                    val fit = fitRect(size.width, size.height, w.toFloat() / h)
+                    val k = fit.height / h
+                    val filter = if (invert) INVERT_FILTER else null
+                    // a MusicXML page cuts between systems: blank paper between the two parts
+                    drawRect(if (invert) Color.Black else Color.White, Offset(fit.left, fit.top), Size(fit.width, fit.height))
+                    val upper = (h * split.upper).toInt()
+                    val lower = (h * split.lower).toInt()
+                    val nextRows = (next.height * split.upper).toInt()
+                    val curFrom = (cur.height * split.lower).toInt()
+                    drawImage(
+                        nextImage, IntOffset.Zero, IntSize(next.width, nextRows),
+                        IntOffset(fit.left.roundToInt(), fit.top.roundToInt()), IntSize(fit.width.roundToInt(), (upper * k).roundToInt()),
+                        colorFilter = filter,
+                    )
+                    drawImage(
+                        curImage, IntOffset(0, curFrom), IntSize(cur.width, cur.height - curFrom),
+                        IntOffset(fit.left.roundToInt(), (fit.top + lower * k).roundToInt()),
+                        IntSize(fit.width.roundToInt(), ((h - lower) * k).roundToInt()),
+                        colorFilter = filter,
+                    )
+                    val y = fit.top + lower * k
+                    drawLine(sepColor, Offset(fit.left, y), Offset(fit.left + fit.width, y), strokeWidth = (h / 200f).coerceAtLeast(2f) * k)
+                }
                 // the playback bar, on whichever part the music is in
                 val pages = places
-                if (pages != null && playback != null) {
+                if (pages != null && barPaths != null) {
                     // a line of music is on the part its middle is in
                     fun middle(s: BarSpot) = (s.top + s.bottom) / 2
                     pages.geometry(currentPage + 1)?.let { geo ->
-                        val path = remember(geo, playback) { BarPath(playback, geo) }
+                        val path = barPaths.of(geo) ?: return@let
                         FitPlaybackBar(path, playQuarters, w, h, Modifier.fillMaxSize(), keep = { s ->
                             pageHeight?.let { middle(s) < it(geo) * split.upper } ?: true
                         })
                     }
                     pages.geometry(currentPage)?.let { geo ->
-                        val path = remember(geo, playback) { BarPath(playback, geo) }
+                        val path = barPaths.of(geo) ?: return@let
                         FitPlaybackBar(path, playQuarters, w, h, Modifier.fillMaxSize(), keep = { s ->
                             pageHeight?.let { middle(s) >= it(geo) * split.lower } ?: true
                         })
@@ -502,9 +502,8 @@ internal fun PageCanvas(
                                 }
                         )
                     // the playback bar, at the page's place and zoom
-                    val cursorGeo = places?.geometry(currentPage)
-                    if (cursorGeo != null && playback != null && bitmaps[currentPage] != null) {
-                        val path = remember(cursorGeo, playback) { BarPath(playback, cursorGeo) }
+                    val path = barPaths?.of(places?.geometry(currentPage))
+                    if (path != null && bitmaps[currentPage] != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val spot = playQuarters()?.let { path.at(it) } ?: return@Canvas
                             drawPlaybackBar(spot, path.width, pageFit.left + offsetX(), pageFit.top + offsetY(), pageFit.width * scale())

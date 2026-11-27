@@ -240,28 +240,64 @@ class SymbolRules(
     /**
      * Time signature digits read again with the staff lines kept (SPEC 11.5): each digit-like
      * symbol's half of its staff, then the other half, cut from the deskewed image and read by the
-     * digit classifier; the readings replace the symbols.
+     * digit classifier; the readings replace the symbols. A symbol as tall as the staff, across its
+     * lines, may be a time signature whose digits touch through a staff line and make one blob the
+     * classifier names otherwise (Mistral gagnant: 12/8 read as mf, 9/8 as a C clef, 6/8 as a
+     * natural, the measures then 3/4 long): it is one when a digit is read in both halves of the
+     * staff there, else it stays what it was named.
      */
     private fun timeSignatures(symbols: List<BitmapSymbol>): List<BitmapSymbol> {
         val isDigit = { s: BitmapSymbol -> s.name.startsWith("timeSig") && s.name.length > 7 && s.name.substring(7).all { it.isDigit() } }
-        val keep = symbols.filterNot(isDigit).toMutableList()
-        val done = mutableSetOf<List<Int>>()
-        for (s in symbols.filter(isDigit).sortedWith(compareBy({ -it.confidence }, { it.blob }))) {
-            val si = staves.indexOfFirst { st ->
-                st.top - 0.5 * space <= s.centerY && s.centerY <= st.bottom + 0.5 * space && st.left - space <= s.centerX && s.centerX <= st.right + space
-            }
-            if (si < 0) continue
-            val staff = staves[si]
-            val upper = s.centerY < staff.rows[2] + staff.off((s.x0 + s.x1) / 2)
-            for (half in listOf(upper, !upper)) {
-                val (crop, box) = digitSlot(staff, s.x0, s.x1, half) ?: continue
-                val key = listOf(si, if (half) 1 else 0) + box.toList()
-                if (!done.add(key)) continue
-                val read = model.digits.classify(Features.of(crop, space, model.thresholds))
-                if (read.name != "other") keep += BitmapSymbol(read.name, box[0], box[1], box[2], box[3], read.score, s.blob)
+        val acrossLines = { s: BitmapSymbol ->
+            !isDigit(s) && s.name !in NEVER_DIGITS && staves.any { st ->
+                st.left <= s.centerX && s.centerX <= st.right &&
+                    s.y0 <= st.top + 0.5 * space && s.y1 >= st.bottom - 0.5 * space && s.y1 - s.y0 + 1 <= (4 + TIME_SIGNATURE_MARGIN) * space
             }
         }
+        val keep = symbols.filterNot { isDigit(it) || acrossLines(it) }.toMutableList()
+        val done = mutableSetOf<List<Int>>()
+        for (s in symbols.filter(acrossLines)) {
+            val read = readDigits(s, done)
+            if (read.count { it.second } > 0 && read.count { !it.second } > 0) keep += read.map { it.first } else keep += s
+        }
+        for (s in symbols.filter(isDigit).sortedWith(compareBy({ -it.confidence }, { it.blob }))) keep += readDigits(s, done).map { it.first }
         return keep
+    }
+
+    /** The digits read in [s]'s staff halves, each with whether it is in the upper half; each half once ([done]). */
+    private fun readDigits(s: BitmapSymbol, done: MutableSet<List<Int>>): List<Pair<BitmapSymbol, Boolean>> {
+        val si = staves.indexOfFirst { st ->
+            st.top - 0.5 * space <= s.centerY && s.centerY <= st.bottom + 0.5 * space && st.left - space <= s.centerX && s.centerX <= st.right + space
+        }
+        if (si < 0) return emptyList()
+        val staff = staves[si]
+        val upper = s.centerY < staff.rows[2] + staff.off((s.x0 + s.x1) / 2)
+        val out = mutableListOf<Pair<BitmapSymbol, Boolean>>()
+        for (half in listOf(upper, !upper)) {
+            val (crop, box) = digitSlot(staff, s.x0, s.x1, half) ?: continue
+            val key = listOf(si, if (half) 1 else 0) + box.toList()
+            if (!done.add(key)) continue
+            for ((digit, at) in split(crop, box)) {
+                val read = model.digits.classify(Features.of(digit, space, model.thresholds))
+                if (read.name != "other") out += BitmapSymbol(read.name, at[0], at[1], at[2], at[3], read.score, s.blob) to half
+            }
+        }
+        return out
+    }
+
+    /**
+     * A number of two digits (12/8) cut in two at its thinnest column in the middle third, when
+     * wider than [MAX_DIGIT_WIDTH] spaces: the digit classifier reads one digit, and two digits
+     * often touch.
+     */
+    internal fun split(crop: InkMask, box: IntArray): List<Pair<InkMask, IntArray>> {
+        if (crop.width <= MAX_DIGIT_WIDTH * space) return listOf(crop to box)
+        val ink = IntArray(crop.width) { x -> (0 until crop.height).count { crop[x, it] } }
+        val cut = (crop.width / 3..2 * crop.width / 3).minByOrNull { ink[it] } ?: return listOf(crop to box)
+        return listOfNotNull(
+            Blobs.crop(db, box[0], box[1], box[0] + cut - 1, box[3]),
+            Blobs.crop(db, box[0] + cut + 1, box[1], box[2], box[3]),
+        )
     }
 
     /**
@@ -313,6 +349,15 @@ class SymbolRules(
     }
 
     companion object {
+        /** Never a time signature read wrong: the treble clef (taller than a staff), and what names no symbol. */
+        private val NEVER_DIGITS = setOf("gClef", "gClef8vb", "slur", "beam", "composite", "other", "text")
+
+        /** How much taller than the staff (in spaces) a time signature's blob may be. */
+        private const val TIME_SIGNATURE_MARGIN = 0.6
+
+        /** A time signature digit is at most this wide (in spaces); "12" is 2.6 wide, "8" 1.5. */
+        private const val MAX_DIGIT_WIDTH = 2.2
+
         val NON_SYMBOLS = setOf("other", "text", "slur", "beam", "composite")
         val FLAGS = setOf("flag8thUp", "flag8thDown", "flag16thUp", "flag16thDown", "flag32ndUp", "flag32ndDown")
         private val FLAG_NAMES = listOf("flag8th", "flag16th", "flag32nd")

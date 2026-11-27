@@ -90,8 +90,9 @@ object StaffFinder {
     }
 
     /**
-     * Five evenly spaced lines make a candidate; candidates are taken by the strength of their
-     * weakest line (strongest first), then their spacing (tightest first), sharing no line.
+     * Five evenly spaced lines make a candidate (each line expected at the mean spacing of the ones
+     * before it, within 15 %); candidates are taken by the strength of their weakest line (strongest
+     * first), then their spacing (tightest first), sharing no line.
      */
     private fun groups(lines: List<Line>, space: Double): List<DoubleArray> {
         class Candidate(val strength: Long, val spacing: Double, val order: Int, val lines: IntArray)
@@ -105,7 +106,10 @@ object StaffFinder {
                 val tol = maxOf(0.15 * sp, 1.5)
                 val idx = mutableListOf(i, j)
                 for (k in 2..4) {
-                    val want = lines[i].centre + k * sp
+                    // from the last line found, at the mean spacing so far: a scan's lines are
+                    // spaced unevenly by a pixel or two, which adds up over four spaces
+                    val last = lines[idx.last()].centre
+                    val want = last + (last - lines[i].centre) / (k - 1)
                     var best = -1
                     var bestDistance = 0.0
                     for (m in j until n) {

@@ -84,12 +84,13 @@ object Rhythms {
                 beams = onStem,
             )
         } + rests
-        val drafts = dottedVoices(chordDrafts, dots(chordDrafts, reading, space), space)
+        // the ties read on the chords as drawn (before dotted voices part any)
+        val ties = ties(page, reading, space, chordDrafts)
+        val drafts = dottedVoices(chordDrafts, dots(chordDrafts, reading, space), space, ties)
         beamMarks(drafts)
         arpeggios(drafts, reading.symbols, space)
         fermatas(drafts, reading.symbols, space)
         val tuplets = tuplets(reading, page.lines, beams, space)
-        val ties = ties(page, reading, space, drafts)
 
         // the chords each head is a note of (two, for a head shared by two stems)
         val owners = java.util.IdentityHashMap<StaffNote, MutableList<Draft>>().apply {
@@ -363,19 +364,31 @@ object Rhythms {
         // repeat dots: by a barline, two one over the other, a space apart
         fun isRepeatDot(dot: DrawnGlyph) = reading.barlines.any { abs(it - dot.box.centerX) < 1.2 * space } &&
             allDots.any { other -> other !== dot && abs(other.box.centerX - dot.box.centerX) < 0.3 * space && abs(abs(other.box.centerY - dot.box.centerY) - space) < 0.3 * space }
+        // a dot just after a head, at its height, is its augmentation dot before any staccato (a
+        // dotted quarter's dot against the beam of the voice under it: Mistral gagnant, 39)
+        fun dotOfAHead(dot: DrawnGlyph) = chords.any { chord ->
+            val gap = dot.box.left - chord.box.right
+            gap >= -0.1 * space && gap <= 0.8 * space && chord.notes.any { abs(it.head.box.centerY - dot.box.centerY) <= 0.6 * space }
+        }
         allDots
             .filterNot { isRepeatDot(it) }
-            .filterNot { dot -> staccatoOf(dot, chords, space)?.also { it.staccato = true } != null }
+            .filterNot { dot -> !dotOfAHead(dot) && staccatoOf(dot, chords, space)?.also { it.staccato = true } != null }
             // another dot drawn on a head is some other mark
             .filter { dot -> reading.notes.none { overlap(it.head.box, dot.box) } }
             .sortedBy { it.box.left }
             .forEach { dot ->
-                drafts.filter { draft ->
+                fun beside(draft: Draft, reach: Double, height: Double): Boolean {
                     val gap = dot.box.left - draft.box.right
-                    gap >= -0.2 * space && gap <= 2.5 * space + 1.2 * space * (owned[draft]?.size ?: 0) &&
+                    return gap >= -0.2 * space && gap <= reach &&
                         if (draft.rest) dot.box.centerY >= draft.box.top - 0.5 * space && dot.box.centerY <= draft.box.bottom + 0.5 * space
-                        else draft.notes.any { abs(it.head.box.centerY - dot.box.centerY) <= 0.75 * space }
-                }.maxByOrNull { it.box.right }?.let { owned.getOrPut(it) { mutableListOf() } += dot }
+                        else draft.notes.any { abs(it.head.box.centerY - dot.box.centerY) <= height }
+                }
+                (
+                    drafts.filter { beside(it, 2.5 * space + 1.2 * space * (owned[it]?.size ?: 0), 0.75 * space) }.maxByOrNull { it.box.right }
+                        // else a dot moved a space down off its head, out of another voice's beam
+                        // (Mistral gagnant, 39), right after it
+                        ?: drafts.filter { !it.rest && owned[it] == null && beside(it, 1.0 * space, 1.15 * space) }.maxByOrNull { it.box.right }
+                    )?.let { owned.getOrPut(it) { mutableListOf() } += dot }
             }
         for ((draft, list) in owned) {
             // one row of dots per head: the longest row is the chord's
@@ -389,14 +402,16 @@ object Rhythms {
      * so a chord whose heads far apart (over a space and a half) are dotted for some and not for
      * the others is two notes. The dotted heads are a note of their own, worth what their head is
      * worth when the beams or flag are the others' (a dotted quarter over the first eighth of a
-     * group: Mistral gagnant's 12/8, 30; read as one dotted eighth, the measure ran long).
+     * group: Mistral gagnant's 12/8, 30; read as one dotted eighth, the measure ran long). Not
+     * when each head with no dot starts a tie: its dot, against the tie, was lost in it (Mistral
+     * gagnant, 50: a dotted chord tied over, its top note read short in a voice of its own).
      */
-    private fun dottedVoices(drafts: List<Draft>, dots: Map<Draft, List<DrawnGlyph>>, space: Double): List<Draft> = drafts.flatMap { draft ->
+    private fun dottedVoices(drafts: List<Draft>, dots: Map<Draft, List<DrawnGlyph>>, space: Double, ties: Map<StaffNote, StaffNote?>): List<Draft> = drafts.flatMap { draft ->
         val own = dots[draft]
         if (draft.rest || own == null || draft.notes.size < 2) return@flatMap listOf(draft)
         val dotted = draft.notes.filter { note -> own.any { abs(it.box.centerY - note.head.box.centerY) <= 0.75 * space } }
         val plain = draft.notes.filter { note -> dotted.none { it === note } }
-        if (dotted.isEmpty() || plain.isEmpty() ||
+        if (dotted.isEmpty() || plain.isEmpty() || plain.all { it in ties } ||
             plain.any { p -> dotted.any { abs(p.head.box.centerY - it.head.box.centerY) < 1.5 * space } }
         ) return@flatMap listOf(draft)
         val short = draft.type?.let { it.length < NoteType.QUARTER.length } ?: false
@@ -420,10 +435,21 @@ object Rhythms {
         val x = dot.box.centerX
         val y = dot.box.centerY
         return chords.filter {
+            val above = y < it.box.top + 0.25 * space && abs(y - it.box.top) <= 1.0 * space
+            val below = y > it.box.bottom - 0.25 * space && abs(y - it.box.bottom) <= 1.0 * space
             x >= it.box.left - 0.1 * space && x <= it.box.right + 0.1 * space &&
-                (y < it.box.top + 0.25 * space || y > it.box.bottom - 0.25 * space) &&
-                (minOf(abs(y - it.box.top), abs(y - it.box.bottom)) <= 1.0 * space ||
-                    it.stemLine?.let { stem -> minOf(abs(y - stem.y1), abs(y - stem.y2)) <= 1.25 * space } == true)
+                // by the heads on the side away from the stem: a dot on the stem's side, between a
+                // head and its beam, is another voice's dot (a dotted quarter's over the first
+                // eighth of a group: Mistral gagnant, 39)
+                (when (it.stem) {
+                    Stem.UP -> below
+                    Stem.DOWN -> above
+                    else -> above || below
+                } || it.stemLine?.let { stem ->
+                    // past the stem's end (clear of a beam there), not along it
+                    val end = if (it.stem == Stem.UP) minOf(stem.y1, stem.y2) else maxOf(stem.y1, stem.y2)
+                    abs(y - end) <= 1.25 * space && (if (it.stem == Stem.UP) y < end - 0.3 * space else y > end + 0.3 * space)
+                } == true)
         }
             .minByOrNull { minOf(abs(y - it.box.top), abs(y - it.box.bottom)) }
     }

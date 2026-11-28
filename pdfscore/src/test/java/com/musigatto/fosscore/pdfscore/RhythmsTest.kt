@@ -243,6 +243,24 @@ class RhythmsTest {
         assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 8), Fraction.of(1, 4)), eighths.map { it.onset })
     }
 
+    /**
+     * A chord whose top head lost its dot, glued to the tie that starts from it (Mistral gagnant,
+     * 50), is one dotted chord, no two voices.
+     */
+    @Test
+    fun aChordWhoseUndottedHeadStartsATieIsOneDottedChord() {
+        val e5 = top + 0.5 * space
+        val upper = head(100.0, e5)
+        val lower = head(100.0, g4)
+        val next = head(140.0, e5)
+        val tie = arc(upper.box.right + 0.2 * space, e5 - 0.6 * space, next.box.left - 0.2 * space, e5 - 0.6 * space, -0.4 * space)
+        val stems = listOf(DrawnLine(upper.box.left, e5, upper.box.left, g4 + stemLength, 0.5), stemDown(next))
+        val measure = read(listOf(upper, lower, dot(lower, g4), next), stems, listOf(tie)).single()
+        val chord = measure.events.first().event as Chord
+        assertEquals(2, chord.pitches.size)
+        assertEquals(1, chord.duration.dots)
+    }
+
     /** A dotted note just before a barline keeps its dot: repeat dots come in pairs, one over the other. */
     @Test
     fun aDotByTheBarlineIsTheLastNotesDot() {
@@ -547,6 +565,81 @@ class RhythmsTest {
         )
         val chord = read(listOf(note, dot), listOf(stemUp(note))).single().events.single().event as Chord
         assertEquals(emptySet<Articulation>(), chord.articulations)
+    }
+
+    /**
+     * A dotted quarter, stem down, over the first eighth of a group, stem up: its dot lies on the
+     * eighth's stem side, between its head and its stem's end. It is the quarter's dot, no
+     * staccato of the eighth (Mistral gagnant, 39: three dotted quarters played as quarters).
+     */
+    @Test
+    fun aDotAlongAStemIsNoStaccato() {
+        val upper = head(100.0, c5)
+        val lower = head(upper.box.right + 0.1 * space, c5 + 3 * space)
+        val up = stemUp(lower)
+        val flag = DrawnGlyph("flag8thUp", Box(up.x1, up.y2, up.x1 + 0.9 * space, up.y2 + 3 * space))
+        val dot = DrawnGlyph(
+            "augmentationDot",
+            Box(lower.box.centerX - 0.2 * space, c5 + 0.4 * space, lower.box.centerX + 0.2 * space, c5 + 0.8 * space),
+        )
+        val events = read(listOf(upper, lower, flag, dot), listOf(stemDown(upper), up)).single().events.map { it.event as Chord }
+        assertEquals(1, events.single { it.stem == Stem.DOWN }.duration.dots)
+        assertEquals(emptySet<Articulation>(), events.single { it.stem == Stem.UP }.articulations)
+    }
+
+    /**
+     * The same dot moved a space down off its head, out of the other voice's beam, right after it:
+     * still the quarter's dot (Mistral gagnant, 39).
+     */
+    @Test
+    fun aDotASpaceUnderTheHeadItFollowsIsItsDot() {
+        val upper = head(100.0, c5)
+        val lower = head(upper.box.right + 0.1 * space, c5 + 3 * space)
+        val up = stemUp(lower)
+        val flag = DrawnGlyph("flag8thUp", Box(up.x1, up.y2, up.x1 + 0.9 * space, up.y2 + 3 * space))
+        val dot = DrawnGlyph(
+            "augmentationDot",
+            Box(lower.box.centerX - 0.2 * space, c5 + 0.8 * space, lower.box.centerX + 0.2 * space, c5 + 1.2 * space),
+        )
+        val events = read(listOf(upper, lower, flag, dot), listOf(stemDown(upper), up)).single().events.map { it.event as Chord }
+        assertEquals(1, events.single { it.stem == Stem.DOWN }.duration.dots)
+        assertEquals(0, events.single { it.stem == Stem.UP }.duration.dots)
+    }
+
+    /**
+     * A dot against the end of the eighth's stem, where its beam is, is no staccato either: the
+     * quarter's dot (Mistral gagnant, 39, the second group).
+     */
+    @Test
+    fun aDotAgainstAStemsEndIsNoStaccato() {
+        val upper = head(100.0, c5)
+        val lower = head(upper.box.right + 0.1 * space, c5 + 3 * space)
+        val up = stemUp(lower) // its end at c5 - 0.5 space
+        val flag = DrawnGlyph("flag8thUp", Box(up.x1, up.y2, up.x1 + 0.9 * space, up.y2 + 3 * space))
+        val dot = DrawnGlyph(
+            "augmentationDot",
+            Box(lower.box.centerX - 0.2 * space, c5 - 0.8 * space, lower.box.centerX + 0.2 * space, c5 - 0.4 * space),
+        )
+        val events = read(listOf(upper, lower, flag, dot), listOf(stemDown(upper), up)).single().events.map { it.event as Chord }
+        assertEquals(1, events.single { it.stem == Stem.DOWN }.duration.dots)
+        assertEquals(emptySet<Articulation>(), events.single { it.stem == Stem.UP }.articulations)
+    }
+
+    /**
+     * A dot just after a head and at its height is its dot, even past the end of another voice's
+     * stem under it (where the beam is drawn: Mistral gagnant, 39).
+     */
+    @Test
+    fun aDotJustAfterAHeadIsItsDotBeforeAnyStaccato() {
+        val upper = head(100.0, c5 - 0.5 * space)
+        val lower = head(upper.box.right + 0.1 * space, c5 + 3 * space)
+        val up = stemUp(lower) // its end at c5 - 0.5 space
+        val flag = DrawnGlyph("flag8thUp", Box(up.x1, up.y2, up.x1 + 0.9 * space, up.y2 + 3 * space))
+        val x = upper.box.right + 0.3 * space
+        val dot = DrawnGlyph("augmentationDot", Box(x, c5 - 1.1 * space, x + 0.4 * space, c5 - 0.7 * space))
+        val events = read(listOf(upper, lower, flag, dot), listOf(stemDown(upper), up)).single().events.map { it.event as Chord }
+        assertEquals(1, events.single { it.stem == Stem.DOWN }.duration.dots)
+        assertEquals(emptySet<Articulation>(), events.single { it.stem == Stem.UP }.articulations)
     }
 
     /** A staccato past the end of the stem (where two voices share the staff) is the note's. */

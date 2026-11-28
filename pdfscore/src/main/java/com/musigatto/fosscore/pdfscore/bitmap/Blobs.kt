@@ -163,11 +163,14 @@ object Blobs {
         val widths = IntArray(m.height) { y -> (0 until m.width).count { m[it, y] } }
         val head = 0.8 * space..1.5 * space
         // the first row of the neck after a head-wide band from the top (or before one at the bottom)
+        // (a head's rounded end narrower than the band first: rows counted with it, up to 0.4 space)
         fun neck(rows: List<Int>): Int? {
             var band = 0
+            var rim = 0
             for (y in rows) {
                 if (widths[y] >= 0.9 * space) band++
-                else return if (band.toDouble() in head && widths[y] <= NECK * space) y else null
+                else if (band == 0 && ++rim <= 0.4 * space) continue
+                else return if ((band + rim).toDouble() in head && widths[y] <= NECK * space) y else null
             }
             return null
         }

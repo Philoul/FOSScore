@@ -23,6 +23,21 @@ class BitmapNotesTest {
         assertEquals(listOf(100, 200, 125, 221), parts[0].second.toList())
     }
 
+    /** A real head is rounded: its first rows are narrower than the band (Mistral gagnant, measure 7). */
+    @Test
+    fun aRoundedHeadItsFlagTouchesIsCutOffIt() {
+        val m = InkMask(26, 70)
+        for (y in 0 until 22) {
+            val inset = maxOf(0, 3 - y) * 4 // three rows narrowing to the top
+            for (x in inset until 26 - inset) m[x, y] = true
+        }
+        for (y in 22 until 26) for (x in 18 until 21) m[x, y] = true
+        for (y in 26 until 70) for (x in 0 until 26) if (x in (y - 26) / 2..(y - 26) / 2 + 5) m[x, y] = true
+        val parts = Blobs.splitHead(m, intArrayOf(100, 200, 125, 269), space)
+        assertEquals(2, parts.size)
+        assertEquals(listOf(100, 200, 125, 221), parts[0].second.toList())
+    }
+
     @Test
     fun aFlagAloneStaysWhole() {
         val m = InkMask(12, 60)

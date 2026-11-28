@@ -243,6 +243,24 @@ class RhythmsTest {
         assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 8), Fraction.of(1, 4)), eighths.map { it.onset })
     }
 
+    /**
+     * A chord whose top head lost its dot, glued to the tie that starts from it (Mistral gagnant,
+     * 50), is one dotted chord, no two voices.
+     */
+    @Test
+    fun aChordWhoseUndottedHeadStartsATieIsOneDottedChord() {
+        val e5 = top + 0.5 * space
+        val upper = head(100.0, e5)
+        val lower = head(100.0, g4)
+        val next = head(140.0, e5)
+        val tie = arc(upper.box.right + 0.2 * space, e5 - 0.6 * space, next.box.left - 0.2 * space, e5 - 0.6 * space, -0.4 * space)
+        val stems = listOf(DrawnLine(upper.box.left, e5, upper.box.left, g4 + stemLength, 0.5), stemDown(next))
+        val measure = read(listOf(upper, lower, dot(lower, g4), next), stems, listOf(tie)).single()
+        val chord = measure.events.first().event as Chord
+        assertEquals(2, chord.pitches.size)
+        assertEquals(1, chord.duration.dots)
+    }
+
     /** A dotted note just before a barline keeps its dot: repeat dots come in pairs, one over the other. */
     @Test
     fun aDotByTheBarlineIsTheLastNotesDot() {

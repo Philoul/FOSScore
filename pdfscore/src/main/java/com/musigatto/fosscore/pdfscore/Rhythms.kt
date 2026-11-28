@@ -84,12 +84,13 @@ object Rhythms {
                 beams = onStem,
             )
         } + rests
-        val drafts = dottedVoices(chordDrafts, dots(chordDrafts, reading, space), space)
+        // the ties read on the chords as drawn (before dotted voices part any)
+        val ties = ties(page, reading, space, chordDrafts)
+        val drafts = dottedVoices(chordDrafts, dots(chordDrafts, reading, space), space, ties)
         beamMarks(drafts)
         arpeggios(drafts, reading.symbols, space)
         fermatas(drafts, reading.symbols, space)
         val tuplets = tuplets(reading, page.lines, beams, space)
-        val ties = ties(page, reading, space, drafts)
 
         // the chords each head is a note of (two, for a head shared by two stems)
         val owners = java.util.IdentityHashMap<StaffNote, MutableList<Draft>>().apply {
@@ -401,14 +402,16 @@ object Rhythms {
      * so a chord whose heads far apart (over a space and a half) are dotted for some and not for
      * the others is two notes. The dotted heads are a note of their own, worth what their head is
      * worth when the beams or flag are the others' (a dotted quarter over the first eighth of a
-     * group: Mistral gagnant's 12/8, 30; read as one dotted eighth, the measure ran long).
+     * group: Mistral gagnant's 12/8, 30; read as one dotted eighth, the measure ran long). Not
+     * when each head with no dot starts a tie: its dot, against the tie, was lost in it (Mistral
+     * gagnant, 50: a dotted chord tied over, its top note read short in a voice of its own).
      */
-    private fun dottedVoices(drafts: List<Draft>, dots: Map<Draft, List<DrawnGlyph>>, space: Double): List<Draft> = drafts.flatMap { draft ->
+    private fun dottedVoices(drafts: List<Draft>, dots: Map<Draft, List<DrawnGlyph>>, space: Double, ties: Map<StaffNote, StaffNote?>): List<Draft> = drafts.flatMap { draft ->
         val own = dots[draft]
         if (draft.rest || own == null || draft.notes.size < 2) return@flatMap listOf(draft)
         val dotted = draft.notes.filter { note -> own.any { abs(it.box.centerY - note.head.box.centerY) <= 0.75 * space } }
         val plain = draft.notes.filter { note -> dotted.none { it === note } }
-        if (dotted.isEmpty() || plain.isEmpty() ||
+        if (dotted.isEmpty() || plain.isEmpty() || plain.all { it in ties } ||
             plain.any { p -> dotted.any { abs(p.head.box.centerY - it.head.box.centerY) < 1.5 * space } }
         ) return@flatMap listOf(draft)
         val short = draft.type?.let { it.length < NoteType.QUARTER.length } ?: false

@@ -214,6 +214,35 @@ class RhythmsTest {
         assertEquals(listOf(Fraction.ZERO, Fraction.of(3, 8)), onsets(measure))
     }
 
+    /**
+     * A dotted quarter over the first eighth of a group, on the eighth's stem (Mistral gagnant's
+     * 12/8, 30): only the upper head has a dot, where a dotted chord has one for each head. Two
+     * notes: a dotted quarter, and an eighth with the rest of its group.
+     */
+    @Test
+    fun aDotForOneHeadOfAChordFarApartIsAnotherVoicesNote() {
+        val e5 = top + 0.5 * space
+        val upper = head(100.0, e5)
+        val lower = head(100.0, g4)
+        val second = head(115.0, g4)
+        val third = head(130.0, g4)
+        val end = g4 + stemLength
+        val stems = listOf(
+            DrawnLine(upper.box.left, e5, upper.box.left, end, 0.5),
+            stemDown(second), stemDown(third),
+            DrawnLine(upper.box.left, end - 0.25 * space, third.box.left, end - 0.25 * space, 0.5 * space),
+        )
+        val measure = read(listOf(upper, lower, second, third, dot(upper, e5)), stems).single()
+        val chords = measure.events.map { it.event as Chord }
+        val quarter = chords.single { chord -> chord.pitches.map { it.toString() } == listOf("E5") }
+        assertEquals(NoteType.QUARTER, quarter.duration.type)
+        assertEquals(1, quarter.duration.dots)
+        val eighths = chords.filter { it !== quarter }
+        assertEquals(listOf(NoteType.EIGHTH, NoteType.EIGHTH, NoteType.EIGHTH), eighths.map { it.duration.type })
+        assertEquals(listOf(0, 0, 0), eighths.map { it.duration.dots })
+        assertEquals(listOf(Fraction.ZERO, Fraction.of(1, 8), Fraction.of(1, 4)), eighths.map { it.onset })
+    }
+
     /** A dotted note just before a barline keeps its dot: repeat dots come in pairs, one over the other. */
     @Test
     fun aDotByTheBarlineIsTheLastNotesDot() {

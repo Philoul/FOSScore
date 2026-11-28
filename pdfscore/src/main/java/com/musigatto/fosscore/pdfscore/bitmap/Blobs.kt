@@ -122,7 +122,7 @@ object Blobs {
             for (j in 1..pieces.count) {
                 if (pieces.inks[j - 1] < minArea) continue
                 val piece = pieces.mask(j, rest.width)
-                for ((m, box) in splitStack(piece, x0 + pieces.x0(j), y0 + pieces.y0(j), space)) {
+                for ((m, box) in splitStack(piece, x0 + pieces.x0(j), y0 + pieces.y0(j), space).flatMap { (m, box) -> splitHead(m, box, space) }) {
                     blobs += Blob(2, box[0], box[1], box[2], box[3], m, parent = index)
                 }
             }
@@ -149,6 +149,42 @@ object Blobs {
         }
         return out
     }
+
+    /**
+     * A head its flag touches, cut off it: a piece over two spaces tall that starts (or ends) with
+     * a band as wide and tall as a head, then narrows to a neck under a third of a space, is cut at
+     * the neck. A stem-down eighth's flag curls up from the stem's end to its head; on a scan it
+     * may touch the head, and with the stem erased, head and flag made one piece named a flag, a
+     * flag without a head that was dropped with its note (Mistral gagnant). Else the piece itself.
+     */
+    internal fun splitHead(m: InkMask, box: IntArray, space: Double): List<Pair<InkMask, IntArray>> {
+        val whole = listOf(m to box)
+        if (m.height <= 2 * space) return whole
+        val widths = IntArray(m.height) { y -> (0 until m.width).count { m[it, y] } }
+        val head = 0.8 * space..1.5 * space
+        // the first row of the neck after a head-wide band from the top (or before one at the bottom)
+        fun neck(rows: List<Int>): Int? {
+            var band = 0
+            for (y in rows) {
+                if (widths[y] >= 0.9 * space) band++
+                else return if (band.toDouble() in head && widths[y] <= NECK * space) y else null
+            }
+            return null
+        }
+        neck((0 until m.height).toList())?.let { y ->
+            return listOfNotNull(cut(m, box, 0, y - 1), cut(m, box, y, m.height - 1))
+        }
+        neck((m.height - 1 downTo 0).toList())?.let { y ->
+            return listOfNotNull(cut(m, box, 0, y), cut(m, box, y + 1, m.height - 1))
+        }
+        return whole
+    }
+
+    private fun cut(m: InkMask, box: IntArray, from: Int, to: Int): Pair<InkMask, IntArray>? =
+        crop(m, 0, from, m.width - 1, to)?.let { (part, b) -> part to intArrayOf(box[0] + b[0], box[1] + b[1], box[0] + b[2], box[1] + b[3]) }
+
+    /** A head's flag touches it through a neck at most this wide (in spaces). */
+    private const val NECK = 0.33
 
     /**
      * A piece as wide as a head, tall and dense (a chord's heads stacked on each other) cut into

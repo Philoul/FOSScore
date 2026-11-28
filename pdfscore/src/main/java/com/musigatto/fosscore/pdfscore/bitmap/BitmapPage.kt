@@ -75,7 +75,7 @@ object BitmapPage {
         }
         val lines = staffLines(page) + ledgerLines(page) + stemsAndBarlines(page, prediction)
         // the braces, as the tall curved shapes the systems are read with (Staves.braces)
-        val shapes = beams(page, prediction, keep) + braces(page.deskewed, page.staves, page.systems).map { b ->
+        val shapes = beams(page, prediction, keep) + curves(page, prediction, keep) + braces(page.deskewed, page.staves, page.systems).map { b ->
             DrawnShape(listOf(Point(b.x0.toDouble(), b.y0.toDouble()), Point(b.x1.toDouble(), b.y0.toDouble()), Point(b.x1.toDouble(), b.y1.toDouble()), Point(b.x0.toDouble(), b.y1.toDouble())), curved = true)
         }
         return PageDrawing(
@@ -210,6 +210,27 @@ object BitmapPage {
         return if (widths.isEmpty()) 0.0 else median(widths) / (s.x1 - s.x0 + 1)
     }
 
+    /**
+     * The ties and slurs, as the curves a PDF draws them with: through the middle of each column's
+     * ink, from the blob's first column to its last. The readers find a note's tie by where its
+     * curve starts and ends; a scan's were left out, and no note of a scan was tied (Mistral
+     * gagnant: a measure an eighth short at each tied note).
+     */
+    private fun curves(page: PageAnalysis, prediction: Prediction, keep: List<Int>): List<DrawnShape> =
+        keep.filter { prediction.names[it] == "slur" }.map { curve(page.blobs[it]) }
+
+    /** A blob's curve: the middle of its ink in about a dozen of its columns, the first and last included. */
+    internal fun curve(blob: Blob): DrawnShape {
+        val mask = blob.mask
+        val step = maxOf(1, mask.width / CURVE_POINTS)
+        val columns = ((0 until mask.width step step) + (mask.width - 1)).distinct()
+        val points = columns.mapNotNull { x ->
+            val ys = (0 until mask.height).filter { mask[x, it] }
+            if (ys.isEmpty()) null else Point(blob.x0 + x + 0.5, blob.y0 + (ys.first() + ys.last() + 1) / 2.0)
+        }
+        return DrawnShape(points, curved = true)
+    }
+
     /** The beams of the blobs read as beams, kept or pieces of a composite. */
     private fun beams(page: PageAnalysis, prediction: Prediction, keep: List<Int>): List<DrawnShape> {
         val kept = keep.toSet()
@@ -298,6 +319,8 @@ object BitmapPage {
     }
 
     private const val MAX_BARLINE_SPREAD = 1.75
+
+    private const val CURVE_POINTS = 12
 
     private val HEADS = setOf("noteheadBlack", "noteheadHalf", "noteheadWhole")
 }

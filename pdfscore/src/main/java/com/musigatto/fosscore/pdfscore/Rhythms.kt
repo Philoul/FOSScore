@@ -73,7 +73,7 @@ object Rhythms {
         fun cue(chord: Draft) = struck(chord) || chord !in leading
         // a grace note has a stem: a small whole head on its own is a curve misread; small whole
         // heads one on the other are a chord (a choir's, Pas de boogie woogie, 10)
-        val drafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && it.notes.size < 2 && !struck(it) }.map { chord ->
+        val chordDrafts = chords.filterNot { small(it) && it.type == NoteType.WHOLE && it.notes.size < 2 && !struck(it) }.map { chord ->
             val onStem = beamsAt(chord, beams, space)
             val grace = small(chord) && !cue(chord)
             val value = chord.type ?: blackValue(chord, onStem, reading.symbols, space)
@@ -84,7 +84,7 @@ object Rhythms {
                 beams = onStem,
             )
         } + rests
-        dots(drafts, reading, space)
+        val drafts = dottedVoices(chordDrafts, dots(chordDrafts, reading, space), space)
         beamMarks(drafts)
         arpeggios(drafts, reading.symbols, space)
         fermatas(drafts, reading.symbols, space)
@@ -356,7 +356,7 @@ object Rhythms {
      * head (or rest) it sits beside; repeat dots by a barline are not. Several in a row are a double
      * dot.
      */
-    private fun dots(drafts: List<Draft>, reading: StaffReading, space: Double) {
+    private fun dots(drafts: List<Draft>, reading: StaffReading, space: Double): Map<Draft, List<DrawnGlyph>> {
         val owned = java.util.IdentityHashMap<Draft, MutableList<DrawnGlyph>>()
         val chords = drafts.filter { !it.rest }
         val allDots = reading.symbols.filter { it.name == "augmentationDot" }
@@ -381,6 +381,34 @@ object Rhythms {
             // one row of dots per head: the longest row is the chord's
             draft.dots = list.groupBy { Math.round(it.box.centerY / (0.5 * space)) }.values.maxOf { it.size }
         }
+        return owned
+    }
+
+    /**
+     * Two voices on one stem told apart by their dots: every head of a dotted chord has its dot,
+     * so a chord whose heads far apart (over a space and a half) are dotted for some and not for
+     * the others is two notes. The dotted heads are a note of their own, worth what their head is
+     * worth when the beams or flag are the others' (a dotted quarter over the first eighth of a
+     * group: Mistral gagnant's 12/8, 30; read as one dotted eighth, the measure ran long).
+     */
+    private fun dottedVoices(drafts: List<Draft>, dots: Map<Draft, List<DrawnGlyph>>, space: Double): List<Draft> = drafts.flatMap { draft ->
+        val own = dots[draft]
+        if (draft.rest || own == null || draft.notes.size < 2) return@flatMap listOf(draft)
+        val dotted = draft.notes.filter { note -> own.any { abs(it.box.centerY - note.head.box.centerY) <= 0.75 * space } }
+        val plain = draft.notes.filter { note -> dotted.none { it === note } }
+        if (dotted.isEmpty() || plain.isEmpty() ||
+            plain.any { p -> dotted.any { abs(p.head.box.centerY - it.head.box.centerY) < 1.5 * space } }
+        ) return@flatMap listOf(draft)
+        val short = draft.type?.let { it.length < NoteType.QUARTER.length } ?: false
+        val headType = headValue(dotted.first().head.name) ?: NoteType.QUARTER
+        // each with its own heads' box: one over the other, they are two voices struck together
+        fun box(notes: List<StaffNote>) =
+            Box(notes.minOf { it.head.box.left }, notes.minOf { it.head.box.top }, notes.maxOf { it.head.box.right }, notes.maxOf { it.head.box.bottom })
+        listOf(
+            draft.copy(notes = plain, box = box(plain)).also { it.dots = 0 },
+            draft.copy(notes = dotted, box = box(dotted), type = if (short) headType else draft.type, beams = if (short) emptyList() else draft.beams)
+                .also { it.dots = draft.dots },
+        )
     }
 
     /**

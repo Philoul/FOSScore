@@ -93,7 +93,7 @@ class SymbolRules(
             val b = blobs[i]
             BitmapSymbol(prediction.names[i], b.x0, b.y0, b.x1, b.y1, prediction.confidences[i], i)
         }
-        return timeSignatures(flags(rests(context(named)), prediction))
+        return arpeggios(timeSignatures(flags(rests(context(named)), prediction)).filter(::clefFits))
     }
 
     /**
@@ -244,24 +244,59 @@ class SymbolRules(
      * lines, may be a time signature whose digits touch through a staff line and make one blob the
      * classifier names otherwise (Mistral gagnant: 12/8 read as mf, 9/8 as a C clef, 6/8 as a
      * natural, the measures then 3/4 long): it is one when a digit is read in both halves of the
-     * staff there, else it stays what it was named.
+     * staff there, else it stays what it was named ([mayBeDigits]).
      */
     private fun timeSignatures(symbols: List<BitmapSymbol>): List<BitmapSymbol> {
-        val isDigit = { s: BitmapSymbol -> s.name.startsWith("timeSig") && s.name.length > 7 && s.name.substring(7).all { it.isDigit() } }
-        val acrossLines = { s: BitmapSymbol ->
-            !isDigit(s) && s.name !in NEVER_DIGITS && staves.any { st ->
-                st.left <= s.centerX && s.centerX <= st.right &&
-                    s.y0 <= st.top + 0.5 * space && s.y1 >= st.bottom - 0.5 * space && s.y1 - s.y0 + 1 <= (4 + TIME_SIGNATURE_MARGIN) * space
-            }
-        }
-        val keep = symbols.filterNot { isDigit(it) || acrossLines(it) }.toMutableList()
+        val keep = symbols.filterNot { isDigit(it) || mayBeDigits(it) }.toMutableList()
         val done = mutableSetOf<List<Int>>()
-        for (s in symbols.filter(acrossLines)) {
+        for (s in symbols.filter(::mayBeDigits)) {
             val read = readDigits(s, done)
             if (read.count { it.second } > 0 && read.count { !it.second } > 0) keep += read.map { it.first } else keep += s
         }
-        for (s in symbols.filter(isDigit).sortedWith(compareBy({ -it.confidence }, { it.blob }))) keep += readDigits(s, done).map { it.first }
+        for (s in symbols.filter(::isDigit).sortedWith(compareBy({ -it.confidence }, { it.blob }))) keep += readDigits(s, done).map { it.first }
         return keep
+    }
+
+    /**
+     * An arpeggio's wavy line, which the classifier has no class for and names a quarter rest (as
+     * tall and narrow): a "rest" holding a vertical stroke (the wave's spine, inked all along; a
+     * rest's strokes are slanted) just before a note at its height (Mistral gagnant: every rolled
+     * chord had a quarter rest before it).
+     */
+    internal fun arpeggios(symbols: List<BitmapSymbol>): List<BitmapSymbol> {
+        val heads = symbols.filter { it.name.startsWith("notehead") }
+        return symbols.map { s ->
+            if (s.name == "restQuarter" && s.blob in blobs.indices && blobs[s.blob].stems.isNotEmpty() && heads.any { h ->
+                    h.x0 >= s.x1 - 0.2 * space && h.x0 <= s.x1 + ARPEGGIO_GAP * space && h.centerY >= s.y0 - 0.5 * space && h.centerY <= s.y1 + 0.5 * space
+                }
+            ) s.copy(name = "wiggleArpeggiatoUp") else s
+        }
+    }
+
+    private fun isDigit(s: BitmapSymbol) = s.name.startsWith("timeSig") && s.name.length > 7 && s.name.substring(7).all { it.isDigit() }
+
+    /**
+     * Whether a symbol named otherwise may be a time signature misread: one as tall as its staff,
+     * across its lines; or a bass or C clef past a staff's start (Mistral gagnant, 81: a 3/4 read
+     * as two bass clefs, the melody then read in the bass clef).
+     */
+    internal fun mayBeDigits(s: BitmapSymbol): Boolean = !isDigit(s) && s.name !in NEVER_DIGITS && staves.any { st ->
+        st.left <= s.centerX && s.centerX <= st.right && (
+            (s.y0 <= st.top + 0.5 * space && s.y1 >= st.bottom - 0.5 * space && s.y1 - s.y0 + 1 <= (4 + TIME_SIGNATURE_MARGIN) * space) ||
+                ((s.name == "fClef" || s.name == "cClef") && st.left + OPENING_CLEF_REACH * space < s.centerX &&
+                    s.centerY >= st.top - 0.5 * space && s.centerY <= st.bottom + 0.5 * space)
+            )
+    }
+
+    /**
+     * Whether a symbol named a treble clef is one: it reaches from over its staff's top line to
+     * under its bottom line (a clef change drawn small too). An octave line's "8" and its hook, on
+     * a scan, were read as a treble clef over the staff, and the notes after it a fifth off.
+     */
+    internal fun clefFits(s: BitmapSymbol): Boolean {
+        if (!s.name.startsWith("gClef")) return true
+        val staff = nearestStaff(s, 4.0) ?: return false
+        return s.y0 <= staff.top + 0.3 * space && s.y1 >= staff.bottom + 0.3 * space
     }
 
     /** The digits read in [s]'s staff halves, each with whether it is in the upper half; each half once ([done]). */
@@ -351,6 +386,12 @@ class SymbolRules(
     companion object {
         /** Never a time signature read wrong: the treble clef (taller than a staff), and what names no symbol. */
         private val NEVER_DIGITS = setOf("gClef", "gClef8vb", "slur", "beam", "composite", "other", "text")
+
+        /** A system's opening clef starts within this many spaces of its staff's left end. */
+        private const val OPENING_CLEF_REACH = 4.0
+
+        /** An arpeggio stands this close (in spaces) before its chord's heads. */
+        private const val ARPEGGIO_GAP = 1.5
 
         /** How much taller than the staff (in spaces) a time signature's blob may be. */
         private const val TIME_SIGNATURE_MARGIN = 0.6

@@ -92,6 +92,26 @@ class StaffNotesTest {
         assertEquals(listOf(100.0, 150.0), staff.notes.map { it.head.box.left })
     }
 
+    /**
+     * A piano's barlines run from its upper staff to its lower one: a line as tall as one staff
+     * alone there is a stem whose head was not read (Mistral gagnant's scan: two measures more on
+     * its first line, the music after them one measure off).
+     */
+    @Test
+    fun aLineOnOneStaffOfAPianoWhoseBarlinesJoinBothIsNoBarline() {
+        val upper = 100.0
+        val lower = 150.0
+        val bottom = lower + 4 * space
+        val lines = staffLines(upper) + staffLines(lower) + barline(50.0, upper, bottom) +
+            listOf(200.0, 350.0, 550.0).map { barline(it, upper, bottom) } +
+            barline(280.0, upper, upper + 4 * space)
+        val glyphs = listOf(gClef(55.0, upper), fClef(55.0, lower)) +
+            listOf(100.0, 250.0, 300.0, 400.0).flatMap { listOf(head(it, upper + 2 * space), head(it, lower + 2 * space)) }
+        val system = read(lines, glyphs).single()
+        assertEquals(listOf(200.0, 350.0, 550.0), system[0].barlines)
+        assertEquals(listOf(200.0, 350.0, 550.0), system[1].barlines)
+    }
+
     @Test
     fun aBarlineRightAfterTheKeyClosesNoMeasure() {
         val top = 100.0

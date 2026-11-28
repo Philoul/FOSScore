@@ -82,9 +82,10 @@ object StaffNotes {
             staff: Staff,
             fallbackClef: Clef? = null,
             extraBars: List<Double> = emptyList(),
+            droppedBars: List<Double> = emptyList(),
         ): StaffReading {
             val index = staves.indexOfFirst { it.second === staff }
-            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef, extraBars, page.shapes)
+            return read(staff, system, byStaff[index].orEmpty().sortedBy { it.box.left }, page.lines, fallbackClef, extraBars, page.shapes, droppedBars)
         }
         val readings = systems.map { system -> system.staves.map { staff -> readStaff(system, staff) } }
         // a staff whose clef was not read (a scan) takes the one its place has in the nearest
@@ -99,12 +100,13 @@ object StaffNotes {
         }
         return readings.mapIndexed { si, system ->
             val space = systems[si].staves.minOf { it.space }
+            val dropped = unjoined(systems[si], system, page.lines)
             // a barline the system's other staves have at the same place, missed on a staff (a
             // scan breaks it), is that staff's too when no note stands there: its measures after it
             // were one off (Audiveris aligns barlines across a system's staves the same way)
             val missing = system.map { reading ->
                 if (system.size < 2) return@map emptyList<Double>()
-                val others = system.filter { it !== reading }.flatMap { it.barlines }
+                val others = system.filter { it !== reading }.flatMap { it.barlines }.filter { x -> dropped.none { kotlin.math.abs(it - x) < space } }
                 others.filter { x ->
                     reading.barlines.none { kotlin.math.abs(it - x) < space } &&
                         reading.notes.none { note -> x >= note.head.box.left - 0.3 * space && x <= note.head.box.right + 0.3 * space } &&
@@ -113,10 +115,39 @@ object StaffNotes {
             }
             system.mapIndexed { s, reading ->
                 val clef = clefs[si][s]
-                if (reading.clef == clef && missing[s].isEmpty()) reading
-                else readStaff(systems[si], systems[si].staves[s], clef, missing[s])
+                val drop = dropped.filter { x -> reading.barlines.any { kotlin.math.abs(it - x) < space } }
+                if (reading.clef == clef && missing[s].isEmpty() && drop.isEmpty()) reading
+                else readStaff(systems[si], systems[si].staves[s], clef, missing[s], drop)
             }
         }
+    }
+
+    /**
+     * The barlines of a system that do not run through to the next staff where the system's
+     * barlines do: a piano's barlines are drawn from the top of its upper staff to the bottom of
+     * its lower one, and a line as tall as one staff alone there is a stem (on a scan, one whose
+     * head was not read: Mistral gagnant's first line had two more measures, and the music after
+     * them was one measure off). Only where most of the barlines (at least two) of two neighbour
+     * staves are joined.
+     */
+    private fun unjoined(system: StaffSystem, readings: List<StaffReading>, lines: List<DrawnLine>): List<Double> {
+        if (readings.size < 2) return emptyList()
+        val space = system.staves.minOf { it.space }
+        val out = mutableListOf<Double>()
+        for (i in 0 until readings.size - 1) {
+            val upper = readings[i].staff
+            val lower = readings[i + 1].staff
+            val xs = (readings[i].barlines + readings[i + 1].barlines).sorted()
+                .fold(mutableListOf<Double>()) { kept, x -> kept.apply { if (none { kotlin.math.abs(it - x) < space }) add(x) } }
+            val joined = xs.filter { x ->
+                lines.any { line ->
+                    line.isVertical && kotlin.math.abs(line.x1 - x) < 0.5 * space &&
+                        minOf(line.y1, line.y2) <= upper.bottom + 0.5 * space && maxOf(line.y1, line.y2) >= lower.top - 0.5 * space
+                }
+            }
+            if (joined.size >= 2 && joined.size >= JOINED_SHARE * xs.size) out += xs - joined.toSet()
+        }
+        return out
     }
 
     private fun isTupletNumber(name: String?): Boolean = name != null && name.startsWith("tuplet")
@@ -237,6 +268,7 @@ object StaffNotes {
         fallbackClef: Clef? = null,
         extraBars: List<Double> = emptyList(),
         shapes: List<DrawnShape> = emptyList(),
+        droppedBars: List<Double> = emptyList(),
     ): StaffReading {
         val space = staff.space
         // Nothing is played before the system's opening clef: a head, rest or flag there is a piece
@@ -258,7 +290,7 @@ object StaffNotes {
         // (a repeat it starts still starts with the system)
         val dots = symbols.filter { it.name == "augmentationDot" || it.name == "repeatDot" }
         // with the barlines the system's other staves found where this one missed them
-        val allBars = (barlines(staff, system, lines, heads, dots) + extraBars.map { Bar(it, BarStyle.REGULAR, Repeat.NONE) }).sortedBy { it.x }
+        val allBars = (barlines(staff, system, lines, heads, dots).filter { bar -> droppedBars.none { kotlin.math.abs(it - bar.x) < space } } + extraBars.map { Bar(it, BarStyle.REGULAR, Repeat.NONE) }).sortedBy { it.x }
         val bars = allBars.dropWhile { bar ->
             symbols.none { (isHead(it.name) || it.name.orEmpty().startsWith("rest")) && it.box.centerX < bar.x }
         }
@@ -620,6 +652,9 @@ object StaffNotes {
 
     /** A key starts this far (in spaces) after its clef or barline at most: fonts with narrow clefs (MuseJazz) leave almost 2. */
     private const val KEY_REACH = 2.5
+
+    /** The share of two staves' barlines that must run from one to the other for the rest to have to. */
+    private const val JOINED_SHARE = 0.6
 
     /** A system's opening clef starts within this many spaces of its staff's left end. */
     private const val OPENING_CLEF_REACH = 3.0

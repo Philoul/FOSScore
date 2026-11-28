@@ -93,7 +93,7 @@ class SymbolRules(
             val b = blobs[i]
             BitmapSymbol(prediction.names[i], b.x0, b.y0, b.x1, b.y1, prediction.confidences[i], i)
         }
-        return timeSignatures(flags(rests(context(named)), prediction)).filter(::clefFits)
+        return arpeggios(timeSignatures(flags(rests(context(named)), prediction)).filter(::clefFits))
     }
 
     /**
@@ -257,6 +257,22 @@ class SymbolRules(
         return keep
     }
 
+    /**
+     * An arpeggio's wavy line, which the classifier has no class for and names a quarter rest (as
+     * tall and narrow): a "rest" holding a vertical stroke (the wave's spine, inked all along; a
+     * rest's strokes are slanted) just before a note at its height (Mistral gagnant: every rolled
+     * chord had a quarter rest before it).
+     */
+    internal fun arpeggios(symbols: List<BitmapSymbol>): List<BitmapSymbol> {
+        val heads = symbols.filter { it.name.startsWith("notehead") }
+        return symbols.map { s ->
+            if (s.name == "restQuarter" && s.blob in blobs.indices && blobs[s.blob].stems.isNotEmpty() && heads.any { h ->
+                    h.x0 >= s.x1 - 0.2 * space && h.x0 <= s.x1 + ARPEGGIO_GAP * space && h.centerY >= s.y0 - 0.5 * space && h.centerY <= s.y1 + 0.5 * space
+                }
+            ) s.copy(name = "wiggleArpeggiatoUp") else s
+        }
+    }
+
     private fun isDigit(s: BitmapSymbol) = s.name.startsWith("timeSig") && s.name.length > 7 && s.name.substring(7).all { it.isDigit() }
 
     /**
@@ -373,6 +389,9 @@ class SymbolRules(
 
         /** A system's opening clef starts within this many spaces of its staff's left end. */
         private const val OPENING_CLEF_REACH = 4.0
+
+        /** An arpeggio stands this close (in spaces) before its chord's heads. */
+        private const val ARPEGGIO_GAP = 1.5
 
         /** How much taller than the staff (in spaces) a time signature's blob may be. */
         private const val TIME_SIGNATURE_MARGIN = 0.6

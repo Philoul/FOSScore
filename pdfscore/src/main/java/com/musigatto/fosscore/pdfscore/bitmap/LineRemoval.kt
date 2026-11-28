@@ -30,17 +30,24 @@ object LineRemoval {
             val x0 = maxOf(staff.left - floorInt(d), 0)
             val x1 = minOf(staff.right + floorInt(d), img.width - 1)
             val length = floorInt(1.1 * d)
-            for (k in 1..ledgers) {
-                for (y in doubleArrayOf(staff.top - k * d, staff.bottom + k * d)) {
-                    if (y < 0 || y >= img.height) continue
-                    val columns = ledgerColumns(img, floorInt(y), x0, x1, length)
-                    val erased = columns.filter { x -> erase(img, x, rnd(y) + staff.off(x), maxLength) }.toSet()
-                    found?.let { list ->
-                        for (run in runs(columns)) {
-                            if (run.none { it in erased }) continue
-                            list += Ledger(run.first, run.last, rnd(y) + staff.off((run.first + run.last) / 2))
-                        }
+            // from the farthest ledger line in: a ledger line holds a head, or leads to one farther out
+            for (side in intArrayOf(-1, 1)) {
+                var outer = emptyList<IntRange>()
+                for (k in ledgers downTo 1) {
+                    val y = if (side < 0) staff.top - k * d else staff.bottom + k * d
+                    if (y < 0 || y >= img.height) {
+                        outer = emptyList()
+                        continue
                     }
+                    val runs = runs(ledgerColumns(img, floorInt(y), x0, x1, length)).filter { run ->
+                        outer.any { it.first <= run.last && run.first <= it.last } ||
+                            holdsHead(img, run, rnd(y) + staff.off((run.first + run.last) / 2), d)
+                    }
+                    for (run in runs) {
+                        val erased = run.filter { x -> erase(img, x, rnd(y) + staff.off(x), maxLength) }
+                        if (erased.isNotEmpty()) found?.add(Ledger(run.first, run.last, rnd(y) + staff.off((run.first + run.last) / 2)))
+                    }
+                    outer = runs
                 }
             }
         }
@@ -83,6 +90,27 @@ object LineRemoval {
         for (i in y - up..y + down) img[x, i] = false
         return true
     }
+
+    /**
+     * Whether a head lies on the ledger line at [row] over columns [run], or hangs from it: at
+     * least half a space of its columns hold ink spanning [HEAD_SPAN] of a space on one side of
+     * the line, within a space of it (a hollow head spans it with its rims). A tie or slur whose
+     * flat top lies a space off the staff is no ledger line: only its thin ends dip from it, and
+     * erasing it cut the tie in pieces nothing read (Mistral gagnant's ties over the staff).
+     */
+    internal fun holdsHead(img: InkMask, run: IntRange, row: Int, space: Double): Boolean {
+        val far = rnd(space)
+        val span = HEAD_SPAN * space
+        fun spans(x: Int, rows: IntProgression): Boolean {
+            val ink = rows.filter { it >= 0 && it < img.height && img[x, it] }
+            return ink.isNotEmpty() && ink.max() - ink.min() + 1 >= span
+        }
+        val columns = run.count { x -> spans(x, row - far..row) || spans(x, row..row + far) }
+        return columns >= 0.5 * space
+    }
+
+    /** A head on or beside a ledger line spans at least this much of a space in its columns. */
+    private const val HEAD_SPAN = 0.4
 
     /** Sorted columns grouped into runs of neighbours. */
     private fun runs(columns: List<Int>): List<IntRange> {
